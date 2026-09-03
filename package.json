@@ -1,0 +1,27 @@
+{
+  "name": "jarvis-command",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @jarvis-command/web && npm run build -w @jarvis-command/server",
+    "dev": "concurrently -n server,web -c green,cyan \"npm run dev -w @jarvis-command/server\" \"npm run dev -w @jarvis-command/web\"",
+    "lint": "eslint . --max-warnings=0",
+    "test": "npm run test --workspaces --if-present",
+    "test:e2e": "playwright test",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@playwright/test": "1.62.1",
+    "concurrently": "10.0.5",
+    "eslint": "10.9.1",
+    "globals": "17.12.0",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.69.0"
+  }
+}
