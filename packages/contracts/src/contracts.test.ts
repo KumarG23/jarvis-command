@@ -62,6 +62,13 @@ describe('CommandBootstrapSchema', () => {
     expect(() => CommandBootstrapSchema.parse(candidate)).toThrow();
   });
 
+  it('accepts an explicit development identity only in the shared wire shape', () => {
+    const candidate = structuredClone(validBootstrap);
+    candidate.identity.provider = 'development';
+
+    expect(CommandBootstrapSchema.parse(candidate).identity.provider).toBe('development');
+  });
+
   it('rejects malformed timestamps', () => {
     const candidate = structuredClone(validBootstrap);
     candidate.command.generatedAt = 'yesterday-ish';

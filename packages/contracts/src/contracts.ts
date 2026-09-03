@@ -25,7 +25,7 @@ export const CommandBootstrapSchema = z
     identity: z
       .object({
         email: z.email(),
-        provider: z.literal('cloudflare-access'),
+        provider: z.enum(['cloudflare-access', 'development']),
       })
       .strict(),
     command: z
