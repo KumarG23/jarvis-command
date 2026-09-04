@@ -8,6 +8,7 @@ services:
       - /etc/jarvis-command/app.env
     volumes:
       - /var/lib/jarvis-command/cloudflare-jwks:/run/jarvis-command/cloudflare-jwks:ro
+      - /srv/jarvis-command/public/.well-known:/app/apps/web/dist/.well-known:ro
     restart: "no"
     init: true
     read_only: true

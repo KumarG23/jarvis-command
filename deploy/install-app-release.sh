@@ -77,7 +77,8 @@ loaded_image_id=$(docker image inspect --format '{{.Id}}' "${expected_app_image}
 [[ ${loaded_image_id} == "${expected_app_image}" ]]
 
 sudo -n install -d -o root -g root -m 0755 \
-  /srv/jarvis-command /etc/jarvis-command /usr/local/libexec
+  /srv/jarvis-command /srv/jarvis-command/public \
+  /srv/jarvis-command/public/.well-known /etc/jarvis-command /usr/local/libexec
 sudo -n install -m 0755 "${stage}/secure-env-file.py" \
   /usr/local/libexec/jarvis-command-secure-env-file
 sudo -n /usr/local/libexec/jarvis-command-secure-env-file install \

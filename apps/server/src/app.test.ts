@@ -187,6 +187,35 @@ describe('Jarvis Command server', () => {
     await app.close();
   });
 
+  it('serves Digital Asset Links as JSON instead of the SPA fallback', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'jarvis-command-assetlinks-'));
+    const associationDirectory = join(directory, '.well-known');
+    const association = '[{"relation":["delegate_permission/common.handle_all_urls"]}]\n';
+    await mkdir(associationDirectory);
+    await writeFile(join(directory, 'index.html'), '<!doctype html><title>Jarvis Command</title>');
+    await writeFile(join(associationDirectory, 'assetlinks.json'), association);
+    const app = buildApp({
+      config: { ...config, webDistDir: directory },
+      verifyAccess: vi.fn(),
+      hermes: { readSnapshot: vi.fn() },
+    });
+
+    try {
+      const response = await app.inject({
+        method: 'GET',
+        url: '/.well-known/assetlinks.json',
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.headers['content-type']).toContain('application/json');
+      expect(response.body).toBe(association);
+      expect(response.body).not.toContain('<title>Jarvis Command</title>');
+    } finally {
+      await app.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('serves the built web shell and SPA routes when a distribution directory is configured', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'jarvis-command-web-'));
     await writeFile(join(directory, 'index.html'), '<!doctype html><title>Jarvis Command</title>');

@@ -3,6 +3,13 @@ dist/
 coverage/
 playwright-report/
 test-results/
+.gradle/
+**/build/
+local.properties
+*.apk
+*.aab
+*.jks
+*.keystore
 .env
 .env.*
 !.env.example

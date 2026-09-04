@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.kumargg.jarviscommand",
+      "sha256_cert_fingerprints": [
+        "62:1C:87:98:E1:AF:33:0A:60:AA:7F:1B:8B:B7:68:9B:BC:9C:66:2C:B1:8B:94:A7:E8:9F:0E:5F:07:C1:34:D0"
+      ]
+    }
+  }
+]

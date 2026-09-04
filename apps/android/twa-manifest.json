@@ -1,0 +1,51 @@
+{
+  "packageId": "com.kumargg.jarviscommand",
+  "host": "command.sharma-house.com",
+  "name": "Jarvis Command",
+  "launcherName": "Command",
+  "display": "standalone",
+  "themeColor": "#090B10",
+  "themeColorDark": "#000000",
+  "navigationColor": "#000000",
+  "navigationColorDark": "#000000",
+  "navigationDividerColor": "#000000",
+  "navigationDividerColorDark": "#000000",
+  "backgroundColor": "#090B10",
+  "enableNotifications": false,
+  "startUrl": "/",
+  "iconUrl": "https://command.sharma-house.com/pwa-512.png",
+  "maskableIconUrl": "https://command.sharma-house.com/pwa-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "/home/neal/.config/jarvis-command/android/jarvis-command-release.jks",
+    "alias": "jarvis-command"
+  },
+  "appVersionName": "0.1.0",
+  "appVersionCode": 1,
+  "shortcuts": [],
+  "generatorApp": "bubblewrap-cli",
+  "fallbackType": "customtabs",
+  "features": {},
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": "https://command.sharma-house.com/",
+  "minSdkVersion": 23,
+  "orientation": "default",
+  "fingerprints": [
+    {
+      "name": "release",
+      "value": "62:1C:87:98:E1:AF:33:0A:60:AA:7F:1B:8B:B7:68:9B:BC:9C:66:2C:B1:8B:94:A7:E8:9F:0E:5F:07:C1:34:D0"
+    }
+  ],
+  "additionalTrustedOrigins": [],
+  "retainedBundles": [],
+  "protocolHandlers": [],
+  "fileHandlers": [],
+  "launchHandlerClientMode": "",
+  "displayOverride": [],
+  "appVersion": "0.1.0"
+}
