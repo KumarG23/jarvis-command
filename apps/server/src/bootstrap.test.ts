@@ -12,9 +12,7 @@ const developmentConfig: AppConfig = {
   cloudflare: null,
   hermes: {
     baseUrl: 'http://127.0.0.1:18642',
-    apiKey: 'local-hermes-key-with-safe-length',
-    modelLabel: 'gpt-5.6-sol',
-    providerLabel: 'OpenAI Codex',
+    readProxyKey: 'local-read-proxy-key-with-safe-length',
   },
   webDistDir: undefined,
 };
@@ -41,7 +39,6 @@ describe('server composition', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().identity).toEqual({
-      email: 'operator@jarvis.invalid',
       provider: 'development',
     });
     await app.close();

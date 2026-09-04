@@ -1,0 +1,27 @@
+services:
+  app:
+    image: ${JARVIS_COMMAND_APP_IMAGE:?Set JARVIS_COMMAND_APP_IMAGE to the verified sha256 image ID}
+    container_name: jarvis-command-app
+    user: "10001:10001"
+    network_mode: host
+    env_file:
+      - /etc/jarvis-command/app.env
+    volumes:
+      - /var/lib/jarvis-command/cloudflare-jwks:/run/jarvis-command/cloudflare-jwks:ro
+    restart: "no"
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+    pids_limit: 128
+    mem_limit: 512m
+    cpus: 1.0
+    ulimits:
+      nofile:
+        soft: 1024
+        hard: 2048
+    stop_grace_period: 20s

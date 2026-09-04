@@ -1,0 +1,36 @@
+[Unit]
+Description=Jarvis Command application container
+Requires=jarvis-command-egress.service docker.service
+After=jarvis-command-egress.service docker.service
+BindsTo=jarvis-command-egress.service
+PartOf=jarvis-command-egress.service
+ConditionFileIsExecutable=/usr/local/libexec/jarvis-command-validated-compose-up
+ConditionFileIsExecutable=/usr/bin/systemd-notify
+ConditionPathExists=/srv/jarvis-command/compose.yaml
+ConditionPathExists=/etc/jarvis-command/release.env
+
+[Service]
+Type=notify
+NotifyAccess=all
+ExecStart=/usr/local/libexec/jarvis-command-validated-compose-up app /srv/jarvis-command/compose.yaml /etc/jarvis-command/release.env --monitor
+ExecStop=/usr/bin/docker stop --time 20 jarvis-command-app
+ExecStopPost=-/usr/bin/docker stop --time 20 jarvis-command-app
+Restart=always
+RestartSec=5
+TimeoutStartSec=120
+TimeoutStopSec=30
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target jarvis-command-egress.service

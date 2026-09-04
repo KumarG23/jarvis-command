@@ -8,10 +8,10 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build -w @jarvis-command/web && npm run build -w @jarvis-command/server",
+    "build": "npm run build -w @jarvis-command/web && npm run build -w @jarvis-command/server && npm run build -w @jarvis-command/read-proxy",
     "dev": "concurrently -n server,web -c green,cyan \"npm run dev -w @jarvis-command/server\" \"npm run dev -w @jarvis-command/web\"",
     "lint": "eslint . --max-warnings=0",
-    "test": "npm run test --workspaces --if-present",
+    "test": "node --test deploy/*.test.mjs && npm run test --workspaces --if-present",
     "test:e2e": "playwright test",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },

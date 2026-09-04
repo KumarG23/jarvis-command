@@ -13,7 +13,6 @@ export const SessionSummarySchema = z
     source: z.string().min(1).max(40),
     model: z.string().min(1).max(160).nullable(),
     lastActive: IsoTimestampSchema,
-    preview: z.string().max(500),
     messageCount: z.number().int().nonnegative(),
     toolCallCount: z.number().int().nonnegative(),
     pinned: z.boolean(),
@@ -24,7 +23,6 @@ export const CommandBootstrapSchema = z
   .object({
     identity: z
       .object({
-        email: z.email(),
         provider: z.enum(['cloudflare-access', 'development']),
       })
       .strict(),

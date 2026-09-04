@@ -1,0 +1,28 @@
+[Unit]
+Description=Jarvis Command host-network container egress policy
+After=network-pre.target nftables.service
+Before=docker.service
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+ExecStartPre=/usr/local/libexec/jarvis-command-apply-nftables egress-start
+ExecStartPre=-/usr/sbin/nft add table inet jarvis_command_egress
+ExecStart=/usr/sbin/nft -f /etc/jarvis-command/jarvis-command-egress.nft
+ExecReload=/usr/sbin/nft -f /etc/jarvis-command/jarvis-command-egress.nft
+RemainAfterExit=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+
+[Install]
+WantedBy=multi-user.target

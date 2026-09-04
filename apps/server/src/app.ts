@@ -9,7 +9,10 @@ type AppDependencies = Readonly<{
   config: AppConfig;
   verifyAccess: (
     assertion: string | undefined,
-  ) => Promise<CommandBootstrap['identity']>;
+  ) => Promise<Readonly<{
+    subject: string;
+    provider: CommandBootstrap['identity']['provider'];
+  }>>;
   hermes: Readonly<{
     readSnapshot: () => Promise<HermesSnapshot>;
   }>;
@@ -18,13 +21,60 @@ type AppDependencies = Readonly<{
 
 export function buildApp(dependencies: AppDependencies) {
   const app = Fastify({
-    logger: dependencies.config.nodeEnv !== 'test',
+    logger: createLoggerOptions(dependencies.config.nodeEnv),
     trustProxy: false,
+    bodyLimit: 16_384,
+    connectionTimeout: 10_000,
+    requestTimeout: 15_000,
+    keepAliveTimeout: 5_000,
+    maxRequestsPerSocket: 100,
   });
   const now = dependencies.now ?? (() => new Date());
 
-  app.addHook('onSend', async (_request, reply, payload) => {
-    reply.header('cache-control', 'no-store');
+  app.setErrorHandler((error, request, reply) => {
+    const errorName = error instanceof Error ? error.name : 'UnknownError';
+    const candidateStatusCode = typeof error === 'object'
+      && error !== null
+      && 'statusCode' in error
+      && typeof error.statusCode === 'number'
+      ? error.statusCode
+      : undefined;
+    request.log.error({ errorType: errorName }, 'request failed');
+    const statusCode = candidateStatusCode !== undefined
+      && candidateStatusCode >= 400
+      && candidateStatusCode < 500
+      ? candidateStatusCode
+      : 500;
+    return reply.code(statusCode).send({
+      error: statusCode === 500 ? 'internal_error' : 'bad_request',
+    });
+  });
+
+  app.addHook('onSend', async (request, reply, payload) => {
+    const cachePolicy = isApiRequestUrl(request.url)
+      ? 'no-store'
+      : request.url.startsWith('/assets/')
+        ? 'public, max-age=31536000, immutable'
+        : 'no-cache';
+    reply.header('cache-control', cachePolicy);
+    reply.header('content-security-policy', [
+      "default-src 'self'",
+      "base-uri 'self'",
+      "connect-src 'self'",
+      "font-src 'self'",
+      "form-action 'self'",
+      "frame-ancestors 'none'",
+      "img-src 'self' data:",
+      "manifest-src 'self'",
+      "object-src 'none'",
+      "script-src 'self'",
+      "style-src 'self'",
+      "worker-src 'self'",
+    ].join('; '));
+    reply.header('cross-origin-opener-policy', 'same-origin');
+    reply.header('cross-origin-resource-policy', 'same-origin');
+    reply.header('permissions-policy', 'camera=(), microphone=(), geolocation=()');
+    reply.header('strict-transport-security', 'max-age=31536000; includeSubDomains');
     reply.header('x-content-type-options', 'nosniff');
     reply.header('x-frame-options', 'DENY');
     reply.header('referrer-policy', 'no-referrer');
@@ -40,10 +90,10 @@ export function buildApp(dependencies: AppDependencies) {
   app.get('/api/bootstrap', async (request, reply) => {
     const rawAssertion = request.headers['cf-access-jwt-assertion'];
     const assertion = typeof rawAssertion === 'string' ? rawAssertion : undefined;
-    let identity: CommandBootstrap['identity'];
+    let verifiedIdentity: Awaited<ReturnType<AppDependencies['verifyAccess']>>;
 
     try {
-      identity = await dependencies.verifyAccess(assertion);
+      verifiedIdentity = await dependencies.verifyAccess(assertion);
     } catch {
       return reply.code(401).send({ error: 'unauthorized' });
     }
@@ -52,11 +102,11 @@ export function buildApp(dependencies: AppDependencies) {
     try {
       snapshot = await dependencies.hermes.readSnapshot();
     } catch {
-      snapshot = offlineSnapshot(dependencies.config);
+      snapshot = offlineSnapshot();
     }
 
     const payload: CommandBootstrap = {
-      identity,
+      identity: { provider: verifiedIdentity.provider },
       command: {
         version: dependencies.config.appVersion,
         environment: dependencies.config.nodeEnv,
@@ -84,7 +134,7 @@ export function buildApp(dependencies: AppDependencies) {
       index: ['index.html'],
     });
     app.setNotFoundHandler(async (request, reply) => {
-      if (request.method === 'GET' && !request.url.startsWith('/api/')) {
+      if (request.method === 'GET' && !isApiRequestUrl(request.url)) {
         return reply.type('text/html; charset=utf-8').sendFile('index.html');
       }
 
@@ -95,16 +145,52 @@ export function buildApp(dependencies: AppDependencies) {
   return app;
 }
 
-function offlineSnapshot(config: AppConfig): HermesSnapshot {
+function isApiRequestUrl(requestUrl: string): boolean {
+  let pathname: string;
+  try {
+    pathname = new URL(requestUrl, 'http://jarvis-command.invalid').pathname;
+  } catch {
+    return requestUrl === '/api'
+      || requestUrl.startsWith('/api/')
+      || requestUrl.startsWith('/api?');
+  }
+
+  return pathname === '/api' || pathname.startsWith('/api/');
+}
+
+export function createLoggerOptions(nodeEnv: AppConfig['nodeEnv']): false | {
+  level: string;
+  redact: { paths: string[]; censor: string };
+} {
+  if (nodeEnv === 'test') {
+    return false;
+  }
+
+  return {
+    level: 'info',
+    redact: {
+      paths: [
+        'req.body',
+        'req.headers.authorization',
+        'req.headers.cookie',
+        "req.headers['cf-access-jwt-assertion']",
+        'res.headers.set-cookie',
+      ],
+      censor: '[REDACTED]',
+    },
+  };
+}
+
+function offlineSnapshot(): HermesSnapshot {
   return {
     state: 'offline',
     version: null,
-    model: config.hermes.modelLabel,
-    provider: config.hermes.providerLabel,
+    model: null,
+    provider: null,
     gatewayState: 'unknown',
     activeAgents: 0,
     capabilities: [],
-    readinessChecks: { upstream: 'fail' },
+    readinessChecks: { hermesBridge: 'fail' },
     sessions: [],
   };
 }

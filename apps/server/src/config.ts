@@ -1,18 +1,23 @@
+import { isAbsolute, resolve } from 'node:path';
 import { z } from 'zod';
 
 const EnvironmentSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   HOST: z.string().min(1).default('127.0.0.1'),
   PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
-  APP_VERSION: z.string().min(1).max(80).default('0.1.0-dev'),
+  APP_VERSION: z.string().min(1).max(40).default('0.1.0-dev'),
   AUTH_MODE: z.enum(['cloudflare', 'development']).default('development'),
-  CF_ACCESS_TEAM_DOMAIN: z.string().min(1).optional(),
+  CF_ACCESS_TEAM_DOMAIN: z.string()
+    .regex(/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.cloudflareaccess\.com$/i, 'Invalid CF_ACCESS_TEAM_DOMAIN')
+    .optional(),
   CF_ACCESS_AUD: z.string().regex(/^[a-f0-9]{64}$/i).optional(),
-  CF_ACCESS_EMAIL: z.email().optional(),
+  CF_ACCESS_EMAIL_SHA256: z.string()
+    .regex(/^[a-f0-9]{64}$/i, 'Invalid CF_ACCESS_EMAIL_SHA256')
+    .optional(),
+  CF_ACCESS_JWKS_FILE: z.string().min(1).optional(),
   HERMES_API_BASE_URL: z.url().default('http://127.0.0.1:18642'),
-  HERMES_API_KEY: z.string().min(16),
-  HERMES_MODEL_LABEL: z.string().min(1).max(160).default('gpt-5.6-sol'),
-  HERMES_PROVIDER_LABEL: z.string().min(1).max(120).default('OpenAI Codex'),
+  HERMES_READ_PROXY_KEY: z.string().min(32),
+
   WEB_DIST_DIR: z.string().min(1).optional(),
 });
 
@@ -25,30 +30,60 @@ export type AppConfig = Readonly<{
   cloudflare: Readonly<{
     teamDomain: string;
     audience: string;
-    allowedEmail: string;
+    allowedEmailHash: string;
+    jwksFile: string;
   }> | null;
   hermes: Readonly<{
     baseUrl: string;
-    apiKey: string;
-    modelLabel: string;
-    providerLabel: string;
+    readProxyKey: string;
   }>;
   webDistDir: string | undefined;
 }>;
 
 export function loadConfig(environment: NodeJS.ProcessEnv): AppConfig {
   const parsed = EnvironmentSchema.parse(environment);
+  const hermesBridgeUrl = new URL(parsed.HERMES_API_BASE_URL);
 
   if (parsed.NODE_ENV === 'production' && parsed.AUTH_MODE !== 'cloudflare') {
     throw new Error('AUTH_MODE must be cloudflare in production');
   }
 
+  if (parsed.NODE_ENV === 'production' && parsed.HOST !== '127.0.0.1') {
+    throw new Error('HOST must remain on the 127.0.0.1 loopback interface in production');
+  }
+
+  if (
+    parsed.NODE_ENV === 'production'
+    && (
+      hermesBridgeUrl.protocol !== 'http:'
+      || hermesBridgeUrl.hostname !== '127.0.0.1'
+      || hermesBridgeUrl.username
+      || hermesBridgeUrl.password
+      || hermesBridgeUrl.pathname !== '/'
+      || hermesBridgeUrl.search
+      || hermesBridgeUrl.hash
+    )
+  ) {
+    throw new Error('HERMES_API_BASE_URL must be an uncredentialed loopback HTTP origin in production');
+  }
+
   const cloudflare = parsed.AUTH_MODE === 'cloudflare'
-    ? {
-        teamDomain: requireValue('CF_ACCESS_TEAM_DOMAIN', parsed.CF_ACCESS_TEAM_DOMAIN),
+    ? (() => {
+        const jwksFile = requireValue('CF_ACCESS_JWKS_FILE', parsed.CF_ACCESS_JWKS_FILE);
+        if (!isAbsolute(jwksFile)) {
+          throw new Error('CF_ACCESS_JWKS_FILE must be an absolute local path');
+        }
+
+        return {
+        teamDomain: requireValue('CF_ACCESS_TEAM_DOMAIN', parsed.CF_ACCESS_TEAM_DOMAIN).toLowerCase(),
         audience: requireValue('CF_ACCESS_AUD', parsed.CF_ACCESS_AUD),
-        allowedEmail: requireValue('CF_ACCESS_EMAIL', parsed.CF_ACCESS_EMAIL).toLowerCase(),
-      }
+        allowedEmailHash: requireValue(
+          'CF_ACCESS_EMAIL_SHA256',
+          parsed.CF_ACCESS_EMAIL_SHA256,
+        ).toLowerCase(),
+          jwksFile,
+        };
+      })()
     : null;
 
   return Object.freeze({
@@ -59,12 +94,10 @@ export function loadConfig(environment: NodeJS.ProcessEnv): AppConfig {
     authMode: parsed.AUTH_MODE,
     cloudflare,
     hermes: Object.freeze({
-      baseUrl: parsed.HERMES_API_BASE_URL.replace(/\/$/, ''),
-      apiKey: parsed.HERMES_API_KEY,
-      modelLabel: parsed.HERMES_MODEL_LABEL,
-      providerLabel: parsed.HERMES_PROVIDER_LABEL,
+      baseUrl: hermesBridgeUrl.origin,
+      readProxyKey: parsed.HERMES_READ_PROXY_KEY,
     }),
-    webDistDir: parsed.WEB_DIST_DIR,
+    webDistDir: parsed.WEB_DIST_DIR ? resolve(parsed.WEB_DIST_DIR) : undefined,
   });
 }
 

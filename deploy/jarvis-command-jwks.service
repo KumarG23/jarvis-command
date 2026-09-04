@@ -1,0 +1,29 @@
+[Unit]
+Description=Refresh Jarvis Command Cloudflare Access signing keys
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/etc/jarvis-command/cloudflare-jwks.env
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/jarvis-command/cloudflare-jwks.env
+ExecStart=/usr/local/libexec/jarvis-command-refresh-cloudflare-jwks ${CF_ACCESS_TEAM_DOMAIN} /var/lib/jarvis-command/cloudflare-jwks
+User=root
+Group=root
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET AF_INET6
+SystemCallArchitectures=native
+ReadWritePaths=/var/lib/jarvis-command/cloudflare-jwks

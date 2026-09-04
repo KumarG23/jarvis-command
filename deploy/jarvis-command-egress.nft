@@ -1,0 +1,16 @@
+delete table inet jarvis_command_egress
+table inet jarvis_command_egress {
+  chain output {
+    type filter hook output priority filter; policy accept;
+
+    ct state established,related accept
+
+    # Host-network app container: only its own health port and the SSH bridge.
+    meta skuid 10001 ip daddr 127.0.0.1 tcp dport { 3000, 18642 } accept
+    meta skuid 10001 reject
+
+    # Host-network read proxy: only its own health port and Hermes loopback API.
+    meta skuid 10002 ip daddr 127.0.0.1 tcp dport { 8642, 8643 } accept
+    meta skuid 10002 reject
+  }
+}

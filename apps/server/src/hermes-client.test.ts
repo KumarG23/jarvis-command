@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { HermesUpstreamError, createHermesClient } from './hermes-client';
 
 const baseUrl = 'http://127.0.0.1:18642';
-const apiKey = 'server-side-hermes-key';
+const readProxyKey = 'server-side-hermes-key';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -27,9 +27,11 @@ describe('Hermes client', () => {
         return jsonResponse({
           status: 'ready',
           version: '0.21.0',
-          gateway_state: 'idle',
+          gateway_state: 'draining',
+          gateway_busy: false,
           active_agents: 2,
           readiness: {
+            status: 'degraded',
             checks: {
               config: { status: 'ok', detail: 'must not cross the BFF' },
               disk: { status: 'warning', detail: '/private/path' },
@@ -67,11 +69,14 @@ describe('Hermes client', () => {
               preview: 'Build the real command deck.',
               message_count: 18,
               tool_call_count: 7,
-              pinned: 1,
+              pinned: true,
               system_prompt: 'must-not-leak',
               model_config: { api_key: 'must-not-leak' },
             },
           ],
+          limit: 12,
+          offset: 0,
+          has_more: false,
         });
       }
 
@@ -80,18 +85,16 @@ describe('Hermes client', () => {
 
     const client = createHermesClient({
       baseUrl,
-      apiKey,
-      modelLabel: 'gpt-5.6-sol',
-      providerLabel: 'OpenAI Codex',
+      readProxyKey,
       fetcher,
     });
 
     await expect(client.readSnapshot()).resolves.toEqual({
       state: 'degraded',
       version: '0.21.0',
-      model: 'gpt-5.6-sol',
-      provider: 'OpenAI Codex',
-      gatewayState: 'idle',
+      model: 'hermes-agent',
+      provider: null,
+      gatewayState: 'unknown',
       activeAgents: 2,
       capabilities: ['run_events_sse', 'session_resources'],
       readinessChecks: {
@@ -106,7 +109,6 @@ describe('Hermes client', () => {
           source: 'discord',
           model: 'gpt-5.6-sol',
           lastActive: '2026-09-03T14:12:20.000Z',
-          preview: 'Build the real command deck.',
           messageCount: 18,
           toolCallCount: 7,
           pinned: true,
@@ -114,7 +116,20 @@ describe('Hermes client', () => {
       ],
     });
     expect(requests).toHaveLength(3);
-    expect(requests.every((request) => request.authorization === `Bearer ${apiKey}`)).toBe(true);
+    expect(requests.every((request) => request.authorization === `Bearer ${readProxyKey}`)).toBe(true);
+  });
+
+  it('fails closed with the same sanitized error when an upstream contract drifts', async () => {
+    const fetcher: typeof fetch = async () => jsonResponse({ unexpected: true });
+    const client = createHermesClient({
+      baseUrl,
+      readProxyKey,
+      fetcher,
+    });
+
+    await expect(client.readSnapshot()).rejects.toEqual(
+      new HermesUpstreamError('Hermes control plane is unavailable'),
+    );
   });
 
   it('fails with a sanitized error when Hermes is unavailable', async () => {
@@ -123,9 +138,7 @@ describe('Hermes client', () => {
     }, 503);
     const client = createHermesClient({
       baseUrl,
-      apiKey,
-      modelLabel: 'gpt-5.6-sol',
-      providerLabel: 'OpenAI Codex',
+      readProxyKey,
       fetcher,
     });
 

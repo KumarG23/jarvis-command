@@ -1,0 +1,12 @@
+[Unit]
+Description=Periodically refresh Jarvis Command Cloudflare Access signing keys
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=5m
+RandomizedDelaySec=30s
+Persistent=yes
+Unit=jarvis-command-jwks.service
+
+[Install]
+WantedBy=timers.target

@@ -4,7 +4,6 @@ import { CommandBootstrapSchema, SessionSummarySchema } from './contracts';
 
 const validBootstrap = {
   identity: {
-    email: 'operator@example.com',
     provider: 'cloudflare-access',
   },
   command: {
@@ -33,7 +32,6 @@ const validBootstrap = {
       source: 'discord',
       model: 'gpt-5.6-sol',
       lastActive: '2026-09-03T13:59:00.000Z',
-      preview: 'Build the first command room.',
       messageCount: 12,
       toolCallCount: 4,
       pinned: true,
@@ -69,6 +67,18 @@ describe('CommandBootstrapSchema', () => {
     expect(CommandBootstrapSchema.parse(candidate).identity.provider).toBe('development');
   });
 
+  it('rejects identity email addresses at the browser contract boundary', () => {
+    const candidate = {
+      ...structuredClone(validBootstrap),
+      identity: {
+        ...validBootstrap.identity,
+        email: 'operator@example.com',
+      },
+    };
+
+    expect(() => CommandBootstrapSchema.parse(candidate)).toThrow();
+  });
+
   it('rejects malformed timestamps', () => {
     const candidate = structuredClone(validBootstrap);
     candidate.command.generatedAt = 'yesterday-ish';
@@ -88,10 +98,18 @@ describe('SessionSummarySchema', () => {
     expect(() => SessionSummarySchema.parse(candidate)).toThrow();
   });
 
-  it('bounds previews and counters', () => {
+  it('rejects session message previews at the public contract boundary', () => {
     const candidate = {
       ...validBootstrap.sessions[0],
-      preview: 'x'.repeat(501),
+      preview: 'message content must not cross the first-slice boundary',
+    };
+
+    expect(() => SessionSummarySchema.parse(candidate)).toThrow();
+  });
+
+  it('requires integral operational counters', () => {
+    const candidate = {
+      ...validBootstrap.sessions[0],
       messageCount: 1.2,
     };
 
