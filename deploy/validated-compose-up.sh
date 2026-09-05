@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 if [[ $# -lt 3 || $# -gt 4 ]]; then
-  printf 'usage: %s app|read-proxy /path/to/compose.yaml /path/to/release.env [--monitor]\n' "$0" >&2
+  printf 'usage: %s app|read-proxy|command-proxy /path/to/compose.yaml /path/to/release.env [--monitor]\n' "$0" >&2
   exit 64
 fi
 
@@ -30,6 +30,10 @@ case ${component} in
   read-proxy)
     image_variable=JARVIS_COMMAND_READ_PROXY_IMAGE
     container_name=jarvis-command-read-proxy
+    ;;
+  command-proxy)
+    image_variable=JARVIS_COMMAND_COMMAND_PROXY_IMAGE
+    container_name=jarvis-command-command-proxy
     ;;
   *)
     printf 'unknown component: %s\n' "${component}" >&2

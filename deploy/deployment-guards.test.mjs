@@ -236,6 +236,7 @@ test('all production systemd units verify together with their executable depende
     'nftables.service',
     'jarvis-command-app.service',
     'jarvis-command-read-proxy.service',
+    'jarvis-command-command-proxy.service',
     'jarvis-command-egress.service',
     'jarvis-command-jwks.service',
     'jarvis-command-jwks.timer',

@@ -2,7 +2,9 @@
 
 ## Ownership
 
-GPT-5.6 Sol at the maximum available reasoning effort owns this project’s architecture, implementation, review, testing, integration, deployment, and release gating. Delegated engineering work must also use Sol at high effort. The Sol parent remains responsible for the complete diff and real verification evidence.
+GPT-6 Astra at high reasoning effort owns this project’s architecture and implementation. GPT-5.6 Sol at high effort independently reviews the complete final candidate. Generic engineering delegation is the Sol read-only review lane; use a fresh explicitly selected Astra/high session if implementation needs a separate worker. No routine xhigh/max/ultra and no silent fallback on quota failure. The Astra lead remains responsible for the complete tracked/untracked diff, integration, and real verification evidence.
+
+Use one implementer followed by one finite read-only independent reviewer, concise file-backed handoffs, fresh milestone sessions, focused TDD during implementation, and scripted final gates. Follow the `subagent-driven-development` skill’s `references/efficient-engineering.md`. Preserve every WIP path; reducing orchestration never reduces security or exact-candidate review requirements.
 
 Terra is retired and must not be assigned implementation, review, reconnaissance, tests, documentation, cron, memory, or auxiliary work. Grok may be used only for source-grounded freshness research or fallback work; Luna only for low-risk non-building utilities.
 
@@ -38,7 +40,7 @@ A release is not complete until:
 
 1. Focused and full automated tests pass.
 2. Typecheck, lint, and production build pass without warnings we own.
-3. Sol reviews the complete diff after the final amendment.
+3. An independent reviewer inspects the complete exact candidate after the final amendment.
 4. The deployed artifact hash matches the reviewed candidate.
 5. Cloudflare Access positive and negative paths remain enforced.
 6. The public PWA is exercised in a real browser at desktop and mobile widths.

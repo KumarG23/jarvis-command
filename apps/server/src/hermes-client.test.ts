@@ -13,6 +13,16 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe('Hermes client', () => {
+  it.each(['x'.repeat(161), ' padded', 'padded ', 'id\n'])('refuses malformed session-list identities %j', async (id) => {
+    const fetcher: typeof fetch = async (input) => {
+      const url = String(input);
+      if (url.endsWith('/health/detailed')) return jsonResponse({ status: 'ready', version: 'test', active_agents: 0, readiness: { status: 'ready', checks: {} } });
+      if (url.endsWith('/v1/capabilities')) return jsonResponse({ model: 'test', features: {} });
+      return jsonResponse({ object: 'list', data: [{ id }], limit: 12, offset: 0, has_more: false });
+    };
+    await expect(createHermesClient({ baseUrl, readProxyKey, fetcher }).readSnapshot()).rejects.toEqual(new HermesUpstreamError());
+  });
+
   it('projects readiness, capabilities, and sessions into a bounded snapshot', async () => {
     const requests: Array<{ url: string; authorization: string | null }> = [];
     const fetcher: typeof fetch = async (input, init) => {
@@ -107,6 +117,7 @@ describe('Hermes client', () => {
           id: 'session_123',
           title: 'Jarvis Command',
           source: 'discord',
+          ownership: 'external',
           model: 'gpt-5.6-sol',
           lastActive: '2026-09-03T14:12:20.000Z',
           messageCount: 18,

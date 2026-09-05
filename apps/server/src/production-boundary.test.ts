@@ -137,6 +137,7 @@ describe('production trust boundary', () => {
         baseUrl: 'http://127.0.0.1:18642',
         readProxyKey,
       },
+      command: null,
       webDistDir: undefined,
     };
     const app = buildApp({
@@ -163,6 +164,7 @@ describe('production trust boundary', () => {
         version: '0.1.0-integration',
         environment: 'production',
         generatedAt: '2026-09-03T17:01:00.000Z',
+        liveRoom: { enabled: false, externalContinue: false, maxInputCharacters: 16_000, maxSteerCharacters: 4_000 },
       },
       hermes: {
         state: 'online',
@@ -178,6 +180,7 @@ describe('production trust boundary', () => {
         id: 'session-1',
         title: 'Jarvis Command',
         source: 'discord',
+        ownership: 'external',
         model: 'gpt-5.6-sol',
         lastActive: '2026-09-03T17:00:00.000Z',
         messageCount: 12,

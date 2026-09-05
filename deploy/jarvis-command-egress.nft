@@ -5,12 +5,16 @@ table inet jarvis_command_egress {
 
     ct state established,related accept
 
-    # Host-network app container: only its own health port and the SSH bridge.
-    meta skuid 10001 ip daddr 127.0.0.1 tcp dport { 3000, 18642 } accept
+    # Host-network app container: only its own health port and the SSH bridges.
+    meta skuid 10001 ip daddr 127.0.0.1 tcp dport { 3000, 18642, 18643 } accept
     meta skuid 10001 reject
 
     # Host-network read proxy: only its own health port and Hermes loopback API.
     meta skuid 10002 ip daddr 127.0.0.1 tcp dport { 8642, 8643 } accept
     meta skuid 10002 reject
+
+    # Host-network command proxy: only its own health port and Hermes loopback API.
+    meta skuid 10003 ip daddr 127.0.0.1 tcp dport { 8642, 8647 } accept
+    meta skuid 10003 reject
   }
 }

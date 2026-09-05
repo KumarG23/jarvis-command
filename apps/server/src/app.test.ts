@@ -1,3 +1,5 @@
+import { Writable } from 'node:stream';
+import pino from 'pino';
 import { CommandBootstrapSchema } from '@jarvis-command/contracts';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -25,6 +27,7 @@ const config: AppConfig = {
     baseUrl: 'http://127.0.0.1:18642',
     readProxyKey: 'server-side-read-proxy-secret',
   },
+  command: null,
   webDistDir: undefined,
 };
 
@@ -58,6 +61,17 @@ describe('Jarvis Command server', () => {
         ]),
       },
     });
+  });
+
+  it('minimizes real request log serialization so rejected query secrets cannot leak', () => {
+    let output = '';
+    const stream = new Writable({ write(chunk, _encoding, callback) { output += String(chunk); callback(); } });
+    const options = createLoggerOptions('production');
+    if (!options) throw new Error('Expected production logger');
+    const logger = pino(options, stream);
+    logger.info({ req: { method: 'POST', url: '/api/live/runs?token=PRIVATE_QUERY', body: { input: 'PRIVATE_PROMPT' }, headers: { authorization: 'Bearer PRIVATE_AUTH', cookie: 'PRIVATE_COOKIE' } } }, 'request received');
+    for (const marker of ['PRIVATE_QUERY', 'PRIVATE_PROMPT', 'PRIVATE_AUTH', 'PRIVATE_COOKIE']) expect(output).not.toContain(marker);
+    expect(JSON.parse(output).req).toEqual({ method: 'POST' });
   });
 
   it('exposes a minimal unauthenticated liveness probe', async () => {
@@ -121,6 +135,7 @@ describe('Jarvis Command server', () => {
         version: '0.1.0-test',
         environment: 'test',
         generatedAt: '2026-09-03T14:30:00.000Z',
+        liveRoom: { enabled: false, externalContinue: false, maxInputCharacters: 16_000, maxSteerCharacters: 4_000 },
       },
       hermes: {
         state: 'online',

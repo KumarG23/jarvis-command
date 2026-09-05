@@ -1,0 +1,379 @@
+{
+  "provenance": "Sanitized real Docker Compose config and docker create, immutable app image never started. Actual network none and private mounts; tests explicitly map policy/paths.",
+  "compose": {
+    "name": "jc-hardening-64acba94eadf4135943ed879f7687148",
+    "services": {
+      "app": {
+        "cap_drop": [
+          "ALL"
+        ],
+        "cpus": 1,
+        "command": null,
+        "container_name": "jarvis-command-app",
+        "entrypoint": null,
+        "environment": {
+          "COMMAND_AUDIT_LOG_PATH": "/var/lib/jarvis-command/audit/events.jsonl",
+          "COMMAND_MODE": "enabled"
+        },
+        "image": "sha256:e5175aec03d18297bad644ace3470eaf52882dcc9d164c3c04ec91faaf06a58f",
+        "init": true,
+        "mem_limit": "536870912",
+        "network_mode": "host",
+        "pids_limit": 128,
+        "read_only": true,
+        "restart": "no",
+        "security_opt": [
+          "no-new-privileges:true"
+        ],
+        "stop_grace_period": "20s",
+        "tmpfs": [
+          "/tmp:rw,noexec,nosuid,nodev,size=16m"
+        ],
+        "ulimits": {
+          "nofile": {
+            "soft": 1024,
+            "hard": 2048
+          }
+        },
+        "user": "10001:10001",
+        "volumes": [
+          {
+            "type": "bind",
+            "source": "/var/lib/jarvis-command/cloudflare-jwks",
+            "target": "/run/jarvis-command/cloudflare-jwks",
+            "read_only": true,
+            "bind": {}
+          },
+          {
+            "type": "bind",
+            "source": "/srv/jarvis-command/public/.well-known",
+            "target": "/app/apps/web/dist/.well-known",
+            "read_only": true,
+            "bind": {}
+          },
+          {
+            "type": "bind",
+            "source": "/var/lib/jarvis-command/audit",
+            "target": "/var/lib/jarvis-command/audit",
+            "bind": {
+              "create_host_path": false
+            }
+          }
+        ]
+      }
+    }
+  },
+  "image": {
+    "Id": "sha256:e5175aec03d18297bad644ace3470eaf52882dcc9d164c3c04ec91faaf06a58f",
+    "Config": {
+      "User": "10001:10001",
+      "Env": [
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "NODE_VERSION=22.22.3",
+        "YARN_VERSION=1.22.22",
+        "NODE_ENV=production",
+        "HOST=127.0.0.1",
+        "PORT=3000",
+        "WEB_DIST_DIR=/app/apps/web/dist"
+      ],
+      "Entrypoint": [
+        "docker-entrypoint.sh"
+      ],
+      "Cmd": [
+        "node",
+        "apps/server/dist/index.js"
+      ],
+      "WorkingDir": "/app",
+      "Labels": {
+        "org.jarvis-command.source-sha256": "3f241c2c97282534430eb7e7bfb1e72280271ee14881c4298a7f35256780a271"
+      },
+      "ArgsEscaped": true,
+      "Healthcheck": {
+        "Test": [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:'+process.env.PORT+'/api/health',{signal:AbortSignal.timeout(4000)}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ],
+        "Interval": 30000000000,
+        "Timeout": 5000000000,
+        "StartPeriod": 10000000000,
+        "Retries": 3
+      }
+    }
+  },
+  "created": {
+    "Id": "457a2b41475139f654d3bafb64dc0f754f74305e25b2a164340d5aa925a6a477",
+    "Created": "2026-09-05T07:47:40.314880694Z",
+    "Path": "docker-entrypoint.sh",
+    "Args": [
+      "node",
+      "apps/server/dist/index.js"
+    ],
+    "State": {
+      "Status": "created",
+      "Running": false,
+      "Paused": false,
+      "Restarting": false,
+      "OOMKilled": false,
+      "Dead": false,
+      "Pid": 0,
+      "ExitCode": 0,
+      "Error": "",
+      "StartedAt": "0001-01-01T00:00:00Z",
+      "FinishedAt": "0001-01-01T00:00:00Z"
+    },
+    "Image": "sha256:e5175aec03d18297bad644ace3470eaf52882dcc9d164c3c04ec91faaf06a58f",
+    "ResolvConfPath": "",
+    "HostnamePath": "",
+    "HostsPath": "",
+    "LogPath": "",
+    "Name": "/jc-hardening-64acba94eadf4135943ed879f7687148",
+    "RestartCount": 0,
+    "Driver": "overlayfs",
+    "Platform": "linux",
+    "MountLabel": "",
+    "ProcessLabel": "",
+    "AppArmorProfile": "",
+    "ExecIDs": null,
+    "HostConfig": {
+      "Binds": null,
+      "ContainerIDFile": "",
+      "LogConfig": {
+        "Type": "json-file",
+        "Config": {}
+      },
+      "NetworkMode": "none",
+      "PortBindings": {},
+      "RestartPolicy": {
+        "Name": "no",
+        "MaximumRetryCount": 0
+      },
+      "AutoRemove": false,
+      "VolumeDriver": "",
+      "VolumesFrom": null,
+      "ConsoleSize": [
+        0,
+        0
+      ],
+      "CapAdd": null,
+      "CapDrop": [
+        "ALL"
+      ],
+      "CgroupnsMode": "private",
+      "Dns": null,
+      "DnsOptions": [],
+      "DnsSearch": [],
+      "ExtraHosts": null,
+      "GroupAdd": null,
+      "IpcMode": "private",
+      "Cgroup": "",
+      "Links": null,
+      "OomScoreAdj": 0,
+      "PidMode": "",
+      "Privileged": false,
+      "PublishAllPorts": false,
+      "ReadonlyRootfs": true,
+      "SecurityOpt": [
+        "no-new-privileges:true"
+      ],
+      "Tmpfs": {
+        "/tmp": "rw,noexec,nosuid,nodev,size=16m"
+      },
+      "UTSMode": "",
+      "UsernsMode": "",
+      "ShmSize": 67108864,
+      "Runtime": "runc",
+      "Isolation": "",
+      "CpuShares": 0,
+      "Memory": 536870912,
+      "NanoCpus": 1000000000,
+      "CgroupParent": "",
+      "BlkioWeight": 0,
+      "BlkioWeightDevice": [],
+      "BlkioDeviceReadBps": [],
+      "BlkioDeviceWriteBps": [],
+      "BlkioDeviceReadIOps": [],
+      "BlkioDeviceWriteIOps": [],
+      "CpuPeriod": 0,
+      "CpuQuota": 0,
+      "CpuRealtimePeriod": 0,
+      "CpuRealtimeRuntime": 0,
+      "CpusetCpus": "",
+      "CpusetMems": "",
+      "Devices": [],
+      "DeviceCgroupRules": null,
+      "DeviceRequests": null,
+      "MemoryReservation": 0,
+      "MemorySwap": 1073741824,
+      "MemorySwappiness": null,
+      "OomKillDisable": false,
+      "PidsLimit": 128,
+      "Ulimits": [
+        {
+          "Name": "nofile",
+          "Hard": 2048,
+          "Soft": 1024
+        }
+      ],
+      "CpuCount": 0,
+      "CpuPercent": 0,
+      "IOMaximumIOps": 0,
+      "IOMaximumBandwidth": 0,
+      "Mounts": [
+        {
+          "Type": "bind",
+          "Source": "/var/lib/jc-hardening-xmndd6zk/0",
+          "Target": "/run/jarvis-command/cloudflare-jwks",
+          "ReadOnly": true
+        },
+        {
+          "Type": "bind",
+          "Source": "/var/lib/jc-hardening-xmndd6zk/1",
+          "Target": "/app/apps/web/dist/.well-known",
+          "ReadOnly": true
+        },
+        {
+          "Type": "bind",
+          "Source": "/var/lib/jc-hardening-xmndd6zk/2",
+          "Target": "/var/lib/jarvis-command/audit"
+        }
+      ],
+      "MaskedPaths": [
+        "/proc/acpi",
+        "/proc/asound",
+        "/proc/interrupts",
+        "/proc/kcore",
+        "/proc/keys",
+        "/proc/latency_stats",
+        "/proc/sched_debug",
+        "/proc/scsi",
+        "/proc/timer_list",
+        "/proc/timer_stats",
+        "/sys/devices/virtual/powercap",
+        "/sys/firmware"
+      ],
+      "ReadonlyPaths": [
+        "/proc/bus",
+        "/proc/fs",
+        "/proc/irq",
+        "/proc/sys",
+        "/proc/sysrq-trigger"
+      ],
+      "Init": true
+    },
+    "Storage": {
+      "RootFS": {
+        "Snapshot": {
+          "Name": "overlayfs"
+        }
+      }
+    },
+    "Mounts": [
+      {
+        "Type": "bind",
+        "Source": "/var/lib/jc-hardening-xmndd6zk/0",
+        "Destination": "/run/jarvis-command/cloudflare-jwks",
+        "Mode": "",
+        "RW": false,
+        "Propagation": "rprivate"
+      },
+      {
+        "Type": "bind",
+        "Source": "/var/lib/jc-hardening-xmndd6zk/1",
+        "Destination": "/app/apps/web/dist/.well-known",
+        "Mode": "",
+        "RW": false,
+        "Propagation": "rprivate"
+      },
+      {
+        "Type": "bind",
+        "Source": "/var/lib/jc-hardening-xmndd6zk/2",
+        "Destination": "/var/lib/jarvis-command/audit",
+        "Mode": "",
+        "RW": true,
+        "Propagation": "rprivate"
+      }
+    ],
+    "Config": {
+      "Hostname": "457a2b414751",
+      "Domainname": "",
+      "User": "10001:10001",
+      "AttachStdin": false,
+      "AttachStdout": true,
+      "AttachStderr": true,
+      "Tty": false,
+      "OpenStdin": false,
+      "StdinOnce": false,
+      "Env": [
+        "COMMAND_MODE=enabled",
+        "COMMAND_AUDIT_LOG_PATH=/var/lib/jarvis-command/audit/events.jsonl",
+        "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+        "NODE_VERSION=22.22.3",
+        "YARN_VERSION=1.22.22",
+        "NODE_ENV=production",
+        "HOST=127.0.0.1",
+        "PORT=3000",
+        "WEB_DIST_DIR=/app/apps/web/dist"
+      ],
+      "Cmd": [
+        "node",
+        "apps/server/dist/index.js"
+      ],
+      "Healthcheck": {
+        "Test": [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:'+process.env.PORT+'/api/health',{signal:AbortSignal.timeout(4000)}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+        ],
+        "Interval": 30000000000,
+        "Timeout": 5000000000,
+        "StartPeriod": 10000000000,
+        "Retries": 3
+      },
+      "Image": "sha256:e5175aec03d18297bad644ace3470eaf52882dcc9d164c3c04ec91faaf06a58f",
+      "Volumes": null,
+      "WorkingDir": "/app",
+      "Entrypoint": [
+        "docker-entrypoint.sh"
+      ],
+      "Labels": {
+        "org.jarvis-command.source-sha256": "3f241c2c97282534430eb7e7bfb1e72280271ee14881c4298a7f35256780a271"
+      }
+    },
+    "NetworkSettings": {
+      "SandboxID": "",
+      "SandboxKey": "",
+      "Ports": {},
+      "Networks": {
+        "none": {
+          "IPAMConfig": null,
+          "Links": null,
+          "Aliases": null,
+          "DriverOpts": null,
+          "GwPriority": 0,
+          "NetworkID": "",
+          "EndpointID": "",
+          "Gateway": "",
+          "IPAddress": "",
+          "MacAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "DNSNames": null
+        }
+      }
+    },
+    "ImageManifestDescriptor": {
+      "mediaType": "application/vnd.oci.image.manifest.v1+json",
+      "digest": "sha256:a427edbdbe22e200be6474cbc024a2660711c125cfcd423bfb45c50920b75fa6",
+      "size": 2193,
+      "platform": {
+        "architecture": "amd64",
+        "os": "linux"
+      }
+    }
+  }
+}

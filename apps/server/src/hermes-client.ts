@@ -1,3 +1,4 @@
+import { SessionIdSchema } from '@jarvis-command/contracts';
 import type {
   CheckState,
   HermesState,
@@ -29,7 +30,7 @@ const CapabilitiesSchema = z.object({
 }).passthrough();
 
 const UpstreamSessionSchema = z.object({
-  id: z.string().min(1).max(512),
+  id: SessionIdSchema,
   title: z.string().nullable().optional(),
   source: z.string().nullable().optional(),
   model: z.string().nullable().optional(),
@@ -163,16 +164,22 @@ function projectCapabilities(value: Record<string, unknown>): string[] {
 }
 
 function projectSessions(value: z.infer<typeof UpstreamSessionSchema>[]): SessionSummary[] {
-  return value.map((candidate) => ({
-    id: candidate.id.slice(0, 160),
+  return value.map((candidate): SessionSummary => ({
+    id: candidate.id,
     title: stringOrFallback(candidate.title, 'Untitled session').slice(0, 160),
     source: stringOrFallback(candidate.source, 'unknown').slice(0, 40),
+    ownership: isCommandOwnedSession(candidate.id, candidate.source) ? 'command' : 'external',
     model: stringOrNull(candidate.model)?.slice(0, 160) ?? null,
     lastActive: toIsoTimestamp(candidate.last_active ?? candidate.started_at),
     messageCount: candidate.message_count ?? 0,
     toolCallCount: candidate.tool_call_count ?? 0,
     pinned: candidate.pinned ?? false,
   })).slice(0, 50);
+}
+
+function isCommandOwnedSession(id: string, source: string | null | undefined): boolean {
+  return /^jc_[a-f0-9]{32}$/.test(id)
+    && (source === 'jarvis-command' || source === 'api_server');
 }
 
 function deriveState(

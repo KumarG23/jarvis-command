@@ -1,0 +1,13 @@
+# Storage-only opt-in. Does NOT enable commands. The dedicated source-only
+# supervised-command-app.py uses exactly app base + this override after VERIFY.
+# The future transaction must prepare storage explicitly once with all writers
+# stopped; runtime/reboot must never create a missing ledger. No auto-install.
+services:
+  app:
+    volumes:
+      - type: bind
+        source: /var/lib/jarvis-command/audit
+        target: /var/lib/jarvis-command/audit
+        read_only: false
+        bind:
+          create_host_path: false

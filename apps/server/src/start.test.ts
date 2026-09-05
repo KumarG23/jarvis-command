@@ -14,6 +14,7 @@ const config: AppConfig = {
     baseUrl: 'http://127.0.0.1:18642',
     readProxyKey: 'local-read-proxy-key-with-safe-length',
   },
+  command: null,
   webDistDir: undefined,
 };
 

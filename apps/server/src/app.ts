@@ -2,6 +2,10 @@ import { CommandBootstrapSchema, type CommandBootstrap } from '@jarvis-command/c
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
 
+import { registerLiveRoomRoutes, type LiveStreamLimits } from './live-room-routes';
+import type { createLiveRoomService } from './live-room-service';
+import { AuditIntegrityError } from './audit-ledger';
+import { CommandProxyUnavailableError } from './command-client';
 import type { AppConfig } from './config';
 import type { HermesSnapshot } from './hermes-client';
 
@@ -16,6 +20,9 @@ type AppDependencies = Readonly<{
   hermes: Readonly<{
     readSnapshot: () => Promise<HermesSnapshot>;
   }>;
+  liveRoom?: ReturnType<typeof createLiveRoomService> | undefined;
+  checkLiveRoom?: () => Promise<void>;
+  liveStreamLimits?: LiveStreamLimits;
   now?: () => Date;
 }>;
 
@@ -23,7 +30,7 @@ export function buildApp(dependencies: AppDependencies) {
   const app = Fastify({
     logger: createLoggerOptions(dependencies.config.nodeEnv),
     trustProxy: false,
-    bodyLimit: 16_384,
+    bodyLimit: 131_072,
     connectionTimeout: 10_000,
     requestTimeout: 15_000,
     keepAliveTimeout: 5_000,
@@ -40,6 +47,9 @@ export function buildApp(dependencies: AppDependencies) {
       ? error.statusCode
       : undefined;
     request.log.error({ errorType: errorName }, 'request failed');
+    if (error instanceof AuditIntegrityError || (error instanceof CommandProxyUnavailableError && error.statusCode === 503)) {
+      return reply.code(503).send({ error: 'live_room_unavailable' });
+    }
     const statusCode = candidateStatusCode !== undefined
       && candidateStatusCode >= 400
       && candidateStatusCode < 500
@@ -105,12 +115,17 @@ export function buildApp(dependencies: AppDependencies) {
       snapshot = offlineSnapshot();
     }
 
+    let liveRoomEnabled = !!dependencies.config.command && !!dependencies.liveRoom;
+    if (liveRoomEnabled) {
+      try { await dependencies.checkLiveRoom?.(); } catch { liveRoomEnabled = false; }
+    }
     const payload: CommandBootstrap = {
       identity: { provider: verifiedIdentity.provider },
       command: {
         version: dependencies.config.appVersion,
         environment: dependencies.config.nodeEnv,
         generatedAt: now().toISOString(),
+        liveRoom: { enabled: liveRoomEnabled, externalContinue: false, maxInputCharacters: 16_000, maxSteerCharacters: 4_000 },
       },
       hermes: {
         state: snapshot.state,
@@ -127,6 +142,8 @@ export function buildApp(dependencies: AppDependencies) {
 
     return CommandBootstrapSchema.parse(payload);
   });
+
+  registerLiveRoomRoutes(app, dependencies);
 
   if (dependencies.config.webDistDir) {
     app.register(fastifyStatic, {
@@ -161,6 +178,7 @@ function isApiRequestUrl(requestUrl: string): boolean {
 export function createLoggerOptions(nodeEnv: AppConfig['nodeEnv']): false | {
   level: string;
   redact: { paths: string[]; censor: string };
+  serializers: { req: (request: { method?: string }) => { method: string } };
 } {
   if (nodeEnv === 'test') {
     return false;
@@ -168,6 +186,7 @@ export function createLoggerOptions(nodeEnv: AppConfig['nodeEnv']): false | {
 
   return {
     level: 'info',
+    serializers: { req: (request) => ({ method: request.method ?? 'UNKNOWN' }) },
     redact: {
       paths: [
         'req.body',

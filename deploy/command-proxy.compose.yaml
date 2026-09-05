@@ -1,0 +1,25 @@
+services:
+  command-proxy:
+    image: ${JARVIS_COMMAND_COMMAND_PROXY_IMAGE:?Set JARVIS_COMMAND_COMMAND_PROXY_IMAGE to the verified sha256 image ID}
+    container_name: jarvis-command-command-proxy
+    user: "10003:10003"
+    network_mode: host
+    env_file:
+      - /etc/jarvis-command/command-proxy.env
+    restart: "no"
+    init: true
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=8m
+    pids_limit: 64
+    mem_limit: 256m
+    cpus: 0.5
+    ulimits:
+      nofile:
+        soft: 512
+        hard: 1024
+    stop_grace_period: 20s

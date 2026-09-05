@@ -12,13 +12,9 @@ if [[ ! -r ${public_key_file} ]]; then
   exit 66
 fi
 
-IFS=' ' read -r key_type key_blob _ < "${public_key_file}"
-if [[ ${key_type} != ssh-ed25519 || -z ${key_blob:-} ]]; then
-  printf 'expected one Ed25519 OpenSSH public key\n' >&2
-  exit 65
-fi
-
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+# Complete validation/rendering before any account, file, or service mutation.
+authorized_key=$(python3 "${script_dir}/render-bridge-key.py" "${public_key_file}")
 account=jarvis-bridge
 home=/var/lib/jarvis-bridge
 
@@ -28,8 +24,7 @@ fi
 
 install -d -m 0700 -o "${account}" -g "${account}" "${home}/.ssh"
 install -m 0600 -o "${account}" -g "${account}" /dev/null "${home}/.ssh/authorized_keys"
-printf 'restrict,port-forwarding,permitlisten="127.0.0.1:18642" %s %s\n' \
-  "${key_type}" "${key_blob}" > "${home}/.ssh/authorized_keys"
+printf '%s\n' "${authorized_key}" > "${home}/.ssh/authorized_keys"
 chown "${account}:${account}" "${home}/.ssh/authorized_keys"
 
 install -m 0644 -o root -g root \

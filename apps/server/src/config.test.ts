@@ -6,7 +6,7 @@ const productionEnvironment = {
   NODE_ENV: 'production',
   PORT: '3000',
   HOST: '127.0.0.1',
-  APP_VERSION: '0.1.0-test',
+  APP_VERSION: '0.2.0-test',
   AUTH_MODE: 'cloudflare',
   CF_ACCESS_TEAM_DOMAIN: 'team.cloudflareaccess.com',
   CF_ACCESS_AUD: 'a'.repeat(64),
@@ -14,6 +14,11 @@ const productionEnvironment = {
   CF_ACCESS_JWKS_FILE: '/run/jarvis-command/cloudflare-jwks/certs.json',
   HERMES_API_BASE_URL: 'http://127.0.0.1:18642',
   HERMES_READ_PROXY_KEY: 'test-read-proxy-key-with-safe-length',
+  COMMAND_MODE: 'enabled',
+  PUBLIC_ORIGIN: 'https://command.sharma-house.com',
+  HERMES_COMMAND_API_BASE_URL: 'http://127.0.0.1:18643',
+  HERMES_COMMAND_PROXY_KEY: 'test-command-proxy-key-with-safe-length',
+  COMMAND_AUDIT_LOG_PATH: '/var/lib/jarvis-command/audit/events.jsonl',
 };
 
 describe('loadConfig', () => {
@@ -27,7 +32,7 @@ describe('loadConfig', () => {
       nodeEnv: 'production',
       host: '127.0.0.1',
       port: 3000,
-      appVersion: '0.1.0-test',
+      appVersion: '0.2.0-test',
       authMode: 'cloudflare',
       cloudflare: {
         teamDomain: 'team.cloudflareaccess.com',
@@ -38,6 +43,12 @@ describe('loadConfig', () => {
       hermes: {
         baseUrl: 'http://127.0.0.1:18642',
         readProxyKey: 'test-read-proxy-key-with-safe-length',
+      },
+      command: {
+        baseUrl: 'http://127.0.0.1:18643',
+        commandProxyKey: 'test-command-proxy-key-with-safe-length',
+        auditLogPath: '/var/lib/jarvis-command/audit/events.jsonl',
+        publicOrigin: 'https://command.sharma-house.com',
       },
       webDistDir: undefined,
     });
@@ -101,6 +112,42 @@ describe('loadConfig', () => {
     })).toThrow(/loopback/i);
   });
 
+  it('rejects an enabled command bridge outside loopback or a non-HTTPS production origin', () => {
+    expect(() => loadConfig({
+      ...productionEnvironment,
+      HERMES_COMMAND_API_BASE_URL: 'http://192.168.6.67:8644',
+    })).toThrow(/command.*loopback/i);
+    expect(() => loadConfig({
+      ...productionEnvironment,
+      PUBLIC_ORIGIN: 'http://command.sharma-house.com',
+    })).toThrow(/PUBLIC_ORIGIN|https/i);
+  });
+
+  it('requires command credentials and targets distinct from the read bridge', () => {
+    expect(() => loadConfig({ ...productionEnvironment, HERMES_COMMAND_PROXY_KEY: productionEnvironment.HERMES_READ_PROXY_KEY })).toThrow();
+    expect(() => loadConfig({ ...productionEnvironment, HERMES_COMMAND_API_BASE_URL: productionEnvironment.HERMES_API_BASE_URL })).toThrow();
+  });
+
+  it('requires every command boundary value when command mode is enabled', () => {
+    for (const name of [
+      'PUBLIC_ORIGIN',
+      'HERMES_COMMAND_API_BASE_URL',
+      'HERMES_COMMAND_PROXY_KEY',
+      'COMMAND_AUDIT_LOG_PATH',
+    ] as const) {
+      const candidate: Record<string, string> = { ...productionEnvironment };
+      delete candidate[name];
+      expect(() => loadConfig(candidate)).toThrow();
+    }
+  });
+
+  it('keeps the write boundary explicitly disabled when command mode is disabled', () => {
+    expect(loadConfig({
+      ...productionEnvironment,
+      COMMAND_MODE: 'disabled',
+    }).command).toBeNull();
+  });
+
   it('rejects a production listener outside loopback', () => {
     expect(() => loadConfig({
       ...productionEnvironment,
@@ -130,5 +177,6 @@ describe('loadConfig', () => {
     expect(config.port).toBe(3000);
     expect(config.cloudflare).toBeNull();
     expect(config.hermes.baseUrl).toBe('http://127.0.0.1:18642');
+    expect(config.command).toBeNull();
   });
 });

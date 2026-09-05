@@ -7,9 +7,15 @@ const validBootstrap = {
     provider: 'cloudflare-access',
   },
   command: {
-    version: '0.1.0',
+    version: '0.2.0',
     environment: 'production',
     generatedAt: '2026-09-03T14:00:00.000Z',
+    liveRoom: {
+      enabled: true,
+      externalContinue: false,
+      maxInputCharacters: 16_000,
+      maxSteerCharacters: 4_000,
+    },
   },
   hermes: {
     state: 'online',
@@ -30,6 +36,7 @@ const validBootstrap = {
       id: 'session_123',
       title: 'Jarvis Command',
       source: 'discord',
+      ownership: 'external',
       model: 'gpt-5.6-sol',
       lastActive: '2026-09-03T13:59:00.000Z',
       messageCount: 12,

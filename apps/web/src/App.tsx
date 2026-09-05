@@ -26,6 +26,10 @@ import {
 import { useEffect, useState, type ReactNode } from 'react';
 
 import './styles.css';
+import { LiveRoom } from './LiveRoom';
+import { CreateSession } from './CreateSession';
+import { useLiveTurn } from './useLiveTurn';
+import { TurnComposer, TurnView } from './TurnView';
 
 type LoadBootstrap = () => Promise<CommandBootstrap>;
 
@@ -110,7 +114,19 @@ function FailureState() {
 }
 
 function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) {
+  const live = useLiveTurn();
+  const [selectedSession, setSelectedSession] = useState<SessionSummary | null>(null);
+  const [sessions, setSessions] = useState(bootstrap.sessions);
+  const recoveredSessionId = live.turn?.intent.input === null ? live.turn.intent.sessionId : null;
+  useEffect(() => {
+    if (recoveredSessionId) {
+      const known = bootstrap.sessions.find((session) => session.id === recoveredSessionId);
+      if (known) setSelectedSession(known);
+    }
+  }, [recoveredSessionId, bootstrap.sessions]);
+  const liveEnabled = bootstrap.command.liveRoom.enabled;
   const hermesOnline = bootstrap.hermes.state === 'online';
+  const writeAllowed = liveEnabled && hermesOnline && bootstrap.hermes.capabilities.includes('run_events_sse') && selectedSession?.ownership === 'command' && selectedSession.id.startsWith('jc_');
   const hermesReachable = bootstrap.hermes.state !== 'offline';
   const controlPlaneLabel = bootstrap.hermes.state === 'online'
     ? 'Hermes available'
@@ -136,9 +152,11 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     <div className="command-shell">
       <WorkspaceRail />
       <RoomSidebar
-        sessions={bootstrap.sessions}
+        sessions={sessions}
         state={bootstrap.hermes.state}
         agentStatus={agentStatus}
+        selectedId={selectedSession?.id}
+        onSelect={liveEnabled ? setSelectedSession : undefined}
       />
 
       <main className="command-main">
@@ -167,7 +185,20 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
           <span className={`agent-count ${bootstrap.hermes.state}`}><CircleDot size={13} /> {agentLabel}</span>
         </section>
 
+        {liveEnabled ? <div className="live-room-toolbar">
+          <label className="session-picker">Session
+            <select value={selectedSession?.id ?? ''} onChange={(event) => setSelectedSession(sessions.find((session) => session.id === event.target.value) ?? null)}>
+              <option value="">Overview</option>
+              {sessions.map((session) => <option key={session.id} value={session.id}>{session.title}</option>)}
+            </select>
+          </label>
+          <CreateSession onCreated={(session) => {
+            setSessions((previous) => [session, ...previous.filter((item) => item.id !== session.id)]);
+            setSelectedSession(session);
+          }} />
+        </div> : null}
         <section className="timeline" aria-label="Mission timeline">
+          {liveEnabled && selectedSession ? <LiveRoom key={`${selectedSession.id}:${live.refresh?.sessionId === selectedSession.id ? live.refresh.revision : ''}`} session={selectedSession} onHistory={live.history} /> : <>
           <div className="room-intro">
             <div className="room-emblem" aria-hidden="true"><Command size={28} /></div>
             <p className="eyebrow">PROJECT COMMAND ROOM</p>
@@ -217,9 +248,13 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
           >
             The first vertical slice is intentionally read-only: secure bootstrap, current status, recent sessions, and responsive supervision surfaces.
           </TimelineEvent>
+          </>}
+          {live.recoveryError ? <p role="alert">{live.recoveryError}</p> : null}
+          {live.turn && (live.turn.intent.sessionId === selectedSession?.id || live.turn.intent.input === null) ? <TurnView turn={live.turn} allowed={writeAllowed && live.turn.intent.sessionId === selectedSession?.id} approve={live.approve} stop={live.stop} /> : null}
         </section>
 
         <footer className="composer-wrap">
+          {liveEnabled ? <TurnComposer blocked={!!live.recoveryError} allowed={hermesOnline && bootstrap.hermes.capabilities.includes('run_events_sse') && selectedSession?.ownership === 'command' && selectedSession.id.startsWith('jc_')} sessionId={selectedSession?.id} max={bootstrap.command.liveRoom.maxInputCharacters} maxSteer={bootstrap.command.liveRoom.maxSteerCharacters} turn={live.turn} send={live.send} retry={live.retry} resume={live.resume} steer={live.steer} recoveries={live.recoveries} consumeRecovery={live.consumeRecovery} /> : <>
           <div className="composer-status">
             <span className={`status-dot ${bootstrap.hermes.state === 'online' ? '' : bootstrap.hermes.state}`} />
             {hermesOnline ? 'Read-only bridge' : controlPlaneLabel}
@@ -229,6 +264,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
             <span>Messaging is unavailable in this read-only slice.</span>
           </div>
           <p>Command execution is locked until approval and audit paths land. Sensible, if less cinematic.</p>
+          </>}
         </footer>
       </main>
 
@@ -269,10 +305,12 @@ function RailButton({ children, label, active = false }: Readonly<{ children: Re
   );
 }
 
-function RoomSidebar({ sessions, state, agentStatus }: Readonly<{
+function RoomSidebar({ sessions, state, agentStatus, selectedId, onSelect }: Readonly<{
   sessions: SessionSummary[];
   state: CommandBootstrap['hermes']['state'];
   agentStatus: string;
+  selectedId?: string | undefined;
+  onSelect?: ((session: SessionSummary) => void) | undefined;
 }>) {
   return (
     <aside className="room-sidebar">
@@ -299,7 +337,7 @@ function RoomSidebar({ sessions, state, agentStatus }: Readonly<{
 
         <SidebarSection label="Recent sessions">
           {sessions.length > 0 ? sessions.map((session) => (
-            <button type="button" className="session-item" key={session.id} disabled>
+            <button type="button" className="session-item" key={session.id} disabled={!onSelect} aria-current={selectedId === session.id ? 'page' : undefined} onClick={() => onSelect?.(session)}>
               <span className="session-source">{sourceGlyph(session.source)}</span>
               <span>
                 <strong>{session.title}</strong>

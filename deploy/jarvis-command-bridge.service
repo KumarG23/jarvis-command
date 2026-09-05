@@ -1,5 +1,5 @@
 [Unit]
-Description=Jarvis Command reverse read-only bridge to application VM
+Description=Jarvis Command restricted dual reverse bridge to application VM
 After=network-online.target docker.service
 Wants=network-online.target
 Requires=docker.service
@@ -8,15 +8,18 @@ Requires=docker.service
 Type=simple
 User=neal
 Group=neal
-ExecStart=/usr/bin/ssh -NT \
+ExecStart=/usr/bin/ssh -F /dev/null -NT \
   -R 127.0.0.1:18642:127.0.0.1:8643 \
+  -R 127.0.0.1:18643:127.0.0.1:8647 \
   -i /etc/jarvis-command/bridge_to_app_ed25519 \
+  -o IdentitiesOnly=yes \
   -o BatchMode=yes \
   -o ExitOnForwardFailure=yes \
   -o ServerAliveInterval=30 \
   -o ServerAliveCountMax=3 \
   -o StrictHostKeyChecking=yes \
   -o UserKnownHostsFile=/etc/jarvis-command/app_known_hosts \
+  -o GlobalKnownHostsFile=/dev/null \
   jarvis-bridge@192.168.6.113
 Restart=always
 RestartSec=5s
