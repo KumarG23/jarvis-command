@@ -60,7 +60,7 @@ export function LiveRoom({ session, onHistory }: Readonly<{ session: SessionSumm
     </div>
     {loading ? <p role="status">Loading messages…</p> : null}
     {error ? <div className="history-feedback"><p role="alert">{error}</p><button type="button" className="primary-button" onClick={() => { setError(null); setLoading(true); setAttempt((value) => value + 1); }}>Retry history</button></div> : null}
-    {!loading && !error && messages.length === 0 ? <p role="status">No messages in this session yet.</p> : null}
+    {!loading && !error && messages.length === 0 ? <p role="status">No saved messages in session history yet.</p> : null}
     {messages.map((message) => <article className="timeline-event history-message" key={message.id} data-message-id={message.id}>
       <div className={`event-icon ${message.role === 'user' ? 'violet' : 'cyan'}`}>
         {message.role === 'tool' ? <SquareTerminal size={17} /> : message.role === 'user' ? <MessageSquare size={17} /> : <Bot size={17} />}

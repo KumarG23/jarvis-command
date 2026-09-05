@@ -2,14 +2,14 @@ import { expect, test } from '@playwright/test';
 
 // Synthetic browser fixtures only: no privileged upstream or production mutation.
 test.use({ serviceWorkers: 'block' });
-test('streams a synthetic turn through the compiled UI', async ({ page }) => {
+test('streams a synthetic turn through the compiled UI', async ({ page, context }, testInfo) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
   const timestamp = '2026-09-04T12:00:00.000Z';
   const sessionId = 'jc_browser_turn';
   const publicRunId = 'jcr_' + 'a'.repeat(32);
-  const session = { id: sessionId, title: 'Synthetic turn', ownership: 'command', source: 'web', model: null, lastActive: timestamp, messageCount: 0, toolCallCount: 0, pinned: false };
+  const session = { id: sessionId, title: 'Synthetic live conversation with a long project title for phone readability', ownership: 'command', source: 'web', model: null, lastActive: timestamp, messageCount: 0, toolCallCount: 0, pinned: false };
   await page.route('**/api/bootstrap', (route) => route.fulfill({ json: {
     identity: { provider: 'development' }, command: { version: 'test', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 100, maxSteerCharacters: 100 } },
     hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse'], readinessChecks: {} }, sessions: [session],
@@ -36,6 +36,20 @@ test('streams a synthetic turn through the compiled UI', async ({ page }) => {
   await expect(page.getByText('Run completed', { exact: true })).toBeVisible();
   await expect(page.getByText('Browser streamed answer', { exact: true })).toHaveCount(1);
   await expect(page.getByText('Tool started: synthetic — No real commands')).toBeVisible();
+  await expect(page.getByText('No saved messages in session history yet.', { exact: true })).toBeVisible();
+  const responseCard = page.getByRole('article', { name: 'Jarvis response' });
+  await expect(responseCard).toBeVisible();
+  await expect(page.getByRole('list', { name: 'Run activity' })).toBeVisible();
+  const title = page.getByLabel('Selected session');
+  await expect(title).toHaveText(session.title);
+  expect(await title.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect(await title.evaluate((element) => getComputedStyle(element).whiteSpace)).toBe('normal');
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await responseCard.getByRole('button', { name: 'Copy response' }).click();
+  await expect(responseCard.getByText('Response copied')).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe('Browser streamed answer');
+  await page.screenshot({ path: testInfo.outputPath('live-conversation.png'), fullPage: true });
+  expect(await page.locator('.timeline').evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   expect(sends).toBe(1);
   expect(errors).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
@@ -253,7 +267,7 @@ test('selects history and creates a room at desktop and phone widths', async ({ 
   await page.getByRole('button', { name: 'New Command session', exact: true }).click();
   await expect(page.getByRole('heading', { name: created.title })).toBeVisible();
   await expect(picker).toHaveValue(created.id);
-  await expect(page.getByText('No messages in this session yet.')).toBeVisible();
+  await expect(page.getByText('No saved messages in session history yet.')).toBeVisible();
   expect(creations).toBe(1);
   expect(errors).toEqual([]);
   expect(failed).toEqual([]);

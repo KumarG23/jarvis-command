@@ -84,7 +84,7 @@ describe('Command session creation', () => {
       method: 'POST', credentials: 'same-origin', headers: { accept: 'application/json', 'content-type': 'application/json', 'x-jarvis-command': '1' }, body: '{}',
     });
     await act(async () => pending.resolve(Response.json({ session: created })));
-    expect(await screen.findByText('No messages in this session yet.')).toBeInTheDocument();
+    expect(await screen.findByText('No saved messages in session history yet.')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: created.title })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /New Command session.*0 messages/ })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByText('Command-owned session')).toBeInTheDocument();
@@ -247,7 +247,7 @@ describe('Live Room history', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(history('session_123', 0, []))));
     render(<App loadBootstrap={async () => liveBootstrap} />);
     fireEvent.click(await screen.findByRole('button', { name: /18 messages/ }));
-    expect(await screen.findByText('No messages in this session yet.')).toBeInTheDocument();
+    expect(await screen.findByText('No saved messages in session history yet.')).toBeInTheDocument();
   });
 
   it('selects a recent session and renders oldest-first typed history through the BFF', async () => {

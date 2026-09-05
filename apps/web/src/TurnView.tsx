@@ -7,10 +7,10 @@ export function TurnView({ turn, allowed, approve, stop }: Readonly<{ turn: Turn
   const canControl = allowed && turn.identityVerified;
   return <section className="live-turn" aria-label="Current turn">
     <p role="status">{turn.phase}</p>
-    {turn.intent.input === null ? <><p>Original message unavailable after reload; no message was retransmitted.</p><p>Recovery target · Session: {turn.intent.sessionId} · Request: {turn.intent.clientRequestId} · Run: {turn.publicRunId ?? 'Unknown — admission lookup unsupported'}</p></> : <p className="turn-input">{turn.intent.input}</p>}
-    {turn.output && !turn.historyMatched ? <p className="turn-output">{turn.output}</p> : null}
+    {turn.intent.input === null ? <><p>Original message unavailable after reload; no message was retransmitted.</p><p>Recovery target · Session: {turn.intent.sessionId} · Request: {turn.intent.clientRequestId} · Run: {turn.publicRunId ?? 'Unknown — admission lookup unsupported'}</p></> : <article className="timeline-event live-message" aria-label="Your message"><div className="event-icon violet" aria-hidden="true">You</div><div className="event-body"><div className="event-label">You</div><p className="turn-input">{turn.intent.input}</p></div></article>}
+    {turn.output && !turn.historyMatched ? <article className="timeline-event live-message" aria-label="Jarvis response"><div className="event-icon cyan" aria-hidden="true">J</div><div className="event-body"><div className="event-label">Jarvis</div><p className="turn-output">{turn.output}</p><CopyResponse key={JSON.stringify([turn.intent.sessionId, turn.intent.clientRequestId])} text={turn.output} limited={turn.outputLimited} /></div></article> : null}
     {turn.outputLimited ? <p role="status">Output preview limited. Full output may be available in session history.</p> : null}
-    {turn.events.map((event, index) => <p key={index}>{activity(event)}</p>)}
+    {turn.events.length > 0 ? <ol className="turn-activity" aria-label="Run activity">{turn.events.map((event, index) => <li key={index}>{activity(event)}</li>)}</ol> : null}
     {turn.controlMessage ? <p role="status">{turn.controlMessage}</p> : null}
     {turn.approval ? <section aria-label="Awaiting approval"><h2>Awaiting approval</h2><pre>{turn.approval.command}</pre><p>{turn.approval.description}</p><p>Tool: {turn.approval.tool ?? 'Not reported'}</p><p>Request: {turn.approval.requestId}</p><p>Run: {turn.publicRunId} · Session: {turn.intent.sessionId}</p>
       {canControl && !turn.done ? <><button type="button" disabled={turn.controlBusy} onClick={() => approve(turn, 'once')}>Approve once</button><button type="button" disabled={turn.controlBusy} onClick={() => approve(turn, 'deny')}>Deny</button></> : null}
@@ -24,6 +24,23 @@ export function TurnView({ turn, allowed, approve, stop }: Readonly<{ turn: Turn
     </> : null}
   </section>;
 }
+function CopyResponse({ text, limited }: Readonly<{ text: string; limited: boolean }>) {
+  const [notice, setNotice] = useState<{ text: string; message: string } | null>(null);
+  const copy = async () => {
+    setNotice(null);
+    try {
+      await navigator.clipboard.writeText(text);
+      setNotice({ text, message: limited ? 'Preview copied' : 'Response copied' });
+    } catch {
+      setNotice({ text, message: 'Could not copy. Select the response text and copy manually.' });
+    }
+  };
+  return <div className="response-actions">
+    <button className="secondary-button" type="button" onClick={() => { void copy(); }}>{limited ? 'Copy preview' : 'Copy response'}</button>
+    <span role="status">{notice?.text === text ? notice.message : ''}</span>
+  </div>;
+}
+
 function activity(event: RunEvent): string {
   switch (event.type) {
     case 'tool.started': return `Tool started: ${event.tool} — ${event.preview}`;
