@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import secrets
 import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -36,8 +37,20 @@ def main():
     if not args.execute:
         print('Read-only default: no resources changed. See --help for explicit synthetic execution.')
         return
-    assert args.ack == 'SYNTHETIC_ONLY' and os.geteuid() == 0
-    assert args.parent_app and args.parent_command and args.evidence
+    if not __debug__:
+        parser.error('optimized execution is forbidden; safety assertions are required')
+    if args.ack != 'SYNTHETIC_ONLY':
+        parser.error('exact --ack SYNTHETIC_ONLY is required')
+    if os.geteuid() != 0:
+        parser.error('root is required for isolated synthetic execution')
+    if not args.parent_app or not args.parent_command or not args.evidence:
+        parser.error('--parent-app, --parent-command and --evidence are required')
+    required = [args.parent_app / name for name in ['SUCCESS.json', 'app-source-sha256.json', 'read-proxy-source-sha256.json']]
+    required += [args.parent_command / name for name in ['image-source-sha256.json', 'image-id.txt', 'container-checks.json', 'image-inspect.log']]
+    if any(not path.is_file() for path in required):
+        parser.error('missing required parent evidence file')
+    if args.evidence.exists() or args.evidence.is_symlink():
+        parser.error('evidence must be a fresh path')
     os.umask(0o077)
     evidence = args.evidence.resolve()
     evidence.mkdir(exist_ok=False, parents=True)
@@ -49,10 +62,27 @@ def main():
         (evidence / name).write_text(json.dumps(value, indent=2) + '\n')
 
     def run(argv, check=True, timeout=30):
-        result = subprocess.run(argv, cwd=ROOT, capture_output=True, text=True, timeout=timeout,
-                                env={'PATH': PATH, 'HOME': '/home/neal', 'PLAYWRIGHT_BROWSERS_PATH': '/home/neal/.cache/ms-playwright'})
-        records.append({'argv': argv, 'exit': result.returncode})
-        save('commands.json', records)
+        prefix = 'command-' + str(len(records))
+        entry = {'argv': argv, 'exit': None, 'prefix': prefix}
+        records.append(entry); save('commands.json', records)
+        with (evidence / (prefix + '.stdout')).open('w') as stdout, (evidence / (prefix + '.stderr')).open('w') as stderr:
+            worker = subprocess.Popen(['/usr/bin/python3', str(ROOT / 'deploy/owned-process.py'), str(evidence / (prefix + '-lifecycle.json')), str(timeout), '--', *argv], cwd=ROOT, stdout=stdout, stderr=stderr, start_new_session=True,
+                                      env={'PATH': PATH, 'HOME': '/home/neal', 'PLAYWRIGHT_BROWSERS_PATH': '/home/neal/.cache/ms-playwright'})
+            fd = os.pidfd_open(worker.pid)
+            try:
+                worker.wait(timeout=timeout + 5)
+            except BaseException:
+                try: signal.pidfd_send_signal(fd, signal.SIGTERM)
+                except ProcessLookupError: pass
+                worker.wait(timeout=5)
+                raise
+            finally:
+                os.close(fd)
+                entry['exit'] = worker.returncode; save('commands.json', records)
+        result = subprocess.CompletedProcess(argv, worker.returncode, (evidence / (prefix + '.stdout')).read_text(), (evidence / (prefix + '.stderr')).read_text())
+        lifecycle = json.loads((evidence / (prefix + '-lifecycle.json')).read_text())
+        if not lifecycle['cleanup_verified']:
+            raise RuntimeError('Owned subprocess cleanup failed: ' + prefix)
         if check and result.returncode:
             raise RuntimeError(f'{argv[:4]} exit {result.returncode}: {result.stderr[:1000]}')
         return result
@@ -151,7 +181,7 @@ def main():
         assert 'run.started' in audit and ledger.stat().st_ino == prepared['inode']
         entries = [json.loads(line) for line in audit.splitlines()]
         started = [entry for entry in entries if entry['action'] == 'run.started']
-        assert len(started) == 2 and len({entry['upstreamRunId'] for entry in started}) == 2
+        assert len(started) == 6 and len({entry['upstreamRunId'] for entry in started}) == 6
         for mode in ['desktop', 'phone']:
             browser = json.loads((evidence / (mode + '.json')).read_text())
             admission = browser['admission']
@@ -161,8 +191,16 @@ def main():
             assert matching[0]['upstreamRunId'] == browser['after']['runs'][-1]['run_id']
             assert len(browser['denied']) == 24 and browser['proxyCredentialDenials'] == 8
             assert browser['after']['violations'] == []
+            for choice in ['once', 'deny']:
+                controls = json.loads((evidence / (mode + '-' + choice + '-controls.json')).read_text())
+                admission = controls['admission']
+                matching = [entry for entry in started if entry['publicRunId'] == admission['publicRunId']]
+                assert len(matching) == 1
+                assert all(matching[0][key] == admission[key] for key in ['clientRequestId', 'sessionId'])
+                assert matching[0]['upstreamRunId'] == controls['after']['runs'][-1]['run_id']
+                assert controls['after']['violations'] == []
         browser_config = json.loads((fixture / 'browser.json').read_text())
-        assert all(value not in audit for value in [*config.values(), browser_config['assertion'], 'Synthetic private container prompt', 'Synthetic streamed answer', 'synthetic-approved@example.test'])
+        assert all(value not in audit for value in [*config.values(), browser_config['assertion'], 'Synthetic private container prompt', 'Synthetic streamed answer', 'synthetic-approved@example.test', 'Synthetic container controls', 'Synthetic private queued guidance', '/EXACT_SYNTHETIC_TARGET'])
         save('audit.json', {'content': audit, 'sha256': digest(ledger), 'inode': ledger.stat().st_ino, 'mode': oct(ledger.stat().st_mode & 0o777), 'uid': ledger.stat().st_uid})
         assert all(digest(ROOT / path) == value for binding in bindings.values() for path, value in binding['manifest'].items())
         outcome['passed'] = True

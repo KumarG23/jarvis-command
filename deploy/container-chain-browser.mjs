@@ -4,6 +4,8 @@ import { X509Certificate, createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { chromium, devices, expect } from '@playwright/test';
+import { exerciseControls } from './container-chain-controls.mjs';
+import { finalizeBrowser } from './container-chain-lifecycle.mjs';
 const directory = process.env.JC_CHAIN_PRIVATE, evidence = process.env.JC_CHAIN_EVIDENCE;
 const config = JSON.parse(readFileSync(directory + '/browser.json'));
 const origin = 'https://127.0.0.1:8443', seed = 'jc_' + 'a'.repeat(32);
@@ -19,21 +21,27 @@ async function bounded(url, options = {}) {
 }
 const counts = async () => JSON.parse((await bounded('http://127.0.0.1:18640/fixture-counts')).text);
 let previousPassed = true;
-for (const mode of ['desktop', 'phone']) test('containerized compiled PWA ' + mode, { timeout: 45000 }, async () => {
+for (const mode of ['desktop', 'phone']) test('containerized compiled PWA ' + mode, { timeout: 45000 }, async t => {
   assert.ok(previousPassed, 'Previous browser failed: shared ledger isolation unproven; refusing cascading admission');
   previousPassed = false;
   const certificate = new X509Certificate(readFileSync(directory + '/tls.crt'));
   const spki = createHash('sha256').update(certificate.publicKey.export({ type: 'spki', format: 'der' })).digest('base64');
   const browser = await chromium.launch({ headless: true, args: ['--ignore-certificate-errors-spki-list=' + spki] });
-  let context;
+  let context, page;
   const errors = [], failures = [], denied = [];
-  const transportStart = (await counts()).transport.length;
+  const responseStatuses = new WeakMap(), lifecycle = [];
+  const record = value => { lifecycle.push(value); writeFileSync(evidence + '/' + mode + '-lifecycle.json', JSON.stringify(lifecycle, null, 2)); };
+  const abort = () => { record({ stage: 'test-cancelled', ok: false }); void browser.close().catch(error => record({ stage: 'cancel-close', ok: false, error: String(error) })); };
+  t.signal.addEventListener('abort', abort, { once: true });
   try {
+    const transportStart = (await counts()).transport.length;
     context = await browser.newContext({ ...(mode === 'phone' ? devices['Pixel 7'] : { viewport: { width: 1440, height: 900 } }), ignoreHTTPSErrors: true, serviceWorkers: 'allow', extraHTTPHeaders: { 'cf-access-jwt-assertion': config.assertion } });
-    const page = await context.newPage();
+    context.setDefaultTimeout(5000);
+    page = await context.newPage();
     page.on('pageerror', error => errors.push(error.message));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
-    page.on('requestfailed', request => failures.push(request.response().then(response => ({ url: request.url(), method: request.method(), error: request.failure()?.errorText, responseStatus: response?.status() }))));
+    page.on('response', response => responseStatuses.set(response.request(), response.status()));
+    page.on('requestfailed', request => { failures.push({ url: request.url(), method: request.method(), error: request.failure()?.errorText, responseStatus: responseStatuses.get(request) }); writeFileSync(evidence + '/' + mode + '-failures.json', JSON.stringify(failures, null, 2)); });
     await page.goto(origin);
     await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
     await page.getByRole('combobox', { name: 'Session' }).selectOption(seed);
@@ -98,9 +106,24 @@ for (const mode of ['desktop', 'phone']) test('containerized compiled PWA ' + mo
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth));
     await page.screenshot({ path: evidence + '/' + mode + '.png', fullPage: true });
     writeFileSync(evidence + '/' + mode + '.json', JSON.stringify({ admission, authoritative, submitted, before, after, denied, proxyCredentialDenials: 8, errors, failures: observedFailures, payloads: observedPayloads, serviceWorker: await page.evaluate(() => navigator.serviceWorker.controller.scriptURL) }, null, 2));
+    await exerciseControls({ page, counts, directory, evidence, mode, seed });
+    const controlled = await counts();
+    const allPayloads = controlled.transport.slice(transportStart);
+    for (const secret of [config.read, config.command, config.upstream, config.assertion, config.unapproved, ...controlled.runs.map(r => r.run_id)]) assert.ok(!JSON.stringify(allPayloads).includes(secret));
+    assert.deepEqual(errors, []);
+    for (const failure of await Promise.all(failures)) {
+      assert.equal(failure.error, 'net::ERR_ABORTED'); assert.equal(failure.responseStatus, 200);
+      assert.ok(allPayloads.some(r => origin + r.path === failure.url && r.method === failure.method && r.status === 200 && r.text.length > 0 && (r.complete || (r.path.endsWith('/events') && /approval.request|message.delta|run.completed/.test(r.text)))));
+    }
     previousPassed = true;
+  } catch (error) {
+    record({ stage: 'original-failure', ok: false, error: String(error.stack ?? error) });
+    throw error;
   } finally {
-    writeFileSync(evidence + '/' + mode + '-diagnostics.json', JSON.stringify({ errors, failures: await Promise.all(failures), counts: await counts() }, null, 2));
-    try { await context?.close(); } finally { await browser.close(); }
+    await finalizeBrowser({ diagnostic: async () => {
+      if (page && !page.isClosed()) await page.screenshot({ path: evidence + '/' + mode + '-final.png', timeout: 1000, fullPage: true });
+      writeFileSync(evidence + '/' + mode + '-diagnostics.json', JSON.stringify({ errors, failures, counts: await counts() }, null, 2));
+    }, contextClose: () => context?.close(), browserClose: () => browser.close(), record });
+    t.signal.removeEventListener('abort', abort);
   }
 });

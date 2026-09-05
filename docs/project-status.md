@@ -25,6 +25,64 @@ Both worker and parent executed the actual source-bound app under the real super
 
 ## Next gates, in order
 
+## Resumed controls checkpoint — 2026-09-05
+
+Neal explicitly resumed ongoing integration work after a usage reset became available. Parent revalidated the complete saved 220-path snapshot, immutable image-source bindings, four controls cases, six admissions and 38 audit records, bounded transport evidence and exact four-container/namespace cleanup. Final suite contains 618 automated tests plus the Python and browser gates below. New complete-candidate independent review is pending; no production cutover.
+Parent completed the remaining gate-error preservation and bounded held-status fixes with asserting RED/GREEN, then successfully executed desktop and phone-emulated approval-once/deny, queued steer, stop confirmation, same-tab reload/rebind and draft recovery through the immutable app and both proxies. Runtime evidence: `deploy-8-parent-controls/runtime-1/` (successful runtime, lifecycle, payload, audit and cleanup receipts).
+
+Full final gates passed: automated suite, supervisor/owned-process/cross-UID gate/root-storage tests, typecheck, lint, build, dependency audit (zero vulnerabilities), 17 standard browser tests (one skip), six signed-source chain tests and e2e typecheck. Evidence: `deploy-8-parent-controls/final-gates/`. Raw secret scan still flags five exact unchanged synthetic fixtures matching the prior checkpoint; no new suppressions. The initial full run exposed a wall-clock-dependent replay test: fixed ledger time had aged outside the real clock's retention horizon. Parent fixed only the test's injected clock; production retention enforcement is unchanged.
+
+Current code is UNREVIEWED WIP, not committed or released. Last approved/pushed checkpoint remains `94bc5946e60acfaeaecdc1d890d44b025c820ea4`. Pause archive and exact manifest are under `PAUSED-CONTROLS-CHECKPOINT/` in the evidence root. Next on explicit resume: verify snapshot, complete parent payload/cleanup evidence audit, then independent full-candidate Sol/high review; only exact APPROVE permits the code checkpoint. App-container restart, transactional installation/trusted backup-root hardening and separately authorized live acceptance remain pending. Production is unchanged.
+
+Earlier attempt reports below are historical and superseded by this pause checkpoint.
+
+
+### Deploy 8 bounded implementation attempt
+
+Deploy 8 controls repair is a smaller **unreviewed partial**, not controls acceptance.
+The repair adds a Linux per-command subreaper with pidfd-validated child signalling,
+progressive stdout/stderr evidence, and descendant reaping. Asserting RED/GREEN
+exercised normal exit, ordinary failure, timeout, and cancellation with a real
+grandchild and an unrelated sentinel. Browser diagnostic/close stages now have
+independent deadlines; request failures are recorded synchronously rather than
+awaiting response retrieval, and original assertions are recorded before cleanup.
+
+The real cross-UID gate reproduction confirmed inherited umask 0077 creates a
+root-owned 0600 gate despite Node's requested 0644, denying synthetic UID 10004.
+The repair uses atomic rename and explicit synthetic ownership/0600 without
+broadening private directories. Final focused/lint/type results and exact source
+binding are in `deploy-8-controls-repair/IMPLEMENTATION-RESULT.json`.
+No new container runtime was launched: held-status disconnect/deadline behavior
+still needs asserting RED/GREEN before a privileged retry. Full browser controls,
+transport classification/count bounds and audit acceptance remain unverified.
+The subprocess helper and its integration still require independent review;
+no claim covers forced supervisor death or hostile endless-fork containment.
+App restart and installation remain untouched. No production changes, vault edits,
+commit, push, or release approval occurred in this repair.
+
+The exact `94bc5946e60acfaeaecdc1d890d44b025c820ea4` container-chain checkpoint
+received complete independent Sol/high APPROVE; the continuation receipt is at
+`container-chain-checkpoint/continuation-1/SOL-REVIEW.json`. The new Deploy 8
+worktree amendments are **unreviewed and incomplete**, with no commit or push.
+Production remains read-only v0.1; application/proxy sources are unchanged.
+
+Asserting RED/GREEN covered explicit non-assert execution preflight (including
+optimized refusal/read-only default) and independent persisted synthetic approval,
+queued steer, and nonterminal stop state. A new real-container browser scenario
+attempts once/deny, same-tab recovery and explicit cancellation. Runtime-1 timed
+out after 110 seconds: desktop basic and once-approval screenshots exist, but
+controls/recovery acceptance is NOT established. The fixture removed its four
+exact containers and storage; the parent browser runner timeout left namespace
+descendants, which required exact-network-namespace cleanup recorded separately.
+Do not count the fixture's container-only cleanup receipt as browser cleanup.
+
+Evidence: `deploy-8-container-controls/IMPLEMENTATION-RESULT.json` and `runtime-1/`
+under the evidence root. Resume by diagnosing the timeout, testing bounded gate
+lifecycle/permissions and browser-descendant cleanup, then rerun desktop/phone
+controls. App-container restart/replacement is not implemented. Continue remaining
+recovery, then transactional installation and trusted backup-root hardening; no
+production cutover. Plain live-turn/clipped-selector polish debt remains.
+
 Deploy 7's containerized desktop/phone tracer now passes twice consecutively
 (`deploy-7-container-chain-repair/runtime-2` and `runtime-3`). The synthetic upstream
 previously reused one run ID, correctly triggering the production ledger's identity

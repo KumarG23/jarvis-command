@@ -415,7 +415,8 @@ it('recovers an uncertain upstream admission after restart with the same durable
   await ledger.close();
   const reopened = await AuditLedger.open(path); ledgers.push(reopened);
   const recoveredClient = fakeClient();
-  const recovered = createLiveRoomService({ client: recoveredClient, ledger: reopened });
+  // Keep replay inside the fixed ledger clock's retention window, not wall time.
+  const recovered = createLiveRoomService({ client: recoveredClient, ledger: reopened, now: () => new Date('2026-09-04T14:01:00.000Z') });
   const result = await recovered.submitRun('operator', request);
   expect(result).toMatchObject({ publicRunId, replayed: true });
   expect(vi.mocked(recoveredClient.startRun).mock.calls[0]![0].idempotencyKey).toBe(key);

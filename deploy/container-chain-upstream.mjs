@@ -1,4 +1,4 @@
-/* global Buffer, process, URL */
+/* global Buffer, process, URL, setTimeout */
 import { createServer as http, request as forward } from 'node:http';
 import { createServer as https } from 'node:https';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -20,10 +20,18 @@ if (process.argv[3] === '--prepare') {
   const statePath = directory + '/runs.json';
   const runs = existsSync(statePath) ? JSON.parse(readFileSync(statePath)) : [];
   const persist = () => writeFileSync(statePath, JSON.stringify(runs), { mode: 0o600, flush: true });
+  const approval = { request_id: 'synthetic-approval-exact', command: 'printf synthetic-control ; printf /EXACT_SYNTHETIC_TARGET', description: 'Synthetic display-only command; never executed', tool: 'terminal' };
+  const statusOf = record => record.cancelled ? 'cancelled' : record.completed ? 'completed' : record.stopping ? 'stopping' : record.approvalPending ? 'waiting_for_approval' : 'running';
+  const gate = record => {
+    const path = directory + '/gate.json';
+    const value = existsSync(path) ? JSON.parse(readFileSync(path)) : {};
+    return value.run_id === record.run_id ? value.action : null;
+  };
   const server = http({ requestTimeout: 5000, headersTimeout: 5000, maxHeaderSize: 16384 }, async (req, res) => {
     const url = new URL(req.url, 'http://127.0.0.1');
     const send = (value, status = 200) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(value)); };
-    if (req.method !== (url.pathname === '/v1/runs' ? 'POST' : 'GET')) return send({ error: 'method_not_allowed' }, 405);
+    const control = /^\/v1\/runs\/(run_[a-f0-9]{32})\/(approval|steer|stop)$/.exec(url.pathname);
+    if (req.method !== (url.pathname === '/v1/runs' || control ? 'POST' : 'GET')) return send({ error: 'method_not_allowed' }, 405);
     if (url.pathname === '/fixture-counts') return send({ requests, violations, runs, transport });
     requests.push({ method: req.method, path: url.pathname });
     if (req.headers['cf-access-jwt-assertion'] || req.headers.authorization !== 'Bearer ' + config.upstream) violations.push('upstream boundary violation');
@@ -44,14 +52,48 @@ if (process.argv[3] === '--prepare') {
       const existing = runs.find(record => record.key === key);
       if (existing) {
         if (existing.body.session_id !== body.session_id || existing.body.input !== body.input) return send({ error: 'idempotency_conflict' }, 409);
-        return send({ run_id: existing.run_id, status: existing.completed ? 'completed' : 'running', replayed: true });
+        return send({ run_id: existing.run_id, status: statusOf(existing), replayed: true });
       }
-      const record = { run_id: 'run_' + (runs.length + 1).toString(16).padStart(32, '0'), key, body, completed: false };
+      const record = { run_id: 'run_' + (runs.length + 1).toString(16).padStart(32, '0'), key, body, completed: false, approvalPending: body.input === 'Synthetic container controls', controls: [], pendingSteer: null };
       runs.push(record); persist(); return send({ run_id: record.run_id, status: 'running', replayed: false });
     }
-    const record = runs.find(record => url.pathname === '/v1/runs/' + record.run_id || url.pathname === '/v1/runs/' + record.run_id + '/events');
-    if (record && url.pathname === '/v1/runs/' + record.run_id) return send({ run_id: record.run_id, session_id: record.body.session_id, status: record.completed ? 'completed' : 'running', approval: null, pending_steer: null, updated_at: timestamp, output: record.completed ? 'Synthetic streamed answer' : null });
+    const record = runs.find(record => control ? record.run_id === control[1] : url.pathname === '/v1/runs/' + record.run_id || url.pathname === '/v1/runs/' + record.run_id + '/events');
+    if (record && control) {
+      let body;
+      try { body = JSON.parse(text); } catch { return send({ error: 'invalid_json' }, 400); }
+      const action = control[2];
+      if (!body || typeof body !== 'object' || Array.isArray(body)) return send({ error: 'invalid_control' }, 400);
+      if (record.body.input !== 'Synthetic container controls' || record.stopping || record.cancelled) return send({ error: 'control_conflict' }, 409);
+      if (action === 'approval') {
+        if (!record.approvalPending || body.request_id !== approval.request_id || !['once', 'deny'].includes(body.choice) || Object.keys(body).sort().join(',') !== 'choice,request_id') return send({ error: 'approval_conflict' }, 409);
+        record.approvalPending = false;
+      } else if (action === 'steer') {
+        if (record.approvalPending || record.pendingSteer !== null || typeof body.input !== 'string' || !body.input || Object.keys(body).join(',') !== 'input') return send({ error: 'steer_conflict' }, 409);
+        record.pendingSteer = body.input;
+      } else {
+        if (Object.keys(body).length) return send({ error: 'invalid_stop' }, 400);
+        record.stopping = true;
+      }
+      record.controls.push({ path: url.pathname, body }); persist();
+      return send(action === 'approval' ? { run_id: record.run_id, ...body, resolved: 1 } : action === 'steer' ? { run_id: record.run_id, accepted: true } : { run_id: record.run_id, status: 'stopping' });
+    }
+    if (record && url.pathname === '/v1/runs/' + record.run_id) {
+      const deadline = Date.now() + 5000;
+      while (gate(record) === 'hold') {
+        if (res.destroyed) return;
+        if (Date.now() >= deadline) return send({ error: 'synthetic_hold_deadline' }, 503);
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+      if (res.destroyed) return;
+      if (gate(record) === 'finish' && record.stopping) { record.cancelled = true; persist(); }
+      return send({ run_id: record.run_id, session_id: record.body.session_id, status: statusOf(record), approval: record.approvalPending ? approval : null, pending_steer: record.pendingSteer, updated_at: timestamp, output: record.completed ? 'Synthetic streamed answer' : null });
+    }
     if (record && url.pathname.endsWith('/events')) {
+      if (record.body.input === 'Synthetic container controls') {
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        res.write('data: ' + JSON.stringify({ run_id: record.run_id, timestamp, event: record.approvalPending ? 'approval.request' : 'message.delta', ...(record.approvalPending ? approval : { delta: 'Synthetic controls active' }) }) + '\n\n');
+        return;
+      }
       record.completed = true; persist(); res.writeHead(200, { 'content-type': 'text/event-stream' });
       return res.end([{ event: 'message.delta', delta: 'Synthetic streamed answer' }, { event: 'tool.started', tool: 'synthetic-tool', preview: 'Synthetic tool preview' }, { event: 'run.completed', output: 'Synthetic streamed answer', pending_steer: null, usage: null }].map(event => 'data: ' + JSON.stringify({ run_id: record.run_id, timestamp, ...event }) + '\n\n').join(''));
     }
