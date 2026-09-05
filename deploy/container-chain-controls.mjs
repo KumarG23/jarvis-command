@@ -1,13 +1,14 @@
 /* global localStorage, sessionStorage */
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync, renameSync, unlinkSync } from 'node:fs';
 import { expect } from '@playwright/test';
 import { writeGate } from './container-chain-gate.mjs';
 
 // Node-only fixture orchestration. No HTTP control endpoint or browser-supplied ID.
-export async function exerciseControls({ page, counts, directory, evidence, mode, seed }) {
+export async function exerciseControls({ page, counts, directory, evidence, mode, seed, recoveredDenials, crashWindow }) {
   for (const choice of ['once', 'deny']) {
     const before = await counts(), start = before.transport.length;
+    let crashStart = -1, crashEnd = -1;
     const captured = async (path, method = 'POST') => {
       await expect.poll(async () => (await counts()).transport.slice(start).filter(r => r.path === path && r.method === method && r.complete).length).toBeGreaterThan(0);
       const records = (await counts()).transport.slice(start).filter(r => r.path === path && r.method === method && r.complete);
@@ -55,13 +56,32 @@ export async function exerciseControls({ page, counts, directory, evidence, mode
       assert.deepEqual(await stored(), { local: {}, session: { 'jarvis-command:live-turn': JSON.stringify(identity) } });
       gate('hold');
       try {
+        const preReplacement = await counts();
+        crashStart = preReplacement.transport.length - 1;
+        crashWindow(path);
+        writeFileSync(directory + '/recovery-request.tmp', JSON.stringify({ mode }), { flag: 'wx', mode: 0o600 });
+        renameSync(directory + '/recovery-request.tmp', directory + '/recovery-request.json');
+        await expect.poll(() => existsSync(directory + '/recovery-ack.json'), { timeout: 25000 }).toBe(true);
+        assert.deepEqual(JSON.parse(readFileSync(directory + '/recovery-ack.json')), { mode });
+        unlinkSync(directory + '/recovery-ack.json');
+        assert.deepEqual((await counts()).runs, preReplacement.runs);
         await page.reload();
         await expect(page.getByRole('region', { name: 'Current turn', exact: true })).toContainText(admission.publicRunId);
         await expect(page.getByRole('textbox', { name: 'Message Jarvis' })).toBeDisabled();
         await expect(page.getByRole('button', { name: 'Stop run', exact: true })).toHaveCount(0);
         await expect(page.getByRole('textbox', { name: 'Steer Jarvis' })).toHaveCount(0);
+        await page.screenshot({ path: evidence + '/' + mode + '-replacement-unbound.png', fullPage: true });
       } finally { gate('release'); }
       await expect(page.getByRole('button', { name: 'Stop run', exact: true })).toBeVisible();
+      await expect.poll(async () => JSON.parse((await captured(path, 'GET')).text).pendingSteer).toBe('Synthetic private queued guidance');
+      const recovered = JSON.parse((await captured(path, 'GET')).text);
+      assert.equal(recovered.publicRunId, admission.publicRunId); assert.equal(recovered.sessionId, seed);
+      assert.equal(recovered.status, 'running');
+      crashEnd = (await counts()).transport.length;
+      crashWindow(null);
+      const denied = await recoveredDenials(path);
+      writeFileSync(evidence + '/' + mode + '-recovered.json', JSON.stringify({ admission, recovered, denied, storage: await stored(), upstream: (await counts()).runs.at(-1) }, null, 2));
+      await page.screenshot({ path: evidence + '/' + mode + '-replacement-bound.png', fullPage: true });
       assert.deepEqual(await stored(), { local: {}, session: { 'jarvis-command:live-turn': JSON.stringify(identity) } });
     }
     await page.getByRole('button', { name: 'Stop run', exact: true }).click();
@@ -87,7 +107,13 @@ export async function exerciseControls({ page, counts, directory, evidence, mode
     assert.deepEqual(run.controls[0].body, { request_id: 'synthetic-approval-exact', choice });
     assert.equal(run.cancelled, true);
     const payloads = after.transport.slice(start);
-    for (const r of payloads) {
+    for (const [index, r] of payloads.entries()) {
+      if (r.status === 502) {
+        assert.equal(choice, 'once'); assert.equal(r.path, path); assert.equal(r.method, 'GET');
+        assert.ok(index + start >= crashStart && index + start < crashEnd);
+        assert.equal(r.text, ''); assert.equal(r.complete, true);
+        continue;
+      }
       assert.ok(r.text.length > 0);
       if (!r.complete) {
         assert.equal(r.method, 'GET'); assert.equal(r.path, path + '/events'); assert.equal(r.status, 200);
@@ -95,6 +121,6 @@ export async function exerciseControls({ page, counts, directory, evidence, mode
       }
     }
     await page.screenshot({ path: evidence + '/' + mode + '-' + choice + '-cancelled.png', fullPage: true });
-    writeFileSync(evidence + '/' + mode + '-' + choice + '-controls.json', JSON.stringify({ choice, admission, submitted, authoritative, before, after, payloads, deliberateLifecycle: 'approval/steer status polling, same-tab reload, explicit stop then fixture terminal release; deny is nonterminal and separately stopped', restart: false }, null, 2));
+    writeFileSync(evidence + '/' + mode + '-' + choice + '-controls.json', JSON.stringify({ choice, admission, submitted, authoritative, before, after, payloads, deliberateLifecycle: 'approval/steer status polling, same-tab reload, explicit stop then fixture terminal release; deny is nonterminal and separately stopped', restart: choice === 'once' }, null, 2));
   }
 }

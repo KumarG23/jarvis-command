@@ -110,6 +110,17 @@ test('TLS transport retains real response bytes independently of browser reader 
   assert.equal(records[0].status, 200);
 });
 
+test('TLS records actual empty 502 when only the app socket dies', async () => {
+  const socket = new PassThrough();
+  const f = fixture(new Map(), () => socket);
+  const req = new PassThrough(); req.url = '/api/live/runs/exact'; req.method = 'GET'; req.headers = {};
+  const res = new PassThrough(); let status; res.writeHead = code => { status = code; };
+  f.transport(req, res); socket.emit('error', new Error('synthetic socket death'));
+  assert.equal(status, 502);
+  const records = (await f.request('GET', '/fixture-counts')).json().transport;
+  assert.equal(records[0].status, 502); assert.equal(records[0].complete, true); assert.equal(records[0].text, '');
+});
+
 test('synthetic controls persist independent approval, queued steer and nonterminal stop state', async () => {
   const files = new Map(), f = fixture(files), session_id = 'jc_' + 'a'.repeat(32);
   for (const [index, choice] of ['once', 'deny'].entries()) {

@@ -25,6 +25,18 @@ Both worker and parent executed the actual source-bound app under the real super
 
 ## Next gates, in order
 
+## App-only recovery locally verified — 2026-09-05
+
+Controls checkpoint `1d5d8ea1b08a6a12605f8d1e220a9910fe8d28ed` is independently approved and pushed. Parent corrected an overclaimed initial review by verifying the same reviewer's remaining raw-source reads; all 220 paths and 47 chunks were actually inspected before accepting the cumulative APPROVE. Exact staged/committed bytes matched the approved archive. This is a development checkpoint, not release approval.
+
+Deploy 9 extends only the synthetic deployment harness. Parent executed desktop AND phone app-only SIGKILL/removal/replacement with a new container/PID, unchanged immutable image, identical mounted audit inode/device/owner/mode/content and unchanged proxy/upstream identities. Browser recovered the same public/session/request identity and queued steer; controls and writer stayed locked before authoritative rebind. Invalid authentication and wrong Origin on the recovered app refused with zero upstream mutations. Explicit stop and terminal draft recovery completed without duplicate admission. Six admissions and 38 audit records were verified; all six exact containers, fixture paths and network-namespace descendants were removed. Evidence: `deploy-9-app-recovery/parent-runtime-2/` and parent audit scripts.
+
+The worker's initial runtime missed actual empty HTTP 502 transport evidence during deliberate app death; its asserting regression fixed the recorder without fabricating a body. Parent then reproduced Docker's unordered Mounts inspection: only order varied in raw records. A RED/GREEN regression now compares complete mount objects keyed by unique destination, rejecting duplicate destinations and every changed field; no storage/security normalization was introduced. The actual guarded expression is exercised from trusted local AST, not user input.
+
+Current Deploy 9 amendments are NOT independently approved or committed. Final full gates and fresh complete-candidate review remain required. Pending approval-at-death is not claimed: selected recovery slice is post-approval queued steer. Callback failure tests prove ordering/retained ownership, not full create-in-flight/host-reboot failure acceptance. Production app/proxy code and ledger handling are unchanged. Transactional installer/recovery and trusted backup-root hardening remain next; production, live-Hermes and physical-Pixel acceptance remain separate.
+
+Earlier reports below are historical; the current checkpoint above supersedes their active-work language.
+
 ## Resumed controls checkpoint — 2026-09-05
 
 Neal explicitly resumed ongoing integration work after a usage reset became available. Parent revalidated the complete saved 220-path snapshot, immutable image-source bindings, four controls cases, six admissions and 38 audit records, bounded transport evidence and exact four-container/namespace cleanup. Final suite contains 618 automated tests plus the Python and browser gates below. New complete-candidate independent review is pending; no production cutover.

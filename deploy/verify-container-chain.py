@@ -16,6 +16,9 @@ import signal
 import subprocess
 import tempfile
 import time
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from container_recovery import request as recovery_request, replace_app, same_mounts
 
 ROOT = Path(__file__).resolve().parents[1]
 PATH = '/home/neal/.local/bin:/usr/local/bin:/usr/bin:/bin'
@@ -61,7 +64,7 @@ def main():
     def save(name, value):
         (evidence / name).write_text(json.dumps(value, indent=2) + '\n')
 
-    def run(argv, check=True, timeout=30):
+    def run(argv, check=True, timeout=30, tick=None):
         prefix = 'command-' + str(len(records))
         entry = {'argv': argv, 'exit': None, 'prefix': prefix}
         records.append(entry); save('commands.json', records)
@@ -70,7 +73,13 @@ def main():
                                       env={'PATH': PATH, 'HOME': '/home/neal', 'PLAYWRIGHT_BROWSERS_PATH': '/home/neal/.cache/ms-playwright'})
             fd = os.pidfd_open(worker.pid)
             try:
-                worker.wait(timeout=timeout + 5)
+                deadline = time.monotonic() + timeout + 5
+                while worker.poll() is None:
+                    if time.monotonic() >= deadline:
+                        raise subprocess.TimeoutExpired(argv, timeout)
+                    if tick: tick()
+                    try: worker.wait(timeout=.05)
+                    except subprocess.TimeoutExpired: pass
             except BaseException:
                 try: signal.pidfd_send_signal(fd, signal.SIGTERM)
                 except ProcessLookupError: pass
@@ -105,8 +114,8 @@ def main():
         snapshot = dict(state); snapshot['Config'] = dict(state['Config']); snapshot['Config'].pop('Env', None)
         save(state['Name'].strip('/') + '-' + state['State']['Status'] + '.json', snapshot)
 
-    def launch(kind, image, uid, env, network, mounts=(), command=()):
-        name = fixture.name + '-' + kind
+    def launch(kind, image, uid, env, network, mounts=(), command=(), suffix=''):
+        name = fixture.name + '-' + kind + suffix
         assert not docker('ps', '-a', '--filter', 'name=^/' + name + '$', '--format', '{{.ID}}').stdout.strip()
         owned.append({'name': name, 'id': None})
         save('ownership.json', owned)
@@ -174,9 +183,73 @@ def main():
         netns = os.readlink(f'/proc/{pid}/ns/net')
         assert netns != os.readlink('/proc/self/ns/net')
         save('substitutions.json', {'fixture': str(fixture), 'network': namespace, 'netns': netns, 'published_ports': [], 'loopback_ports': {'upstream': 18640, 'read': 18642, 'command': 18643, 'app': 3000, 'tls_transport': 8443}, 'mounts': 'See exact created/running container metadata', 'audit': {'host': str(ledger), 'container': '/audit/events.jsonl'}, 'public_origin': appenv['PUBLIC_ORIGIN'], 'jwks': '/run/fixture-jwks.json', 'tls': 'ephemeral self-signed; browser ignoreHTTPSErrors; no Access bypass', 'browser': 'host-installed Chromium executed as root inside owned network-none namespace; not browser sandbox acceptance', 'production_logic_modified': False})
-        result = run(['nsenter', '--net=' + f'/proc/{pid}/ns/net', '--', 'env', 'PATH=' + PATH, 'JC_CHAIN_PRIVATE=' + str(fixture), 'JC_CHAIN_EVIDENCE=' + str(evidence), NODE, '--test', str(ROOT / 'deploy/container-chain-browser.mjs')], check=False, timeout=110)
+        stable = {r['id']: inspect(r['id']) for r in owned if r['id'] != app}
+        recoveries = []
+        def recover():
+            nonlocal app
+            request_path = fixture / 'recovery-request.json'
+            if not request_path.exists() and not request_path.is_symlink(): return
+            mode = recovery_request(request_path, ['desktop', 'phone'][len(recoveries)] if len(recoveries) < 2 else None)
+            old = app
+            old_state = inspect(old)
+            old_pid = old_state['State']['Pid']
+            mount = [f'type=bind,src={fixture / "jwks.json"},dst=/run/fixture-jwks.json,readonly', f'type=bind,src={storage / "audit"},dst=/audit']
+            def check_stable():
+                for cid, original in stable.items():
+                    current = inspect(cid)
+                    assert current['Id'] == cid and current['Image'] == original['Image']
+                    assert current['State']['Running'] and current['State']['Pid'] == original['State']['Pid']
+                    assert current['HostConfig'] == original['HostConfig']
+                assert os.readlink(f'/proc/{pid}/ns/net') == netns
+            def validate():
+                assert any(r['id'] == old and '/' + r['name'] == old_state['Name'] for r in owned)
+                policy(old_state, bindings['app']['image'], 10001, 512, 1000000000, 128, namespace)
+                assert old_state['State']['Running'] and old_pid > 0
+                assert os.readlink(f'/proc/{old_pid}/ns/net') == netns
+                check_stable()
+            def snapshot():
+                s = ledger.lstat()
+                return {'inode': s.st_ino, 'device': s.st_dev, 'uid': s.st_uid, 'gid': s.st_gid, 'mode': s.st_mode, 'bytes': s.st_size, 'sha256': digest(ledger)}
+            before = snapshot()
+            runs_before = json.loads((synthetic_dir / 'runs.json').read_text())
+            def kill():
+                validate()
+                docker('kill', '--signal=KILL', old)
+            def absent():
+                stopped = inspect(old)
+                assert not stopped['State']['Running'] and stopped['State']['Pid'] == 0
+                assert not Path('/proc', str(old_pid)).exists()
+                policy(stopped, bindings['app']['image'], 10001, 512, 1000000000, 128, namespace)
+                docker('rm', old)
+                assert not docker('ps', '-a', '--no-trunc', '--filter', 'id=' + old, '--format', '{{.ID}}').stdout.strip()
+                assert snapshot() == before
+                save(mode + '-app-absent.json', {'id': old, 'pid': old_pid, 'absent': True, 'audit': snapshot()})
+            def replacement():
+                nonlocal app
+                check_stable()
+                app = launch('app', bindings['app']['image'], 10001, appenv, namespace, mount, suffix='-' + mode)
+                assert app != old
+                new = inspect(app)
+                assert same_mounts(new['Mounts'], old_state['Mounts'])
+                return {'old_id': old, 'old_pid': old_pid, 'new_id': app, 'new_pid': new['State']['Pid'], 'image': new['Image']}
+            def ready():
+                deadline = time.monotonic() + 10
+                while docker('exec', app, 'node', '-e', "fetch('http://127.0.0.1:3000/api/health',{signal:AbortSignal.timeout(500)}).then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))", check=False).returncode:
+                    assert time.monotonic() < deadline
+                policy(inspect(app), bindings['app']['image'], 10001, 512, 1000000000, 128, namespace)
+            def unchanged():
+                check_stable()
+                assert snapshot() == before
+                assert json.loads((synthetic_dir / 'runs.json').read_text()) == runs_before
+                return snapshot()
+            record = replace_app(validate=validate, snapshot=snapshot, kill=kill, absent=absent, launch=replacement, ready=ready, unchanged=unchanged)
+            recoveries.append(record); save('app-recoveries.json', recoveries)
+            request_path.unlink()
+            ack = fixture / 'recovery-ack.tmp'; ack.write_text(json.dumps({'mode': mode})); ack.rename(fixture / 'recovery-ack.json')
+        result = run(['nsenter', '--net=' + f'/proc/{pid}/ns/net', '--', 'env', 'PATH=' + PATH, 'JC_CHAIN_PRIVATE=' + str(fixture), 'JC_CHAIN_EVIDENCE=' + str(evidence), NODE, '--test', str(ROOT / 'deploy/container-chain-browser.mjs')], check=False, timeout=150, tick=recover)
         (evidence / 'browser.log').write_text(result.stdout + result.stderr)
         assert result.returncode == 0, 'Browser path failed; see browser.log'
+        assert len(recoveries) == 2
         audit = ledger.read_text()
         assert 'run.started' in audit and ledger.stat().st_ino == prepared['inode']
         entries = [json.loads(line) for line in audit.splitlines()]

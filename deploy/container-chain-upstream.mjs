@@ -118,7 +118,13 @@ if (process.argv[3] === '--prepare') {
       res.writeHead(reply.statusCode, reply.headers); reply.pipe(res);
     });
     upstream.on('timeout', () => upstream.destroy());
-    upstream.on('error', () => { if (!res.headersSent) res.writeHead(502); res.end(); });
+    upstream.on('error', () => {
+      if (!res.headersSent) {
+        if (record) { record.status = 502; record.complete = true; }
+        res.writeHead(502);
+      }
+      res.end();
+    });
     res.on('close', () => upstream.destroy()); req.pipe(upstream);
   }).listen(8443, '127.0.0.1');
 }
