@@ -167,11 +167,11 @@ export function buildCommandProxy({
   app.get('/_ready', async (request, reply) => {
     if (!authorize(request, reply, config.commandProxyKey)) return reply;
     try {
-      const capabilities = z.object({ idempotency: z.object({
+      const capabilities = z.object({ features: z.object({ runs_idempotency: z.object({
         supported: z.literal(true), durable: z.literal(true),
         retention_seconds: z.number().int().min(86_400),
-      }) }).parse(await requestJson({ path: '/v1/capabilities', method: 'GET', config, fetcher }));
-      return { ready: true, durableIdempotency: true, retentionSeconds: capabilities.idempotency.retention_seconds, externalContinue: false };
+      }) }) }).parse(await requestJson({ path: '/v1/capabilities', method: 'GET', config, fetcher }));
+      return { ready: true, durableIdempotency: true, retentionSeconds: capabilities.features.runs_idempotency.retention_seconds, externalContinue: false };
     } catch (error) { return sendProxyError(error, reply); }
   });
 

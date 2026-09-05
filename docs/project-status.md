@@ -2,6 +2,26 @@
 
 Updated: 2026-09-05 (Eastern).
 
+## Single-user release integration candidate
+
+Active worktree: `feat/v0.2-single-user-release` at `f95c3508a799218cdd29cfcc79ad92a7e886191d`, preserving the inherited usability WIP. Added a fixed VM108/VM113 runbook and host cutover helper with private file snapshots, exact-byte installation, preflight refusal and normal-failure rollback. The parked transactional installer and its blocked review remain untouched; this work does not clear that concern. No commit/push/deployment or vault changes.
+
+Read-only live contract discovery exposed a real proxy mismatch: Hermes advertises `features.runs_idempotency`, not a top-level `idempotency`. Regression RED/GREEN corrected the proxy and synthetic fixtures. The repaired local proxy returned authenticated readiness HTTP200 against the running Hermes API, with durable 86400-second retention, zero mutations and no new listener. External Continue remains disabled. Current VM108 LAN address is `.46`, not the stale `.67` note.
+
+Local gates passed: full automated tests, typecheck, lint, build, production dependency audit; 17 standard browser tests (one existing skip), six signed local-chain browser tests, explicit e2e typecheck, source-bound immutable image packaging and desktop/phone container tracer with exact cleanup. Fixed-cutover tests exercise real private file snapshots/install/restore with isolated service-state fixtures, not production systemd/SSH changes. Runbook: `docs/deployment/single-user-v0.2.md`. Complete candidate/image bindings and evidence: `/home/neal/backups/jarvis-command/single-user-release/IMPLEMENTATION-RESULT.json`.
+
+Parent must obtain fresh complete exact-candidate Sol review before production changes, perform the documented bridge/audit preparation and fixed-host cutover, and obtain Neal's Access login/MFA for real public positive acceptance. Built/tested is not reviewed/deployed. Earlier sections describe inherited history, not approval for this amended candidate.
+
+## Active product branch — Live Room usability
+
+Neal redirected work toward useful single-user product progress rather than open-ended deployment hardening. This worktree is `feat/live-room-usability`, based on the independently approved development checkpoint `f95c3508a799218cdd29cfcc79ad92a7e886191d`. It does not contain the separate, uncommitted Deploy 10 transactional changes. That original worktree and its incomplete provider-blocked review remain parked; this branch cannot clear that blocker or authorize production cutover.
+
+Implemented locally: distinct labeled user/Jarvis cards, ordered typed activity, explicit copy response/preview with honest clipboard failure, complete selected-session title wrapping, touch-sized run/approval controls, and empty-history wording that distinguishes saved history from the current live turn. Message text, target visibility, history overlap handling, identity, authorization and command behavior are unchanged. No dependency changes.
+
+Verification: asserting RED/GREEN for card, clipboard, activity and selected-title/history-label behavior; 627 automated tests (160 web), typecheck, lint, build, explicit changed-e2e typecheck, 17 standard browser passes with one existing skip, and six authenticated real-local-BFF/both-proxy browser-chain passes. The upstream is synthetic, not production Hermes. Actual Chromium clipboard readback matched the displayed response on desktop and phone emulation. Screenshots and console checks cover readable response and approval controls without horizontal page/timeline overflow. Physical Pixel and live production acceptance are not claimed.
+
+Evidence: `/home/neal/backups/jarvis-command/ui-product-progress/`, including `gates.json`, RED/GREEN logs and the frozen review manifest. New candidate is locally verified, uncommitted, and awaiting independent complete-candidate review. No release approval or deployment. Earlier sections below are historical and do not supersede this branch-specific state.
+
 ## Goal and shipped state
 
 The v1.0 goal is a complete project-work loop on phone and desktop: converse, inspect context, supervise agents, approve a consequential step, review an artifact or diff, verify the outcome, and promote the durable result without retreating to Discord or a terminal.

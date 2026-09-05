@@ -71,7 +71,7 @@ export async function startRealChain(mode: 'completed' | 'controls' = 'completed
       }
     });
     synthetic.get('/health/detailed', async () => ({ status: 'ready', version: 'synthetic', gateway_state: 'idle', gateway_busy: false, active_agents: 0, readiness: { status: 'ready', checks: { config: 'pass' } } }));
-    synthetic.get('/v1/capabilities', async () => ({ model: 'synthetic-model', features: { run_events_sse: true, session_resources: true }, idempotency: { supported: true, durable: true, retention_seconds: 86400 } }));
+    synthetic.get('/v1/capabilities', async () => ({ model: 'synthetic-model', features: { run_events_sse: true, session_resources: true, runs_idempotency: { supported: true, durable: true, retention_seconds: 86400 } } }));
     synthetic.get('/api/sessions', async () => ({ object: 'list', data: sessions, limit: 12, offset: 0, has_more: false }));
     synthetic.get<{ Params: { id: string } }>('/api/sessions/:id', async (request, reply) => {
       const session = sessions.find(session => session.id === request.params.id);

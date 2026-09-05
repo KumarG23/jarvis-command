@@ -35,7 +35,7 @@ function setup(admit?: (body: Record<string, string>) => Promise<Response>, fina
 async function open(value = bootstrap) {
   render(<App loadBootstrap={async () => value} />);
   fireEvent.change(await screen.findByRole('combobox', { name: 'Session' }), { target: { value: session.id } });
-  await screen.findByText('No messages in this session yet.');
+  await screen.findByText('No saved messages in session history yet.');
 }
 async function send() {
   fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: 'Hello Jarvis' } });
@@ -375,7 +375,7 @@ it.each(['offline', 'capability', 'disabled', 'external'])('removes active contr
   initial.sessions.push({ ...session, id: 'external:room', ownership: 'external' });
   const { rerender } = render(<App loadBootstrap={async () => initial} />);
   fireEvent.change(await screen.findByRole('combobox', { name: 'Session' }), { target: { value: session.id } });
-  await screen.findByText('No messages in this session yet.'); await send();
+  await screen.findByText('No saved messages in session history yet.'); await send();
   act(() => Source.instances[0]!.emit('approval.request', { approval }));
   expect(screen.getByRole('button', { name: 'Queue steer' })).toBeInTheDocument();
   const changed = structuredClone(initial);

@@ -24,7 +24,7 @@ it('preserves exact identities and redacts metadata through signed Access, BFF, 
     expect(request.headers['cf-access-jwt-assertion']).toBeUndefined();
     if (request.headers.authorization !== 'Bearer ' + 'h'.repeat(32)) return reply.code(401).send({});
   });
-  synthetic.get('/v1/capabilities', async () => ({ idempotency: { supported: true, durable: true, retention_seconds: 86400 } }));
+  synthetic.get('/v1/capabilities', async () => ({ features: { runs_idempotency: { supported: true, durable: true, retention_seconds: 86400 } } }));
   synthetic.get('/api/sessions/:id', async () => ({ session: { id: sessionId, source: 'jarvis-command' } }));
   synthetic.post('/v1/runs', async () => { mutations++; return { run_id: runId, status: 'running' }; });
   synthetic.get('/v1/runs/:id', async () => ({ run_id: runId, session_id: sessionId, status: 'running', updated_at: '2026-09-04T14:00:00Z' }));
@@ -115,7 +115,7 @@ it.each(['漢'.repeat(16_000), '\u0000'.repeat(16_000)])('composes real Access, 
     if (request.headers.authorization !== 'Bearer ' + 'h'.repeat(32)) return reply.code(401).send({});
     expect(request.headers['cf-access-jwt-assertion']).toBeUndefined();
   });
-  syntheticHermes.get('/v1/capabilities', async () => ({ idempotency: { supported: true, durable, retention_seconds: 86400 } }));
+  syntheticHermes.get('/v1/capabilities', async () => ({ features: { runs_idempotency: { supported: true, durable, retention_seconds: 86400 } } }));
   syntheticHermes.get('/api/sessions/:id', async () => ({ session: { id: sessionId, source: 'jarvis-command' } }));
   syntheticHermes.post('/v1/runs', async (request) => { mutations++; keys.push(String(request.headers['idempotency-key'])); return { run_id: upstreamRunId, status: 'running', replayed: false }; });
   syntheticHermes.get('/v1/runs/:id', async () => ({ run_id: upstreamRunId, session_id: sessionId, status: 'running', updated_at: '2026-09-04T14:00:00.000Z' }));

@@ -6,7 +6,7 @@ it('projects authenticated durable-run readiness without forwarding capability i
   try {
     expect((await app.inject('/_ready')).statusCode).toBe(401);
     for (const durable of [true, false]) {
-      fetcher.mockResolvedValueOnce(new Response(JSON.stringify({ idempotency: { supported: true, durable, retention_seconds: 86400 }, secret: 'private detail' }), { headers: { 'content-type': 'application/json' } }));
+      fetcher.mockResolvedValueOnce(new Response(JSON.stringify({ features: { runs_idempotency: { supported: true, durable, retention_seconds: 86400 } }, secret: 'private detail' }), { headers: { 'content-type': 'application/json' } }));
       const response = await app.inject({ url: '/_ready', headers: { authorization: 'Bearer ' + 'c'.repeat(32) } });
       expect(response.statusCode).toBe(durable ? 200 : 503);
       expect(response.json()).toEqual(durable ? { ready: true, durableIdempotency: true, retentionSeconds: 86400, externalContinue: false } : { error: 'upstream_unavailable' });
