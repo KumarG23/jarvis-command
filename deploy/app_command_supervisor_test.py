@@ -24,6 +24,31 @@ FIXTURE = json.loads(SOURCE.with_name('fixtures').joinpath('app-supervisor-real.
 
 
 class HardeningTests(unittest.TestCase):
+    def test_target_compose2_and_local_compose5_bind_normalizations(self):
+        captures = json.loads(SOURCE.with_name('fixtures').joinpath('compose-bind-normalization.json').read_text())['captures']
+        self.assertEqual([c['compose_version'] for c in captures], ['2.40.3+ds1-0ubuntu1~24.04.1', '5.5.0'])
+        self.assertEqual(captures[0]['volume']['bind'], {})
+        self.assertIs(captures[1]['volume']['bind']['create_host_path'], False)
+        for capture in captures:
+            with self.subTest(version=capture['compose_version']):
+                config = copy.deepcopy(FIXTURE['compose'])
+                config['services']['app']['volumes'][2] = capture['volume']
+                app.compose_config(config, FIXTURE['image']['Id'], config['services']['app']['environment'])
+
+    def test_audit_bind_rejects_unsafe_siblings(self):
+        for bind in (None, [], True, False, 'false', {'create_host_path': True},
+                     {'create_host_path': None}, {'create_host_path': 0},
+                     {'create_host_path': 1}, {'create_host_path': 'false'},
+                     {'create_host_path': []}, {'create_host_path': {}},
+                     {'create_host_path': False, 'propagation': 'rprivate'}):
+            bad = copy.deepcopy(FIXTURE['compose']['services']['app']['volumes'])
+            bad[2]['bind'] = bind
+            with self.subTest(bind=bind), self.assertRaises(app.Refused):
+                app.check_mounts(bad)
+        bad = copy.deepcopy(FIXTURE['compose']['services']['app']['volumes'])
+        del bad[2]['bind']
+        with self.assertRaises(app.Refused): app.check_mounts(bad)
+
     def test_started_oom_null_requires_explicit_linux_cgroup2_no_disable_support(self):
         state = copy.deepcopy(FIXTURE['created'])
         metadata = FIXTURE['image']['Config']

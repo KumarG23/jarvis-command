@@ -130,6 +130,29 @@ for (const options of [{}, { monitorSignal: 'TERM' }, { startStatus: 17 }]) {
   });
 }
 
+for (const bind of [{}, { create_host_path: false }]) {
+  test(`verified raw false survives Compose normalization ${JSON.stringify(bind)}`, async () => {
+    const config = s => { s.volumes[2].bind = bind; };
+    const r = await scenario({ config, monitorSignal: 'TERM' });
+    assert.equal(r.status, 143, r.stderr);
+    assert.match(r.calls, /helper verify/);
+    assert.match(r.calls, /notify --ready/);
+    assert.equal(r.record, null);
+    const missing = await scenario({ config, helperStatus: 19 });
+    assert.equal(missing.status, 19, missing.stderr);
+    assert.doesNotMatch(missing.calls, / create |docker start|notify --ready/);
+    const storage = await readFile('deploy/app-command-storage.compose.yaml', 'utf8');
+    for (const raw of ['true', 'null', '0', '"false"', '{}']) {
+      const denied = await scenario({ config, storage: storage.replace('create_host_path: false', `create_host_path: ${raw}`) });
+      assert.match(denied.stderr, /exact narrow storage override required/);
+      assert.doesNotMatch(denied.calls, /docker compose|helper verify|docker start|notify --ready/);
+    }
+    const absent = await scenario({ config, storage: storage.replace('          create_host_path: false', '') });
+    assert.match(absent.stderr, /exact narrow storage override required/);
+    assert.doesNotMatch(absent.calls, /docker compose|docker start|notify --ready/);
+  });
+}
+
 test('starting-health hardening drift is refused before READY', async () => {
   const r = await scenario({ starting: true, startingDrift: true, later: s => { s.State.Health.Status = 'healthy'; }, monitorSignal: 'TERM' });
   assert.equal(r.error, undefined);

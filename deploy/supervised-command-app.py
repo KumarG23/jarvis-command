@@ -179,7 +179,11 @@ def check_mounts(mounts, *, actual=False):
         if kind != "bind" or not isinstance(rw, bool):
             raise Refused("unsafe mount type")
         found[target] = (source, rw)
-        if not actual and target == AUDIT and mount.get("bind", {}).get("create_host_path") is not False:
+        # Compose 2 omits the false field but retains bind:{}; Compose 5 emits
+        # explicit false. launch() first requires the exact raw false declaration
+        # and verifies existing storage before CREATE. Neither version may create
+        # the source. Keep absent bind, true, malformed and extra options refused.
+        if not actual and target == AUDIT and ("bind" not in mount or mount["bind"].get("create_host_path", False) is not False):
             raise Refused("audit bind must not create host path")
     if found != expected:
         raise Refused("mount identity mismatch")

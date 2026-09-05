@@ -1,0 +1,17 @@
+{
+  "scope": "Sanitized actual config --format json volume captures; source/target mapped to supervisor audit path. Both real daemons refused CREATE with absent bind source and did not create it.",
+  "captures": [
+    {
+      "host": "VM113",
+      "compose_version": "2.40.3+ds1-0ubuntu1~24.04.1",
+      "daemon_version": "29.1.3",
+      "volume": {"type": "bind", "source": "/var/lib/jarvis-command/audit", "target": "/var/lib/jarvis-command/audit", "bind": {}}
+    },
+    {
+      "host": "VM108",
+      "compose_version": "5.5.0",
+      "daemon_version": "29.7.2",
+      "volume": {"type": "bind", "source": "/var/lib/jarvis-command/audit", "target": "/var/lib/jarvis-command/audit", "bind": {"create_host_path": false}}
+    }
+  ]
+}
