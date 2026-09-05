@@ -13,7 +13,7 @@ Production remains the independently approved read-only v0.1. The protected web 
 - Local session history/creation, message submission, typed progress, approve-once/deny, stop, steer, and bounded reconnection/reload recovery are implemented. The earlier complete local UI+BFF checkpoint received independent Sol approval; subsequent deployment changes invalidate that approval for the current candidate.
 - Compiled desktop/mobile PWA flows exercised the actual BFF/HTTP clients/proxies against an explicitly synthetic upstream. This is not live-Hermes or production acceptance.
 - Image packaging, restricted bridge/egress fixtures, durable audit admission, and lifecycle/hardening checks have substantial isolated runtime evidence.
-- The supervised-runtime checkpoint passed 608 automated tests plus 11 Python tests, typecheck, lint, build, dependency audit, and whitespace checks. Jarvis independently reran the real supervised-app harness successfully after the worker. Complete-candidate independent review is still required before a code checkpoint is committed.
+- The supervised-runtime checkpoint passed 608 automated tests plus 11 Python tests and the additional runtime/browser gates. Complete independent Sol/high review covered all 209 frozen paths and returned APPROVE. Jarvis verified the exact staged/committed bytes and pushed `d5c4f4b` to `feat/v0.2-live-room`. That local checkpoint is not release approval; the later container-chain fixture amendments require fresh complete-candidate review.
 
 ## Startup blocker resolved locally — 2026-09-05
 
@@ -25,7 +25,48 @@ Both worker and parent executed the actual source-bound app under the real super
 
 ## Next gates, in order
 
-1. Freeze the complete tracked/untracked supervised-runtime checkpoint, run applicable browser/security gates, and obtain fresh independent Sol review before committing/pushing this code checkpoint. Review approval is not production-cutover permission.
+Deploy 7's containerized desktop/phone tracer now passes twice consecutively
+(`deploy-7-container-chain-repair/runtime-2` and `runtime-3`). The synthetic upstream
+previously reused one run ID, correctly triggering the production ledger's identity
+rebinding guard on the second admission. Fixture-only RED/GREEN regressions now
+cover distinct admissions, persisted same-key replay, conflicting payload refusal,
+unknown IDs and method restrictions. The ledger enforcement is unchanged.
+
+The existing TLS transport now retains bounded actual request/response bytes;
+browser-reader disposal cannot silently erase privacy evidence. Admissions bind
+the submitted request to captured response, authoritative run/session status and
+the durable audit's client/public/upstream identity mapping. Both browser paths
+verify active PWA/history, 24 identity/Origin denials and eight proxy-key denials,
+one upstream admission, typed tool event, one final answer, and screenshots.
+Known ERR_ABORTED is accepted only with exact method/URL, HTTP 200, retained payload
+and verified terminal outcome. A failed desktop refuses a cascading phone admission.
+
+Jarvis independently reran the exact executable candidate: both containerized
+browser paths passed again with audit identity binding and cleanup. Parent gates
+passed 613 automated tests, 11 Python tests, types, lint, build, zero-vulnerability
+production dependency audit, 17 standard browser tests (one skip), six signed
+local-source browser-chain tests, and explicit e2e typecheck. The source scanner
+still reports five exact unchanged synthetic fixtures from the approved archive;
+all other security checks pass, with no new suppressions. All 16 exact containers
+from the three worker attempts and parent run, recorded PIDs, and fixture roots
+were verified absent. The first repair attempt failed an incorrect harness assertion
+that status exposes clientRequestId; admission and audit contracts provide that binding.
+The parent verified the worker model/session and all 213 source paths/archive/modes;
+only this status document was then reconciled. Fresh complete-candidate independent
+review is the next checkpoint gate. Production and application/proxy sources are unchanged.
+This is synthetic network-none/TLS integration, not SSH, host-egress, supervisor,
+real Cloudflare login or release acceptance. UI polish debt remains: live-turn content
+is plain stacked text compared with styled history, and the phone session selector
+clips its label without an ellipsis. Both screenshots remain readable without page
+overflow; neither is a real-device usability sign-off. No redesign in this slice.
+
+Next: parent verification/review, control/recovery integration, then transactional
+installation. Keep transactional recovery and backup-root hardening separate:
+`cutover-app.sh:196-210` and `install-android-association.sh:496-497,553-555`
+accept arbitrary absolute backup roots whose existing directory modes may change;
+the shipped orchestrators fix `/var/backups/jarvis-command`.
+
+1. Freeze the complete tracked/untracked container-chain checkpoint and obtain fresh independent Sol review before committing/pushing its code. Review approval is not production-cutover permission.
 2. Complete containerized browser/both-proxy integration and transactional installation/recovery procedures. Preserve the read-only production path; subsequent code amendments require new exact-candidate review.
 3. Complete authorized production cutover, desktop/Pixel human-path acceptance, negative authorization, restart/reboot and rollback proof before declaring v0.2 shipped.
 
