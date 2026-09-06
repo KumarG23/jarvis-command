@@ -7,11 +7,13 @@ export function TurnView({ turn, allowed, approve, stop }: Readonly<{ turn: Turn
   const canControl = allowed && turn.identityVerified;
   return <section className="live-turn" aria-label="Current turn">
     <p role="status">{turn.phase}</p>
-    {turn.intent.input === null ? <><p>Original message unavailable after reload; no message was retransmitted.</p><p>Recovery target · Session: {turn.intent.sessionId} · Request: {turn.intent.clientRequestId} · Run: {turn.publicRunId ?? 'Unknown — admission lookup unsupported'}</p></> : <article className="timeline-event live-message" aria-label="Your message"><div className="event-icon violet" aria-hidden="true">You</div><div className="event-body"><div className="event-label">You</div><p className="turn-input">{turn.intent.input}</p></div></article>}
+    {turn.intent.input === null ? <><p>Original message unavailable after reload; no message was retransmitted.</p><p>Recovery target · Session: {turn.intent.sessionId} · Request: {turn.intent.clientRequestId} · Run: {turn.publicRunId ?? 'Unknown — admission lookup unsupported'}</p></> : !turn.userHistoryMatched ? <article className="timeline-event live-message" aria-label="Your message"><div className="event-icon violet" aria-hidden="true">You</div><div className="event-body"><div className="event-label">You</div><p className="turn-input">{turn.intent.input}</p></div></article> : null}
     {turn.output && !turn.historyMatched ? <article className="timeline-event live-message" aria-label="Jarvis response"><div className="event-icon cyan" aria-hidden="true">J</div><div className="event-body"><div className="event-label">Jarvis</div><p className="turn-output">{turn.output}</p><CopyResponse key={JSON.stringify([turn.intent.sessionId, turn.intent.clientRequestId])} text={turn.output} limited={turn.outputLimited} /></div></article> : null}
     {turn.outputLimited ? <p role="status">Output preview limited. Full output may be available in session history.</p> : null}
-    {turn.events.length > 0 ? <ol className="turn-activity" aria-label="Run activity">{turn.events.map((event, index) => <li key={index}>{activity(event)}</li>)}</ol> : null}
-    {turn.controlMessage ? <p role="status">{turn.controlMessage}</p> : null}
+    {turn.events.length > 0 ? <ol className="turn-activity" aria-label="Run activity">{turn.events.map((event, index) => <li key={index}>{activity(event, turn.done)}</li>)}</ol> : null}
+    {turn.controlMessage ? <p role="status">{turn.done && /steer/i.test(turn.controlMessage)
+      ? turn.terminalPendingSteer ? 'Run ended — unconsumed guidance was returned for draft recovery.' : 'Run ended — steer consumption was not reported.'
+      : turn.controlMessage}</p> : null}
     {turn.approval ? <section aria-label="Awaiting approval"><h2>Awaiting approval</h2><pre>{turn.approval.command}</pre><p>{turn.approval.description}</p><p>Tool: {turn.approval.tool ?? 'Not reported'}</p><p>Request: {turn.approval.requestId}</p><p>Run: {turn.publicRunId} · Session: {turn.intent.sessionId}</p>
       {canControl && !turn.done ? <><button type="button" disabled={turn.controlBusy} onClick={() => approve(turn, 'once')}>Approve once</button><button type="button" disabled={turn.controlBusy} onClick={() => approve(turn, 'deny')}>Deny</button></> : null}
     </section> : null}
@@ -41,14 +43,14 @@ export function CopyResponse({ text, limited }: Readonly<{ text: string; limited
   </div>;
 }
 
-function activity(event: RunEvent): string {
+function activity(event: RunEvent, done: boolean): string {
   switch (event.type) {
     case 'tool.started': return `Tool started: ${event.tool} — ${event.preview}`;
     case 'tool.completed': return `Tool ${event.error ? 'failed' : 'completed'}: ${event.tool}`;
     case 'subagent.start': return `Subagent started: ${event.subagentId} — ${event.goal}`;
     case 'subagent.complete': return `Subagent completed: ${event.subagentId} — ${event.summary}`;
     case 'approval.responded': return `Approval responded: ${event.choice}`;
-    case 'run.steered': return 'Steer queued';
+    case 'run.steered': return done ? 'Steer was acknowledged; run ended. Consumption not reported by this event.' : 'Steer queued';
     default: return event.type;
   }
 }

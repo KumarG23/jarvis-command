@@ -14,7 +14,12 @@ test('streams a synthetic turn through the compiled UI', async ({ page, context 
     identity: { provider: 'development' }, command: { version: 'test', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 100, maxSteerCharacters: 100 } },
     hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse'], readinessChecks: {} }, sessions: [session],
   } }));
-  await page.route('**/api/sessions/*/messages?*', (route) => route.fulfill({ json: { sessionId, messages: [], pagination: { limit: 50, offset: 0, returned: 0, hasMore: false } } }));
+  let saved = false;
+  const messages = [
+    { id: 'saved:user', sessionId, role: 'user', content: 'Synthetic hello', timestamp, toolName: null, displayKind: null },
+    { id: 'saved:answer', sessionId, role: 'assistant', content: 'Browser streamed answer', timestamp, toolName: null, displayKind: null },
+  ];
+  await page.route('**/api/sessions/*/messages?*', (route) => route.fulfill({ json: { sessionId, messages: saved ? messages : [], pagination: { limit: 50, offset: 0, returned: saved ? 2 : 0, hasMore: false } } }));
   let sends = 0;
   await page.route('**/api/live/runs', async (route) => {
     sends++;
@@ -28,15 +33,18 @@ test('streams a synthetic turn through the compiled UI', async ({ page, context 
     { type: 'tool.started', tool: 'synthetic', preview: 'No real commands' },
     { type: 'run.completed', output: 'Browser streamed answer', pendingSteer: null, usage: null },
   ].map((event) => `event: ${event.type}\ndata: ${JSON.stringify({ ...event, publicRunId, timestamp })}\n\n`).join('') }));
-  await page.route(`**/api/live/runs/${publicRunId}`, (route) => route.fulfill({ json: { publicRunId, sessionId, status: 'completed', updatedAt: timestamp, approval: null, output: 'Browser streamed answer', error: null, pendingSteer: null, usage: null } }));
+  await page.route(`**/api/live/runs/${publicRunId}`, (route) => { saved = true; return route.fulfill({ json: { publicRunId, sessionId, status: 'completed', updatedAt: timestamp, approval: null, output: 'Browser streamed answer', error: null, pendingSteer: null, usage: null } }); });
   await page.goto('/');
   await page.getByRole('combobox', { name: 'Session' }).selectOption(sessionId);
   await page.getByRole('textbox', { name: 'Message Jarvis' }).fill('Synthetic hello');
+  await expect(page.getByText('No saved messages in session history yet.', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Send message' }).click();
   await expect(page.getByText('Run completed', { exact: true })).toBeVisible();
   await expect(page.getByText('Browser streamed answer', { exact: true })).toHaveCount(1);
   await expect(page.getByText('Tool started: synthetic — No real commands')).toBeVisible();
-  await expect(page.getByText('No saved messages in session history yet.', { exact: true })).toBeVisible();
+  await expect(page.locator('[data-message-id="saved:answer"]')).toBeVisible();
+  await expect(page.getByText('Synthetic hello', { exact: true })).toHaveCount(1);
+  await expect(page.getByText('End of history.', { exact: true })).toHaveCount(0);
   const responseCard = page.getByRole('article', { name: 'Jarvis response' });
   await expect(responseCard).toBeVisible();
   await expect(page.getByRole('list', { name: 'Run activity' })).toBeVisible();
@@ -53,6 +61,11 @@ test('streams a synthetic turn through the compiled UI', async ({ page, context 
   expect(sends).toBe(1);
   expect(errors).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.reload();
+  await expect(page.getByText('Synthetic hello', { exact: true })).toHaveCount(1);
+  await expect(page.getByText('Browser streamed answer', { exact: true })).toHaveCount(1);
+  expect(sends).toBe(1);
+  expect(errors).toEqual([]);
 });
 test('reloads a known synthetic run with identifiers only and no second admission', async ({ page }) => {
   const errors: string[] = [];

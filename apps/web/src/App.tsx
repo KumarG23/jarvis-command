@@ -268,7 +268,9 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
           {selectedSession ? <p className="selected-session-title" aria-label="Selected session">{selectedSession.title}</p> : null}
         </div> : null}
         <section className="timeline" aria-label="Mission timeline">
-          {liveEnabled && selectedSession ? <LiveRoom key={`${selectedSession.id}:${live.refresh?.sessionId === selectedSession.id ? live.refresh.revision : ''}`} session={selectedSession} onHistory={live.history} /> : <>
+          {liveEnabled && selectedSession ? <LiveRoom key={`${selectedSession.id}:${live.refresh?.sessionId === selectedSession.id ? live.refresh.revision : ''}`} session={selectedSession} onHistory={live.history}
+            turns={[...live.completedTurns, ...(live.turn ? [live.turn] : [])]}
+            renderTurn={(turn) => <TurnView turn={turn} allowed={writeAllowed && turn.intent === live.turn?.intent} approve={live.approve} stop={live.stop} />} /> : <>
           <div className="room-intro">
             <div className="room-emblem" aria-hidden="true"><Command size={28} /></div>
             <p className="eyebrow">PROJECT COMMAND ROOM</p>
@@ -320,11 +322,13 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
           </TimelineEvent>
           </>}
           {live.recoveryError ? <p role="alert">{live.recoveryError}</p> : null}
-          {live.turn && (live.turn.intent.sessionId === selectedSession?.id || live.turn.intent.input === null) ? <TurnView turn={live.turn} allowed={writeAllowed && live.turn.intent.sessionId === selectedSession?.id} approve={live.approve} stop={live.stop} /> : null}
+          {live.turn && !selectedSession && live.turn.intent.input === null ? <TurnView turn={live.turn} allowed={false} approve={live.approve} stop={live.stop} /> : null}
         </section>
 
         <footer className="composer-wrap">
-          {liveEnabled ? <TurnComposer blocked={!!live.recoveryError} allowed={hermesOnline && bootstrap.hermes.capabilities.includes('run_events_sse') && selectedSession?.ownership === 'command' && selectedSession.id.startsWith('jc_')} sessionId={selectedSession?.id} max={bootstrap.command.liveRoom.maxInputCharacters} maxSteer={bootstrap.command.liveRoom.maxSteerCharacters} turn={live.turn} send={live.send} retry={live.retry} resume={live.resume} steer={live.steer} recoveries={live.recoveries} consumeRecovery={live.consumeRecovery} /> : <>
+          {liveEnabled && selectedSession?.ownership === 'command' && !live.historyReady(selectedSession.id) ? <p role="status">Load complete session history before sending. Retry history or load remaining pages; for a history beyond the view limit, start a new Command session.</p> : null}
+          {live.historyBacklogFull ? <p role="alert">Unconfirmed reply limit reached. Your replies are retained; retry history in their sessions before sending more.</p> : null}
+          {liveEnabled ? <TurnComposer blocked={!!live.recoveryError || !live.historyReady(selectedSession?.id) || live.historyBacklogFull} allowed={hermesOnline && bootstrap.hermes.capabilities.includes('run_events_sse') && selectedSession?.ownership === 'command' && selectedSession.id.startsWith('jc_')} sessionId={selectedSession?.id} max={bootstrap.command.liveRoom.maxInputCharacters} maxSteer={bootstrap.command.liveRoom.maxSteerCharacters} turn={live.turn} send={live.send} retry={live.retry} resume={live.resume} steer={live.steer} recoveries={live.recoveries} consumeRecovery={live.consumeRecovery} /> : <>
           <div className="composer-status">
             <span className={`status-dot ${bootstrap.hermes.state === 'online' ? '' : bootstrap.hermes.state}`} />
             {hermesOnline ? 'Read-only bridge' : controlPlaneLabel}

@@ -1,9 +1,11 @@
 import { SessionMessagesPageSchema, type SessionMessage, type SessionSummary } from '@jarvis-command/contracts';
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Bot, MessageSquare, SquareTerminal } from 'lucide-react';
 import { CopyResponse } from './TurnView';
+import type { Turn } from './useLiveTurn';
+import { projectTurns } from './timeline';
 
-export function LiveRoom({ session, onHistory }: Readonly<{ session: SessionSummary; onHistory: (sessionId: string, messages: SessionMessage[], complete: boolean) => void }>) {
+export function LiveRoom({ session, onHistory, turns = [], renderTurn }: Readonly<{ session: SessionSummary; onHistory: (sessionId: string, messages: SessionMessage[], complete: boolean) => void; turns?: Turn[]; renderTurn?: (turn: Turn) => ReactNode }>) {
   const report = useRef(onHistory);
   report.current = onHistory;
   const [messages, setMessages] = useState<SessionMessage[]>([]);
@@ -15,7 +17,7 @@ export function LiveRoom({ session, onHistory }: Readonly<{ session: SessionSumm
   const [attempt, setAttempt] = useState(0);
   const [pagesLoaded, setPagesLoaded] = useState(0);
 
-  useEffect(() => { if (!loading) report.current(session.id, messages, !error && !hasMore); }, [session.id, messages, loading, error, hasMore]);
+  useEffect(() => { report.current(session.id, messages, !loading && !error && !hasMore); }, [session.id, messages, loading, error, hasMore]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -52,6 +54,11 @@ export function LiveRoom({ session, onHistory }: Readonly<{ session: SessionSumm
     return () => controller.abort();
   }, [session.id, offset, attempt]);
 
+  // Derive handoff from the very snapshot being rendered, not a prior mount's
+  // effect. Loading/failed/partial history must not remove the only local reply.
+  const projected = projectTurns(turns.filter((turn) => turn.intent.sessionId === session.id), messages, !loading && !error && !hasMore);
+  const omittedEchoIds = new Set(renderTurn ? projected.map((item) => item.omittedEchoId) : []);
+  const liveAfter = (index: number) => projected.filter((item) => item.after === index).map(({ turn }) => <Fragment key={turn.intent.clientRequestId}>{renderTurn?.(turn)}</Fragment>);
   return <>
     <div className="room-intro">
       <p className="eyebrow">LIVE ROOM · HISTORY</p>
@@ -62,17 +69,18 @@ export function LiveRoom({ session, onHistory }: Readonly<{ session: SessionSumm
     {loading ? <p role="status">Loading messages…</p> : null}
     {error ? <div className="history-feedback"><p role="alert">{error}</p><button type="button" className="primary-button" onClick={() => { setError(null); setLoading(true); setAttempt((value) => value + 1); }}>Retry history</button></div> : null}
     {!loading && !error && messages.length === 0 ? <p role="status">No saved messages in session history yet.</p> : null}
-    {messages.map((message) => <article className="timeline-event history-message" key={message.id} data-message-id={message.id}>
+    {liveAfter(-1)}
+    {messages.map((message, index) => <Fragment key={message.id}>{omittedEchoIds.has(message.id) ? null : <article className="timeline-event history-message" data-message-id={message.id} aria-label={message.role === 'user' ? 'Your message' : message.role === 'assistant' ? 'Jarvis response' : undefined}>
       <div className={`event-icon ${message.role === 'user' ? 'violet' : 'cyan'}`}>
         {message.role === 'tool' ? <SquareTerminal size={17} /> : message.role === 'user' ? <MessageSquare size={17} /> : <Bot size={17} />}
       </div>
       <div className="event-body">
-        <div className="event-label"><span>{message.role}</span><time>{message.timestamp ? new Date(message.timestamp).toLocaleString() : 'Time not reported'}</time></div>
+        <div className="event-label"><span>{message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Jarvis' : message.role}</span><time>{message.timestamp ? new Date(message.timestamp).toLocaleString() : 'Time not reported'}</time></div>
         {message.toolName ? <h2>{message.toolName}</h2> : null}
-        <p>{message.content}</p>
+        <p>{message.content || (message.role === 'assistant' ? 'Assistant activity record — no text was saved.' : 'No text was saved.')}</p>
         {message.role === 'assistant' && message.content ? <CopyResponse text={message.content} limited={false} /> : null}
       </div>
-    </article>)}
-    {!error && (hasMore && pagesLoaded >= 10 ? <p role="status">History view limit reached. More messages may exist.</p> : hasMore ? <button type="button" className="primary-button" disabled={loading} onClick={() => { setLoading(true); setOffset(nextOffset); }}>Load more messages</button> : !loading && messages.length > 0 ? <p role="status">End of history.</p> : null)}
+    </article>}{liveAfter(index)}</Fragment>)}
+    {!error && (hasMore && pagesLoaded >= 10 ? <p role="status">History view limit reached. More messages may exist.</p> : hasMore ? <button type="button" className="primary-button" disabled={loading} onClick={() => { setLoading(true); setOffset(nextOffset); }}>Load more messages</button> : null)}
   </>;
 }

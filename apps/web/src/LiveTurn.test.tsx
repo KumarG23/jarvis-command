@@ -21,6 +21,11 @@ class Source {
   emit(type: string, data: object) { this.listeners.get(type)?.({ data: JSON.stringify({ type, publicRunId: id, timestamp, ...data }) } as MessageEvent); }
 }
 function status(state = 'completed', extra = {}) { return { publicRunId: id, sessionId: session.id, status: state, updatedAt: timestamp, approval: null, output: 'Streamed answer', error: null, pendingSteer: null, usage: null, ...extra }; }
+function readyHook() {
+  const hook = renderHook(useLiveTurn);
+  act(() => hook.result.current.history(session.id, [], true));
+  return hook;
+}
 function setup(admit?: (body: Record<string, string>) => Promise<Response>, final = status()) {
   Source.instances = [];
   vi.stubGlobal('EventSource', Source);
@@ -50,7 +55,7 @@ it.each(['wall', 'backward'])('expires retries at exactly 23 hours from first at
   vi.spyOn(performance, 'now').mockImplementation(() => elapsed);
   const start = Date.now();
   const fetchMock = setup(async () => { throw new Error('uncertain'); });
-  const { result, unmount } = renderHook(useLiveTurn);
+  const { result, unmount } = readyHook();
   await act(async () => result.current.send(session.id, 'exact original', 100));
   elapsed = 23 * 60 * 60 * 1000 - 1;
   vi.setSystemTime(clock === 'wall' ? start + elapsed : start - 100_000);
@@ -74,7 +79,7 @@ it.each(['headers', 'body'])('bounds admission through stalled %s and cleans lat
   const response = new Response(new ReadableStream({ cancel }));
   const fetchMock = vi.fn(() => stall === 'body' ? Promise.resolve(response) : new Promise<Response>((resolve) => { deliver = resolve; }));
   vi.stubGlobal('fetch', fetchMock);
-  const { result, unmount } = renderHook(useLiveTurn);
+  const { result, unmount } = readyHook();
   act(() => result.current.send(session.id, 'exact original', 100));
   await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
   expect(result.current.turn?.phase).toMatch(/Admission uncertain/);
@@ -88,7 +93,7 @@ it.each(['headers', 'body'])('bounds admission through stalled %s and cleans lat
 
 it.each(['headers', 'body'])('bounds status through stalled %s without poisoning the next attempt', async (stall) => {
   const fetchMock = setup();
-  const { result, unmount } = renderHook(useLiveTurn);
+  const { result, unmount } = readyHook();
   await act(async () => result.current.send(session.id, 'hello', 100));
   vi.useFakeTimers();
   const cancel = vi.fn();
@@ -123,26 +128,254 @@ it('sends one exact intent, streams partial output and reconciles terminal statu
   expect(fetchMock.mock.calls.filter(([url]) => url.includes('/messages?'))).toHaveLength(2);
 });
 
-it('resumes live activity after a control acknowledgement and status readback', async () => {
+it('hands the submitted user and answer to saved history once, in conversation order', async () => {
+  const fetchMock = setup(); await open(); await send();
+  act(() => Source.instances[0]!.emit('message.delta', { delta: 'Streamed answer' }));
+  const messages = [
+    { id: 'saved:user', sessionId: session.id, role: 'user', content: 'Hello Jarvis', timestamp, toolName: null, displayKind: null },
+    { id: 'saved:answer', sessionId: session.id, role: 'assistant', content: 'Streamed answer', timestamp, toolName: null, displayKind: null },
+  ];
+  fetchMock.mockImplementation(async (url: string) => Response.json(url.includes('/messages?')
+    ? { sessionId: session.id, messages, pagination: { limit: 50, offset: 0, returned: 2, hasMore: false } } : status()));
+  await act(async () => Source.instances[0]!.onerror?.());
+  await waitFor(() => expect(document.querySelector('[data-message-id="saved:answer"]')).not.toBeNull());
+  expect(screen.getAllByText('Hello Jarvis')).toHaveLength(1);
+  expect(screen.getAllByText('Streamed answer')).toHaveLength(1);
+  expect(screen.queryByText('End of history.')).not.toBeInTheDocument();
+  expect(screen.getAllByRole('article').map((node) => node.textContent)).toEqual([
+    expect.stringContaining('Hello Jarvis'), expect.stringContaining('Streamed answer'),
+  ]);
+  expect(screen.getByRole('button', { name: 'Copy response' })).toBeInTheDocument();
+});
+
+it('retains unsaved completed turns when another identical message is submitted and sessions switch', async () => {
+  setup(); await open(); await send();
+  await act(async () => Source.instances[0]!.onerror?.());
+  fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: 'Hello Jarvis' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  await waitFor(() => expect(Source.instances).toHaveLength(2));
+  expect(screen.getAllByText('Hello Jarvis')).toHaveLength(2);
+  expect(screen.getByText('Streamed answer')).toBeInTheDocument();
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'jc_second' } });
+  expect(screen.queryByText('Streamed answer')).not.toBeInTheDocument();
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: session.id } });
+  expect(await screen.findByText('Streamed answer')).toBeInTheDocument();
+  expect(screen.getAllByText('Hello Jarvis')).toHaveLength(2);
+});
+
+it('reconciles two identical turns after delayed persistence without claiming either twice', async () => {
+  const fetchMock = setup(); await open(); await send();
+  await act(async () => Source.instances[0]!.onerror?.());
+  fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: 'Hello Jarvis' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  await waitFor(() => expect(Source.instances).toHaveLength(2));
+  const messages = ['user', 'assistant', 'user', 'assistant'].map((role, i) => ({
+    id: `saved:${i}`, sessionId: session.id, role, content: role === 'user' ? 'Hello Jarvis' : 'Streamed answer', timestamp, toolName: null, displayKind: null,
+  }));
+  fetchMock.mockImplementation(async (url: string) => Response.json(url.includes('/messages?')
+    ? { sessionId: session.id, messages, pagination: { limit: 50, offset: 0, returned: 4, hasMore: false } } : status()));
+  await act(async () => Source.instances[1]!.onerror?.());
+  // Real run IDs differ; switch forces a fresh history view even with this fixture's reused ID.
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'jc_second' } });
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: session.id } });
+  await waitFor(() => expect(document.querySelector('[data-message-id="saved:3"]')).not.toBeNull());
+  expect(screen.getAllByText('Hello Jarvis')).toHaveLength(2);
+  expect(screen.getAllByText('Streamed answer')).toHaveLength(2);
+  expect(screen.getAllByRole('article').map((node) => node.textContent)).toEqual([
+    expect.stringContaining('Hello Jarvis'), expect.stringContaining('Streamed answer'),
+    expect.stringContaining('Hello Jarvis'), expect.stringContaining('Streamed answer'),
+  ]);
+  fetchMock.mockRejectedValue(new Error('history unavailable'));
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'jc_second' } });
+  fireEvent.change(screen.getByRole('combobox'), { target: { value: session.id } });
+  await screen.findByRole('alert');
+  // Only unconfirmed bodies remain in memory after durable handoff.
+  expect(screen.getAllByText('Hello Jarvis')).toHaveLength(1);
+  expect(screen.getAllByText('Streamed answer')).toHaveLength(1);
+  fetchMock.mockImplementation(async () => Response.json({ sessionId: session.id, messages, pagination: { limit: 50, offset: 0, returned: 4, hasMore: false } }));
+  fireEvent.click(screen.getByRole('button', { name: 'Retry history' }));
+  await waitFor(() => expect(screen.getAllByText('Hello Jarvis')).toHaveLength(2));
+  expect(screen.getAllByText('Streamed answer')).toHaveLength(2);
+});
+
+it('keeps the live stream through steer readback so tool completion is not lost in a reconnect gap', async () => {
   const fetchMock = setup(undefined, status('running', { output: null }));
-  const { result, unmount } = renderHook(useLiveTurn);
+  const { result, unmount } = readyHook();
   await act(async () => result.current.send(session.id, 'hello', 100));
   vi.useFakeTimers();
-  fetchMock.mockResolvedValueOnce(Response.json({ publicRunId: id, accepted: true }));
+  act(() => Source.instances[0]!.emit('tool.started', { tool: 'terminal', preview: 'Harmless test' }));
+  fetchMock.mockResolvedValueOnce(Response.json({ publicRunId: id, accepted: true, state: 'queued' }));
   await act(async () => result.current.steer(result.current.turn!, 'Keep testing', 100));
+  expect(Source.instances[0]!.close).not.toHaveBeenCalled();
+  act(() => Source.instances[0]!.emit('tool.completed', { tool: 'terminal', error: false, durationSeconds: 1 }));
   await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
-  expect(Source.instances).toHaveLength(2);
-  act(() => Source.instances[1]!.emit('tool.started', { tool: 'terminal', preview: 'Harmless test' }));
-  expect(result.current.turn?.events.at(-1)?.type).toBe('tool.started');
+  expect(Source.instances).toHaveLength(1);
+  expect(result.current.turn?.events.map((event) => event.type)).toEqual(['tool.started', 'tool.completed']);
   expect(fetchMock.mock.calls.filter(([url]) => url.endsWith('/steer'))).toHaveLength(1);
+  unmount();
+});
+
+it('does not replace a live preview with a concurrent nonterminal status snapshot', async () => {
+  const fetchMock = setup();
+  const { result, unmount } = readyHook();
+  await act(async () => result.current.send(session.id, 'hello', 100));
+  act(() => Source.instances[0]!.emit('message.delta', { delta: 'Streamed ' }));
+  let deliver!: (response: Response) => void;
+  fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => { deliver = resolve; }));
+  act(() => result.current.refreshStatus(result.current.turn!));
+  act(() => Source.instances[0]!.emit('message.delta', { delta: 'answer' }));
+  await act(async () => deliver(Response.json(status('running', { output: 'Streamed ' }))));
+  expect(result.current.turn?.output).toBe('Streamed answer');
+  act(() => Source.instances[0]!.emit('message.delta', { delta: '!' }));
+  expect(result.current.turn?.output).toBe('Streamed answer!');
+  expect(Source.instances[0]!.close).not.toHaveBeenCalled();
+  unmount();
+});
+
+it.each(['request', 'responded'])('does not regress newer streamed approval %s with a stale status snapshot', async (kind) => {
+  const fetchMock = setup();
+  const { result, unmount } = readyHook();
+  await act(async () => result.current.send(session.id, 'hello', 100));
+  const approval = { requestId: 'approval-race', command: 'printf test', description: 'Harmless fixture', tool: 'terminal' };
+  let deliver!: (response: Response) => void;
+  fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => { deliver = resolve; }));
+  act(() => result.current.refreshStatus(result.current.turn!));
+  act(() => Source.instances[0]!.emit('approval.request', { approval }));
+  if (kind === 'responded') act(() => Source.instances[0]!.emit('approval.responded', { requestId: approval.requestId, choice: 'deny' }));
+  const phase = result.current.turn?.phase;
+  await act(async () => deliver(Response.json(status('running', { approval: kind === 'responded' ? approval : null }))));
+  expect(result.current.turn?.approval).toEqual(kind === 'request' ? approval : null);
+  expect(result.current.turn?.phase).toBe(phase);
+  unmount();
+});
+
+it('rechecks terminal evidence arriving during a nonterminal status read without replaying the stream', async () => {
+  const fetchMock = setup();
+  const { result, unmount } = readyHook();
+  await act(async () => result.current.send(session.id, 'hello', 100));
+  vi.useFakeTimers();
+  let deliver!: (response: Response) => void;
+  fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => { deliver = resolve; }));
+  act(() => result.current.refreshStatus(result.current.turn!));
+  act(() => Source.instances[0]!.emit('run.completed', { output: 'Streamed answer', pendingSteer: null, usage: null }));
+  await act(async () => deliver(Response.json(status('running', { output: null }))));
+  await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+  expect(result.current.turn?.done).toBe(true);
+  expect(result.current.turn?.output).toBe('Streamed answer');
+  expect(Source.instances).toHaveLength(1);
+  expect(fetchMock.mock.calls.filter(([url]) => url === '/api/live/runs')).toHaveLength(1);
+  unmount();
+});
+
+it('keeps the composer disabled through delayed and failed history, then unlocks after retry', async () => {
+  const fetchMock = setup(); const ordinary = fetchMock.getMockImplementation()!;
+  let settle!: (response: Response) => void;
+  let attempts = 0;
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    if (url.includes('/messages?') && attempts++ === 0) return new Promise<Response>((resolve) => { settle = resolve; });
+    return ordinary(url, init);
+  });
+  render(<App loadBootstrap={async () => bootstrap} />);
+  fireEvent.change(await screen.findByRole('combobox', { name: 'Session' }), { target: { value: session.id } });
+  expect(await screen.findByRole('textbox', { name: 'Message Jarvis' })).toBeDisabled();
+  await act(async () => settle(new Response('', { status: 503 })));
+  expect(await screen.findByRole('button', { name: 'Retry history' })).toBeInTheDocument();
+  expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry history' }));
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toBeEnabled());
+  expect(fetchMock.mock.calls.filter(([url]) => url === '/api/live/runs')).toHaveLength(0);
+});
+
+it('refuses admission until the selected history baseline is complete', async () => {
+  const fetchMock = setup(); const { result, unmount } = renderHook(useLiveTurn);
+  await act(async () => { expect(await result.current.send(session.id, 'Hello', 20)).toBe(false); });
+  expect(fetchMock).not.toHaveBeenCalled();
+  act(() => result.current.history(session.id, [], false));
+  await act(async () => { expect(await result.current.send(session.id, 'Hello', 20)).toBe(false); });
+  act(() => result.current.history(session.id, [], true));
+  await act(async () => { expect(await result.current.send(session.id, 'Hello', 20)).toBe(true); });
+  unmount();
+});
+
+it('retains the consuming-queue stream prefix and activity across reconnect', async () => {
+  vi.useFakeTimers(); setup(undefined, status('running', { output: 'stale' }));
+  const { result, unmount } = readyHook();
+  act(() => result.current.history(session.id, [], true));
+  await act(async () => { await result.current.send(session.id, 'Hello', 20); });
+  act(() => {
+    Source.instances[0]!.emit('message.delta', { delta: 'Visible prefix ' });
+    Source.instances[0]!.emit('tool.started', { tool: 'terminal', preview: 'Harmless test' });
+    Source.instances[0]!.onerror?.();
+  });
+  await act(async () => { await vi.advanceTimersByTimeAsync(2100); });
+  expect(Source.instances).toHaveLength(2);
+  expect(result.current.turn?.output).toBe('Visible prefix ');
+  expect(result.current.turn?.events.map((event) => event.type)).toEqual(['tool.started']);
+  act(() => {
+    Source.instances[1]!.emit('message.delta', { delta: 'suffix' });
+    Source.instances[1]!.emit('tool.completed', { tool: 'terminal', error: false, durationSeconds: 1 });
+  });
+  expect(result.current.turn?.output).toBe('Visible prefix suffix');
+  expect(result.current.turn?.events.map((event) => event.type)).toEqual(['tool.started', 'tool.completed']);
+  unmount(); vi.useRealTimers();
+});
+
+it('keeps activity limits across explicit supervisor replacement', async () => {
+  vi.useFakeTimers(); setup(undefined, status('running', { output: null }));
+  const { result, unmount } = readyHook();
+  await act(async () => { await result.current.send(session.id, 'Hello', 20); });
+  act(() => { for (let index = 0; index < 1000; index++) Source.instances[0]!.emit('run.steered', { accepted: true }); });
+  expect(result.current.turn?.events).toHaveLength(1000);
+  await act(async () => result.current.refreshStatus(result.current.turn!, false, false));
+  await act(async () => result.current.refreshStatus(result.current.turn!));
+  await act(async () => { await vi.advanceTimersByTimeAsync(2100); });
+  expect(Source.instances).toHaveLength(2);
+  act(() => Source.instances[1]!.emit('run.steered', { accepted: true }));
+  expect(result.current.turn?.events).toHaveLength(1000);
+  unmount(); vi.useRealTimers();
+});
+
+it('releases a completed body once complete history owns its pair', async () => {
+  setup(); const { result, unmount } = readyHook();
+  act(() => result.current.history(session.id, [], true));
+  await act(async () => { await result.current.send(session.id, 'Hello', 20); });
+  await act(async () => { Source.instances[0]!.emit('run.completed', {}); });
+  act(() => result.current.history(session.id, [
+    { id: 'user:1', sessionId: session.id, role: 'user', content: 'Hello', timestamp, toolName: null, displayKind: null },
+    { id: 'assistant:1', sessionId: session.id, role: 'assistant', content: 'Streamed answer', timestamp, toolName: null, displayKind: null },
+  ], true));
+  await act(async () => { await result.current.send(session.id, 'Next', 20); });
+  expect(result.current.completedTurns).toHaveLength(0); unmount();
+});
+
+it('bounds unconfirmed bodies without dropping them and resumes after positive history handoff', async () => {
+  setup(); const { result, unmount } = readyHook();
+  for (let index = 0; index < 9; index++) {
+    act(() => result.current.history(session.id, [], true));
+    await act(async () => { expect(await result.current.send(session.id, `turn ${index}`, 20)).toBe(true); });
+    await act(async () => { Source.instances.at(-1)!.emit('run.completed', {}); });
+  }
+  act(() => result.current.history(session.id, [], true));
+  await act(async () => { expect(await result.current.send(session.id, 'overflow', 20)).toBe(false); });
+  expect(result.current.completedTurns).toHaveLength(8);
+  expect(result.current.turn?.intent.input).toBe('turn 8');
+  const saved = Array.from({ length: 9 }, (_, index) => [
+    { id: `u:${index}`, sessionId: session.id, role: 'user' as const, content: `turn ${index}`, timestamp, toolName: null, displayKind: null },
+    { id: `a:${index}`, sessionId: session.id, role: 'assistant' as const, content: 'Streamed answer', timestamp, toolName: null, displayKind: null },
+  ]).flat();
+  act(() => result.current.history(session.id, saved, false));
+  expect(result.current.completedTurns).toHaveLength(8);
+  act(() => result.current.history(session.id, saved, true));
+  expect(result.current.completedTurns).toHaveLength(0);
+  await act(async () => { expect(await result.current.send(session.id, 'Resumed', 20)).toBe(true); });
   unmount();
 });
 
 it('keeps monitoring healthy long-running work until its terminal status arrives', async () => {
   const fetchMock = setup(undefined, status('running', { output: null }));
-  const { result, unmount } = renderHook(useLiveTurn);
-  await act(async () => result.current.send(session.id, 'hello', 100));
+  const { result, unmount } = readyHook();
   vi.useFakeTimers();
+  await act(async () => result.current.send(session.id, 'hello', 100));
   await act(async () => result.current.refreshStatus(result.current.turn!));
   await act(async () => { await vi.advanceTimersByTimeAsync(180_000); });
   expect(result.current.turn?.phase).not.toMatch(/supervision paused/);
@@ -183,7 +416,7 @@ it.each(['admission', 'status-body', 'status-headers', 'stream'])('cleans active
   const cancel = vi.fn();
   const response = new Response(new ReadableStream({ cancel }));
   if (stage === 'admission') fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => { late = resolve; }));
-  const { result, unmount } = renderHook(useLiveTurn);
+  const { result, unmount } = readyHook();
   await act(async () => result.current.send(session.id, 'hello', 100));
   if (stage.startsWith('status')) {
     fetchMock.mockImplementationOnce(() => stage === 'status-body' ? Promise.resolve(response) : new Promise<Response>((resolve) => { late = resolve; }));
@@ -203,10 +436,11 @@ it.each(['admission', 'status-body', 'status-headers', 'stream'])('cleans active
 
 it('ignores old stream callbacks after a new run starts', async () => {
   setup();
-  const { result } = renderHook(useLiveTurn);
+  const { result } = readyHook();
   await act(async () => result.current.send(session.id, 'first', 100));
   const previous = Source.instances[0]!;
   await act(async () => previous.onerror?.());
+  act(() => result.current.history(session.id, [], true));
   await act(async () => result.current.send(session.id, 'second', 100));
   act(() => previous.emit('message.delta', { delta: 'Stale previous run' }));
   expect(result.current.turn!.intent.input).toBe('second');
@@ -215,7 +449,7 @@ it('ignores old stream callbacks after a new run starts', async () => {
 
 it('enforces the event count independently of byte bounds', async () => {
   const fetchMock = setup(undefined, status('running', { output: null }));
-  const { result } = renderHook(useLiveTurn);
+  const { result } = readyHook();
   await act(async () => result.current.send(session.id, 'hello', 100));
   const source = Source.instances[0]!;
   act(() => { for (let i = 0; i < 1000; i++) source.emit('run.steered', { accepted: true }); });
@@ -228,7 +462,7 @@ it('enforces the event count independently of byte bounds', async () => {
 
 it.each(['json', 'schema', 'event-name'])('reconciles malformed %s events without projecting their payload', async (fault) => {
   setup();
-  const { result } = renderHook(useLiveTurn);
+  const { result } = readyHook();
   await act(async () => result.current.send(session.id, 'hello', 100));
   const source = Source.instances[0]!;
   const data = fault === 'json' ? '{not-json' : JSON.stringify({ type: fault === 'event-name' ? 'run.steered' : 'message.delta', publicRunId: id, timestamp, delta: 'Never display', unexpected: true });
@@ -238,14 +472,19 @@ it.each(['json', 'schema', 'event-name'])('reconciles malformed %s events withou
   expect(source.close).toHaveBeenCalled();
 });
 
-it.each(['none', 'partial', 'complete-old', 'complete-new'])('keeps terminal output identity-safe with a %s history baseline', async (baseline) => {
+it.each(['none', 'partial', 'complete-old', 'complete-new', 'complete-unpaired'])('keeps terminal output identity-safe with a %s history baseline', async (baseline) => {
   setup();
   const { result } = renderHook(useLiveTurn);
   const message = { id: 'history:exact', sessionId: session.id, role: 'assistant' as const, content: 'Streamed answer', timestamp, toolName: null, displayKind: null };
   if (baseline !== 'none') act(() => result.current.history(session.id, baseline === 'complete-old' ? [message] : [], baseline !== 'partial'));
+  if (baseline === 'none' || baseline === 'partial') {
+    act(() => expect(result.current.send(session.id, 'hello', 100)).toBe(false));
+    expect(Source.instances).toHaveLength(0);
+    return;
+  }
   await act(async () => result.current.send(session.id, 'hello', 100));
   await act(async () => Source.instances[0]!.onerror?.());
-  act(() => result.current.history(session.id, [message], true));
+  act(() => result.current.history(session.id, baseline === 'complete-new' ? [{ ...message, id: 'history:user', role: 'user', content: 'hello' }, message] : [message], true));
   expect(result.current.turn?.historyMatched).toBe(baseline === 'complete-new');
   act(() => result.current.history(session.id, [], false));
   expect(result.current.turn?.historyMatched).toBe(false);
@@ -342,6 +581,7 @@ it('never sends another room draft to the selected session', async () => {
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'jc_second' } });
   expect(screen.getByRole('textbox')).toHaveValue('');
   fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Only room B' } });
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
   await waitFor(() => expect(Source.instances).toHaveLength(1));
   expect(JSON.parse(fetchMock.mock.calls.find(([url]) => url === '/api/live/runs')![1]!.body as string)).toMatchObject({ sessionId: 'jc_second', input: 'Only room B' });
@@ -349,7 +589,7 @@ it('never sends another room draft to the selected session', async () => {
 
 it.each(['same', 'different'])('preserves a %s uncertain steer after terminal recovery without duplicate handoff', async (kind) => {
   const fetchMock = setup(undefined, status('completed', { pendingSteer: 'terminal input' }));
-  const { result, unmount } = renderHook(useLiveTurn);
+  const { result, unmount } = readyHook();
   await act(async () => result.current.send(session.id, 'hello', 100));
   let reject!: (reason: Error) => void;
   fetchMock.mockImplementationOnce(() => new Promise<Response>((_, fail) => { reject = fail; }));
@@ -376,7 +616,7 @@ it('retains an edited steer draft after a successful queued acknowledgement', as
   expect(fetchMock.mock.calls.filter(([url]) => url.endsWith('/steer'))).toHaveLength(1);
 });
 it.each(['approval', 'stop'] as const)('blocks steer while %s is pending', async (kind) => {
-  const fetchMock = setup(); const { result, unmount } = renderHook(useLiveTurn);
+  const fetchMock = setup(); const { result, unmount } = readyHook();
   await act(async () => result.current.send(session.id, 'hello', 100));
   act(() => Source.instances[0]!.emit('approval.request', { approval }));
   fetchMock.mockImplementationOnce(() => new Promise<Response>(() => {}));
@@ -390,7 +630,7 @@ it.each(['approval', 'stop'] as const)('blocks steer while %s is pending', async
   await act(async () => unmount());
 });
 it('cancels an active steer body on unmount without recovery callbacks', async () => {
-  vi.useFakeTimers(); const fetchMock = setup(); const { result, unmount } = renderHook(useLiveTurn);
+  vi.useFakeTimers(); const fetchMock = setup(); const { result, unmount } = readyHook();
   await act(async () => result.current.send(session.id, 'hello', 100));
   const cancel = vi.fn();
   fetchMock.mockResolvedValueOnce(new Response(new ReadableStream({ cancel })));
@@ -438,7 +678,8 @@ it('queues exact steer with shared locking and restores authoritative terminal i
   expect(posts).toHaveLength(1);
   expect(posts[0]![1]).toMatchObject({ method: 'POST', credentials: 'same-origin', headers: { accept: 'application/json', 'content-type': 'application/json', 'x-jarvis-command': '1' }, body: JSON.stringify({ input: exact }) });
   await act(async () => resolve(Response.json({ publicRunId: id, accepted: true, state: 'queued' })));
-  expect(screen.getByText(/Steer queued — not executed/)).toBeInTheDocument();
+  expect(screen.queryByText(/Steer queued — not executed/)).not.toBeInTheDocument();
+  expect(screen.getByText(/Run ended.*unconsumed guidance/)).toBeInTheDocument();
   expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue(exact);
   fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: '' } });
   fireEvent.change(screen.getByRole('combobox'), { target: { value: 'jc_second' } });
@@ -464,6 +705,7 @@ it('offers explicit recovery for an edited room draft and does not auto-restore 
   fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: 'New edit' } });
   fireEvent.click(screen.getByRole('button', { name: 'Append to draft' }));
   expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('New edit\n  pending\nexact  ');
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled());
   fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
   expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('');
   expect(screen.queryByRole('region', { name: 'Recover steer draft' })).not.toBeInTheDocument();
@@ -490,7 +732,7 @@ it.each(['missing', 'run', 'malformed', 'network', 'state', 'accepted'])('retain
 });
 
 it.each(['headers', 'body'])('bounds steer %s and keeps exact input for explicit recovery', async (stall) => {
-  vi.useFakeTimers(); const fetchMock = setup(undefined, status('running')); const { result, unmount } = renderHook(useLiveTurn);
+  vi.useFakeTimers(); const fetchMock = setup(undefined, status('running')); const { result, unmount } = readyHook();
   await act(async () => result.current.send(session.id, 'hello', 100));
   const cancel = vi.fn(); const response = new Response(new ReadableStream({ cancel }));
   fetchMock.mockImplementationOnce(() => stall === 'body' ? Promise.resolve(response) : new Promise<Response>(() => {}));
@@ -506,7 +748,7 @@ it.each(['headers', 'body'])('bounds steer %s and keeps exact input for explicit
 });
 
 it('rejects invalid steer in the hook and serializes steer with approval and stop; ignores late new-intent replies', async () => {
-  const fetchMock = setup(); const { result, unmount } = renderHook(useLiveTurn);
+  const fetchMock = setup(); const { result, unmount } = readyHook();
   await act(async () => result.current.send(session.id, 'hello', 100));
   act(() => Source.instances[0]!.emit('approval.request', { approval }));
   const run = result.current.turn!;
@@ -517,6 +759,7 @@ it('rejects invalid steer in the hook and serializes steer with approval and sto
   act(() => { void result.current.steer(run, 'valid', 100); void result.current.steer(run, 'duplicate', 100); void result.current.approve(run, 'once'); void result.current.stop(run); });
   expect(fetchMock.mock.calls.filter(([url]) => /\/(steer|approval|stop)$/.test(url))).toHaveLength(1);
   await act(async () => Source.instances[0]!.onerror?.());
+  act(() => result.current.history('jc_second', [], true));
   await act(async () => result.current.send('jc_second', 'new intent', 100));
   const requests = fetchMock.mock.calls.length;
   await act(async () => resolve(Response.json({ publicRunId: id, accepted: true, state: 'queued' })));
@@ -527,7 +770,7 @@ it('rejects invalid steer in the hook and serializes steer with approval and sto
 });
 
 it('does not reoffer a handed-off uncertain payload when terminal read-back repeats it', async () => {
-  const fetchMock = setup(undefined, status('running')); const { result, unmount } = renderHook(useLiveTurn);
+  const fetchMock = setup(undefined, status('running')); const { result, unmount } = readyHook();
   await act(async () => result.current.send(session.id, 'hello', 100));
   fetchMock.mockRejectedValueOnce(new Error('network'));
   await act(async () => result.current.steer(result.current.turn!, 'exact', 100));
@@ -553,7 +796,7 @@ it.each(['missing', 'run', 'request', 'choice', 'malformed', 'network'])('reconc
 
 it('preserves a newer approval while an older mutation returns', async () => {
   const newer = { ...approval, requestId: 'approval:new', command: 'New exact command' };
-  const fetchMock = setup(undefined, status('running')); const { result } = renderHook(useLiveTurn);
+  const fetchMock = setup(undefined, status('running')); const { result } = readyHook();
   await act(async () => result.current.send(session.id, 'hello', 100));
   act(() => Source.instances[0]!.emit('approval.request', { approval }));
   let resolve!: (response: Response) => void;
@@ -565,7 +808,7 @@ it('preserves a newer approval while an older mutation returns', async () => {
 });
 
 it.each(['headers', 'body'])('bounds approval mutation %s and reconciles its uncertain outcome', async (stall) => {
-  const fetchMock = setup(undefined, status('running')); const { result, unmount } = renderHook(useLiveTurn);
+  const fetchMock = setup(undefined, status('running')); const { result, unmount } = readyHook();
   await act(async () => result.current.send(session.id, 'hello', 100));
   act(() => Source.instances[0]!.emit('approval.request', { approval }));
   vi.useFakeTimers(); const cancel = vi.fn(); const response = new Response(new ReadableStream({ cancel }));
@@ -582,7 +825,7 @@ it.each(['headers', 'body'])('bounds approval mutation %s and reconciles its unc
 });
 
 it.each(['missing', 'run', 'malformed', 'network'])('keeps an uncertain %s stop acknowledgement nonterminal', async (fault) => {
-  const fetchMock = setup(undefined, status('running')); const { result, unmount } = renderHook(useLiveTurn);
+  const fetchMock = setup(undefined, status('running')); const { result, unmount } = readyHook();
   await act(async () => result.current.send(session.id, 'hello', 100));
   const ack = { publicRunId: fault === 'run' ? 'jcr_' + 'b'.repeat(32) : id, status: 'stopping', ...(fault === 'malformed' ? { unexpected: true } : {}) };
   fetchMock.mockImplementationOnce(async () => { if (fault === 'network') throw new Error('SECRET upstream'); return Response.json(fault === 'missing' ? {} : ack); });
@@ -596,7 +839,7 @@ it.each(['missing', 'run', 'malformed', 'network'])('keeps an uncertain %s stop 
 });
 it.each(['headers', 'body'])('bounds stop mutation %s without declaring cancellation', async (stall) => {
   vi.useFakeTimers();
-  const fetchMock = setup(undefined, status('running')); const { result, unmount } = renderHook(useLiveTurn);
+  const fetchMock = setup(undefined, status('running')); const { result, unmount } = readyHook();
   await act(async () => result.current.send(session.id, 'hello', 100));
   const cancel = vi.fn(); const response = new Response(new ReadableStream({ cancel }));
   fetchMock.mockImplementationOnce(() => stall === 'body' ? Promise.resolve(response) : new Promise<Response>(() => {}));
@@ -611,7 +854,7 @@ it.each(['headers', 'body'])('bounds stop mutation %s without declaring cancella
   unmount(); expect(vi.getTimerCount()).toBe(0);
 });
 it.each(['approval', 'stop'] as const)('serializes %s against the other control and ignores its late response after replacement', async (kind) => {
-  const fetchMock = setup(); const { result, unmount } = renderHook(useLiveTurn);
+  const fetchMock = setup(); const { result, unmount } = readyHook();
   await act(async () => result.current.send(session.id, 'hello', 100));
   act(() => Source.instances[0]!.emit('approval.request', { approval }));
   let resolve!: (response: Response) => void;
@@ -625,6 +868,7 @@ it.each(['approval', 'stop'] as const)('serializes %s against the other control 
   expect(fetchMock.mock.calls.filter(([url]) => /\/(approval|stop)$/.test(url))).toHaveLength(1);
   await act(async () => Source.instances[0]!.onerror?.());
   expect(result.current.turn?.done).toBe(true);
+  act(() => result.current.history(session.id, [], true));
   await act(async () => result.current.send(session.id, 'new intent', 100));
   expect(signal.aborted).toBe(true);
   const requests = fetchMock.mock.calls.length;
@@ -637,7 +881,7 @@ it.each(['approval', 'stop'] as const)('serializes %s against the other control 
 });
 it.each(['approval', 'stop'] as const)('cancels active %s body and all work on unmount', async (kind) => {
   vi.useFakeTimers();
-  const fetchMock = setup(); const { result, unmount } = renderHook(useLiveTurn);
+  const fetchMock = setup(); const { result, unmount } = readyHook();
   await act(async () => result.current.send(session.id, 'hello', 100));
   act(() => Source.instances[0]!.emit('approval.request', { approval }));
   const cancel = vi.fn();

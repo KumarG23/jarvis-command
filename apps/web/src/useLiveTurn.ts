@@ -1,9 +1,11 @@
 import { LiveRunSteerResponseSchema, LiveRunStopResponseSchema, LiveRunApprovalResponseSchema, LiveRunSubmissionResponseSchema, LiveRunStatusSchema, RunEventSchema, type LiveRunSubmissionRequest, type LiveRunStatus, type RunEvent, type SessionMessage } from '@jarvis-command/contracts';
 import { useEffect, useRef, useState } from 'react';
 import { clearRecovery, readRecovery, writeRecovery, type RecoveryIdentity } from './turnRecovery';
+import { matchTurn, projectTurns } from './timeline';
 
 const eventNames = ['message.delta', 'tool.started', 'tool.completed', 'subagent.start', 'subagent.complete', 'approval.request', 'approval.responded', 'run.steered', 'run.completed', 'run.failed', 'run.cancelled', 'run.interrupted'] as const;
 const terminal = (status: string) => ['completed', 'failed', 'cancelled', 'interrupted'].includes(status);
+const MAX_UNCONFIRMED_TURNS = 8;
 
 // Own the reader: transport cancellation must not depend on cooperative JSON parsing.
 async function boundedJson(url: string, init: RequestInit, controller: AbortController): Promise<unknown> {
@@ -59,6 +61,8 @@ export type Turn = {
   intent: TurnIntent; publicRunId: string | null; phase: string; output: string; outputLimited: boolean;
   events: RunEvent[]; approval: LiveRunStatus['approval']; done: boolean; historyMatched: boolean;
   identityVerified: boolean; controlBusy?: boolean; controlMessage?: string;
+  historyBaseline?: string[]; userHistoryMatched?: boolean;
+  terminalPendingSteer?: boolean;
 };
 export type DraftRecovery = { intent: TurnIntent; input: string; kind: 'terminal' | 'uncertain' };
 
@@ -75,10 +79,15 @@ export function useLiveTurn() {
     setRecoveries((items) => items.filter((item) => item.intent !== recovery.intent || item.input !== recovery.input));
   };
   const [turn, setTurn] = useState<Turn | null>(null);
+  const [completedTurns, setCompletedTurns] = useState<Turn[]>([]);
+  const completed = useRef<Turn[]>([]);
+  const [, refreshHistoryReady] = useState(0);
+  const retain = (items: Turn[]) => { completed.current = items; setCompletedTurns(items); };
   const [refresh, setRefresh] = useState<{ sessionId: string; revision: string } | null>(null);
   const current = useRef<Turn | null>(null);
   const alive = useRef(true);
   const cleanup = useRef(() => {});
+  const checkStatus = useRef<((preserve: boolean) => boolean) | null>(null);
   const mutation = useRef<AbortController | null>(null);
   const admissionAge = useRef({ wall: 0, monotonic: 0, elapsed: 0 });
   const retryExpired = () => {
@@ -87,7 +96,7 @@ export function useLiveTurn() {
     return age.elapsed >= 23 * 60 * 60 * 1000;
   };
   const histories = useRef(new Map<string, { ids: Set<string>; complete: boolean }>());
-  const before = useRef({ ids: new Set<string>(), complete: false });
+
   const update = (change: Partial<Turn>) => {
     if (!alive.current || !current.current) return;
     current.current = { ...current.current, ...change };
@@ -112,23 +121,34 @@ export function useLiveTurn() {
   function supervise(run: Turn, statusOnly = false, preserveApproval = false, readFirst = false) {
     let controller: AbortController | undefined;
     let source: EventSource | undefined;
+    let streamOpen = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let closed = false;
     let reconciling = false;
+    let terminalObserved = false;
+    let approvalRevision = 0;
     let reconnects = 0;
     let polls = 0;
-    let eventCount = 0;
-    let eventBytes = 0;
-    let previewBytes = 0;
-    let limited = statusOnly;
+    let eventCount = run.events.length;
+    let eventBytes = run.events.reduce((bytes, event) => bytes + new TextEncoder().encode(JSON.stringify(event)).length, 0);
+    let previewBytes = new TextEncoder().encode(run.output).length;
+    let limited = statusOnly || run.outputLimited;
     const valid = () => !closed && alive.current && current.current?.intent === run.intent;
     cleanup.current = () => { closed = true; controller?.abort(); source?.close(); clearTimeout(timer); };
-    async function reconcile() {
-      source?.close(); clearTimeout(timer);
+    checkStatus.current = (preserve) => {
+      if (!valid() || !streamOpen) return false;
+      preserveApproval = preserve;
+      void reconcile(true);
+      return true;
+    };
+    async function reconcile(keepStream = false) {
+      if (!keepStream) { streamOpen = false; source?.close(); clearTimeout(timer); }
       if (!valid() || reconciling) return;
       reconciling = true;
       polls++;
       update({ phase: 'Recovering status' });
+      const approvalAtStart = current.current!.approval;
+      const revisionAtStart = approvalRevision;
       try {
         controller = new AbortController();
         const status = LiveRunStatusSchema.parse(await boundedJson(`/api/live/runs/${run.publicRunId}`, { credentials: 'same-origin', headers: { accept: 'application/json' } }, controller));
@@ -136,9 +156,19 @@ export function useLiveTurn() {
         if (!valid()) return;
         // Healthy nonterminal work is not a failed recovery attempt.
         polls = 0;
-        update({ identityVerified: true, phase: `Run ${status.status}`, ...(status.output === null ? {} : outputPreview(status.output)), approval: terminal(status.status) ? null : preserveApproval ? current.current!.approval : status.approval, done: terminal(status.status) });
+        const done = terminal(status.status);
+        const newerApproval = approvalRevision !== revisionAtStart || current.current!.approval !== approvalAtStart;
+        // A status snapshot has no stream cursor: applying it during a healthy
+        // stream can rewind output or double-count later deltas. Terminal wins.
+        update({ identityVerified: true,
+          phase: !done && newerApproval ? current.current!.phase : `Run ${status.status}`,
+          ...(status.output === null || (!done && (keepStream || !!current.current!.output)) ? {} : outputPreview(status.output)),
+          approval: done ? null : preserveApproval || newerApproval ? current.current!.approval : status.approval,
+          done });
         preserveApproval = false;
         if (terminal(status.status)) {
+          histories.current.delete(run.intent.sessionId);
+          update({ terminalPendingSteer: status.pendingSteer !== null });
           try {
             if (stored.current) {
               clearRecovery(stored.current);
@@ -155,18 +185,21 @@ export function useLiveTurn() {
       } catch { if (valid()) update({ phase: 'Disconnected — status unconfirmed' }); }
       finally {
         reconciling = false;
-        if (valid()) {
+        if (valid() && !streamOpen) {
           if (polls >= 12) update({ phase: 'Disconnected — supervision paused; run outcome unknown' });
-          else if (reconnects < 2 && !limited) timer = setTimeout(() => { reconnects++; connect(); }, 2_000);
+          else if (reconnects < 2 && !limited && !terminalObserved) timer = setTimeout(() => { reconnects++; connect(); }, 2_000);
           else timer = setTimeout(() => { void reconcile(); }, 2_000);
         }
       }
     }
     function connect() {
       if (!valid()) return;
-      if (reconnects) { previewBytes = 0; update({ output: '', outputLimited: false, events: [], phase: 'Reconnecting — preview restarting' }); }
+      // Hermes consumes a shared queue; replacement streams do not replay their
+      // prefix. Preserve visible data and cumulative per-run limits.
+      if (reconnects) update({ phase: 'Reconnecting — preview retained' });
       const connection = new EventSource(`/api/live/runs/${run.publicRunId}/events`);
       source = connection;
+      streamOpen = true;
       let ended = false;
       const recover = () => { if (ended) return; ended = true; void reconcile(); };
       connection.onerror = recover;
@@ -184,13 +217,17 @@ export function useLiveTurn() {
           if (previewBytes > 131072) { limited = true; update({ outputLimited: true }); throw new Error('preview'); }
           update({ output: current.current!.output + event.delta });
         }
-        else if (event.type.startsWith('run.') && event.type !== 'run.steered') recover();
-        else if (event.type === 'approval.request') update({ phase: 'Awaiting approval', approval: event.approval });
-        else if (event.type === 'approval.responded') update({
-          ...(current.current!.approval?.requestId === event.requestId ? { approval: null, phase: 'Approval acknowledged — awaiting run status' } : {}),
-          events: [...current.current!.events, event],
-        });
-        else update({ events: [...current.current!.events, event] });
+        else if (event.type.startsWith('run.') && event.type !== 'run.steered') {
+          terminalObserved = true; recover();
+        } else if (event.type === 'approval.request') {
+          approvalRevision++; update({ phase: 'Awaiting approval', approval: event.approval });
+        } else if (event.type === 'approval.responded') {
+          approvalRevision++;
+          update({
+            ...(current.current!.approval?.requestId === event.requestId ? { approval: null, phase: 'Approval acknowledged — awaiting run status' } : {}),
+            events: [...current.current!.events, event],
+          });
+        } else update({ events: [...current.current!.events, event] });
       } catch { recover(); }
     });
       timer = setTimeout(recover, 60_000);
@@ -218,6 +255,8 @@ export function useLiveTurn() {
     } catch { if (!cancelled && alive.current && current.current?.intent === intent) update({ phase: 'Admission uncertain — retry the same intent' }); }
   }
   function send(sessionId: string, input: string, max: number) {
+    const baseline = histories.current.get(sessionId);
+    if (!baseline?.complete || (current.current?.done && !current.current.historyMatched && completed.current.length >= MAX_UNCONFIRMED_TURNS)) return false;
     if (recoveryBlocked.current || (current.current && !current.current.done) || !input.trim() || input.length > max) return false;
     cleanup.current();
     mutation.current?.abort(); mutation.current = null;
@@ -226,9 +265,12 @@ export function useLiveTurn() {
     try { writeRecovery(pending, null); stored.current = pending; }
     catch { recoveryBlocked.current = true; setRecoveryError('Local reload recovery unavailable — message not sent; writer locked.'); return false; }
     admissionAge.current = { wall: Date.now(), monotonic: performance.now(), elapsed: 0 };
-    const baseline = histories.current.get(sessionId);
-    before.current = { ids: new Set(baseline?.ids), complete: baseline?.complete ?? false };
-    current.current = { intent, publicRunId: null, phase: 'Sending', output: '', outputLimited: false, events: [], approval: null, done: false, historyMatched: false, identityVerified: false };
+    if (current.current && !current.current.historyMatched) {
+      const previous = current.current;
+      retain([...completed.current, previous]);
+    }
+    current.current = { intent, publicRunId: null, phase: 'Sending', output: '', outputLimited: false, events: [], approval: null, done: false, historyMatched: false, identityVerified: false,
+      ...(baseline?.complete ? { historyBaseline: [...baseline.ids] } : {}) };
     setTurn(current.current); void admit(intent);
     return true;
   }
@@ -239,12 +281,23 @@ export function useLiveTurn() {
     update({ phase: 'Sending' }); void admit(current.current.intent);
   }
   function history(sessionId: string, messages: SessionMessage[], complete = false) {
+    histories.current.delete(sessionId);
     histories.current.set(sessionId, { ids: new Set(messages.map((message) => message.id)), complete });
+    for (const id of histories.current.keys()) {
+      if (histories.current.size <= 32) break;
+      if (id !== sessionId && id !== current.current?.intent.sessionId && id !== stored.current?.sessionId) histories.current.delete(id);
+    }
+    refreshHistoryReady((revision) => revision + 1);
+    if (complete) {
+      const matched = new Set(projectTurns(completed.current.filter((item) => item.intent.sessionId === sessionId), messages, true)
+        .filter((item) => item.turn.historyMatched).map((item) => item.turn.intent));
+      if (matched.size) retain(completed.current.filter((item) => !matched.has(item.intent)));
+    }
     const run = current.current;
-    if (run?.done && run.intent.sessionId === sessionId) update({
-      historyMatched: before.current.complete && !run.outputLimited && messages.some((message) =>
-        message.sessionId === sessionId && !before.current.ids.has(message.id) && message.role === 'assistant' && message.content === run.output),
-    });
+    if (run && run.intent.sessionId === sessionId) {
+      const match = matchTurn(run, messages, complete);
+      update({ historyMatched: !!match.assistant, userHistoryMatched: !!match.user });
+    }
   }
   function resume() {
     const run = current.current;
@@ -255,6 +308,7 @@ export function useLiveTurn() {
   // A read-only refresh is independent of admission retry and never repeats a mutation.
   function refreshStatus(run: Turn, preserveApproval = false, resumeStream = true) {
     if (!alive.current || current.current?.intent !== run.intent || current.current.publicRunId !== run.publicRunId || current.current.intent.sessionId !== run.intent.sessionId) return;
+    if (resumeStream && checkStatus.current?.(preserveApproval)) return;
     cleanup.current(); supervise(current.current, !resumeStream, preserveApproval, true);
   }
   async function mutate(run: Turn, action: { kind: 'approval'; choice: 'once' | 'deny' } | { kind: 'stop' } | { kind: 'steer'; input: string }) {
@@ -304,5 +358,7 @@ export function useLiveTurn() {
     if (!input.trim() || input.length > max || !Number.isInteger(max) || max < 1 || max > 4000) return Promise.resolve(undefined);
     return mutate(run, { kind: 'steer', input });
   };
-  return { turn, refresh, send, retry, history, resume, approve, stop, steer, recoveries, consumeRecovery, refreshStatus, recoveryError };
+  const historyBacklogFull = !!turn?.done && !turn.historyMatched && completedTurns.length >= MAX_UNCONFIRMED_TURNS;
+  const historyReady = (sessionId: string | undefined) => !!sessionId && histories.current.get(sessionId)?.complete === true;
+  return { turn, completedTurns, refresh, send, retry, history, historyReady, historyBacklogFull, resume, approve, stop, steer, recoveries, consumeRecovery, refreshStatus, recoveryError };
 }

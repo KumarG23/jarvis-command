@@ -10,13 +10,18 @@ const sessionId = 'jc_reload';
 const publicRunId = 'jcr_' + 'a'.repeat(32);
 const clientRequestId = '12345678-1234-4234-8234-123456789abc';
 const record = { sessionId, clientRequestId, publicRunId };
+function readyHook() {
+  const hook = renderHook(useLiveTurn);
+  act(() => hook.result.current.history(sessionId, [], true));
+  return hook;
+}
 const status = (state = 'running', extra = {}) => ({ publicRunId, sessionId, status: state, updatedAt: '2026-09-04T12:00:00.000Z', approval: null, output: null, error: null, pendingSteer: null, usage: null, ...extra });
 it.each(['running', 'completed'])('recovers %s by exact GET only with absent input and conditional terminal clear', async (state) => {
   sessionStorage.setItem(key, JSON.stringify(record));
   const uuid = vi.spyOn(crypto, 'randomUUID');
   const fetchMock = vi.fn(async () => Response.json(status(state, { pendingSteer: state === 'completed' ? 'memory-only guidance' : null })));
   vi.stubGlobal('fetch', fetchMock);
-  const { result, unmount } = renderHook(useLiveTurn);
+  const { result, unmount } = readyHook();
   await act(async () => {});
   expect(result.current.turn?.intent).toEqual({ sessionId, clientRequestId, input: null });
   expect(result.current.turn?.done).toBe(state === 'completed');
@@ -40,7 +45,7 @@ it.each([true, false])('shows recovered target without fabricating a bootstrap r
   sessionStorage.setItem(key, JSON.stringify(record));
   vi.stubGlobal('fetch', vi.fn(async (url: string) => Response.json(url.includes('/messages?') ? { sessionId, messages: [], pagination: { limit: 50, offset: 0, returned: 0, hasMore: false } } : status())));
   render(<App loadBootstrap={async () => ({ identity: { provider: 'development' }, command: { version: 'test', environment: 'test', generatedAt: '2026-09-04T12:00:00.000Z', liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 100, maxSteerCharacters: 100 } }, hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse'], readinessChecks: {} }, sessions: present ? [{ id: sessionId, title: 'Real bootstrap room', source: 'web', ownership: 'command', model: null, lastActive: '2026-09-04T12:00:00.000Z', messageCount: 0, toolCallCount: 0, pinned: false }] : [] })} />);
-  expect(await screen.findByText(/Original message unavailable/)).toBeInTheDocument();
+  await waitFor(() => expect(screen.getByText(/Original message unavailable/)).toBeInTheDocument());
   expect(screen.getByRole('region', { name: 'Current turn' })).toHaveTextContent(clientRequestId);
   await waitFor(() => expect(screen.getByRole('combobox', { name: 'Session' })).toHaveValue(present ? sessionId : ''));
   if (present) expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toBeDisabled();
@@ -55,7 +60,7 @@ it.each(['pending', 'foreign', 'valid'])('allows recovered controls only after %
     return Promise.resolve(Response.json(status('running', caseName === 'foreign' ? { sessionId: 'jc_other' } : {})));
   });
   vi.stubGlobal('fetch', fetchMock);
-  const { result, unmount } = renderHook(useLiveTurn);
+  const { result, unmount } = readyHook();
   await act(async () => {});
   await act(async () => { await result.current.stop(result.current.turn!); await result.current.steer(result.current.turn!, 'guidance', 100); });
   expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST').length).toBe(caseName === 'valid' ? 2 : 0);
@@ -65,7 +70,7 @@ it('keeps pending admission unknown with identifiers, no retries and no UUID', a
   sessionStorage.setItem(key, JSON.stringify({ ...record, publicRunId: null }));
   const fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock);
   const uuid = vi.spyOn(crypto, 'randomUUID');
-  const { result } = renderHook(useLiveTurn);
+  const { result } = readyHook();
   expect(result.current.turn?.phase).toMatch(/Admission unknown.*writer locked/);
   act(() => { result.current.retry(); result.current.send(sessionId, 'never', 100); });
   expect(fetchMock).not.toHaveBeenCalled(); expect(uuid).not.toHaveBeenCalled();
@@ -76,7 +81,7 @@ it.each(['corrupt', 'oversize', 'extra', 'session', 'request', 'run', 'read'])('
   sessionStorage.setItem(key, raw);
   if (fault === 'read') vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('secret raw'); });
   const fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock);
-  const { result } = renderHook(useLiveTurn);
+  const { result } = readyHook();
   act(() => result.current.send(sessionId, 'never', 100));
   expect(result.current.recoveryError).toMatch(/writer locked/);
   expect(result.current.recoveryError).not.toContain('secret raw');
@@ -87,7 +92,7 @@ it.each(['write', 'readback'])('refuses POST on pending %s failure', async (faul
   if (fault === 'write') vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota'); });
   else vi.spyOn(Storage.prototype, 'getItem').mockReturnValue(null);
   const fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock);
-  const { result } = renderHook(useLiveTurn);
+  const { result } = readyHook();
   act(() => result.current.send(sessionId, 'never', 100));
   expect(result.current.recoveryError).toMatch(/message not sent/);
   expect(fetchMock).not.toHaveBeenCalled();
@@ -99,7 +104,7 @@ it.each(['foreign-run', 'foreign-session', 'missing', '401', '404', 'unavailable
     if (fault === 'unavailable') throw new Error('offline');
     return fault === '401' || fault === '404' ? new Response('', { status: Number(fault) }) : Response.json(status('completed', fault === 'foreign-run' ? { publicRunId: 'jcr_' + 'b'.repeat(32) } : fault === 'foreign-session' ? { sessionId: 'jc_other' } : { sessionId: undefined }));
   }));
-  const { result, unmount } = renderHook(useLiveTurn);
+  const { result, unmount } = readyHook();
   await act(async () => {});
   expect(result.current.turn?.done).toBe(false);
   expect(result.current.turn?.phase).toMatch(/unconfirmed/);
@@ -111,7 +116,7 @@ it('unlocks after a failed terminal clear is authoritatively retried and verifie
   sessionStorage.setItem(key, JSON.stringify(record));
   const remove = vi.spyOn(Storage.prototype, 'removeItem').mockImplementationOnce(() => { throw new Error('transient'); });
   const fetchMock = vi.fn(async () => Response.json(status('completed'))); vi.stubGlobal('fetch', fetchMock);
-  const { result, unmount } = renderHook(useLiveTurn);
+  const { result, unmount } = readyHook();
   await act(async () => {});
   expect(result.current.recoveryError).toMatch(/writer locked/);
   remove.mockRestore();
@@ -119,6 +124,7 @@ it('unlocks after a failed terminal clear is authoritatively retried and verifie
   expect(sessionStorage.getItem(key)).toBeNull();
   expect(result.current.recoveryError).toBeNull();
   let sent: boolean | undefined;
+  act(() => result.current.history(sessionId, [], true));
   act(() => { sent = result.current.send(sessionId, 'new after verified recovery', 100); });
   expect(sent).toBe(true);
   unmount();
@@ -127,7 +133,7 @@ it('does not clear a replaced identity on terminal read-back', async () => {
   sessionStorage.setItem(key, JSON.stringify(record));
   let resolve!: (value: Response) => void;
   vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((r) => { resolve = r; })));
-  const { result } = renderHook(useLiveTurn);
+  const { result } = readyHook();
   const replacement = { ...record, clientRequestId: '12345678-1234-4234-8234-123456789abd' };
   sessionStorage.setItem(key, JSON.stringify(replacement));
   await act(async () => resolve(Response.json(status('completed'))));
@@ -162,7 +168,7 @@ it.each(['write', 'readback'])('keeps in-memory supervision on post-ACK storage 
     return Response.json({ sessionId, clientRequestId: body.clientRequestId, publicRunId, status: 'running', replayed: false });
   });
   vi.stubGlobal('fetch', fetchMock);
-  const { result, unmount } = renderHook(useLiveTurn);
+  const { result, unmount } = readyHook();
   await act(async () => result.current.send(sessionId, 'private payload', 100));
   expect(result.current.turn?.publicRunId).toBe(publicRunId);
   expect(result.current.turn?.done).toBe(false);
@@ -175,7 +181,7 @@ it.each(['write', 'readback'])('keeps in-memory supervision on post-ACK storage 
 });
 it('refuses admission when storage read fails after mount but before POST', async () => {
   const fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock);
-  const { result } = renderHook(useLiveTurn);
+  const { result } = readyHook();
   vi.spyOn(Storage.prototype, 'getItem').mockImplementationOnce(() => { throw new Error('denied'); });
   act(() => result.current.send(sessionId, 'not sent', 100));
   expect(result.current.recoveryError).toMatch(/message not sent/);
@@ -190,7 +196,7 @@ it.each(['remove', 'readback'])('retains the writer lock on terminal clear %s fa
     vi.spyOn(Storage.prototype, 'getItem').mockImplementationOnce(() => { throw new Error('unverified'); });
   });
   const fetchMock = vi.fn(async () => Response.json(status('completed'))); vi.stubGlobal('fetch', fetchMock);
-  const { result } = renderHook(useLiveTurn);
+  const { result } = readyHook();
   await act(async () => {});
   expect(result.current.turn?.done).toBe(true);
   expect(result.current.recoveryError).toMatch(/writer locked/);
@@ -200,7 +206,7 @@ it.each(['remove', 'readback'])('retains the writer lock on terminal clear %s fa
 it('pauses bounded unavailable recovered polling without clearing identity or unlocking', async () => {
   sessionStorage.setItem(key, JSON.stringify(record)); vi.useFakeTimers();
   const fetchMock = vi.fn(async () => { throw new Error('offline'); }); vi.stubGlobal('fetch', fetchMock);
-  const { result, unmount } = renderHook(useLiveTurn);
+  const { result, unmount } = readyHook();
   await act(async () => vi.advanceTimersByTimeAsync(30_000));
   expect(fetchMock).toHaveBeenCalledTimes(12);
   expect(result.current.turn?.phase).toMatch(/supervision paused/);
@@ -211,7 +217,7 @@ it('pauses bounded unavailable recovered polling without clearing identity or un
 it('does not persist a late admission ACK after unmount', async () => {
   let resolve!: (value: Response) => void; let request!: { sessionId: string; clientRequestId: string };
   vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => { request = JSON.parse(init.body as string); return new Promise<Response>((done) => { resolve = done; }); }));
-  const { result, unmount } = renderHook(useLiveTurn);
+  const { result, unmount } = readyHook();
   act(() => result.current.send(sessionId, 'private payload', 100));
   const pending = sessionStorage.getItem(key);
   unmount();
@@ -238,7 +244,7 @@ it('writes and verifies only opaque pending identifiers before POST, then binds 
     return Response.json({ sessionId, clientRequestId: body.clientRequestId, publicRunId, status: 'running', replayed: false });
   });
   vi.stubGlobal('fetch', fetchMock);
-  const { result, unmount } = renderHook(useLiveTurn);
+  const { result, unmount } = readyHook();
   await act(async () => result.current.send(sessionId, 'secret original input', 100));
   expect(fetchMock).toHaveBeenCalledTimes(1);
   expect(JSON.parse(sessionStorage.getItem(key)!)).toEqual({ sessionId, clientRequestId: result.current.turn!.intent.clientRequestId, publicRunId });

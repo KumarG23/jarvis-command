@@ -1,6 +1,20 @@
 # Jarvis Command — current engineering status
 
-Updated: 2026-09-05 (Eastern).
+Updated: 2026-09-06 (Eastern).
+
+## Continuous timeline — local implementation candidate, not deployed
+
+The first full Sol/high review returned REQUEST_CHANGES (no deployment): reconnect state reset (CT-003), incomplete pre-admission history (CT-002), and unbounded retained completed turns (CT-001). The follow-up preserves consuming-queue stream output/activity and limits across reconnect/supervisor replacement; requires complete selected-session history before admission and invalidates it on terminal refresh; and releases bodies only on positive durable history ownership, with a fail-closed limit of eight unconfirmed retained turns. Room snapshots are capped at 32 sessions. New sends pause with explicit guidance during missing/failed/partial history or output capacity; supervision and guidance remain available. The existing bounded history view requires all available pages before admission and cannot enable sending beyond its view limit. This is explicit, not an invented message identity. RED/GREEN logs and gate receipts are under `/home/neal/backups/jarvis-command/continuous-timeline/v2/`. Revised tests establish the history-ready precondition and verify history retry after released bodies without weakening uncertain-admission storage guards. Public acceptance remains pending; `NEXT-PROJECT-ROOM.md` remains discovery only.
+
+Active worktree: `fix/continuous-timeline`, based on `ae971dd5d95911a438e65e474c1d6028cb43d574`. This section supersedes historical active-work language below. No other worktree, Hermes configuration, authentication, firewall or production service was changed. No commit, push or deployment has occurred; the initial independent review is complete and its findings require a renewed verdict on the amended candidate. Parent owns complete-candidate Sol review and release gates.
+
+Built: session-scoped history/live projection with ordered complete pre-submit history-ID baselines and exact user/assistant pair matching; in-tab retention of completed turns pending saved-history handoff; no middle-of-conversation End of history marker; consistent saved user/Jarvis labels and informative empty activity records. Saved responses retain Copy. History remounts derive visibility from their current snapshot, so failed reads do not inherit a stale hidden-reply flag. Identical submitted turns retain separate identities and their relative order.
+
+Steer readback now leaves a healthy event stream connected instead of introducing a reconnect gap. Terminal steer wording reports returned unconsumed guidance or unknown consumption, never invented execution. Missing upstream events still cannot be reconstructed or marked complete. Reload continues to persist identifiers only and never retransmits a message.
+
+Conservative boundary: the public history contract has no run/request-to-message link. Unknown/incomplete pre-submit baselines, recovered runs without original input, transformed/limited output and ambiguous history remain unmatched rather than hiding the only reply. Such uncertain cases may retain both history and local status output; exact universal reconciliation requires a public upstream identity link. Local completed-turn retention is tab-memory only. Persistent project rooms and the full desktop/mobile command center remain subsequent work, not implemented here.
+
+Asserting vertical RED/GREEN logs and final gate exit codes are recorded under `/home/neal/backups/jarvis-command/continuous-timeline/IMPLEMENTATION-RESULT.json`. Browser evidence uses compiled local UI with explicitly synthetic API fixtures, not production Hermes, Cloudflare login or a physical phone. This is a locally built candidate, not a release approval; final verification results and any blockers are authoritative in that result file.
 
 ## Single-user release integration candidate
 

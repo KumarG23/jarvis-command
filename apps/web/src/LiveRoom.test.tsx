@@ -1,10 +1,45 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { LiveRoom } from './LiveRoom';
+import { TurnView } from './TurnView';
+import type { Turn } from './useLiveTurn';
 
 const session = { id: 'jc_' + 'a'.repeat(32), title: 'Saved test room', source: 'api_server', ownership: 'command' as const, model: null, lastActive: '2026-09-05T12:00:00Z', messageCount: 1, toolCallCount: 0, pinned: false };
 const content = 'Saved reply\n  exact whitespace';
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+it.each([false, true])('renders an owned partial-page echo once while retaining local output (done=%s)', async done => {
+  const turn: Turn = { intent: { sessionId: session.id, clientRequestId: 'local', input: 'question' }, publicRunId: 'jcr_' + 'a'.repeat(32), phase: 'Run running', done, output: content, outputLimited: false, historyMatched: false, identityVerified: true, approval: null, events: [], historyBaseline: ['old:u', 'old:a'] };
+  const messages = ['user', 'assistant', 'user', 'assistant'].map((role, index) => ({ id: ['old:u', 'old:a', 'new:u', 'new:a'][index], sessionId: session.id, role, content: role === 'user' ? 'question' : content, timestamp: null, toolName: null, displayKind: null }));
+  const fetchMock = vi.fn().mockResolvedValue(Response.json({ sessionId: session.id, messages, pagination: { limit: 50, offset: 0, returned: 4, hasMore: true } }));
+  vi.stubGlobal('fetch', fetchMock);
+  const renderTurn = (value: Turn) => <TurnView turn={value} allowed={false} approve={vi.fn()} stop={vi.fn()} />;
+  const { rerender } = render(<LiveRoom session={session} onHistory={vi.fn()} turns={[turn]} renderTurn={renderTurn} />);
+  await screen.findByRole('button', { name: 'Load more messages' });
+  expect(screen.getAllByRole('article', { name: 'Your message' })).toHaveLength(2);
+  expect(screen.getAllByRole('article', { name: 'Jarvis response' })).toHaveLength(2);
+  expect(document.querySelector('[data-message-id="old:a"]')).not.toBeNull();
+  expect(document.querySelector('.live-message .turn-output')).toHaveTextContent('Saved reply');
+  expect(document.querySelector('[data-message-id="new:a"]')).toBeNull();
+  fetchMock.mockRejectedValueOnce(new Error('late page unavailable'));
+  fireEvent.click(screen.getByRole('button', { name: 'Load more messages' }));
+  await screen.findByRole('alert');
+  expect(screen.getAllByRole('article', { name: 'Jarvis response' })).toHaveLength(2);
+  fetchMock.mockResolvedValueOnce(Response.json({ sessionId: session.id, messages: [], pagination: { limit: 50, offset: 4, returned: 0, hasMore: false } }));
+  fireEvent.click(screen.getByRole('button', { name: 'Retry history' }));
+  await waitFor(() => expect(screen.queryByText('Loading messages…')).not.toBeInTheDocument());
+  rerender(<LiveRoom session={session} onHistory={vi.fn()} turns={[{ ...turn, done: true }]} renderTurn={renderTurn} />);
+  expect(document.querySelector('[data-message-id="new:a"]')).not.toBeNull();
+  expect(screen.getAllByRole('article', { name: 'Jarvis response' })).toHaveLength(2);
+  expect(screen.getAllByRole('button', { name: 'Copy response' })).toHaveLength(2);
+});
+it('labels saved conversation cards consistently and explains empty assistant records without inventing tool completion', async () => {
+  const messages = ['user', 'assistant'].map((role, index) => ({ id: `record:${index}`, sessionId: session.id, role, content: role === 'user' ? 'question' : '', timestamp: null, toolName: null, displayKind: 'tool_call' }));
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ sessionId: session.id, messages, pagination: { limit: 50, offset: 0, returned: 2, hasMore: false } })));
+  render(<LiveRoom session={session} onHistory={vi.fn()} />);
+  expect(await screen.findByRole('article', { name: 'Your message' })).toHaveTextContent('You');
+  expect(screen.getByRole('article', { name: 'Jarvis response' })).toHaveTextContent('Jarvis');
+  expect(screen.getByText('Assistant activity record — no text was saved.')).toBeInTheDocument();
+});
 it.each(['success', 'denied'])('offers honest %s copying after a reply moves to saved history', async mode => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ sessionId: session.id, messages: [{ id: 'saved:1', sessionId: session.id, role: 'assistant', content, timestamp: session.lastActive, toolName: null, displayKind: null }], pagination: { limit: 50, offset: 0, returned: 1, hasMore: false } })));
   const writeText = mode === 'success' ? vi.fn().mockResolvedValue(undefined) : vi.fn().mockRejectedValue(new Error('denied'));

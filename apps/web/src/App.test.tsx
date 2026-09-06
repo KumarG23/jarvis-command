@@ -1,5 +1,5 @@
 import type { CommandBootstrap } from '@jarvis-command/contracts';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App';
@@ -160,7 +160,8 @@ describe('Live Room history', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load messages.');
     expect(screen.getByText('Initial 49')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry history' }));
-    expect(await screen.findByText('End of history.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Load more messages' })).not.toBeInTheDocument());
+    expect(screen.queryByText('End of history.')).not.toBeInTheDocument();
     expect(fetchMock.mock.calls[1]![0]).toBe('/api/sessions/session_123/messages?limit=50&offset=50');
     expect(fetchMock.mock.calls[2]![0]).toBe(fetchMock.mock.calls[1]![0]);
     expect(screen.getAllByRole('article')).toHaveLength(50);
@@ -266,7 +267,7 @@ describe('Live Room history', () => {
     expect(screen.getAllByText('First question')).toHaveLength(1);
     expect(screen.queryByText('Duplicate')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Load more messages' })).not.toBeInTheDocument();
-    expect(screen.getByText('End of history.')).toBeInTheDocument();
+    expect(screen.queryByText('End of history.')).not.toBeInTheDocument();
     expect(fetchMock.mock.calls[1]![0]).toBe('/api/sessions/session_123/messages?limit=50&offset=1');
   });
 
