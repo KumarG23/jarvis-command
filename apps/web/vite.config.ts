@@ -9,7 +9,7 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['jarvis-command.svg', 'pwa-192.png', 'pwa-512.png'],
       workbox: {
-        navigateFallbackDenylist: [/^\/api(?:\/|\?|$)/],
+        navigateFallbackDenylist: [/^\/api(?:\/|\?|$)/, /^\/cdn-cgi(?:\/|\?|$)/],
       },
       manifest: {
         name: 'Jarvis Command',

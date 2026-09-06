@@ -368,7 +368,7 @@ describe('Jarvis Command shell', () => {
     expect(screen.queryByText(/did not answer the private upstream probe/i)).not.toBeInTheDocument();
   });
 
-  it('shows a bounded failure state when bootstrap authorization fails', async () => {
+  it('shows a bounded failure state for an unclassified bootstrap failure', async () => {
     render(
       <App
         loadBootstrap={async () => {
@@ -378,7 +378,7 @@ describe('Jarvis Command shell', () => {
     );
 
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      'Jarvis Command could not establish the secure session.',
+      'Command unavailable',
     );
     expect(screen.queryByText('sensitive upstream details')).not.toBeInTheDocument();
   });

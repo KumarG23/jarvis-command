@@ -97,6 +97,17 @@ export function buildApp(dependencies: AppDependencies) {
     version: dependencies.config.appVersion,
   }));
 
+  // Network-only top-level reauth entry. Never accept a caller-selected target.
+  app.get('/api/auth/recover', async (request, reply) => {
+    const rawAssertion = request.headers['cf-access-jwt-assertion'];
+    try {
+      await dependencies.verifyAccess(typeof rawAssertion === 'string' ? rawAssertion : undefined);
+    } catch {
+      return reply.code(401).send({ error: 'unauthorized' });
+    }
+    return reply.redirect('/', 303);
+  });
+
   app.get('/api/bootstrap', async (request, reply) => {
     const rawAssertion = request.headers['cf-access-jwt-assertion'];
     const assertion = typeof rawAssertion === 'string' ? rawAssertion : undefined;

@@ -49,6 +49,23 @@ const snapshot: HermesSnapshot = {
 };
 
 describe('Jarvis Command server', () => {
+  it.each([true, false])('reauth entry verifies identity and returns only to root (allowed=%s)', async (allowed) => {
+    const verifyAccess = allowed ? vi.fn().mockResolvedValue(identity) : vi.fn().mockRejectedValue(new Error('private denial'));
+    const readSnapshot = vi.fn();
+    const app = buildApp({ config, verifyAccess, hermes: { readSnapshot } });
+    try {
+      const response = await app.inject({ method: 'GET', url: '/api/auth/recover?returnTo=https://untrusted.invalid', headers: { 'cf-access-jwt-assertion': 'local-test-assertion' } });
+      expect(response.statusCode).toBe(allowed ? 303 : 401);
+      expect(response.headers.location).toBe(allowed ? '/' : undefined);
+      expect(response.headers['cache-control']).toBe('no-store');
+      expect(response.headers['referrer-policy']).toBe('no-referrer');
+      expect(verifyAccess).toHaveBeenCalledWith('local-test-assertion');
+      expect(readSnapshot).not.toHaveBeenCalled();
+      expect(response.body).not.toContain('private denial');
+      expect(response.body).not.toContain('untrusted.invalid');
+    } finally { await app.close(); }
+  });
+
   it('redacts authentication material from production logs', () => {
     expect(createLoggerOptions('production')).toMatchObject({
       redact: {

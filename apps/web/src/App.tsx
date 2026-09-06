@@ -32,36 +32,46 @@ import { useLiveTurn } from './useLiveTurn';
 import { TurnComposer, TurnView } from './TurnView';
 
 type LoadBootstrap = () => Promise<CommandBootstrap>;
+type BootstrapFailureKind = 'signin' | 'denied' | 'network' | 'unavailable' | 'invalid';
+
+class BootstrapFailure extends Error {
+  constructor(readonly kind: BootstrapFailureKind) { super(kind); }
+}
 
 type AppProps = Readonly<{
   loadBootstrap?: LoadBootstrap;
+  interruptedAccess?: boolean;
 }>;
 
-export function App({ loadBootstrap = fetchBootstrap }: AppProps) {
+export function App({ loadBootstrap = fetchBootstrap, interruptedAccess = false }: AppProps) {
   const [bootstrap, setBootstrap] = useState<CommandBootstrap | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<BootstrapFailureKind | null>(null);
 
   useEffect(() => {
+    if (interruptedAccess) return;
     let current = true;
     loadBootstrap()
       .then((payload) => {
         if (current) {
-          setBootstrap(CommandBootstrapSchema.parse(payload));
+          const parsed = CommandBootstrapSchema.safeParse(payload);
+          if (!parsed.success) throw new BootstrapFailure('invalid');
+          setBootstrap(parsed.data);
         }
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (current) {
-          setFailed(true);
+          setFailed(error instanceof BootstrapFailure ? error.kind : 'unavailable');
         }
       });
 
     return () => {
       current = false;
     };
-  }, [loadBootstrap]);
+  }, [loadBootstrap, interruptedAccess]);
 
+  if (interruptedAccess) return <FailureState kind="signin" />;
   if (failed) {
-    return <FailureState />;
+    return <FailureState kind={failed} />;
   }
 
   if (!bootstrap) {
@@ -72,16 +82,25 @@ export function App({ loadBootstrap = fetchBootstrap }: AppProps) {
 }
 
 async function fetchBootstrap(): Promise<CommandBootstrap> {
-  const response = await fetch('/api/bootstrap', {
-    credentials: 'same-origin',
-    headers: { accept: 'application/json' },
-  });
-
-  if (!response.ok) {
-    throw new Error('bootstrap_failed');
+  let response: Response;
+  try {
+    response = await fetch('/api/bootstrap', {
+      credentials: 'same-origin',
+      headers: { accept: 'application/json' },
+      redirect: 'manual',
+      cache: 'no-store',
+    });
+  } catch {
+    throw new BootstrapFailure('network');
   }
-
-  return CommandBootstrapSchema.parse(await response.json());
+  if (response.type === 'opaqueredirect' || response.status === 401) throw new BootstrapFailure('signin');
+  if (response.status === 403) throw new BootstrapFailure('denied');
+  if (!response.ok) throw new BootstrapFailure('unavailable');
+  try {
+    return CommandBootstrapSchema.parse(await response.json());
+  } catch {
+    throw new BootstrapFailure('invalid');
+  }
 }
 
 function LoadingState() {
@@ -97,18 +116,56 @@ function LoadingState() {
   );
 }
 
-function FailureState() {
+function FailureState({ kind }: Readonly<{ kind: BootstrapFailureKind }>) {
+  const messages: Record<BootstrapFailureKind, readonly [string, string]> = {
+    signin: ['Sign-in required', 'Your secure session needs attention. Sign in again through Cloudflare Access.'],
+    denied: ['Access denied', 'This request was denied. Sign in with the approved account; contact the operator if denial persists.'],
+    network: ['Connection unavailable', 'Your connection or sign-in may need attention. Check connectivity, retry, or sign in again.'],
+    unavailable: ['Command unavailable', 'Jarvis Command could not load. Retry shortly; signing in will not repair a server outage.'],
+    invalid: ['Invalid server response', 'Jarvis Command received an unexpected response. Retry; contact the operator if this persists.'],
+  };
+  const [recovering, setRecovering] = useState(false);
+  const [recoveryFailed, setRecoveryFailed] = useState(false);
+  async function signIn() {
+    setRecovering(true);
+    setRecoveryFailed(false);
+    try {
+      // Unregister only this app's root worker. Keep pending work and unrelated
+      // caches intact. A top-level navigation gets a new client without the old
+      // controller, including on the edge's subsequent callback redirect.
+      if ('serviceWorker' in navigator) {
+        const registration = await navigator.serviceWorker.getRegistration('/');
+        if (registration) {
+          const ownScript = `${window.location.origin}/sw.js`;
+          const workers = [registration.active, registration.waiting, registration.installing].filter(Boolean);
+          if (registration.scope !== `${window.location.origin}/` || workers.some((worker) => worker!.scriptURL !== ownScript)) {
+            throw new Error('recovery_unavailable');
+          }
+          if (!await registration.unregister()) throw new Error('recovery_unavailable');
+        }
+      }
+      window.location.replace('/api/auth/recover');
+    } catch {
+      setRecoveryFailed(true);
+      setRecovering(false);
+    }
+  }
   return (
     <main className="boot-screen failure-screen">
       <div className="boot-mark danger" aria-hidden="true">
         <ShieldCheck size={30} strokeWidth={1.6} />
       </div>
-      <p className="boot-kicker">SECURE SESSION FAILED</p>
-      <h1 role="alert">Jarvis Command could not establish the secure session.</h1>
-      <p className="boot-copy">Refresh after confirming Cloudflare Access. No upstream details were exposed.</p>
+      <p className="boot-kicker">JARVIS COMMAND</p>
+      <h1 role="alert">{messages[kind][0]}</h1>
+      <p className="boot-copy">{messages[kind][1]}</p>
       <button className="primary-button" type="button" onClick={() => window.location.reload()}>
         Retry connection
       </button>
+      <button className="primary-button" type="button" disabled={recovering} onClick={() => { void signIn(); }}>
+        {recovering ? 'Opening sign-in…' : 'Sign in again'}
+      </button>
+      <p className="boot-copy">Sign-in resets this app’s offline worker, not your saved pending work. Close other Command tabs first. If sign-in loops, open the site root in a fresh Incognito window, or clear this site’s storage in Chrome (clearing storage removes locally saved pending work).</p>
+      {recoveryFailed ? <p role="alert" className="boot-copy">Browser recovery could not finish. Use a fresh Incognito window or clear this site’s storage, then open the site root. Do not copy the sign-in callback URL.</p> : null}
     </main>
   );
 }
