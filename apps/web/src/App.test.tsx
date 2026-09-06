@@ -69,6 +69,40 @@ function deferred<T>() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Selected room recovery', () => {
+  it('creates a named project, attaches and reloads an exact conversation outside recents with honest context', async () => {
+    const session = { ...bootstrap.sessions[0]!, id: 'jc_' + 'a'.repeat(32), source: 'api_server', ownership: 'command' as const, title: 'Project conversation' };
+    let rooms: unknown[] = [];
+    const room = { id: 'room_' + 'b'.repeat(32), name: 'Jarvis Command project', goal: 'Build persistent rooms', repository: '/repo/command', notes: ['vault/Command.md'], sessionIds: [session.id], lastSessionId: session.id };
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/api/rooms') {
+        if (init?.method === 'POST') { rooms = [{ ...room, sessionIds: [], lastSessionId: null }]; return Response.json({ room: rooms[0] }); }
+        return Response.json({ version: 1, rooms });
+      }
+      if (url === `/api/rooms/${room.id}/sessions`) { rooms = [room]; return Response.json({ room, session }); }
+      if (url === `/api/live/sessions/${session.id}` || url === '/api/live/sessions') return Response.json({ session });
+      return Response.json(history(session.id));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const load = async () => ({ ...liveBootstrap, hermes: { ...liveBootstrap.hermes, model: 'hermes-agent', provider: null }, sessions: [] });
+    const view = render(<App loadBootstrap={load} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Project rooms' }));
+    fireEvent.change(await screen.findByLabelText('Room name'), { target: { value: room.name } });
+    fireEvent.change(screen.getByLabelText('Room goal'), { target: { value: room.goal } });
+    fireEvent.change(screen.getByLabelText('Repository / workdir reference'), { target: { value: room.repository } });
+    fireEvent.change(screen.getByLabelText('Pinned note references (one per line)'), { target: { value: room.notes[0] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create project room' }));
+    await screen.findByText(room.goal);
+    fireEvent.click(screen.getByRole('button', { name: 'New Command session' }));
+    await screen.findByRole('heading', { name: session.title });
+    expect(screen.getByText(/Associated metadata only/)).toBeInTheDocument();
+    expect(screen.getByText('Adapter label: hermes-agent')).toBeInTheDocument();
+    view.unmount(); render(<App loadBootstrap={load} />);
+    await screen.findByRole('heading', { name: session.title });
+    expect(fetchMock).toHaveBeenCalledWith(`/api/live/sessions/${session.id}`, expect.anything());
+    fireEvent.click(screen.getByRole('button', { name: 'All sessions' }));
+    expect(screen.queryByText(room.goal)).not.toBeInTheDocument();
+    sessionStorage.removeItem('jarvis-command:project-room:v1');
+  });
   it.each(['unknown', 'disabled', 'storage-denied'])('ignores unusable remembered selection: %s', async (mode) => {
     sessionStorage.setItem('jarvis-command:selected-session:v1', mode === 'unknown' ? 'not-in-bootstrap' : 'session_123');
     const read = mode === 'storage-denied' ? vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied'); }) : null;

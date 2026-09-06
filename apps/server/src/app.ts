@@ -5,6 +5,7 @@ import Fastify from 'fastify';
 import { registerLiveRoomRoutes, type LiveStreamLimits } from './live-room-routes';
 import type { createLiveRoomService } from './live-room-service';
 import { AuditIntegrityError } from './audit-ledger';
+import { RoomStorageError } from './project-room-store';
 import { CommandProxyUnavailableError } from './command-client';
 import type { AppConfig } from './config';
 import type { HermesSnapshot } from './hermes-client';
@@ -47,6 +48,7 @@ export function buildApp(dependencies: AppDependencies) {
       ? error.statusCode
       : undefined;
     request.log.error({ errorType: errorName }, 'request failed');
+    if (error instanceof RoomStorageError) return reply.code(503).send({ error: 'room_storage_unavailable' });
     if (error instanceof AuditIntegrityError || (error instanceof CommandProxyUnavailableError && error.statusCode === 503)) {
       return reply.code(503).send({ error: 'live_room_unavailable' });
     }

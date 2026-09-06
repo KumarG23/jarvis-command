@@ -1,4 +1,8 @@
 import { Readable } from 'node:stream';
+import { randomBytes } from 'node:crypto';
+import { dirname } from 'node:path';
+import { ProjectRoomCreateSchema, ProjectRoomIdSchema, CommandSessionIdSchema } from '@jarvis-command/contracts';
+import { ProjectRoomStore, RoomStorageError } from './project-room-store';
 import { z } from 'zod';
 import { LiveRoomSessionCreateRequestSchema, LiveRunSubmissionRequestSchema, LiveRoomSessionContinueRequestSchema, LiveRunApprovalRequestSchema, LiveRunSteerRequestSchema, RunEventSchema, type RunEvent } from '@jarvis-command/contracts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -60,6 +64,7 @@ async function* encodeEventStream(events: AsyncIterable<RunEvent>, controller: A
 }
 
 export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Dependencies) {
+  const rooms = dependencies.config.command ? new ProjectRoomStore(dirname(dependencies.config.command.auditLogPath)) : undefined;
   app.register(async (routes) => {
     const subjects = new WeakMap<FastifyRequest, string>();
     const activeStreams = new Set<AbortController>();
@@ -100,6 +105,31 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
           return reply.code(503).send({ error: 'live_room_unavailable' });
         }
       }
+    });
+    routes.get('/api/rooms', { exposeHeadRoute: false }, async () => {
+      if (!rooms) throw new RoomStorageError();
+      return { version: 1, rooms: await rooms.list() };
+    });
+    routes.post('/api/rooms', { bodyLimit: 16_384 }, async (request) => {
+      const metadata = parse(ProjectRoomCreateSchema, request.body);
+      if (!rooms) throw new RoomStorageError();
+      const room = { ...metadata, id: `room_${randomBytes(16).toString('hex')}`, sessionIds: [], lastSessionId: null };
+      await rooms.update(previous => [...previous, room]);
+      return { room };
+    });
+    routes.get('/api/live/sessions/:sessionId', { exposeHeadRoute: false }, async (request) => {
+      const { sessionId } = parse(z.object({ sessionId: CommandSessionIdSchema }).strict(), request.params);
+      return dependencies.liveRoom!.getSession(subjects.get(request)!, sessionId);
+    });
+    routes.post('/api/rooms/:roomId/sessions', { bodyLimit: 1024 }, async (request) => {
+      const { roomId } = parse(z.object({ roomId: ProjectRoomIdSchema }).strict(), request.params);
+      const { sessionId } = parse(z.object({ sessionId: CommandSessionIdSchema }).strict(), request.body);
+      if (!rooms) throw new RoomStorageError();
+      if (!(await rooms.list()).some(room => room.id === roomId)) throw Object.assign(new Error('Room missing'), { statusCode: 404 });
+      const { session } = await dependencies.liveRoom!.getSession(subjects.get(request)!, sessionId);
+      if (session.id !== sessionId || session.ownership !== 'command' || !['api_server', 'jarvis-command'].includes(session.source)) throw new RoomStorageError();
+      const updated = await rooms.update(previous => previous.map(room => room.id !== roomId ? room : { ...room, sessionIds: [...new Set([...room.sessionIds, sessionId])], lastSessionId: sessionId }));
+      return { room: updated.find(room => room.id === roomId)!, session };
     });
     routes.get('/api/sessions/:sessionId/messages', { exposeHeadRoute: false }, async (request) => {
       const { sessionId } = parse(z.object({ sessionId: sessionIdSchema }).strict(), request.params);

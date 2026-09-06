@@ -1,0 +1,88 @@
+import { expect, test } from '@playwright/test';
+
+test.use({ serviceWorkers: 'block' });
+test('creates and resumes a named project with honest metadata at this viewport', async ({ page }, testInfo) => {
+  const errors: string[] = [];
+  const failures: string[] = [];
+  page.on('requestfailed', request => failures.push(`${request.method()} ${request.url()} ${request.failure()?.errorText}`));
+  page.on('response', response => { if (response.status() >= 400) failures.push(`${response.status()} ${response.url()}`); });
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+  const timestamp = '2026-09-06T12:00:00Z';
+  const session = { id: 'jc_' + 'a'.repeat(32), title: 'Jarvis Command conversation', source: 'api_server', ownership: 'command', model: null, lastActive: timestamp, messageCount: 0, toolCallCount: 0, pinned: false };
+  const room = { id: 'room_' + 'b'.repeat(32), name: 'Jarvis Command', goal: 'Build persistent project rooms', repository: '/repo/jarvis-command', notes: ['vault/Command.md'], sessionIds: [] as string[], lastSessionId: null as string | null };
+  let created = false; let creates = 0;
+  await page.route('**/api/bootstrap', route => route.fulfill({ json: { identity: { provider: 'development' }, command: { version: 'fixture', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 16000, maxSteerCharacters: 4000 } }, hermes: { state: 'online', version: '0.21.0', model: 'hermes-agent', provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse'], readinessChecks: {} }, sessions: [] } }));
+  await page.route('**/api/rooms', route => {
+    if (route.request().method() === 'POST') { expect(route.request().postDataJSON()).toEqual({ name: room.name, goal: room.goal, repository: room.repository, notes: room.notes }); created = true; return route.fulfill({ json: { room } }); }
+    return route.fulfill({ json: { version: 1, rooms: created ? [room] : [] } });
+  });
+  await page.route(`**/api/rooms/${room.id}/sessions`, route => { expect(route.request().postDataJSON()).toEqual({ sessionId: session.id }); room.sessionIds = [session.id]; room.lastSessionId = session.id; return route.fulfill({ json: { room, session } }); });
+  await page.route('**/api/live/sessions', route => { creates++; return route.fulfill({ json: { session } }); });
+  await page.route(`**/api/live/sessions/${session.id}`, route => route.fulfill({ json: { session } }));
+  await page.route('**/api/sessions/*/messages?*', route => route.fulfill({ json: { sessionId: session.id, messages: [], pagination: { limit: 50, offset: 0, returned: 0, hasMore: false } } }));
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Project rooms', exact: true }).click();
+  await page.getByLabel('Room name', { exact: true }).fill(room.name);
+  await page.getByLabel('Room goal').fill(room.goal);
+  await page.getByLabel('Repository / workdir reference').fill(room.repository);
+  await page.getByLabel('Pinned note references (one per line)').fill(room.notes[0]!);
+  await page.getByRole('button', { name: 'Create project room' }).click();
+  await expect(page.getByText(room.goal, { exact: true })).toBeVisible();
+  await expect(page.getByText(/Associated metadata only/)).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath('project-details.png') });
+  await page.getByRole('button', { name: 'Project details' }).click();
+  await page.getByRole('button', { name: 'New Command session' }).click();
+  await expect(page.getByRole('heading', { name: session.title })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('heading', { name: session.title })).toBeVisible();
+  expect(creates).toBe(1);
+  await expect(page.getByText('Adapter label: hermes-agent')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  expect(await page.locator('.timeline').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  const timeline = await page.locator('.timeline').boundingBox();
+  const composer = await page.locator('.composer-wrap').boundingBox();
+  expect(timeline!.y + timeline!.height).toBeLessThanOrEqual(composer!.y + 1);
+  await page.screenshot({ path: testInfo.outputPath('project-resumed.png') });
+  await page.getByRole('button', { name: 'All sessions' }).click();
+  await expect(page.getByRole('combobox', { name: 'Session', exact: true })).toBeVisible();
+  expect(errors).toEqual([]);
+  expect(failures).toEqual([]);
+  await testInfo.attach('browser-diagnostics', { body: JSON.stringify({ errors, failures, timeline, composer }), contentType: 'application/json' });
+});
+
+test('room navigation during recovered activity never retargets send, steer or stop', async ({ page }, info) => {
+  const timestamp = '2026-09-06T12:00:00Z';
+  const a = 'jc_' + 'a'.repeat(32), b = 'jc_' + 'b'.repeat(32), run = 'jcr_' + 'c'.repeat(32);
+  const sessions = [a, b].map((id, index) => ({ id, title: `Conversation ${index}`, source: 'api_server', ownership: 'command', model: null, lastActive: timestamp, messageCount: 0, toolCallCount: 0, pinned: false }));
+  const rooms = sessions.map((session, index) => ({ id: 'room_' + String(index + 1).repeat(32), name: `Project ${index}`, goal: 'Synthetic navigation', repository: '', notes: [], sessionIds: [session.id], lastSessionId: session.id }));
+  await page.addInitScript(({ a, run }) => sessionStorage.setItem('jarvis-command:live-turn', JSON.stringify({ sessionId: a, publicRunId: run, clientRequestId: '11111111-1111-4111-8111-111111111111' })), { a, run });
+  await page.route('**/api/bootstrap', route => route.fulfill({ json: { identity: { provider: 'development' }, command: { version: 'fixture', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 100, maxSteerCharacters: 100 } }, hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse'], readinessChecks: {} }, sessions } }));
+  await page.route('**/api/rooms', route => route.fulfill({ json: { version: 1, rooms } }));
+  await page.route('**/api/live/sessions/*', route => route.fulfill({ json: { session: sessions.find(s => route.request().url().endsWith(s.id)) } }));
+  await page.route('**/api/sessions/*/messages?*', route => {
+    const sessionId = new URL(route.request().url()).pathname.split('/')[3];
+    return route.fulfill({ json: { sessionId, messages: [], pagination: { limit: 50, offset: 0, returned: 0, hasMore: false } } });
+  });
+  await page.route(`**/api/live/runs/${run}/events`, route => route.fulfill({ contentType: 'text/event-stream', body: ': synthetic quiet activity\n\n' }));
+  await page.route(`**/api/live/runs/${run}`, route => route.fulfill({ json: { publicRunId: run, sessionId: a, status: 'running', updatedAt: timestamp, approval: null, output: null, error: null, pendingSteer: null, usage: null } }));
+  const mutations: string[] = [];
+  page.on('request', request => { if (request.method() === 'POST') mutations.push(request.url()); });
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: 'Stop run', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Project rooms', exact: true }).click();
+  await page.getByRole('button', { name: 'Project 1', exact: true }).click();
+  await page.getByRole('button', { name: 'Project details', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Conversation 1' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Stop run', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: 'Steer Jarvis' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Send message' })).toBeDisabled();
+  await page.screenshot({ path: info.outputPath('recovered-other-project.png') });
+  await page.getByRole('button', { name: 'All sessions', exact: true }).click();
+  await page.getByRole('combobox', { name: 'Session', exact: true }).selectOption(a);
+  await expect(page.getByRole('button', { name: 'Stop run', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Stop run', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Confirm stop' })).toContainText(a);
+  await expect(page.getByRole('region', { name: 'Confirm stop' })).toContainText(run);
+  expect(mutations).toEqual([]);
+});

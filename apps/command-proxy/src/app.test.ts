@@ -170,6 +170,18 @@ describe('command proxy route boundary', () => {
 });
 
 describe('session projection and ownership', () => {
+  it('looks up an exact owned session independently of recent listings and refuses substituted/external identities', async () => {
+    for (const [id, source, status] of [[commandSessionId, 'api_server', 200], [commandSessionId, 'discord', 403], ['jc_' + 'b'.repeat(32), 'api_server', 503]] as const) {
+      const fetcher = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(upstreamSession(id, source)));
+      const app = createApp(fetcher);
+      expect((await app.inject({ url: `/api/sessions/${commandSessionId}`, headers: authHeaders() })).statusCode).toBe(status);
+      expect(fetcher.mock.calls[0]?.[0]).toBe(`http://127.0.0.1:8642/api/sessions/${commandSessionId}`);
+    }
+    const fetcher = vi.fn<typeof fetch>(); const app = createApp(fetcher);
+    expect((await app.inject({ url: '/api/sessions/jc_bad', headers: authHeaders() })).statusCode).toBe(400);
+    expect((await app.inject({ url: `/api/sessions/${commandSessionId}` })).statusCode).toBe(401);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
   it.each([' padded', 'padded ', 'id\n', 'a b', 'é', 9007199254740992, 1.5])('rejects noncanonical message identity %j', async (id) => {
     const body = { session_id: commandSessionId, data: [{ id, session_id: commandSessionId, role: 'assistant', content: 'Synthetic' }], pagination: { limit: 1, offset: 0, returned: 1, order: 'oldest' } };
     const app = createApp(vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(body)));

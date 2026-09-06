@@ -28,6 +28,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import './styles.css';
 import { LiveRoom } from './LiveRoom';
 import { CreateSession } from './CreateSession';
+import { ProjectRooms } from './ProjectRooms';
 import { useLiveTurn } from './useLiveTurn';
 import { TurnComposer, TurnView } from './TurnView';
 
@@ -172,6 +173,8 @@ function FailureState({ kind }: Readonly<{ kind: BootstrapFailureKind }>) {
 
 function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) {
   const live = useLiveTurn();
+  const [projectName, setProjectName] = useState<string | null>(null);
+  const [roomNavigation, setRoomNavigation] = useState<HTMLDivElement | null>(null);
   const [selectedSession, setSelectedSession] = useState<SessionSummary | null>(() => {
     if (!bootstrap.command.liveRoom.enabled) return null;
     try {
@@ -225,7 +228,8 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
         state={bootstrap.hermes.state}
         agentStatus={agentStatus}
         selectedId={selectedSession?.id}
-        onSelect={liveEnabled ? setSelectedSession : undefined}
+        onSelect={liveEnabled && !projectName ? setSelectedSession : undefined}
+        roomNavigationRef={liveEnabled ? setRoomNavigation : undefined}
       />
 
       <main className="command-main">
@@ -233,7 +237,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
           <div className="room-breadcrumb">
             <span>Projects</span>
             <ChevronRight size={13} />
-            <strong>Jarvis Command</strong>
+            <strong>{projectName ?? 'All sessions'}</strong>
           </div>
           <div className="header-actions">
             <span className={`status-pill ${bootstrap.hermes.state}`}>
@@ -247,14 +251,18 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
         </header>
 
         <section className="context-ribbon" aria-label="Mission context">
-          <span className="context-label">CONFIG SNAPSHOT</span>
-          <ContextChip icon={<Sparkles size={14} />} label={bootstrap.hermes.model ?? 'Model not reported'} tone="violet" />
+          <span className="context-label">REPORTED SNAPSHOT</span>
+          <ContextChip icon={<Sparkles size={14} />} label={bootstrap.hermes.model === 'hermes-agent' ? 'Adapter label: hermes-agent' : bootstrap.hermes.model ?? 'Model not reported'} tone="violet" />
           <ContextChip icon={<Network size={14} />} label={bootstrap.hermes.provider ?? 'Provider not reported'} />
           <span className="context-spacer" />
           <span className={`agent-count ${bootstrap.hermes.state}`}><CircleDot size={13} /> {agentLabel}</span>
         </section>
 
-        {liveEnabled ? <div className="live-room-toolbar">
+        {liveEnabled ? <ProjectRooms navigationTarget={roomNavigation} sessions={sessions} onScope={setProjectName} onSession={session => {
+          if (session) setSessions(previous => [session, ...previous.filter(item => item.id !== session.id)]);
+          setSelectedSession(session);
+        }} /> : null}
+        {liveEnabled && !projectName ? <div className="live-room-toolbar">
           <label className="session-picker">Session
             <select value={selectedSession?.id ?? ''} onChange={(event) => setSelectedSession(sessions.find((session) => session.id === event.target.value) ?? null)}>
               <option value="">Overview</option>
@@ -379,12 +387,13 @@ function RailButton({ children, label, active = false }: Readonly<{ children: Re
   );
 }
 
-function RoomSidebar({ sessions, state, agentStatus, selectedId, onSelect }: Readonly<{
+function RoomSidebar({ sessions, state, agentStatus, selectedId, onSelect, roomNavigationRef }: Readonly<{
   sessions: SessionSummary[];
   state: CommandBootstrap['hermes']['state'];
   agentStatus: string;
   selectedId?: string | undefined;
   onSelect?: ((session: SessionSummary) => void) | undefined;
+  roomNavigationRef?: ((element: HTMLDivElement | null) => void) | undefined;
 }>) {
   return (
     <aside className="room-sidebar">
@@ -403,8 +412,8 @@ function RoomSidebar({ sessions, state, agentStatus, selectedId, onSelect }: Rea
           <SidebarItem icon={<ShieldCheck size={15} />} label="Approvals" badge="0" />
         </SidebarSection>
 
-        <SidebarSection label="Project room">
-          <SidebarItem icon={<MessageSquare size={15} />} label="Jarvis Command" active />
+        <SidebarSection label="Project rooms">
+          {roomNavigationRef ? <div ref={roomNavigationRef} aria-label="Desktop saved project rooms" /> : <p className="empty-copy">Project rooms require the live Command bridge.</p>}
           <SidebarItem icon={<Layers3 size={15} />} label="Artifacts" />
           <SidebarItem icon={<Bot size={15} />} label="Agent runs" />
         </SidebarSection>

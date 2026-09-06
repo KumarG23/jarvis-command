@@ -51,6 +51,7 @@ async function createLedger() {
 function fakeClient(overrides: Partial<CommandProxyClient> = {}): CommandProxyClient {
   return {
     readReadiness: vi.fn().mockResolvedValue({ ready: true, idempotencyRetentionSeconds: 86_400 }),
+    getSession: vi.fn(),
     getMessages: vi.fn().mockResolvedValue({
       sessionId,
       messages: [],

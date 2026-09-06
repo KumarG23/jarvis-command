@@ -141,6 +141,7 @@ export type CommandSteerResponse = z.infer<typeof InternalSteerResponseSchema>;
 export type CommandStopResponse = z.infer<typeof InternalStopResponseSchema>;
 
 export type CommandProxyClient = Readonly<{
+  getSession: (sessionId: string) => Promise<SessionMutationResponse>;
   readReadiness: () => Promise<{ ready: true; idempotencyRetentionSeconds: number }>;
   getMessages: (sessionId: string, limit: number, offset: number) => Promise<SessionMessagesPage>;
   createSession: (request: LiveRoomSessionCreateRequest) => Promise<SessionMutationResponse>;
@@ -203,6 +204,10 @@ export function createCommandProxyClient(options: Readonly<{
   };
 
   return Object.freeze({
+    getSession(sessionId) {
+      if (!/^jc_[a-f0-9]{32}$/.test(sessionId)) return Promise.reject(new CommandProxyUnavailableError(400));
+      return requestJson(`/api/sessions/${sessionId}`, SessionMutationResponseSchema.refine(value => value.session.id === sessionId && value.session.ownership === 'command' && ['api_server', 'jarvis-command'].includes(value.session.source)));
+    },
     async readReadiness() {
       const result = await requestJson('/_ready', z.object({ ready: z.literal(true), durableIdempotency: z.literal(true), retentionSeconds: z.number().int().min(86_400), externalContinue: z.literal(false) }).strict());
       return { ready: true as const, idempotencyRetentionSeconds: result.retentionSeconds };

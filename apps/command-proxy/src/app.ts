@@ -212,6 +212,17 @@ export function buildCommandProxy({
     }
   });
 
+  app.get('/api/sessions/:sessionId', async (request, reply) => {
+    if (!authorize(request, reply, config.commandProxyKey)) return reply;
+    const sessionId = pathParameter(request, 'sessionId');
+    if (typeof sessionId !== 'string' || !COMMAND_SESSION_ID.test(sessionId)) return invalidRequest(reply);
+    try {
+      const upstream = UpstreamSessionEnvelopeSchema.parse(await requestJson({ path: `/api/sessions/${sessionId}`, method: 'GET', config, fetcher }));
+      if (upstream.session.id !== sessionId) throw new UpstreamProtocolError();
+      if (!COMMAND_SOURCES.has(upstream.session.source ?? '')) return reply.code(403).send({ error: 'session_read_only' });
+      return SessionMutationResponseSchema.parse({ session: projectSession(upstream.session, now(), true) });
+    } catch (error) { return sendProxyError(error, reply); }
+  });
   app.post('/api/sessions', async (request, reply) => {
     if (!authorize(request, reply, config.commandProxyKey)) return reply;
     const parsed = LiveRoomSessionCreateRequestSchema.safeParse(request.body);

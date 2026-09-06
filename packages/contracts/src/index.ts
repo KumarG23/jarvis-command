@@ -1,3 +1,4 @@
+export * from './project-rooms';
 export {
   ApprovalChoiceSchema,
   ApprovalRequestIdSchema,
