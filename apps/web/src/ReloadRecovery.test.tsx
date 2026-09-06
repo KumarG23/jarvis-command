@@ -197,9 +197,9 @@ it.each(['remove', 'readback'])('retains the writer lock on terminal clear %s fa
   act(() => result.current.send(sessionId, 'not sent', 100));
   expect(fetchMock).toHaveBeenCalledTimes(1);
 });
-it('pauses bounded recovered polling without clearing identity or unlocking', async () => {
+it('pauses bounded unavailable recovered polling without clearing identity or unlocking', async () => {
   sessionStorage.setItem(key, JSON.stringify(record)); vi.useFakeTimers();
-  const fetchMock = vi.fn(async () => Response.json(status())); vi.stubGlobal('fetch', fetchMock);
+  const fetchMock = vi.fn(async () => { throw new Error('offline'); }); vi.stubGlobal('fetch', fetchMock);
   const { result, unmount } = renderHook(useLiveTurn);
   await act(async () => vi.advanceTimersByTimeAsync(30_000));
   expect(fetchMock).toHaveBeenCalledTimes(12);

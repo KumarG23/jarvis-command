@@ -172,7 +172,19 @@ function FailureState({ kind }: Readonly<{ kind: BootstrapFailureKind }>) {
 
 function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) {
   const live = useLiveTurn();
-  const [selectedSession, setSelectedSession] = useState<SessionSummary | null>(null);
+  const [selectedSession, setSelectedSession] = useState<SessionSummary | null>(() => {
+    if (!bootstrap.command.liveRoom.enabled) return null;
+    try {
+      const id = sessionStorage.getItem('jarvis-command:selected-session:v1');
+      return bootstrap.sessions.find((session) => session.id === id) ?? null;
+    } catch { return null; }
+  });
+  useEffect(() => {
+    try {
+      if (selectedSession) sessionStorage.setItem('jarvis-command:selected-session:v1', selectedSession.id);
+      else sessionStorage.removeItem('jarvis-command:selected-session:v1');
+    } catch { /* Remembering a view is optional; pending-run recovery has its own safeguards. */ }
+  }, [selectedSession]);
   const [sessions, setSessions] = useState(bootstrap.sessions);
   const recoveredSessionId = live.turn?.intent.input === null ? live.turn.intent.sessionId : null;
   useEffect(() => {

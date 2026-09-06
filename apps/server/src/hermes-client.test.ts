@@ -23,6 +23,23 @@ describe('Hermes client', () => {
     await expect(createHermesClient({ baseUrl, readProxyKey, fetcher }).readSnapshot()).rejects.toEqual(new HermesUpstreamError());
   });
 
+  it.each([
+    ['jc_' + 'a'.repeat(32), 'api_server', 'command'],
+    ['jc_' + 'a'.repeat(32), 'jarvis-command', 'command'],
+    ['api_synthetic', 'api_server', 'external'],
+    ['jc_short', 'api_server', 'external'],
+    ['jc_' + 'a'.repeat(32), 'discord', 'external'],
+  ])('projects observed list schema and ownership for %s / %s', async (id, source, ownership) => {
+    const fetcher: typeof fetch = async input => {
+      const url = String(input);
+      if (url.endsWith('/health/detailed')) return jsonResponse({ status: 'ready', version: 'synthetic', active_agents: 0, readiness: { status: 'ready', checks: {} } });
+      if (url.endsWith('/v1/capabilities')) return jsonResponse({ model: 'synthetic', features: {} });
+      return jsonResponse({ object: 'list', data: [{ id, source, title: null, model: null, started_at: 1788530400, last_active: 1788530400, message_count: 0, tool_call_count: 0, pinned: false, archived: false, hidden: false, has_system_prompt: false, has_model_config: false }], limit: 12, offset: 0, has_more: false });
+    };
+    const snapshot = await createHermesClient({ baseUrl, readProxyKey, fetcher }).readSnapshot();
+    expect(snapshot.sessions).toEqual([{ id, source, ownership, title: 'Untitled session', model: null, lastActive: '2026-09-04T14:00:00.000Z', messageCount: 0, toolCallCount: 0, pinned: false }]);
+  });
+
   it('projects readiness, capabilities, and sessions into a bounded snapshot', async () => {
     const requests: Array<{ url: string; authorization: string | null }> = [];
     const fetcher: typeof fetch = async (input, init) => {

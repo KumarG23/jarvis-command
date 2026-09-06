@@ -123,8 +123,40 @@ it('sends one exact intent, streams partial output and reconciles terminal statu
   expect(fetchMock.mock.calls.filter(([url]) => url.includes('/messages?'))).toHaveLength(2);
 });
 
-it('bounds reconnection then status polling without inventing a terminal state', async () => {
+it('resumes live activity after a control acknowledgement and status readback', async () => {
+  const fetchMock = setup(undefined, status('running', { output: null }));
+  const { result, unmount } = renderHook(useLiveTurn);
+  await act(async () => result.current.send(session.id, 'hello', 100));
+  vi.useFakeTimers();
+  fetchMock.mockResolvedValueOnce(Response.json({ publicRunId: id, accepted: true }));
+  await act(async () => result.current.steer(result.current.turn!, 'Keep testing', 100));
+  await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+  expect(Source.instances).toHaveLength(2);
+  act(() => Source.instances[1]!.emit('tool.started', { tool: 'terminal', preview: 'Harmless test' }));
+  expect(result.current.turn?.events.at(-1)?.type).toBe('tool.started');
+  expect(fetchMock.mock.calls.filter(([url]) => url.endsWith('/steer'))).toHaveLength(1);
+  unmount();
+});
+
+it('keeps monitoring healthy long-running work until its terminal status arrives', async () => {
+  const fetchMock = setup(undefined, status('running', { output: null }));
+  const { result, unmount } = renderHook(useLiveTurn);
+  await act(async () => result.current.send(session.id, 'hello', 100));
+  vi.useFakeTimers();
+  await act(async () => result.current.refreshStatus(result.current.turn!));
+  await act(async () => { await vi.advanceTimersByTimeAsync(180_000); });
+  expect(result.current.turn?.phase).not.toMatch(/supervision paused/);
+  expect(result.current.turn?.done).toBe(false);
+  fetchMock.mockResolvedValueOnce(Response.json(status()));
+  await act(async () => { await vi.advanceTimersByTimeAsync(65_000); });
+  expect(result.current.turn?.phase).toBe('Run completed');
+  expect(fetchMock.mock.calls.filter(([url]) => url === '/api/live/runs')).toHaveLength(1);
+  unmount();
+});
+
+it('bounds reconnection and failed status polling without inventing a terminal state', async () => {
   const fetchMock = setup(undefined, status('running', { output: null })); await open(); await send();
+  fetchMock.mockRejectedValue(new Error('network unavailable'));
   vi.useFakeTimers();
   act(() => Source.instances[0]!.onerror?.());
   await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });

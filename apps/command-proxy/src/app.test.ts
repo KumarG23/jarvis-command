@@ -55,7 +55,7 @@ function upstreamSession(id: string, source: string) {
     session: {
       id,
       source,
-      title: source === 'jarvis-command' ? 'Live Room' : 'Discord thread',
+      title: ['jarvis-command', 'api_server'].includes(source) ? 'Live Room' : 'Discord thread',
       model: 'gpt-5.6-sol',
       last_active: 1_788_530_400,
       message_count: 2,
@@ -234,8 +234,8 @@ describe('session projection and ownership', () => {
     expect(response.json().messages).toHaveLength(count);
   });
 
-  it('creates a generated command-owned session while ignoring client control of id/source', async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'jarvis-command'), 201));
+  it('confirms creation when Hermes normalizes the source to api_server', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'api_server'), 201));
     const app = createApp(fetcher);
 
     const response = await app.inject({
@@ -250,7 +250,7 @@ describe('session projection and ownership', () => {
       session: {
         id: commandSessionId,
         title: 'Live Room',
-        source: 'jarvis-command',
+        source: 'api_server',
         ownership: 'command',
         model: 'gpt-5.6-sol',
         lastActive: '2026-09-04T14:00:00.000Z',
@@ -265,15 +265,28 @@ describe('session projection and ownership', () => {
     expect(init).toMatchObject({ method: 'POST', redirect: 'error' });
     expect(JSON.parse(String(init?.body))).toEqual({
       id: commandSessionId,
-      source: 'jarvis-command',
+      source: 'api_server',
       title: 'Live Room',
     });
     expect(new Headers(init?.headers).get('authorization')).toBe(`Bearer ${hermesKey}`);
   });
 
-  it('forks a verified command-owned session into a generated mission', async () => {
+  it.each([
+    { id: 'jc_' + 'b'.repeat(32), source: 'api_server' },
+    { id: externalSessionId, source: 'api_server' },
+    ...['discord', 'cli', 'jarvis-command', '', null, undefined].map(source => ({ id: commandSessionId, source })),
+  ])('rejects an unbound creation response %j', async ({ id, source }) => {
+    const body = upstreamSession(id, 'api_server');
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({ session: { ...body.session, source } }, 201));
+    const response = await createApp(fetcher).inject({ method: 'POST', url: '/api/sessions', headers: authHeaders(), payload: {} });
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({ error: 'upstream_unavailable' });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['jarvis-command', 'api_server'])('forks a verified %s command-owned session into a generated mission', async (source) => {
     const fetcher = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse(upstreamSession('jc_' + 'b'.repeat(32), 'jarvis-command')))
+      .mockResolvedValueOnce(jsonResponse(upstreamSession('jc_' + 'b'.repeat(32), source)))
       .mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'api_server'), 201));
     const app = createApp(fetcher);
 
@@ -345,9 +358,9 @@ describe('session projection and ownership', () => {
 });
 
 describe('run creation and control', () => {
-  it('verifies command ownership then forwards one exact idempotent run request', async () => {
+  it.each(['jarvis-command', 'api_server'])('verifies %s command ownership then forwards one exact idempotent run request', async (source) => {
     const fetcher = vi.fn<typeof fetch>()
-      .mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'jarvis-command')))
+      .mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, source)))
       .mockResolvedValueOnce(jsonResponse({ run_id: runId, status: 'started', replayed: false }, 202));
     const app = createApp(fetcher);
 

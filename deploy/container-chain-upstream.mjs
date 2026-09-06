@@ -38,7 +38,7 @@ if (process.argv[3] === '--prepare') {
     if (violations.length) return send({ error: 'boundary' }, 401);
     let text = '';
     for await (const chunk of req) { text += chunk; if (text.length > 65536) { req.destroy(); return; } }
-    const session = { id: seed, title: 'Synthetic container room', source: 'jarvis-command', last_active: timestamp, message_count: 1 };
+    const session = { id: seed, title: 'Synthetic container room', source: 'api_server', last_active: timestamp, message_count: 1 };
     if (url.pathname === '/health/detailed') return send({ status: 'ready', version: 'synthetic', gateway_state: 'idle', gateway_busy: false, active_agents: 0, readiness: { status: 'ready', checks: { config: 'pass' } } });
     if (url.pathname === '/v1/capabilities') return send({ model: 'synthetic-model', features: { run_events_sse: true, session_resources: true, runs_idempotency: { supported: true, durable: true, retention_seconds: 86400 } } });
     if (url.pathname === '/api/sessions') return send({ object: 'list', data: [session], limit: 12, offset: 0, has_more: false });

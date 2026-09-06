@@ -109,7 +109,7 @@ export function useLiveTurn() {
     return () => { alive.current = false; cleanup.current(); mutation.current?.abort(); };
   }, []);
 
-  function supervise(run: Turn, statusOnly = false, preserveApproval = false) {
+  function supervise(run: Turn, statusOnly = false, preserveApproval = false, readFirst = false) {
     let controller: AbortController | undefined;
     let source: EventSource | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -134,6 +134,8 @@ export function useLiveTurn() {
         const status = LiveRunStatusSchema.parse(await boundedJson(`/api/live/runs/${run.publicRunId}`, { credentials: 'same-origin', headers: { accept: 'application/json' } }, controller));
         if (status.publicRunId !== run.publicRunId || status.sessionId !== run.intent.sessionId) throw new Error('binding');
         if (!valid()) return;
+        // Healthy nonterminal work is not a failed recovery attempt.
+        polls = 0;
         update({ identityVerified: true, phase: `Run ${status.status}`, ...(status.output === null ? {} : outputPreview(status.output)), approval: terminal(status.status) ? null : preserveApproval ? current.current!.approval : status.approval, done: terminal(status.status) });
         preserveApproval = false;
         if (terminal(status.status)) {
@@ -193,7 +195,7 @@ export function useLiveTurn() {
     });
       timer = setTimeout(recover, 60_000);
     }
-    if (statusOnly || terminal(run.phase.replace('Run ', ''))) void reconcile();
+    if (readFirst || statusOnly || terminal(run.phase.replace('Run ', ''))) void reconcile();
     else connect();
   }
 
@@ -251,9 +253,9 @@ export function useLiveTurn() {
     supervise(run, true);
   }
   // A read-only refresh is independent of admission retry and never repeats a mutation.
-  function refreshStatus(run: Turn, preserveApproval = false) {
+  function refreshStatus(run: Turn, preserveApproval = false, resumeStream = true) {
     if (!alive.current || current.current?.intent !== run.intent || current.current.publicRunId !== run.publicRunId || current.current.intent.sessionId !== run.intent.sessionId) return;
-    cleanup.current(); supervise(current.current, true, preserveApproval);
+    cleanup.current(); supervise(current.current, !resumeStream, preserveApproval, true);
   }
   async function mutate(run: Turn, action: { kind: 'approval'; choice: 'once' | 'deny' } | { kind: 'stop' } | { kind: 'steer'; input: string }) {
     if (mutation.current || !current.current?.identityVerified || !run.publicRunId || current.current?.intent !== run.intent || current.current.publicRunId !== run.publicRunId || current.current.intent.sessionId !== run.intent.sessionId || current.current.done) return;
@@ -291,7 +293,7 @@ export function useLiveTurn() {
         mutation.current = null;
         if (alive.current && current.current?.intent === run.intent) {
           update({ controlBusy: false });
-          refreshStatus(run, !!current.current!.approval && current.current!.approval !== run.approval);
+          refreshStatus(run, !!current.current!.approval && current.current!.approval !== run.approval, action.kind !== 'stop');
         }
       }
     }

@@ -68,6 +68,33 @@ function deferred<T>() {
 
 afterEach(() => vi.unstubAllGlobals());
 
+describe('Selected room recovery', () => {
+  it.each(['unknown', 'disabled', 'storage-denied'])('ignores unusable remembered selection: %s', async (mode) => {
+    sessionStorage.setItem('jarvis-command:selected-session:v1', mode === 'unknown' ? 'not-in-bootstrap' : 'session_123');
+    const read = mode === 'storage-denied' ? vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied'); }) : null;
+    const fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock);
+    try {
+      render(<App loadBootstrap={async () => mode === 'disabled' ? bootstrap : liveBootstrap} />);
+      await screen.findByRole('heading', { name: 'Jarvis Command' });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(screen.queryByText('Assistant answer')).not.toBeInTheDocument();
+    } finally { read?.mockRestore(); }
+  });
+  it('returns to the selected room after reload without storing message contents', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json(history())));
+    const first = render(<App loadBootstrap={async () => liveBootstrap} />);
+    fireEvent.change(await screen.findByRole('combobox', { name: 'Session' }), { target: { value: 'session_123' } });
+    await screen.findByText('Assistant answer');
+    expect(sessionStorage.getItem('jarvis-command:selected-session:v1')).toBe('session_123');
+    first.unmount();
+    render(<App loadBootstrap={async () => liveBootstrap} />);
+    expect(await screen.findByText('Assistant answer')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Session' })).toHaveValue('session_123');
+    fireEvent.change(screen.getByRole('combobox', { name: 'Session' }), { target: { value: '' } });
+    expect(sessionStorage.getItem('jarvis-command:selected-session:v1')).toBeNull();
+  });
+});
+
 describe('Command session creation', () => {
   it('creates once with the exact mutation boundary, selects the validated session and adds navigation', async () => {
     const pending = deferred<Response>();

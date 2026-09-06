@@ -25,7 +25,13 @@ test('compiled browser traverses authenticated BFF and both real proxies', async
     const created = await (await createdResponse).json();
     const sessionId = created.session.id;
     expect(sessionId).toMatch(/^jc_[a-f0-9]{32}$/);
+    expect(created.session).toMatchObject({ source: 'api_server', ownership: 'command' });
     await expect(picker).toHaveValue(sessionId);
+    // Refresh through the read-proxy/BFF projection, not only the POST response.
+    await page.reload();
+    await expect(picker.locator(`option[value="${sessionId}"]`)).toHaveCount(1);
+    await picker.selectOption(sessionId);
+    await expect(page.getByRole('textbox', { name: 'Message Jarvis' })).toBeEnabled();
     const admissionResponse = page.waitForResponse(response => response.url().endsWith('/api/live/runs') && response.request().method() === 'POST');
     await page.getByRole('textbox', { name: 'Message Jarvis' }).fill(chain.prompt);
     await page.getByRole('button', { name: 'Send message' }).click();
@@ -50,6 +56,9 @@ test('compiled browser traverses authenticated BFF and both real proxies', async
     const payloads = chain.payloads.map(payload => payload.text);
     const storage = await page.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }));
     const audit = await chain.audit();
+    const creations = audit.trim().split('\n').map(line => JSON.parse(line)).filter(entry => entry.action === 'session.created');
+    expect(creations.map(entry => entry.outcome)).toEqual(['requested', 'succeeded']);
+    expect(creations[1].sessionId).toBe(sessionId);
     expect(audit).toContain(admission.publicRunId);
     for (const secret of [...chain.secrets, chain.assertion]) {
       expect(payloads.join('\n')).not.toContain(secret);
@@ -178,7 +187,7 @@ for (const choice of ['once', 'deny'] as const) test(`real-chain approval ${choi
       expect(chain.runBody).toEqual({ session_id: chain.seedId, input: chain.prompt });
       const identity = { sessionId: chain.seedId, clientRequestId: admission.clientRequestId, publicRunId: admission.publicRunId };
       const stored = () => page.evaluate(() => ({ local: { ...localStorage }, session: { ...sessionStorage } }));
-      expect(await stored()).toEqual({ local: {}, session: { 'jarvis-command:live-turn': JSON.stringify(identity) } });
+      expect(await stored()).toEqual({ local: {}, session: { 'jarvis-command:live-turn': JSON.stringify(identity), 'jarvis-command:selected-session:v1': chain.seedId } });
       const gate = chain.holdStatus();
       try {
         await page.reload();
@@ -189,7 +198,7 @@ for (const choice of ['once', 'deny'] as const) test(`real-chain approval ${choi
         await expect(page.getByRole('region', { name: 'Current turn', exact: true })).toContainText(`Session: ${chain.seedId} · Request: ${admission.clientRequestId} · Run: ${admission.publicRunId}`);
       } finally { gate.release(); }
       await expect(page.getByRole('button', { name: 'Stop run', exact: true })).toBeVisible();
-      expect(await stored()).toEqual({ local: {}, session: { 'jarvis-command:live-turn': JSON.stringify(identity) } });
+      expect(await stored()).toEqual({ local: {}, session: { 'jarvis-command:live-turn': JSON.stringify(identity), 'jarvis-command:selected-session:v1': chain.seedId } });
       expect(chain.count('POST', '/v1/runs')).toBe(1);
       expect(chain.count('POST', '/v1/runs/' + chain.runId + '/steer')).toBe(1);
       // Close browser transports before restarting ONLY this owned BFF. Keep the
@@ -202,7 +211,7 @@ for (const choice of ['once', 'deny'] as const) test(`real-chain approval ${choi
       await page.goto(chain.origin);
     await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
       await expect(page.getByRole('button', { name: 'Stop run', exact: true })).toBeVisible();
-      expect(await stored()).toEqual({ local: {}, session: { 'jarvis-command:live-turn': JSON.stringify(identity) } });
+      expect(await stored()).toEqual({ local: {}, session: { 'jarvis-command:live-turn': JSON.stringify(identity), 'jarvis-command:selected-session:v1': chain.seedId } });
       await expect(page.getByRole('region', { name: 'Current turn', exact: true })).toContainText(`Session: ${chain.seedId} · Request: ${admission.clientRequestId} · Run: ${admission.publicRunId}`);
       expect(await chain.audit()).toContain(auditBeforeRestart);
       expect(chain.count('POST', '/v1/runs')).toBe(1);
@@ -226,7 +235,7 @@ for (const choice of ['once', 'deny'] as const) test(`real-chain approval ${choi
       await expect(page.getByText('Run cancelled', { exact: true })).toBeVisible();
       await expect(page.getByRole('textbox', { name: 'Message Jarvis' })).toBeEnabled();
       await expect(page.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('Synthetic private queued guidance');
-      expect(await stored()).toEqual({ local: {}, session: {} });
+      expect(await stored()).toEqual({ local: {}, session: { 'jarvis-command:selected-session:v1': chain.seedId } });
       await page.getByRole('textbox', { name: 'Message Jarvis' }).fill('Edited in memory');
       await page.getByRole('combobox', { name: 'Session' }).selectOption(chain.seedId);
       await expect(page.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('Edited in memory');

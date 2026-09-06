@@ -24,7 +24,7 @@ export function TurnView({ turn, allowed, approve, stop }: Readonly<{ turn: Turn
     </> : null}
   </section>;
 }
-function CopyResponse({ text, limited }: Readonly<{ text: string; limited: boolean }>) {
+export function CopyResponse({ text, limited }: Readonly<{ text: string; limited: boolean }>) {
   const [notice, setNotice] = useState<{ text: string; message: string } | null>(null);
   const copy = async () => {
     setNotice(null);

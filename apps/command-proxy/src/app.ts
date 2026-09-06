@@ -225,13 +225,14 @@ export function buildCommandProxy({
         method: 'POST',
         body: {
           id: sessionId,
-          source: 'jarvis-command',
+          // Hermes normalizes unknown source tags; use its supported API source.
+          source: 'api_server',
           ...(parsed.data.title ? { title: parsed.data.title } : {}),
         },
         config,
         fetcher,
       }));
-      if (upstream.session.id !== sessionId || upstream.session.source !== 'jarvis-command') throw new UpstreamProtocolError();
+      if (upstream.session.id !== sessionId || upstream.session.source !== 'api_server') throw new UpstreamProtocolError();
       return reply.code(201).send(SessionMutationResponseSchema.parse({
         session: projectSession(upstream.session, now(), true),
       }));

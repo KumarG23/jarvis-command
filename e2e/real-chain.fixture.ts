@@ -38,7 +38,7 @@ export async function startRealChain(mode: 'completed' | 'controls' = 'completed
     const prompt = 'Synthetic private browser prompt';
     const output = 'Synthetic streamed answer';
     const timestamp = '2026-09-04T14:00:00.000Z';
-    const sessions = [{ id: seedId, title: 'Synthetic existing Command room', source: 'jarvis-command', last_active: timestamp, message_count: 1 }];
+    const sessions = [{ id: seedId, title: 'Synthetic existing Command room', source: 'api_server', last_active: timestamp, message_count: 1 }];
     const requests: { method: string; path: string }[] = [];
     const upstreamViolations: string[] = [];
     const payloads: { path: string; text: string }[] = [];
@@ -78,7 +78,8 @@ export async function startRealChain(mode: 'completed' | 'controls' = 'completed
       return session ? { session } : reply.code(404).send({ error: 'synthetic_unknown_session' });
     });
     synthetic.post<{ Body: { id: string; source: string; title?: string } }>('/api/sessions', async request => {
-      const session = { ...request.body, title: request.body.title ?? 'Synthetic created Command room', last_active: timestamp, message_count: 0 };
+      // Model the installed gateway, never the imagined echo of a custom source.
+      const session = { ...request.body, source: 'api_server', title: request.body.title ?? 'Synthetic created Command room', last_active: timestamp, message_count: 0 };
       sessions.push(session); return { session };
     });
     synthetic.get<{ Params: { id: string }; Querystring: { limit: string; offset: string; order: string } }>('/api/sessions/:id/messages', async request => {

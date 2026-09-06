@@ -1,6 +1,7 @@
 import { SessionMessagesPageSchema, type SessionMessage, type SessionSummary } from '@jarvis-command/contracts';
 import { useEffect, useRef, useState } from 'react';
 import { Bot, MessageSquare, SquareTerminal } from 'lucide-react';
+import { CopyResponse } from './TurnView';
 
 export function LiveRoom({ session, onHistory }: Readonly<{ session: SessionSummary; onHistory: (sessionId: string, messages: SessionMessage[], complete: boolean) => void }>) {
   const report = useRef(onHistory);
@@ -69,6 +70,7 @@ export function LiveRoom({ session, onHistory }: Readonly<{ session: SessionSumm
         <div className="event-label"><span>{message.role}</span><time>{message.timestamp ? new Date(message.timestamp).toLocaleString() : 'Time not reported'}</time></div>
         {message.toolName ? <h2>{message.toolName}</h2> : null}
         <p>{message.content}</p>
+        {message.role === 'assistant' && message.content ? <CopyResponse text={message.content} limited={false} /> : null}
       </div>
     </article>)}
     {!error && (hasMore && pagesLoaded >= 10 ? <p role="status">History view limit reached. More messages may exist.</p> : hasMore ? <button type="button" className="primary-button" disabled={loading} onClick={() => { setLoading(true); setOffset(nextOffset); }}>Load more messages</button> : !loading && messages.length > 0 ? <p role="status">End of history.</p> : null)}
