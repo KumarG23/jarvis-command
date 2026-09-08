@@ -63,7 +63,11 @@ export async function startRealChain(mode: 'completed' | 'controls' = 'completed
     };
     const approval = { request_id: 'synthetic-approval-exact', command: 'printf synthetic-control ; printf /EXACT_SYNTHETIC_TARGET', description: 'Synthetic display-only command; never executed', tool: 'terminal' };
     const controls: { runId: string; body: unknown; path: string }[] = [];
-    const synthetic = Fastify(); owned.push(synthetic);
+    // Aborting SSE can leave a pooled replacement TCP connection with no HTTP
+    // request/response yet. It is absent from streams and Node's idle HTTP set,
+    // so default close() waits for it. Close all synthetic upstream connections
+    // only after downstream servers have finished their normal teardown.
+    const synthetic = Fastify({ forceCloseConnections: true }); owned.push(synthetic);
     synthetic.addHook('preClose', async () => { releaseStatus(); for (const stream of streams) stream.destroy(); });
     synthetic.addHook('onRequest', async (request, reply) => {
       requests.push({ method: request.method, path: request.url.split('?')[0]! });
@@ -146,7 +150,7 @@ export async function startRealChain(mode: 'completed' | 'controls' = 'completed
     await new Promise<void>((resolve, reject) => reservation.close(error => error ? reject(error) : resolve()));
     const origin = 'http://127.0.0.1:' + port;
     const auditPath = join(directory, 'audit.jsonl');
-    const config = loadConfig({ NODE_ENV: 'test', AUTH_MODE: 'cloudflare', CF_ACCESS_TEAM_DOMAIN: 'synthetic.cloudflareaccess.com', CF_ACCESS_AUD: 'a'.repeat(64), CF_ACCESS_EMAIL_SHA256: createHash('sha256').update(email).digest('hex'), CF_ACCESS_JWKS_FILE: jwks, HERMES_API_BASE_URL: readOrigin, HERMES_READ_PROXY_KEY: secrets[1], COMMAND_MODE: 'enabled', PUBLIC_ORIGIN: origin, HERMES_COMMAND_API_BASE_URL: commandOrigin, HERMES_COMMAND_PROXY_KEY: secrets[2], COMMAND_AUDIT_LOG_PATH: auditPath, WEB_DIST_DIR: resolve('apps/web/dist') });
+    const config = loadConfig({ NODE_ENV: 'test', AUTH_MODE: 'cloudflare', CF_ACCESS_TEAM_DOMAIN: 'synthetic.cloudflareaccess.com', CF_ACCESS_AUD: 'a'.repeat(64), CF_ACCESS_EMAIL_SHA256: createHash('sha256').update(email).digest('hex'), CF_ACCESS_JWKS_FILE: jwks, HERMES_API_BASE_URL: readOrigin, HERMES_READ_PROXY_KEY: secrets[1], COMMAND_MODE: 'enabled', PUBLIC_ORIGIN: origin, HERMES_COMMAND_API_BASE_URL: commandOrigin, HERMES_COMMAND_PROXY_KEY: secrets[2], COMMAND_AUDIT_LOG_PATH: auditPath, WEB_DIST_DIR: resolve(process.env.WEB_DIST_DIR ?? 'apps/web/dist') });
     const startBff = async () => {
       const bff = createCommandServer(config); owned.push(bff);
       bff.addHook('onSend', async (request, _reply, payload) => {
@@ -167,7 +171,7 @@ export async function startRealChain(mode: 'completed' | 'controls' = 'completed
       bff = await startBff();
       return { previousStopped: !previous.server.listening, origin };
     };
-    return { restart, origin, assertion, unapprovedAssertion, seedId, runId, prompt, output, email, secrets, requests, payloads, upstreamViolations, browserMutations, controls, holdStatus, finish: () => { cancelled = true; }, get runBody() { return runBody; }, get idempotencyKey() { return idempotencyKey; }, count: (method: string, path: string) => requests.filter(request => request.method === method && request.path === path).length, audit: () => readFile(auditPath, 'utf8'), close: async () => { releaseStatus(); await close(); } };
+    return { upstreamOrigin: upstream, restart, origin, assertion, unapprovedAssertion, seedId, runId, prompt, output, email, secrets, requests, payloads, upstreamViolations, browserMutations, controls, holdStatus, finish: () => { cancelled = true; }, get runBody() { return runBody; }, get idempotencyKey() { return idempotencyKey; }, count: (method: string, path: string) => requests.filter(request => request.method === method && request.path === path).length, audit: () => readFile(auditPath, 'utf8'), close: async () => { releaseStatus(); await close(); } };
   } catch (error) { await close(); throw error; }
 }
 
