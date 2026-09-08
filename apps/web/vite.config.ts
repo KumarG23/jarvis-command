@@ -5,6 +5,16 @@ import { VitePWA } from 'vite-plugin-pwa';
 export default defineConfig({
   plugins: [
     react(),
+    // Only the explicitly requested synthetic HTTP preview needs UUID support.
+    // This hook is absent from builds and ordinary development sessions.
+    {
+      name: 'synthetic-preview-compatibility',
+      apply: 'serve',
+      transformIndexHtml() {
+        if (!process.argv.includes('--strictPort') || !process.argv.includes('4173')) return;
+        return [{ tag: 'script', attrs: { src: '/preview-compat.js' }, injectTo: 'head-prepend' }];
+      },
+    },
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['jarvis-command.svg', 'pwa-192.png', 'pwa-512.png'],
@@ -45,9 +55,11 @@ export default defineConfig({
   ],
   server: {
     host: '127.0.0.1',
+    allowedHosts: ['terminal.local'],
     port: 5173,
     proxy: {
       '/api': 'http://127.0.0.1:3000',
     },
   },
 });
+

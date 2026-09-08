@@ -1,34 +1,11 @@
 import { CommandBootstrapSchema, type CommandBootstrap, type SessionSummary } from '@jarvis-command/contracts';
-import {
-  Activity,
-  Bot,
-  BrainCircuit,
-  Check,
-  ChevronRight,
-  CircleDot,
-  Code2,
-  Command,
-  FileText,
-  GitBranch,
-  Home,
-  Layers3,
-  LockKeyhole,
-  MessageSquare,
-  Network,
-  Plus,
-  Radio,
-  ServerCog,
-  Settings2,
-  ShieldCheck,
-  Sparkles,
-  SquareTerminal,
-} from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { Command, ShieldCheck, Menu, X, Settings2, PanelRight, ChevronRight, MessageSquare } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 
 import './styles.css';
 import { LiveRoom } from './LiveRoom';
-import { CreateSession } from './CreateSession';
-import { ProjectRooms } from './ProjectRooms';
+import { ProjectRooms, type ProjectRoomsHandle } from './ProjectRooms';
+import { ContextPane } from './ContextPane';
 import { useLiveTurn } from './useLiveTurn';
 import { TurnComposer, TurnView } from './TurnView';
 
@@ -173,391 +150,111 @@ function FailureState({ kind }: Readonly<{ kind: BootstrapFailureKind }>) {
 
 function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) {
   const live = useLiveTurn();
+  const conversationScroll = useRef<HTMLElement | null>(null), conversationContent = useRef<HTMLDivElement | null>(null), followLatest = useRef(true);
   const [projectName, setProjectName] = useState<string | null>(null);
-  const [roomNavigation, setRoomNavigation] = useState<HTMLDivElement | null>(null);
   const [selectedSession, setSelectedSession] = useState<SessionSummary | null>(() => {
     if (!bootstrap.command.liveRoom.enabled) return null;
-    try {
-      const id = sessionStorage.getItem('jarvis-command:selected-session:v1');
-      return bootstrap.sessions.find((session) => session.id === id) ?? null;
-    } catch { return null; }
+    try { const id = sessionStorage.getItem('jarvis-command:selected-session:v1'); return bootstrap.sessions.find(session => session.id === id) ?? null; } catch { return null; }
   });
-  useEffect(() => {
-    try {
-      if (selectedSession) sessionStorage.setItem('jarvis-command:selected-session:v1', selectedSession.id);
-      else sessionStorage.removeItem('jarvis-command:selected-session:v1');
-    } catch { /* Remembering a view is optional; pending-run recovery has its own safeguards. */ }
-  }, [selectedSession]);
   const [sessions, setSessions] = useState(bootstrap.sessions);
+  const [navigationOpen, setNavigationOpen] = useState(false);
+  const [pane, setPane] = useState<'project' | 'runtime' | 'settings' | null>(null);
+  const [contextTarget, setContextTarget] = useState<HTMLDivElement | null>(null);
+  const projects = useRef<ProjectRoomsHandle | null>(null), menu = useRef<HTMLButtonElement | null>(null), sidebar = useRef<HTMLElement | null>(null);
+  const panelClose = useRef<HTMLButtonElement | null>(null), panelOpener = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    try { if (selectedSession) sessionStorage.setItem('jarvis-command:selected-session:v1', selectedSession.id); else sessionStorage.removeItem('jarvis-command:selected-session:v1'); } catch { /* Optional view hint. */ }
+  }, [selectedSession]);
   const recoveredSessionId = live.turn?.intent.input === null ? live.turn.intent.sessionId : null;
   useEffect(() => {
-    if (recoveredSessionId) {
-      const known = bootstrap.sessions.find((session) => session.id === recoveredSessionId);
-      if (known) setSelectedSession(known);
-    }
+    if (recoveredSessionId) { const known = bootstrap.sessions.find(session => session.id === recoveredSessionId); if (known) setSelectedSession(known); }
   }, [recoveredSessionId, bootstrap.sessions]);
+  useEffect(() => {
+    if (navigationOpen) sidebar.current?.querySelector<HTMLButtonElement>('.close-navigation')?.focus();
+  }, [navigationOpen]);
+  useEffect(() => {
+    if (pane === 'runtime' || pane === 'settings') panelClose.current?.focus();
+    if (pane === 'project') contextTarget?.querySelector<HTMLButtonElement>('[aria-label="Close project details"]')?.focus();
+  }, [pane, contextTarget]);
+  useEffect(() => {
+    if (typeof ResizeObserver === 'undefined' || !conversationContent.current) return;
+    const observer = new ResizeObserver(() => {
+      const element = conversationScroll.current;
+      if (element && followLatest.current) element.scrollTop = element.scrollHeight;
+    });
+    observer.observe(conversationContent.current);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    followLatest.current = true;
+    const element = conversationScroll.current;
+    if (element) element.scrollTop = element.scrollHeight;
+  }, [selectedSession?.id]);
+  useEffect(() => {
+    if (live.turn && live.turn.intent.sessionId === selectedSession?.id && live.turn.intent.input !== null) {
+      followLatest.current = true;
+      const element = conversationScroll.current;
+      if (element) element.scrollTop = element.scrollHeight;
+    }
+  }, [live.turn?.intent, selectedSession?.id]);
   const liveEnabled = bootstrap.command.liveRoom.enabled;
   const hermesOnline = bootstrap.hermes.state === 'online';
   const writeAllowed = liveEnabled && hermesOnline && bootstrap.hermes.capabilities.includes('run_events_sse') && selectedSession?.ownership === 'command' && selectedSession.id.startsWith('jc_');
-  const hermesReachable = bootstrap.hermes.state !== 'offline';
-  const controlPlaneLabel = bootstrap.hermes.state === 'online'
-    ? 'Hermes available'
-    : bootstrap.hermes.state === 'degraded'
-      ? 'Hermes degraded'
-      : 'Hermes unavailable';
-  const agentLabel = `${bootstrap.hermes.activeAgents} active agent${bootstrap.hermes.activeAgents === 1 ? '' : 's'}`;
-  const identityLabel = bootstrap.identity.provider === 'cloudflare-access'
-    ? 'Access verified'
-    : 'Development identity';
-  const identityTitle = bootstrap.identity.provider === 'cloudflare-access'
-    ? 'Cloudflare Access identity verified'
-    : 'Development identity verified';
-  const agentStatus = bootstrap.hermes.state === 'offline'
-    ? controlPlaneLabel
-    : bootstrap.hermes.gatewayState === 'busy'
-      ? 'Mission in progress'
-      : bootstrap.hermes.state === 'degraded'
-        ? 'Control plane degraded'
-        : 'Standing by';
-
-  return (
-    <div className="command-shell">
-      <WorkspaceRail />
-      <RoomSidebar
-        sessions={sessions}
-        state={bootstrap.hermes.state}
-        agentStatus={agentStatus}
-        selectedId={selectedSession?.id}
-        onSelect={liveEnabled && !projectName ? setSelectedSession : undefined}
-        roomNavigationRef={liveEnabled ? setRoomNavigation : undefined}
-      />
-
-      <main className="command-main">
-        <header className="command-header">
-          <div className="room-breadcrumb">
-            <span>Projects</span>
-            <ChevronRight size={13} />
-            <strong>{projectName ?? 'All sessions'}</strong>
-          </div>
-          <div className="header-actions">
-            <span className={`status-pill ${bootstrap.hermes.state}`}>
-              <span className="status-dot" />
-              {controlPlaneLabel}
-            </span>
-            <div className="operator-avatar" title={identityTitle} aria-label="Authenticated operator">
-              NS
-            </div>
-          </div>
-        </header>
-
-        <section className="context-ribbon" aria-label="Mission context">
-          <span className="context-label">REPORTED SNAPSHOT</span>
-          <ContextChip icon={<Sparkles size={14} />} label={bootstrap.hermes.model === 'hermes-agent' ? 'Adapter label: hermes-agent' : bootstrap.hermes.model ?? 'Model not reported'} tone="violet" />
-          <ContextChip icon={<Network size={14} />} label={bootstrap.hermes.provider ?? 'Provider not reported'} />
-          <span className="context-spacer" />
-          <span className={`agent-count ${bootstrap.hermes.state}`}><CircleDot size={13} /> {agentLabel}</span>
-        </section>
-
-        {liveEnabled ? <ProjectRooms navigationTarget={roomNavigation} sessions={sessions} onScope={setProjectName} onSession={session => {
-          if (session) setSessions(previous => [session, ...previous.filter(item => item.id !== session.id)]);
-          setSelectedSession(session);
-        }} /> : null}
-        {liveEnabled && !projectName ? <div className="live-room-toolbar">
-          <label className="session-picker">Session
-            <select value={selectedSession?.id ?? ''} onChange={(event) => setSelectedSession(sessions.find((session) => session.id === event.target.value) ?? null)}>
-              <option value="">Overview</option>
-              {sessions.map((session) => <option key={session.id} value={session.id}>{session.title}</option>)}
-            </select>
-          </label>
-          <CreateSession onCreated={(session) => {
-            setSessions((previous) => [session, ...previous.filter((item) => item.id !== session.id)]);
-            setSelectedSession(session);
-          }} />
-        </div> : null}
-        {liveEnabled && selectedSession ? <p className="selected-session-title current-conversation" aria-label="Selected session">{selectedSession.title}</p> : null}
-        <section className="timeline" aria-label="Mission timeline">
-          {liveEnabled && selectedSession ? <LiveRoom key={`${selectedSession.id}:${live.refresh?.sessionId === selectedSession.id ? live.refresh.revision : ''}`} session={selectedSession} onHistory={live.history}
-            turns={[...live.completedTurns, ...(live.turn ? [live.turn] : [])]}
-            renderTurn={(turn) => <TurnView turn={turn} allowed={writeAllowed && turn.intent === live.turn?.intent} approve={live.approve} stop={live.stop} />} /> : <>
-          <div className="room-intro">
-            <div className="room-emblem" aria-hidden="true"><Command size={28} /></div>
-            <p className="eyebrow">PROJECT COMMAND ROOM</p>
-            <h1>Jarvis Command</h1>
-            <p>A browser-native command deck for conversations, agents, approvals, artifacts, and the occasional homelab goblin.</p>
-            <div className="intro-badges">
-              <span className={`identity-badge ${bootstrap.identity.provider}`}><ShieldCheck size={13} /> {identityLabel}</span>
-              <span><GitBranch size={13} /> v{bootstrap.command.version}</span>
-              <span className={`state-badge ${bootstrap.hermes.state}`}><Activity size={13} /> {controlPlaneLabel}</span>
-            </div>
-          </div>
-
-          <div className="timeline-divider"><span>Operational snapshot</span></div>
-
-          <TimelineEvent
-            icon={<ShieldCheck size={17} />}
-            label="Identity"
-            title={identityLabel}
-            tone={bootstrap.identity.provider === 'cloudflare-access' ? 'green' : 'violet'}
-            meta={bootstrap.identity.provider === 'cloudflare-access' ? 'Cloudflare Access' : 'Local test mode'}
-          >
-            {bootstrap.identity.provider === 'cloudflare-access'
-              ? 'The origin accepted a signed human application assertion for this browser session.'
-              : 'Cloudflare identity verification is intentionally bypassed for this local development build.'}
-          </TimelineEvent>
-
-          <TimelineEvent
-            icon={<ServerCog size={17} />}
-            label="Hermes control plane"
-            title={hermesOnline ? 'Read-only bridge synchronized' : controlPlaneLabel}
-            tone={hermesOnline ? 'cyan' : hermesReachable ? 'amber' : 'red'}
-            meta={hermesReachable ? `Hermes ${bootstrap.hermes.version ?? 'version unavailable'}` : 'Private bridge unreachable'}
-          >
-            {hermesOnline
-              ? `${bootstrap.hermes.capabilities.length} API capabilities discovered. Session and readiness data came from the private snapshot.`
-              : hermesReachable
-                ? 'The private snapshot arrived, but readiness checks reported a degraded control plane. Controls remain disabled.'
-                : 'The command shell is healthy, but Hermes did not answer the private upstream probe. Controls remain disabled.'}
-          </TimelineEvent>
-
-          <TimelineEvent
-            icon={<Code2 size={17} />}
-            label="Build snapshot"
-            title={`Jarvis Command v${bootstrap.command.version}`}
-            tone="violet"
-            meta={formatTimestamp(bootstrap.command.generatedAt)}
-          >
-            The first vertical slice is intentionally read-only: secure bootstrap, current status, recent sessions, and responsive supervision surfaces.
-          </TimelineEvent>
-          </>}
-          {live.recoveryError ? <p role="alert">{live.recoveryError}</p> : null}
-          {live.turn && !selectedSession && live.turn.intent.input === null ? <TurnView turn={live.turn} allowed={false} approve={live.approve} stop={live.stop} /> : null}
-        </section>
-
-        <footer className="composer-wrap">
-          {liveEnabled && selectedSession?.ownership === 'command' && !live.historyReady(selectedSession.id) ? <p role="status">Load complete session history before sending. Retry history or load remaining pages; for a history beyond the view limit, start a new Command session.</p> : null}
-          {live.historyBacklogFull ? <p role="alert">Unconfirmed reply limit reached. Your replies are retained; retry history in their sessions before sending more.</p> : null}
-          {liveEnabled ? <TurnComposer blocked={!!live.recoveryError || !live.historyReady(selectedSession?.id) || live.historyBacklogFull} allowed={hermesOnline && bootstrap.hermes.capabilities.includes('run_events_sse') && selectedSession?.ownership === 'command' && selectedSession.id.startsWith('jc_')} sessionId={selectedSession?.id} max={bootstrap.command.liveRoom.maxInputCharacters} maxSteer={bootstrap.command.liveRoom.maxSteerCharacters} turn={live.turn} send={live.send} retry={live.retry} resume={live.resume} steer={live.steer} recoveries={live.recoveries} consumeRecovery={live.consumeRecovery} /> : <>
-          <div className="composer-status">
-            <span className={`status-dot ${bootstrap.hermes.state === 'online' ? '' : bootstrap.hermes.state}`} />
-            {hermesOnline ? 'Read-only bridge' : controlPlaneLabel}
-          </div>
-          <div className="composer-locked" role="status">
-            <LockKeyhole size={15} />
-            <span>Messaging is unavailable in this read-only slice.</span>
-          </div>
-          <p>Command execution is locked until approval and audit paths land. Sensible, if less cinematic.</p>
-          </>}
-        </footer>
-      </main>
-
-      <OperationsDeck bootstrap={bootstrap} agentStatus={agentStatus} />
-      <MobileNavigation />
-    </div>
-  );
-}
-
-function WorkspaceRail() {
-  return (
-    <aside className="workspace-rail" aria-label="Workspaces">
-      <div className="brand-mark" aria-label="Jarvis Command"><Command size={22} /></div>
-      <div className="rail-rule" />
-      <RailButton label="Command center" active>⚡</RailButton>
-      <RailButton label="Game Lab">🎮</RailButton>
-      <RailButton label="Homelab">🧪</RailButton>
-      <RailButton label="Writing">📖</RailButton>
-      <div className="rail-spacer" />
-      <RailButton label="Add workspace"><Plus size={18} /></RailButton>
-      <RailButton label="Settings"><Settings2 size={17} /></RailButton>
-    </aside>
-  );
-}
-
-function RailButton({ children, label, active = false }: Readonly<{ children: ReactNode; label: string; active?: boolean }>) {
-  return (
-    <button
-      type="button"
-      className={`rail-button ${active ? 'active' : ''}`}
-      aria-label={label}
-      aria-current={active ? 'page' : undefined}
-      title={active ? label : `${label} — not available in this slice`}
-      disabled={!active}
-    >
-      {children}
-    </button>
-  );
-}
-
-function RoomSidebar({ sessions, state, agentStatus, selectedId, onSelect, roomNavigationRef }: Readonly<{
-  sessions: SessionSummary[];
-  state: CommandBootstrap['hermes']['state'];
-  agentStatus: string;
-  selectedId?: string | undefined;
-  onSelect?: ((session: SessionSummary) => void) | undefined;
-  roomNavigationRef?: ((element: HTMLDivElement | null) => void) | undefined;
-}>) {
-  return (
-    <aside className="room-sidebar">
-      <div className="sidebar-brand">
-        <div>
-          <p>JARVIS</p>
-          <strong>COMMAND</strong>
-        </div>
-
-      </div>
-
-      <nav aria-label="Project rooms" className="room-navigation">
-        <SidebarSection label="Command center">
-          <SidebarItem icon={<Home size={15} />} label="Overview" />
-          <SidebarItem icon={<Activity size={15} />} label="Activity" />
-          <SidebarItem icon={<ShieldCheck size={15} />} label="Approvals" badge="0" />
-        </SidebarSection>
-
-        <SidebarSection label="Project rooms">
-          {roomNavigationRef ? <div ref={roomNavigationRef} aria-label="Desktop saved project rooms" /> : <p className="empty-copy">Project rooms require the live Command bridge.</p>}
-          <SidebarItem icon={<Layers3 size={15} />} label="Artifacts" />
-          <SidebarItem icon={<Bot size={15} />} label="Agent runs" />
-        </SidebarSection>
-
-        <SidebarSection label="Recent sessions">
-          {sessions.length > 0 ? sessions.map((session) => (
-            <button type="button" className="session-item" key={session.id} disabled={!onSelect} aria-current={selectedId === session.id ? 'page' : undefined} onClick={() => onSelect?.(session)}>
-              <span className="session-source">{sourceGlyph(session.source)}</span>
-              <span>
-                <strong>{session.title}</strong>
-                <small>{session.messageCount} messages · {session.toolCallCount} tools</small>
-              </span>
-              {session.pinned ? <span className="pin-dot" title="Pinned" /> : null}
-            </button>
-          )) : <p className="empty-copy">No sessions returned by Hermes.</p>}
-        </SidebarSection>
-      </nav>
-
-      <div className="sidebar-footer">
-        <div className="mini-avatar"><Bot size={15} /></div>
-        <div><strong>Jarvis Prime</strong><span>{agentStatus}</span></div>
-        <span className={`status-dot ${state}`} />
-      </div>
-    </aside>
-  );
-}
-
-function SidebarSection({ label, children }: Readonly<{ label: string; children: ReactNode }>) {
-  return <section className="sidebar-section"><h2>{label}</h2>{children}</section>;
-}
-
-function SidebarItem({ icon, label, badge, active = false }: Readonly<{ icon: ReactNode; label: string; badge?: string | undefined; active?: boolean }>) {
-  return (
-    <button
-      type="button"
-      className={`sidebar-item ${active ? 'active' : ''}`}
-      aria-current={active ? 'page' : undefined}
-      disabled={!active}
-    >
-      {icon}<span>{label}</span>{badge ? <small>{badge}</small> : null}
-    </button>
-  );
-}
-
-function ContextChip({ icon, label, tone = 'neutral' }: Readonly<{ icon: ReactNode; label: string; tone?: string }>) {
-  return <span className={`context-chip ${tone}`}>{icon}{label}</span>;
-}
-
-function TimelineEvent({ icon, label, title, tone, meta, children }: Readonly<{
-  icon: ReactNode;
-  label: string;
-  title: string;
-  tone: string;
-  meta: string;
-  children: ReactNode;
-}>) {
-  return (
-    <article className="timeline-event">
-      <div className={`event-icon ${tone}`}>{icon}</div>
-      <div className="event-body">
-        <div className="event-label">
-          <span>{label}</span>
-          <time>{meta}</time>
-        </div>
-        <h2>{title}</h2>
-        <p>{children}</p>
-      </div>
-    </article>
-  );
-}
-
-function OperationsDeck({ bootstrap, agentStatus }: Readonly<{
-  bootstrap: CommandBootstrap;
-  agentStatus: string;
-}>) {
-  const checks = Object.entries(bootstrap.hermes.readinessChecks);
-  return (
-    <aside className="operations-deck" aria-label="Operations deck">
-      <header><div><p>OPERATIONS</p><strong>Read-only deck</strong></div><span className="snapshot-badge"><Radio size={12} /> Static snapshot</span></header>
-
-      <section className="ops-card agent-card">
-        <div className="ops-title"><span><Bot size={15} /> Agent deck</span></div>
-        <div className={`agent-orb ${bootstrap.hermes.state}`}><BrainCircuit size={25} /><span className={bootstrap.hermes.state} /></div>
-        <strong>Jarvis Prime</strong>
-        <p>{agentStatus}</p>
-        <div className="metric-row"><span>Active agents</span><strong>{bootstrap.hermes.activeAgents}</strong></div>
-      </section>
-
-      <section className="ops-card">
-        <div className="ops-title"><span><Activity size={15} /> Readiness</span><small>{checks.length} reported</small></div>
-        <div className="check-list">
-          {checks.map(([name, state]) => (
-            <div className="check-row" key={name}>
-              <span className={`check-icon ${state}`}>{state === 'pass' ? <Check size={11} /> : '!'}</span>
-              <span>{humanize(name)}</span>
-              <small className={state}>{humanize(state)}</small>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="ops-card">
-        <div className="ops-title"><span><SquareTerminal size={15} /> Capabilities</span><small>{bootstrap.hermes.capabilities.length}</small></div>
-        <div className="capability-list">
-          {bootstrap.hermes.capabilities.slice(0, 5).map((capability) => <code key={capability}>{capability}</code>)}
-          {bootstrap.hermes.capabilities.length === 0 ? <p className="empty-copy">Awaiting Hermes bridge.</p> : null}
-        </div>
-      </section>
-
-      <section className="ops-card artifact-card">
-        <div className="ops-title"><span><FileText size={15} /> Artifacts</span><small>0</small></div>
-        <div className="artifact-empty"><Layers3 size={21} /><p>Artifacts created in this room will land here.</p></div>
-      </section>
-    </aside>
-  );
-}
-
-function MobileNavigation() {
-  return (
-    <nav className="mobile-navigation" aria-label="Mobile navigation">
-      <button type="button" className="active" aria-current="page"><MessageSquare size={18} /><span>Room</span></button>
-      <button type="button" disabled><Bot size={18} /><span>Agents</span></button>
-      <button type="button" disabled><ShieldCheck size={18} /><span>Approve</span></button>
-      <button type="button" disabled><Layers3 size={18} /><span>Artifacts</span></button>
-    </nav>
-  );
-}
-
-function formatTimestamp(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(new Date(value));
-}
-
-function sourceGlyph(source: string): string {
-  switch (source.toLowerCase()) {
-    case 'discord': return '💬';
-    case 'cli': return '⌘';
-    case 'web': return '🌐';
-    default: return '◆';
+  const health = bootstrap.hermes.state === 'online' ? 'Hermes available' : bootstrap.hermes.state === 'degraded' ? 'Hermes degraded' : 'Hermes unavailable';
+  function selectSession(session: SessionSummary | null) {
+    if (session) setSessions(previous => [session, ...previous.filter(item => item.id !== session.id)]);
+    setSelectedSession(session);
   }
-}
-
-function humanize(value: string): string {
-  return value.replace(/([A-Z])/g, ' $1').replace(/^./, (letter) => letter.toUpperCase());
+  function closeNavigation() { setNavigationOpen(false); menu.current?.focus(); }
+  function openPanel(kind: 'runtime' | 'settings', element: HTMLElement) {
+    projects.current?.closeDetails(); panelOpener.current = element; setPane(kind); setNavigationOpen(false);
+  }
+  function closePanel() { if (pane === 'project') projects.current?.closeDetails(); setPane(null); panelOpener.current?.focus(); }
+  const activeElsewhere = live.turn && !live.turn.done && live.turn.intent.sessionId !== selectedSession?.id;
+  return <div className={`command-shell${pane ? ' has-context' : ''}`}>
+    {navigationOpen ? <button type="button" className="navigation-scrim" aria-label="Close navigation" onClick={closeNavigation} /> : null}
+    <aside ref={sidebar} className={`room-sidebar${navigationOpen ? ' is-open' : ''}`} aria-label="Chat navigation" onKeyDown={event => {
+      if (!navigationOpen) return;
+      if (event.key === 'Escape') { event.stopPropagation(); closeNavigation(); }
+      if (event.key === 'Tab') {
+        const controls = Array.from(sidebar.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input:not(:disabled),a[href]') ?? []).filter(element => element.getClientRects().length > 0);
+        if (event.shiftKey && document.activeElement === controls[0]) { event.preventDefault(); controls.at(-1)?.focus(); }
+        if (!event.shiftKey && document.activeElement === controls.at(-1)) { event.preventDefault(); controls[0]?.focus(); }
+      }
+    }}>
+      <div className="sidebar-brand"><Command size={29} /><strong>Jarvis Command</strong><button className="icon-button close-navigation" type="button" aria-label="Close chat navigation" onClick={closeNavigation}><X size={20} /></button></div>
+      {liveEnabled ? <ProjectRooms ref={projects} sessions={sessions} selectedSessionId={selectedSession?.id} onScope={setProjectName} onSession={selectSession} contextTarget={contextTarget}
+        onOpenChange={open => { setPane(previous => open ? 'project' : previous === 'project' ? null : previous); if (open) setNavigationOpen(false); }} onNavigate={() => { if (navigationOpen || (typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 760px)').matches)) closeNavigation(); }} /> : <div className="sidebar-scroll"><p className="empty-copy">Live chat is unavailable.</p>{sessions.map(session => <div key={session.id} className="sidebar-item"><MessageSquare size={17} /><span>{session.title}</span></div>)}</div>}
+      <footer className="sidebar-footer"><button className="sidebar-item" type="button" onClick={event => openPanel('settings', event.currentTarget)}><Settings2 size={18} /><span>Settings</span></button><div className="account-row"><span className="operator-avatar">NS</span><span>My account<small>{bootstrap.identity.provider === 'development' ? 'Development preview' : 'Personal workspace'}</small></span></div></footer>
+    </aside>
+    <main className="command-main">
+      <header className="command-header"><button ref={menu} className="icon-button menu-button" type="button" aria-label="Open chat navigation" aria-expanded={navigationOpen} onClick={() => setNavigationOpen(true)}><Menu size={21} /></button>
+        <div className="room-breadcrumb">{projectName ? <><span aria-label="Selected project">{projectName}</span><ChevronRight size={14} /></> : null}<strong aria-label="Selected session">{selectedSession?.title ?? (projectName ? 'New conversation' : 'Jarvis Command')}</strong></div>
+        <div className="header-actions">{projectName ? <button className={`icon-button${pane === 'project' ? ' active' : ''}`} type="button" aria-label="Open project details" title="Project details" aria-expanded={pane === 'project'} onClick={event => { if (pane === 'project') projects.current?.closeDetails(); else projects.current?.openDetails(event.currentTarget); }}><PanelRight size={19} /></button> : null}
+          <button className={`health-button ${bootstrap.hermes.state}`} type="button" aria-label={health} title={health} onClick={event => openPanel('runtime', event.currentTarget)}><span className="status-dot" /><span>Hermes</span></button></div>
+      </header>
+      {bootstrap.identity.provider === 'development' ? <div className="preview-notice">Development preview · {bootstrap.command.version}</div> : null}
+      {!hermesOnline ? <p className="notice error" role="status">{health}. {bootstrap.hermes.state === 'offline' ? 'Check the connection before sending.' : 'Some capabilities may be unavailable.'}</p> : null}
+      {activeElsewhere ? <div className="active-run-notice" role="status">Jarvis is working in another chat. <button className="text-button" type="button" onClick={() => { const session = sessions.find(item => item.id === live.turn?.intent.sessionId); if (session) projects.current?.selectChat(session); }}>View active chat</button></div> : null}
+      <section ref={conversationScroll} className="timeline" aria-label="Conversation" onScroll={event => { const element = event.currentTarget; followLatest.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}><div ref={conversationContent} className="conversation-content">
+        {liveEnabled && selectedSession ? <LiveRoom key={`${selectedSession.id}:${live.refresh?.sessionId === selectedSession.id ? live.refresh.revision : ''}`} session={selectedSession} onHistory={live.history}
+          turns={[...live.completedTurns, ...(live.turn ? [live.turn] : [])]} renderTurn={turn => <TurnView turn={turn} allowed={writeAllowed && turn.intent === live.turn?.intent} approve={live.approve} stop={live.stop} />} /> : <div className="welcome"><Command size={39} strokeWidth={1.5} /><p className="eyebrow">YOUR SPACE TO THINK & BUILD</p><h1>{projectName ? `Let’s work on ${projectName}.` : 'What are we working on?'}</h1><p>Start a conversation with Jarvis. Keep related work together in projects.</p><button className="secondary-button welcome-action" type="button" onClick={() => { if (window.matchMedia('(max-width: 760px)').matches) setNavigationOpen(true); else projects.current?.focusSearch(); }}>Choose a chat or start a new one <ChevronRight size={17} /></button></div>}
+        {live.recoveryError ? <p role="alert" className="notice error">{live.recoveryError}</p> : null}
+        {live.turn && !selectedSession && live.turn.intent.input === null ? <TurnView turn={live.turn} allowed={false} approve={live.approve} stop={live.stop} /> : null}
+      </div></section>
+      <footer className="composer-wrap">
+        {liveEnabled && selectedSession?.ownership === 'command' && !live.historyReady(selectedSession.id) ? <p className="composer-feedback" role="status">Load complete chat history before sending. Retry history or load remaining pages.</p> : null}
+        {live.historyBacklogFull ? <p role="alert" className="notice">Unconfirmed reply limit reached. Your replies are retained; retry history before sending more.</p> : null}
+        {liveEnabled ? <TurnComposer blocked={!!live.recoveryError || !live.historyReady(selectedSession?.id) || live.historyBacklogFull} allowed={!!writeAllowed} sessionId={selectedSession?.id} max={bootstrap.command.liveRoom.maxInputCharacters} maxSteer={bootstrap.command.liveRoom.maxSteerCharacters} turn={live.turn} send={live.send} retry={live.retry} resume={live.resume} steer={live.steer} recoveries={live.recoveries} consumeRecovery={live.consumeRecovery} /> : <p className="composer-feedback">Messaging is unavailable in this read-only connection.</p>}
+      </footer>
+    </main>
+    <ContextPane open={pane !== null}>
+      <div ref={setContextTarget} hidden={pane !== 'project'} />
+      {pane === 'runtime' || pane === 'settings' ? <div className="runtime-details" onKeyDown={event => { if (event.key === 'Escape') closePanel(); }}><header className="pane-header"><h2>{pane === 'runtime' ? 'Hermes connection' : 'Settings'}</h2><button ref={panelClose} className="icon-button" type="button" aria-label="Close context" onClick={closePanel}><X size={20} /></button></header><div className="pane-body">
+        <h3>{pane === 'runtime' ? health : 'Your workspace'}</h3><p className="muted">{pane === 'runtime' ? 'Reported connection snapshot' : 'Jarvis Command keeps your conversations connected to Hermes.'}</p>
+        <dl className="runtime-facts"><dt>Version</dt><dd>{bootstrap.command.version}</dd><dt>Identity</dt><dd>{bootstrap.identity.provider === 'cloudflare-access' ? 'Access verified' : 'Development identity'}</dd><dt>Model</dt><dd>{bootstrap.hermes.model === 'hermes-agent' ? 'Adapter label: hermes-agent' : bootstrap.hermes.model ?? 'Not reported'}</dd><dt>Provider</dt><dd>{bootstrap.hermes.provider ?? 'Not reported'}</dd><dt>Active agents</dt><dd>{bootstrap.hermes.activeAgents}</dd></dl>
+        {pane === 'runtime' ? <><h4>Readiness</h4><dl className="runtime-facts">{Object.entries(bootstrap.hermes.readinessChecks).map(([name, value]) => <div key={name}><dt>{name.replace(/([A-Z])/g, ' $1')}</dt><dd>{value}</dd></div>)}</dl><h4>Available capabilities</h4><ul className="capability-list">{bootstrap.hermes.capabilities.map(item => <li key={item}>{item}</li>)}</ul></> : <p className="muted small">Conversations use your current Hermes configuration.</p>}
+      </div></div> : null}
+    </ContextPane>
+  </div>;
 }

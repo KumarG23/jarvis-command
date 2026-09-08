@@ -50,3 +50,15 @@ it.each(['success', 'denied'])('offers honest %s copying after a reply moves to 
   await screen.findByText(mode === 'success' ? 'Response copied' : 'Could not copy. Select the response text and copy manually.');
   expect(writeText).toHaveBeenCalledExactlyOnceWith(content);
 });
+
+
+it('keeps saved tool output collapsed while retaining its exact payload', async () => {
+  const tool = { id: 'tool:1', sessionId: session.id, role: 'tool', content: 'Exact tool output\n  unchanged', timestamp: null, toolName: 'terminal', displayKind: null };
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ sessionId: session.id, messages: [tool], pagination: { limit: 50, offset: 0, returned: 1, hasMore: false } })));
+  render(<LiveRoom session={session} onHistory={vi.fn()} />);
+  const summary = await screen.findByText('terminal');
+  expect(summary.closest('details')).not.toHaveAttribute('open');
+  expect(summary.closest('details')!.querySelector('p')!.textContent).toBe(tool.content);
+  fireEvent.click(summary);
+  expect(summary.closest('details')).toHaveAttribute('open');
+});

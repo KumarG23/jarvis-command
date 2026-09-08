@@ -30,6 +30,7 @@ function setup(admit?: (body: Record<string, string>) => Promise<Response>, fina
   Source.instances = [];
   vi.stubGlobal('EventSource', Source);
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/rooms') return Response.json({ version: 1, rooms: [] });
     if (url.includes('/messages?')) return Response.json({ sessionId: url.includes('jc_second') ? 'jc_second' : session.id, messages: [], pagination: { limit: 50, offset: 0, returned: 0, hasMore: false } });
     if (url === '/api/live/runs') { const body = JSON.parse(init!.body as string); return admit ? admit(body) : Response.json({ ...body, input: undefined, publicRunId: id, status: 'running', replayed: false }); }
     return Response.json(final);
@@ -37,9 +38,15 @@ function setup(admit?: (body: Record<string, string>) => Promise<Response>, fina
   vi.stubGlobal('fetch', fetchMock);
   return fetchMock;
 }
+async function chooseChat(name: string) {
+  const button = await screen.findByRole('button', { name: new RegExp('^' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) });
+  await waitFor(() => expect(button).toBeEnabled());
+  fireEvent.click(button);
+  await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(name));
+}
 async function open(value = bootstrap) {
   render(<App loadBootstrap={async () => value} />);
-  fireEvent.change(await screen.findByRole('combobox', { name: 'Session' }), { target: { value: session.id } });
+  await chooseChat(session.title);
   await screen.findByText('No saved messages in session history yet.');
 }
 async function send() {
@@ -156,9 +163,9 @@ it('retains unsaved completed turns when another identical message is submitted 
   await waitFor(() => expect(Source.instances).toHaveLength(2));
   expect(screen.getAllByText('Hello Jarvis')).toHaveLength(2);
   expect(screen.getByText('Streamed answer')).toBeInTheDocument();
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'jc_second' } });
+  await chooseChat('Second room');
   expect(screen.queryByText('Streamed answer')).not.toBeInTheDocument();
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: session.id } });
+  await chooseChat(session.title);
   expect(await screen.findByText('Streamed answer')).toBeInTheDocument();
   expect(screen.getAllByText('Hello Jarvis')).toHaveLength(2);
 });
@@ -176,8 +183,8 @@ it('reconciles two identical turns after delayed persistence without claiming ei
     ? { sessionId: session.id, messages, pagination: { limit: 50, offset: 0, returned: 4, hasMore: false } } : status()));
   await act(async () => Source.instances[1]!.onerror?.());
   // Real run IDs differ; switch forces a fresh history view even with this fixture's reused ID.
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'jc_second' } });
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: session.id } });
+  await chooseChat('Second room');
+  await chooseChat(session.title);
   await waitFor(() => expect(document.querySelector('[data-message-id="saved:3"]')).not.toBeNull());
   expect(screen.getAllByText('Hello Jarvis')).toHaveLength(2);
   expect(screen.getAllByText('Streamed answer')).toHaveLength(2);
@@ -186,8 +193,8 @@ it('reconciles two identical turns after delayed persistence without claiming ei
     expect.stringContaining('Hello Jarvis'), expect.stringContaining('Streamed answer'),
   ]);
   fetchMock.mockRejectedValue(new Error('history unavailable'));
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'jc_second' } });
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: session.id } });
+  await chooseChat('Second room');
+  await chooseChat(session.title);
   await screen.findByRole('alert');
   // Only unconfirmed bodies remain in memory after durable handoff.
   expect(screen.getAllByText('Hello Jarvis')).toHaveLength(1);
@@ -276,7 +283,7 @@ it('keeps the composer disabled through delayed and failed history, then unlocks
     return ordinary(url, init);
   });
   render(<App loadBootstrap={async () => bootstrap} />);
-  fireEvent.change(await screen.findByRole('combobox', { name: 'Session' }), { target: { value: session.id } });
+  await chooseChat(session.title);
   expect(await screen.findByRole('textbox', { name: 'Message Jarvis' })).toBeDisabled();
   await act(async () => settle(new Response('', { status: 503 })));
   expect(await screen.findByRole('button', { name: 'Retry history' })).toBeInTheDocument();
@@ -404,7 +411,7 @@ it('bounds reconnection and failed status polling without inventing a terminal s
   expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
   fetchMock.mockResolvedValueOnce(Response.json(status()));
   await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Resume status check' })));
-  expect(screen.getByText('Run completed')).toBeInTheDocument();
+  expect(screen.getAllByText('Run completed').length).toBeGreaterThan(0);
   expect(fetchMock.mock.calls.filter(([url]) => url === '/api/live/runs')).toHaveLength(1);
   expect(Source.instances).toHaveLength(3);
 });
@@ -552,7 +559,7 @@ it.each(['publicRunId', 'sessionId', 'malformed'])('refuses unbound %s status an
 
 it('keeps supervision across rooms, ignores foreign events and closes on unmount', async () => {
   setup(undefined, status('running')); await open(); await send();
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'jc_second' } });
+  await chooseChat('Second room');
   act(() => Source.instances[0]!.emit('message.delta', { delta: 'Foreign', publicRunId: 'jcr_' + 'b'.repeat(32) }));
   expect(screen.queryByText('Foreign')).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
@@ -578,7 +585,7 @@ it('rejects blank/oversized input, preserves Shift Enter and IME, and renders co
 it('never sends another room draft to the selected session', async () => {
   const fetchMock = setup(); await open();
   fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Only room A' } });
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'jc_second' } });
+  await chooseChat('Second room');
   expect(screen.getByRole('textbox')).toHaveValue('');
   fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Only room B' } });
   await waitFor(() => expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled());
@@ -644,9 +651,9 @@ it('cancels an active steer body on unmount without recovery callbacks', async (
 it.each(['offline', 'capability', 'disabled', 'external'])('removes active controls under %s gating and retains supervision', async (gate) => {
   const fetchMock = setup();
   const initial = structuredClone(bootstrap);
-  initial.sessions.push({ ...session, id: 'external:room', ownership: 'external' });
+  initial.sessions.push({ ...session, id: 'external:room', title: 'External room', ownership: 'external' });
   const { rerender } = render(<App loadBootstrap={async () => initial} />);
-  fireEvent.change(await screen.findByRole('combobox', { name: 'Session' }), { target: { value: session.id } });
+  await chooseChat(session.title);
   await screen.findByText('No saved messages in session history yet.'); await send();
   act(() => Source.instances[0]!.emit('approval.request', { approval }));
   expect(screen.getByRole('button', { name: 'Queue steer' })).toBeInTheDocument();
@@ -655,7 +662,7 @@ it.each(['offline', 'capability', 'disabled', 'external'])('removes active contr
   if (gate === 'capability') changed.hermes.capabilities = [];
   if (gate === 'disabled') changed.command.liveRoom.enabled = false;
   await act(async () => rerender(<App loadBootstrap={async () => changed} />));
-  if (gate === 'external') fireEvent.change(screen.getByRole('combobox', { name: 'Session' }), { target: { value: 'external:room' } });
+  if (gate === 'external') await chooseChat('External room');
   for (const name of ['Approve once', 'Deny', 'Stop run', 'Queue steer']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
   expect(fetchMock.mock.calls.filter(([url]) => /\/(approval|stop|steer)$/.test(url))).toHaveLength(0);
   await act(async () => Source.instances[0]!.onerror?.());
@@ -682,25 +689,25 @@ it('queues exact steer with shared locking and restores authoritative terminal i
   expect(screen.getByText(/Run ended.*unconsumed guidance/)).toBeInTheDocument();
   expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue(exact);
   fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: '' } });
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'jc_second' } });
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: session.id } });
+  await chooseChat('Second room');
+  await chooseChat(session.title);
   expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('');
 });
 it('offers explicit recovery for an edited room draft and does not auto-restore after clearing it', async () => {
   setup(undefined, status('completed', { pendingSteer: '  pending\nexact  ' })); await open(); await send();
   fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: 'Existing draft' } });
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'jc_second' } });
+  await chooseChat('Second room');
   fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: 'Room B only' } });
   await act(async () => Source.instances[0]!.onerror?.());
   expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('Room B only');
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: session.id } });
+  await chooseChat(session.title);
   expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('Existing draft');
   expect(screen.getByRole('button', { name: 'Restore to empty draft' })).toBeDisabled();
   fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: '' } });
   expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('');
   expect(screen.getByRole('button', { name: 'Restore to empty draft' })).toBeEnabled();
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'jc_second' } });
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: session.id } });
+  await chooseChat('Second room');
+  await chooseChat(session.title);
   expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('');
   fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: 'New edit' } });
   fireEvent.click(screen.getByRole('button', { name: 'Append to draft' }));
@@ -936,3 +943,4 @@ it.each(['once', 'deny'] as const)('submits exact %s approval once and reads bac
   expect(fetchMock.mock.calls.some(([url]) => url === `/api/live/runs/${id}`)).toBe(true);
   expect(screen.queryByRole('region', { name: 'Awaiting approval' })).not.toBeInTheDocument();
 });
+
