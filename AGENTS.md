@@ -1,12 +1,14 @@
 # Jarvis Command Engineering Policy
 
-## Ownership
+## Proportionate engineering — current 2026-09-08
 
-GPT-6 Astra at high reasoning effort owns this project’s architecture and implementation. GPT-5.6 Sol at high effort independently reviews the complete final candidate. Generic engineering delegation is the Sol read-only review lane; use a fresh explicitly selected Astra/high session if implementation needs a separate worker. No routine xhigh/max/ultra and no silent fallback on quota failure. The Astra lead remains responsible for the complete tracked/untracked diff, integration, and real verification evidence.
+Build first. Validate proportionately. Classify the CHANGE, not the repository. Follow the risk tiers in `/home/neal/AGENTS.md` and `subagent-driven-development`.
 
-Use one implementer followed by one finite read-only independent reviewer, concise file-backed handoffs, fresh milestone sessions, focused TDD during implementation, and scripted final gates. Follow the `subagent-driven-development` skill’s `references/efficient-engineering.md`. Preserve every WIP path; reducing orchestration never reduces security or exact-candidate review requirements.
+One capable implementation owner is the default. Ordinary UI/features/refactors/fixes use relevant inspection, coherent implementation, focused tests, applicable typecheck/lint/build and concise self-review. Stop when the requested result is delivered; no automatic independent reviewer, full suite, repository reread, whole-candidate approval or evidence package.
 
-Terra is retired and must not be assigned implementation, review, reconnaissance, tests, documentation, cron, memory, or auxiliary work. Grok may be used only for source-grounded freshness research or fallback work; Luna only for low-risk non-building utilities.
+Contained backend/schema/integration/downtime risk merits stronger self-review and relevant regression checks. Changed auth/MFA/authorization/credentials, privilege/network boundaries, destructive/data-loss operations or consequential command permissions should get scoped independent review. Name the concrete failure risk before escalating source reading, tests, reasoning or delegation. Sol review is an escalation mechanism, not a release stage; no automatic Astra+Sol/high-max pairing.
+
+Reuse successful unchanged worker tests. No parent re-running gates or auditing reviewer read receipts without a concrete reliability concern. Repairs require checking changed behavior and affected interactions, not renewed entire-candidate certification. Preserve all WIP and explicit authorization restrictions. Retired-provider and no-silent-engineering-fallback decisions remain.
 
 ## Product boundary
 
@@ -21,7 +23,7 @@ Read it before architecture or scope changes.
 ## Engineering rules
 
 - Read before editing. Keep diffs scoped.
-- Use strict RED → GREEN → REFACTOR for production behavior.
+- Test changed behavior; use a failing regression test for reproducible bugs when practical.
 - Prefer vertical tracer bullets over horizontal scaffolding sprawl.
 - Browser clients never receive Hermes bearer credentials, Cloudflare tunnel credentials, model-provider credentials, or unrestricted proxy access.
 - The BFF exposes explicit, narrow operations; never ship a generic pass-through proxy to Hermes.
@@ -34,16 +36,8 @@ Read it before architecture or scope changes.
 - No fake success data in production. Sample/demo data must be visibly labeled and isolated from live paths.
 - No secrets in source control, logs, browser storage, screenshots, or chat.
 
-## Release gates
+## Deployment and completion
 
-A release is not complete until:
+For a prepared committed build: verify requested commit/artifact/version and provenance, establish rollback, deploy through the existing recoverable path, smoke-test affected service/UI behavior and report. Source review is warranted only for uncertain provenance, a new security concern, deployment trust-boundary changes or explicit user request.
 
-1. Focused and full automated tests pass.
-2. Typecheck, lint, and production build pass without warnings we own.
-3. An independent reviewer inspects the complete exact candidate after the final amendment.
-4. The deployed artifact hash matches the reviewed candidate.
-5. Cloudflare Access positive and negative paths remain enforced.
-6. The public PWA is exercised in a real browser at desktop and mobile widths.
-7. Browser console and network failures are inspected.
-8. The origin remains loopback-only and services recover after restart.
-9. Canonical Obsidian documentation is updated and pushed.
+Preserve Access/MFA, server-side authorization and identity, credential isolation, narrow proxies, network restrictions, consequential approval/audit and restart/rollback protections. Exercise changed UI at relevant desktop/mobile widths; repeat broader auth/lifecycle checks only for changed boundaries or a concrete concern. No mandatory full suite or exact-candidate independent release review. Record built/deployed/verified status truthfully and keep current documentation short; historical evidence does not govern future work.
