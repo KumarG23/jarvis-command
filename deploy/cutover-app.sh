@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 umask 077
+source "$(dirname -- "${BASH_SOURCE[0]}")/trusted-recovery-directory.sh"
 
 usage() {
   printf 'usage: %s cutover <bootstrap-container> <bootstrap-unit|none> <app-unit> <expected-app-image-id> <backup-root>\n' "$0" >&2
@@ -39,13 +40,7 @@ write_state() {
 }
 
 read_state() {
-  local state_directory=$1
-  local name=$2
-  local value
-  [[ -f ${state_directory}/${name} ]] || fail "cutover state is missing ${name}"
-  value=$(<"${state_directory}/${name}")
-  [[ ${value} != *$'\n'* && ${value} != *$'\r'* ]] || fail "cutover state ${name} is malformed"
-  printf '%s' "${value}"
+  recovery_read "$2"
 }
 
 container_running() {
@@ -71,7 +66,12 @@ restore_bootstrap() {
   local state_directory=$1
   local bootstrap_container bootstrap_unit app_unit bootstrap_image
   local bootstrap_restart bootstrap_was_running bootstrap_unit_enabled bootstrap_unit_active
-  local app_unit_enabled overall=0 current
+  local app_unit_enabled overall=0 current prior_status
+
+  recovery_validate_files || return 1
+  prior_status=$(read_state "$state_directory" status) || return 1
+  [[ $prior_status =~ ^(captured|cutover-verified|bootstrap-restored)$ ]] || return 1
+  [[ -s $state_directory/bootstrap-root.html ]] || return 1
 
   bootstrap_container=$(read_state "${state_directory}" bootstrap-container) || return 1
   bootstrap_unit=$(read_state "${state_directory}" bootstrap-unit) || return 1
@@ -95,7 +95,9 @@ restore_bootstrap() {
 
   "${systemctl_bin}" stop "${app_unit}" >/dev/null 2>&1 || overall=1
   "${docker_bin}" stop "${app_container}" >/dev/null 2>&1 || true
-  if [[ -n $("${docker_bin}" ps --filter "name=^/${app_container}$" --format '{{.Names}}' 2>/dev/null) ]]; then
+  if ! current=$("${docker_bin}" ps --filter "name=^/${app_container}$" --format '{{.Names}}' 2>/dev/null); then
+    overall=1
+  elif [[ -n $current ]]; then
     overall=1
   fi
   if [[ ${app_unit_enabled} == true ]]; then
@@ -147,12 +149,13 @@ restore_bootstrap() {
 
   if (( overall != 0 )); then
     printf 'bootstrap restoration could not be verified; manual recovery required from %s\n' \
-      "${state_directory}" >&2
+      "${recovery_display}" >&2
     return 1
   fi
 
-  write_state "${state_directory}" status bootstrap-restored
-  printf 'BOOTSTRAP_RESTORED_FROM=%s\n' "${state_directory}"
+  recovery_verify || return 1
+  write_state "${state_directory}" status bootstrap-restored || return 1
+  printf 'BOOTSTRAP_RESTORED_FROM=%s\n' "${recovery_display}"
 }
 
 rollback_armed=false
@@ -163,9 +166,9 @@ rollback_on_error() {
   (( status != 0 )) || status=1
   if [[ ${rollback_armed} == true && -n ${state_directory} ]]; then
     if restore_bootstrap "${state_directory}" >/dev/null; then
-      printf 'cutover failed; bootstrap restored from %s\n' "${state_directory}" >&2
+      printf 'cutover failed; bootstrap restored from %s\n' "${recovery_display}" >&2
     else
-      printf 'cutover failed; bootstrap restoration also failed for %s\n' "${state_directory}" >&2
+      printf 'cutover failed; bootstrap restoration also failed for %s\n' "${recovery_display}" >&2
       status=1
     fi
   fi
@@ -178,7 +181,9 @@ shift
 
 if [[ ${mode} == rollback ]]; then
   [[ $# -eq 1 ]] || usage
-  restore_bootstrap "$1"
+  [[ $1 =~ /cutover-[0-9]{8}T[0-9]{6}Z$ ]] || fail 'invalid cutover state directory name'
+  recovery_open "$1"
+  restore_bootstrap "$recovery_directory"
   exit
 fi
 
@@ -195,6 +200,7 @@ valid_unit_name "${app_unit}" || fail 'invalid application systemd unit'
 [[ ${expected_app_image} =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'expected application image must be sha256:<64 lowercase hex>'
 [[ ${backup_root} == /* && ${backup_root} != *$'\n'* && ${backup_root} != *$'\r'* ]] || fail 'backup root must be an absolute path'
 [[ ${sleep_seconds} =~ ^([0-9]+|[0-9]*\.[0-9]+)$ ]] || fail 'CUTOVER_SLEEP_SECONDS must be numeric'
+recovery_open "$backup_root"
 
 if "${systemctl_bin}" is-active --quiet "${app_unit}"; then
   fail 'application unit is already active; refusing bootstrap cutover'
@@ -206,12 +212,9 @@ if ! port_3000_is_bound; then
   fail 'bootstrap does not own an active port 3000 listener'
 fi
 
-mkdir -p "${backup_root}"
-chmod 0700 "${backup_root}"
 timestamp=$("${date_bin}" -u +%Y%m%dT%H%M%SZ)
-state_directory="${backup_root}/cutover-${timestamp}"
-mkdir "${state_directory}"
-chmod 0700 "${state_directory}"
+recovery_create "cutover-${timestamp}"
+state_directory=$recovery_directory
 
 bootstrap_image=$("${docker_bin}" inspect --format '{{.Image}}' "${bootstrap_container}")
 bootstrap_restart=$("${docker_bin}" inspect --format '{{.HostConfig.RestartPolicy.Name}}' "${bootstrap_container}")
@@ -289,7 +292,8 @@ if cmp -s "${state_directory}/bootstrap-root.html" "${state_directory}/app-root.
   fail 'application root still matches the bootstrap artifact'
 fi
 
+recovery_verify
 write_state "${state_directory}" status cutover-verified
 rollback_armed=false
 trap - ERR INT TERM HUP
-printf 'CUTOVER_STATE_DIR=%s\n' "${state_directory}"
+printf 'CUTOVER_STATE_DIR=%s\n' "${recovery_display}"

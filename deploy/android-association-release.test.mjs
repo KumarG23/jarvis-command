@@ -7,8 +7,11 @@ import {
   chmod,
   mkdir,
   mkdtemp,
+  readdir,
   readFile,
   rm,
+  stat,
+  symlink,
   writeFile,
 } from 'node:fs/promises';
 import { constants } from 'node:fs';
@@ -16,9 +19,11 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { URL } from 'node:url';
+import { recoveryFixtureScript, checkAcquisitionRace } from './recovery-fixture.mjs';
+import { checkRootRefusal, rejectedRoots, checkRollbackRefusal, rollbackAttacks } from './recovery-root-cases.mjs';
 
 const deployDirectory = new URL('.', import.meta.url).pathname;
-const associationScript = join(deployDirectory, 'install-android-association.sh');
+let associationScript = join(deployDirectory, 'install-android-association.sh');
 const imageId = 'sha256:2fd64f267f33feeb6a17a20e37b2a6594e3398817ba114b8ead13bc949cfe654';
 const unapprovedImage = `sha256:${'f'.repeat(64)}`;
 const oldCompose = 'services:\n  app:\n    image: old\n';
@@ -43,6 +48,7 @@ async function exists(path) {
 
 async function makeFixture(options = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'jarvis-command-association-'));
+  associationScript = await recoveryFixtureScript(join(deployDirectory, 'install-android-association.sh'), directory);
   const bin = join(directory, 'bin');
   const stage = join(directory, 'stage');
   const backupRoot = join(directory, 'backups');
@@ -74,6 +80,7 @@ async function makeFixture(options = {}) {
   const attackerAssociationSource = join(directory, 'attacker-assetlinks.json');
 
   await mkdir(bin);
+  await mkdir(backupRoot, { mode: 0o700 });
   await mkdir(stage, { mode: 0o700 });
   await mkdir(dirname(composeTarget), { recursive: true });
   await mkdir(dirname(associationTarget), { recursive: true });
@@ -154,6 +161,15 @@ case "$1" in
     ;;
   daemon-reload) ;;
   restart)
+    if [[ -n ${JSON.stringify(options.signal ?? '')} && ! -e ${JSON.stringify(failedRestart)} ]]; then
+      : > ${JSON.stringify(failedRestart)}
+      kill -s ${JSON.stringify(options.signal ?? '')} "$PPID"
+    fi
+    if [[ ${options.replaceRoot ? 'true' : 'false'} == true && ! -e ${JSON.stringify(failedRestart)} ]]; then
+      : > ${JSON.stringify(failedRestart)}
+      mv ${JSON.stringify(backupRoot)} ${JSON.stringify(backupRoot + '.retained')}
+      ln -s ${JSON.stringify(join(directory, 'sentinel'))} ${JSON.stringify(backupRoot)}
+    fi
     if [[ ${options.failFirstRestart ? 'true' : 'false'} == true && ! -e ${JSON.stringify(failedRestart)} ]]; then
       : > ${JSON.stringify(failedRestart)}
       write_state ${JSON.stringify(appRunning)} false
@@ -328,6 +344,59 @@ async function assertRollbackRejected(fixture, stateDirectory, errorPattern) {
   assert.doesNotMatch(result.stdout, /ASSOCIATION_ROLLED_BACK_FROM=/);
   assert.equal((await readFile(join(stateDirectory, 'status'), 'utf8')).trim(), 'association-verified');
 }
+
+for (const point of ['ancestor-validation', 'handoff', 'leaf-create']) {
+  test(`association acquisition race ${point}`, () => checkAcquisitionRace(makeFixture,
+    fixture => spawnSync(associationScript, ['apply', fixture.stage, String(process.getuid()),
+      imageId, fixture.backupRoot, sha256(newCompose), sha256(assetLinks)],
+    { encoding: 'utf8', env: fixture.env, timeout: 5000 }), point));
+}
+
+for (const kind of [...rollbackAttacks, ...['previous-app-image-id', 'previous-unit-enabled',
+  'previous-association-existed', 'previous-compose.yaml'].map(name => `missing:${name}`)]) {
+  test(`association rollback adversarial ${kind}`, () => checkRollbackRefusal(makeFixture,
+    applyAssociation, (fixture, state) => spawnSync(associationScript, ['rollback', state],
+      { encoding: 'utf8', env: fixture.env, timeout: 5000 }), 'previous-unit-active', 'previous-assetlinks.json', kind));
+}
+
+for (const kind of rejectedRoots) {
+  test(`association refuses ${kind} root without side effects`, () => checkRootRefusal(makeFixture,
+    (fixture, path) => spawnSync(associationScript, ['apply', fixture.stage, String(process.getuid()),
+      imageId, path, sha256(newCompose), sha256(assetLinks)], { encoding: 'utf8', env: fixture.env, timeout: 5000 }), kind));
+}
+
+test('standalone packaged association executes over stdin without a sibling helper', async () => {
+  const fixture = await makeFixture();
+  try {
+    const result = spawnSync('/bin/bash', ['-s', '--', 'apply', fixture.stage, String(process.getuid()),
+      imageId, fixture.backupRoot, sha256(newCompose), sha256(assetLinks)], {
+      encoding: 'utf8', env: fixture.env, input: await readFile(associationScript, 'utf8'), timeout: 5000,
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(await readFile(fixture.composeTarget, 'utf8'), newCompose);
+    assert.equal(await readFile(fixture.associationTarget, 'utf8'), assetLinks);
+  } finally { await rm(fixture.directory, { recursive: true, force: true }); }
+});
+
+test('untrusted backup root is refused without chmod or consequential commands', async () => {
+  const fixture = await makeFixture();
+  try {
+    const target = join(fixture.directory, 'sentinel');
+    await mkdir(target, { mode: 0o755 });
+    await writeFile(join(target, 'unrelated'), 'keep me');
+    await rm(fixture.backupRoot, { recursive: true });
+    await symlink(target, fixture.backupRoot);
+    const before = await stat(target);
+    const result = spawnSync(associationScript, ['apply', fixture.stage, String(process.getuid()),
+      imageId, fixture.backupRoot, sha256(newCompose), sha256(assetLinks)], { encoding: 'utf8', env: fixture.env });
+    assert.notEqual(result.status, 0);
+    assert.equal((await stat(target)).mode, before.mode, 'must not chmod symlink target');
+    assert.equal(await readFile(join(target, 'unrelated'), 'utf8'), 'keep me');
+    assert.equal(await readFile(fixture.log, 'utf8').catch(() => ''), '');
+  } finally {
+    await rm(fixture.directory, { recursive: true, force: true });
+  }
+});
 
 test('privileged association installer rejects a matching healthy but unapproved image', async () => {
   const fixture = await makeFixture({ runtimeImage: unapprovedImage });
@@ -896,6 +965,95 @@ test('failed association restart automatically restores the previous compose and
   } finally {
     await rm(fixture.directory, { recursive: true, force: true });
   }
+});
+
+for (const failure of ['persistent', 'one-shot']) {
+test(`installer-local snapshot cleanup ${failure} failure restores rollout and retains honest recovery metadata`, async () => {
+  const fixture = await makeFixture({ initialAssociation: true });
+  let snapshot;
+  try {
+    const cleanupLog = join(fixture.directory, 'cleanup-path');
+    await writeFile(join(fixture.directory, 'bin/rm'), `#!/bin/bash
+if [[ \${!#} == /tmp/jarvis-command-association-root.* && ( ${JSON.stringify(failure)} == persistent || ! -e ${JSON.stringify(cleanupLog)} ) ]]; then
+  printf '%s\\n' "\${!#}" > ${JSON.stringify(cleanupLog)}
+  exit 97
+fi
+exec /usr/bin/rm "$@"
+`, { mode: 0o700 });
+    const result = spawnSync(associationScript, ['apply', fixture.stage, String(process.getuid()),
+      imageId, fixture.backupRoot, sha256(newCompose), sha256(assetLinks)], { encoding: 'utf8', env: fixture.env });
+    snapshot = (await readFile(cleanupLog, 'utf8')).trim();
+    assert.match(snapshot, /^\/tmp\/jarvis-command-association-root\.[A-Za-z0-9_]+$/);
+    assert.equal(await exists(snapshot), true, 'cleanup failure must retain the snapshot, not retry deletion on EXIT');
+    assert.equal((await stat(snapshot)).uid, process.getuid());
+    assert.notEqual(result.status, 0);
+    assert.doesNotMatch(result.stdout, /ASSOCIATION_STATE_DIR=/);
+    assert.match(result.stderr, /snapshot cleanup failed/);
+    assert.equal(await readFile(join(snapshot, 'app.compose.yaml'), 'utf8'), newCompose);
+    assert.equal(await readFile(join(snapshot, 'assetlinks.json'), 'utf8'), assetLinks);
+    assert.equal(await readFile(fixture.composeTarget, 'utf8'), oldCompose, 'must not silently abandon active rollout');
+    assert.equal(await readFile(fixture.associationTarget, 'utf8'), oldAssetLinks);
+    const state = join(fixture.backupRoot, 'association-20260904T160000Z');
+    assert.equal(await readFile(join(state, 'status'), 'utf8'), 'association-restored-after-failure\n');
+    assert.equal(await readFile(join(state, 'snapshot-cleanup-status'), 'utf8'), 'failed\n');
+    assert.equal(await readFile(join(state, 'retained-snapshot'), 'utf8'), snapshot + '\n');
+    assert.equal(await readFile(join(state, 'previous-compose.yaml'), 'utf8'), oldCompose);
+    assert.equal((await stat(join(state, 'snapshot-cleanup-status'))).mode & 0o777, 0o600);
+  } finally {
+    if (snapshot) await rm(snapshot, { recursive: true, force: true });
+    await rm(fixture.directory, { recursive: true, force: true });
+  }
+});
+}
+
+for (const signal of ['HUP', 'INT', 'TERM']) {
+  test(`association ${signal} restores prior bytes and cleans its snapshot`, async () => {
+    const fixture = await makeFixture({ signal });
+    const before = (await readdir('/tmp')).filter(name => name.startsWith('jarvis-command-association-root.'));
+    try {
+      const result = spawnSync(associationScript, ['apply', fixture.stage, String(process.getuid()),
+        imageId, fixture.backupRoot, sha256(newCompose), sha256(assetLinks)], { encoding: 'utf8', env: fixture.env });
+      assert.notEqual(result.status, 0);
+      assert.doesNotMatch(result.stdout, /ASSOCIATION_STATE_DIR=/);
+      assert.equal(await readFile(fixture.composeTarget, 'utf8'), oldCompose);
+      assert.equal(await exists(fixture.associationTarget), false);
+      assert.equal((await readFile(fixture.appRunning, 'utf8')).trim(), 'true');
+      assert.equal((await readFile(join(fixture.backupRoot, 'association-20260904T160000Z/status'), 'utf8')).trim(), 'association-restored-after-failure');
+      assert.deepEqual((await readdir('/tmp')).filter(name => name.startsWith('jarvis-command-association-root.')), before);
+    } finally { await rm(fixture.directory, { recursive: true, force: true }); }
+  });
+}
+
+test('association root replacement retains original state without redirecting writes', async () => {
+  const fixture = await makeFixture({ replaceRoot: true });
+  try {
+    const target = join(fixture.directory, 'sentinel');
+    await mkdir(target, { mode: 0o755 });
+    await writeFile(join(target, 'unrelated'), 'keep me');
+    const before = await stat(target);
+    const result = spawnSync(associationScript, ['apply', fixture.stage, String(process.getuid()),
+      imageId, fixture.backupRoot, sha256(newCompose), sha256(assetLinks)], { encoding: 'utf8', env: fixture.env });
+    assert.notEqual(result.status, 0);
+    assert.doesNotMatch(result.stdout, /ASSOCIATION_STATE_DIR=/);
+    assert.equal((await stat(target)).mode, before.mode);
+    assert.deepEqual(await readdir(target), ['unrelated']);
+    assert.equal(await readFile(join(target, 'unrelated'), 'utf8'), 'keep me');
+    assert.equal((await readFile(join(fixture.backupRoot + '.retained', 'association-20260904T160000Z/status'), 'utf8')).trim(), 'captured');
+    assert.equal(await readFile(fixture.composeTarget, 'utf8'), oldCompose);
+  } finally { await rm(fixture.directory, { recursive: true, force: true }); }
+});
+
+test('rollback refuses trailing newline forgery before consequential commands', async () => {
+  const fixture = await makeFixture();
+  try {
+    const state = await applyAssociation(fixture);
+    await writeFile(join(state, 'previous-unit-active'), 'true\n\n');
+    await writeFile(fixture.log, '');
+    const result = spawnSync(associationScript, ['rollback', state], { encoding: 'utf8', env: fixture.env });
+    assert.notEqual(result.status, 0);
+    assert.equal(await readFile(fixture.log, 'utf8'), '');
+    assert.equal((await readFile(join(state, 'status'), 'utf8')).trim(), 'association-verified');
+  } finally { await rm(fixture.directory, { recursive: true, force: true }); }
 });
 
 test('association release rejects a group-writable active compose before capture', async () => {

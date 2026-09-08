@@ -492,7 +492,7 @@ test('Android association release uses one dedicated descriptor-safe transaction
   assert.doesNotMatch(currentRelease, /scp[^\n]*install-android-association\.sh/);
   assert.match(currentInstaller, /snapshot_release_stage/);
   assert.match(currentInstaller, /release stage does not match reviewed checksum/);
-  assert.match(currentInstaller, /state_directory=\$backup_root\/association-\$timestamp/);
+  assert.match(currentInstaller, /recovery_create "association-\$timestamp"/);
   assert.doesNotMatch(initialRelease, /assetlinks\.json/);
   assert.doesNotMatch(initialInstaller, /assetlinks\.json/);
 });

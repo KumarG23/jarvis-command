@@ -107,7 +107,8 @@ chmod 0700 "$local_stage"
 [[ $(stat -c '%u:%a' -- "$local_stage") == "$operator_uid:700" ]]
 install -m 0644 "$association_source" "$local_stage/assetlinks.json"
 install -m 0644 "$compose_source" "$local_stage/app.compose.yaml"
-install -m 0755 "$installer_source" "$local_stage/install-android-association.sh"
+python3 "$script_dir/bundle-recovery-script.py" "$installer_source" > "$local_stage/install-android-association.sh"
+chmod 0755 "$local_stage/install-android-association.sh"
 (
   cd "$local_stage"
   sha256sum assetlinks.json app.compose.yaml > SHA256SUMS

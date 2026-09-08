@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 umask 077
+source "$(dirname -- "${BASH_SOURCE[0]}")/trusted-recovery-directory.sh"
 
 app_container=${APP_CONTAINER:-jarvis-command-app}
 app_unit=${APP_UNIT:-jarvis-command-app.service}
@@ -13,6 +14,7 @@ sleep_seconds=${ASSOCIATION_SLEEP_SECONDS:-0.25}
 readonly approved_image='sha256:2fd64f267f33feeb6a17a20e37b2a6594e3398817ba114b8ead13bc949cfe654'
 state_directory=''
 stage_snapshot=''
+snapshot_cleanup_failed=false
 rollback_armed=false
 
 usage() {
@@ -36,6 +38,10 @@ valid_image_id() {
 
 cleanup_stage_snapshot() {
   local status=${1-0}
+  if [[ $snapshot_cleanup_failed == true ]]; then
+    (( status != 0 )) || status=1
+    return "$status"
+  fi
   if [[ -z $stage_snapshot ]]; then
     return "$status"
   fi
@@ -45,6 +51,11 @@ cleanup_stage_snapshot() {
     || ! rm -rf -- "$stage_snapshot" \
     || [[ -e $stage_snapshot ]]; then
     printf 'association stage snapshot cleanup failed\n' >&2
+    snapshot_cleanup_failed=true
+    if [[ -n $state_directory ]] && recovery_verify; then
+      write_state "$state_directory" snapshot-cleanup-status failed || status=1
+      write_state "$state_directory" retained-snapshot "$stage_snapshot" || status=1
+    fi
     (( status != 0 )) || status=1
   else
     stage_snapshot=''
@@ -275,29 +286,7 @@ PY
 }
 
 read_state() {
-  local state_path=$1/$2
-  local metadata value
-  if [[ ! -f $state_path || -L $state_path ]]; then
-    fail "association state is missing $2"
-    return 1
-  fi
-  if ! metadata=$(stat -c '%u:%a:%h' -- "$state_path"); then
-    fail "association state metadata could not be read for $2"
-    return 1
-  fi
-  if [[ $metadata != "$(id -u):600:1" ]]; then
-    fail "association state metadata is invalid for $2"
-    return 1
-  fi
-  if ! value=$(<"$state_path"); then
-    fail "association state could not be read for $2"
-    return 1
-  fi
-  if [[ $value == *$'\n'* || $value == *$'\r'* ]]; then
-    fail "association state $2 is malformed"
-    return 1
-  fi
-  printf '%s' "$value"
+  recovery_read "$2"
 }
 
 app_runtime_state() {
@@ -377,10 +366,13 @@ restore_previous() {
   local state=$1
   local status_value=$2
   local previous_image previous_active previous_enabled association_existed previous_association=''
-  local active_state unit_file_state expected_unit_file_state
+  local active_state unit_file_state expected_unit_file_state prior_status
   local overall=0
 
   state_directory=$state
+  recovery_validate_files || return 1
+  prior_status=$(read_state "$state" status) || return 1
+  [[ $prior_status =~ ^(captured|association-verified|association-rolled-back|association-restored-after-failure)$ ]] || return 1
   if ! previous_image=$(read_state "$state" previous-app-image-id); then return 1; fi
   if ! previous_active=$(read_state "$state" previous-unit-active); then return 1; fi
   if ! previous_enabled=$(read_state "$state" previous-unit-enabled); then return 1; fi
@@ -391,6 +383,10 @@ restore_previous() {
 
   [[ -f $state/previous-compose.yaml && ! -L $state/previous-compose.yaml ]] || return 1
   [[ $(stat -c '%u:%a:%h' -- "$state/previous-compose.yaml") == "$(id -u):600:1" ]] || return 1
+  if [[ $association_existed == true ]]; then
+    [[ -f $state/previous-assetlinks.json && ! -L $state/previous-assetlinks.json ]] || return 1
+    [[ $(stat -c '%u:%a:%h' -- "$state/previous-assetlinks.json") == "$(id -u):600:1" ]] || return 1
+  fi
   if ! install -d -m 0755 "$(dirname "$compose_target")" "$(dirname "$association_target")"; then
     fail 'rollback runtime target directories could not be prepared'
     return 1
@@ -445,9 +441,10 @@ restore_previous() {
   fi
 
   if (( overall != 0 )); then
-    printf 'previous association release could not be verified; manual recovery required from %s\n' "$state" >&2
+    printf 'previous association release could not be verified; manual recovery required from %s\n' "$recovery_display" >&2
     return 1
   fi
+  recovery_verify || return 1
   write_state "$state" status "$status_value"
 }
 
@@ -457,9 +454,9 @@ rollback_on_error() {
   (( exit_status != 0 )) || exit_status=1
   if [[ $rollback_armed == true && -n $state_directory ]]; then
     if restore_previous "$state_directory" association-restored-after-failure; then
-      printf 'association release failed; previous association release restored from %s\n' "$state_directory" >&2
+      printf 'association release failed; previous association release restored from %s\n' "$recovery_display" >&2
     else
-      printf 'association release failed; restoration also failed for %s\n' "$state_directory" >&2
+      printf 'association release failed; restoration also failed for %s\n' "$recovery_display" >&2
       exit_status=1
     fi
   fi
@@ -477,12 +474,11 @@ done
 
 if [[ $mode == rollback ]]; then
   [[ $# -eq 1 ]] || usage
-  state_directory=$1
-  valid_absolute_path "$state_directory" || fail 'association state directory must be absolute'
-  [[ -d $state_directory && ! -L $state_directory ]] || fail 'association state directory is invalid'
-  [[ $(stat -c '%u:%a' -- "$state_directory") == "$(id -u):700" ]] || fail 'association state directory metadata is invalid'
+  [[ $1 =~ /association-[0-9]{8}T[0-9]{6}Z$ ]] || fail 'invalid association state directory name'
+  recovery_open "$1"
+  state_directory=$recovery_directory
   restore_previous "$state_directory" association-rolled-back
-  printf 'ASSOCIATION_ROLLED_BACK_FROM=%s\n' "$state_directory"
+  printf 'ASSOCIATION_ROLLED_BACK_FROM=%s\n' "$recovery_display"
   exit
 fi
 
@@ -500,6 +496,7 @@ valid_image_id "$expected_image" || fail 'expected image must be immutable sha25
 [[ $expected_image == "$approved_image" ]] || fail 'expected image does not match approved production image'
 [[ $reviewed_compose_sha256 =~ ^[0-9a-f]{64}$ ]] || fail 'reviewed compose checksum is malformed'
 [[ $reviewed_assetlinks_sha256 =~ ^[0-9a-f]{64}$ ]] || fail 'reviewed assetlinks checksum is malformed'
+recovery_open "$backup_root"
 stage_snapshot=$(snapshot_release_stage \
   "$stage" "$operator_uid" "$reviewed_compose_sha256" "$reviewed_assetlinks_sha256")
 stage=$stage_snapshot
@@ -550,13 +547,9 @@ case $previous_enabled_state in
     ;;
 esac
 
-install -d -m 0700 "$backup_root"
-[[ -d $backup_root && ! -L $backup_root ]] || fail 'backup root is invalid'
-[[ $(stat -c '%u:%a' -- "$backup_root") == "$(id -u):700" ]] || fail 'backup root metadata is invalid'
 timestamp=$(date -u +%Y%m%dT%H%M%SZ)
-state_directory=$backup_root/association-$timestamp
-mkdir "$state_directory"
-chmod 0700 "$state_directory"
+recovery_create "association-$timestamp"
+state_directory=$recovery_directory
 
 install -m 0600 "$compose_target" "$state_directory/previous-compose.yaml"
 install -m 0600 "$stage/app.compose.yaml" "$state_directory/new-compose.yaml"
@@ -589,10 +582,11 @@ cmp -s "$state_directory/new-compose.yaml" "$compose_target"
 systemctl daemon-reload
 systemctl restart "$app_unit"
 verify_runtime "$expected_image" "$state_directory/new-assetlinks.json"
+recovery_verify
+cleanup_stage_snapshot 0
 write_state "$state_directory" status association-verified
 rollback_armed=false
 trap - ERR INT TERM HUP
-release_result=$state_directory
-cleanup_stage_snapshot 0
+release_result=$recovery_display
 trap - EXIT
 printf 'ASSOCIATION_STATE_DIR=%s\n' "$release_result"

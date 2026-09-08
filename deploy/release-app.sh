@@ -110,7 +110,8 @@ printf 'JARVIS_COMMAND_APP_IMAGE=%s\nJARVIS_COMMAND_READ_PROXY_IMAGE=%s\n' \
 chmod 0600 "${local_stage}/release.env"
 install -m 0644 "${script_dir}/app.compose.yaml" "${local_stage}/app.compose.yaml"
 install -m 0644 "${script_dir}/jarvis-command-app.service" "${local_stage}/app.service"
-install -m 0755 "${script_dir}/cutover-app.sh" "${local_stage}/cutover-app.sh"
+python3 "${script_dir}/bundle-recovery-script.py" "${script_dir}/cutover-app.sh" > "${local_stage}/cutover-app.sh"
+chmod 0755 "${local_stage}/cutover-app.sh"
 install -m 0755 "${script_dir}/secure-env-file.py" "${local_stage}/secure-env-file.py"
 sha256sum app-image.tar.gz app.env release.env app.compose.yaml app.service \
   cutover-app.sh secure-env-file.py > SHA256SUMS

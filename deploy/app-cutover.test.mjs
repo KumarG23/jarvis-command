@@ -1,20 +1,23 @@
 import assert from 'node:assert/strict';
 import process from 'node:process';
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { URL } from 'node:url';
+import { recoveryFixtureScript, checkAcquisitionRace } from './recovery-fixture.mjs';
+import { checkRootRefusal, rejectedRoots, checkRollbackRefusal, rollbackAttacks } from './recovery-root-cases.mjs';
 
 const deployDirectory = new URL('.', import.meta.url).pathname;
-const cutoverScript = join(deployDirectory, 'cutover-app.sh');
+let cutoverScript = join(deployDirectory, 'cutover-app.sh');
 
 const bootstrapImage = `sha256:${'b'.repeat(64)}`;
 const appImage = `sha256:${'a'.repeat(64)}`;
 
 async function makeFixture(options = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'jarvis-command-cutover-'));
+  cutoverScript = await recoveryFixtureScript(join(deployDirectory, 'cutover-app.sh'), directory);
   const bin = join(directory, 'bin');
   const backupRoot = join(directory, 'backups');
   const log = join(directory, 'commands.log');
@@ -23,6 +26,7 @@ async function makeFixture(options = {}) {
   const appRunning = join(directory, 'app.running');
   const appEnabled = join(directory, 'app.enabled');
   await import('node:fs/promises').then(({ mkdir }) => mkdir(bin));
+  await mkdir(backupRoot, { mode: 0o700 });
   await writeFile(bootstrapRunning, 'true\n');
   await writeFile(bootstrapRestart, 'unless-stopped\n');
   await writeFile(appRunning, 'false\n');
@@ -78,6 +82,7 @@ case "$1" in
     fi
     ;;
   ps)
+    if [[ ${options.failRollbackInspection ? 'true' : 'false'} == true ]]; then exit 99; fi
     if [[ "$(read_state ${JSON.stringify(appRunning)})" == true ]]; then printf 'jarvis-command-app\\n'; fi
     ;;
   *) exit 64 ;;
@@ -101,6 +106,11 @@ case "$1" in
     if [[ "$*" == *'--now'* ]]; then
       if [[ ${options.failAppStart ? 'true' : 'false'} == true ]]; then exit 23; fi
       write_state ${JSON.stringify(appRunning)} true
+      if [[ -n ${JSON.stringify(options.signal ?? '')} ]]; then kill -s ${JSON.stringify(options.signal ?? '')} "$PPID"; fi
+      if [[ ${options.replaceRoot ? 'true' : 'false'} == true ]]; then
+        mv ${JSON.stringify(backupRoot)} ${JSON.stringify(backupRoot + '.retained')}
+        ln -s ${JSON.stringify(join(directory, 'sentinel'))} ${JSON.stringify(backupRoot)}
+      fi
     fi
     ;;
   disable)
@@ -213,6 +223,52 @@ test('app cutover records the bootstrap, prevents restart, proves the new runtim
   }
 });
 
+for (const point of ['ancestor-validation', 'handoff', 'leaf-create']) {
+  test(`cutover acquisition race ${point}`, () => checkAcquisitionRace(makeFixture,
+    fixture => spawnSync(cutoverScript, ['cutover', 'jarvis-command-bootstrap', 'none',
+      'jarvis-command-app.service', appImage, fixture.backupRoot],
+    { encoding: 'utf8', env: fixture.env, timeout: 5000 }), point));
+}
+
+for (const kind of [...rollbackAttacks, ...['bootstrap-container', 'bootstrap-unit', 'app-unit',
+  'bootstrap-image-id', 'bootstrap-restart-policy', 'bootstrap-unit-enabled',
+  'bootstrap-unit-active', 'app-unit-enabled'].map(name => `missing:${name}`)]) {
+  test(`cutover rollback adversarial ${kind}`, () => checkRollbackRefusal(makeFixture,
+    async fixture => {
+      const result = spawnSync(cutoverScript, ['cutover', 'jarvis-command-bootstrap', 'none',
+        'jarvis-command-app.service', appImage, fixture.backupRoot], { encoding: 'utf8', env: fixture.env });
+      assert.equal(result.status, 0, result.stderr);
+      return /^CUTOVER_STATE_DIR=(.+)$/m.exec(result.stdout)[1];
+    }, (fixture, state) => spawnSync(cutoverScript, ['rollback', state],
+      { encoding: 'utf8', env: fixture.env, timeout: 5000 }), 'bootstrap-was-running', 'bootstrap-root.html', kind));
+}
+
+for (const kind of rejectedRoots) {
+  test(`cutover refuses ${kind} root without side effects`, () => checkRootRefusal(makeFixture,
+    (fixture, path) => spawnSync(cutoverScript, ['cutover', 'jarvis-command-bootstrap', 'none',
+      'jarvis-command-app.service', appImage, path], { encoding: 'utf8', env: fixture.env, timeout: 5000 }), kind));
+}
+
+test('untrusted backup root is refused without chmod or consequential commands', async () => {
+  const fixture = await makeFixture();
+  try {
+    const target = join(fixture.directory, 'sentinel');
+    await mkdir(target, { mode: 0o755 });
+    await writeFile(join(target, 'unrelated'), 'keep me');
+    await rm(fixture.backupRoot, { recursive: true });
+    await symlink(target, fixture.backupRoot);
+    const before = await stat(target);
+    const result = spawnSync(cutoverScript, ['cutover', 'jarvis-command-bootstrap', 'none',
+      'jarvis-command-app.service', appImage, fixture.backupRoot], { encoding: 'utf8', env: fixture.env });
+    assert.notEqual(result.status, 0, 'must refuse symlink backup root');
+    assert.equal((await stat(target)).mode, before.mode, 'must not chmod symlink target');
+    assert.equal(await readFile(join(target, 'unrelated'), 'utf8'), 'keep me');
+    assert.equal(await readFile(fixture.log, 'utf8').catch(() => ''), '');
+  } finally {
+    await rm(fixture.directory, { recursive: true, force: true });
+  }
+});
+
 test('failed app startup automatically restores the exact bootstrap lifecycle', async () => {
   const fixture = await makeFixture({ failAppStart: true });
   try {
@@ -232,6 +288,52 @@ test('failed app startup automatically restores the exact bootstrap lifecycle', 
   } finally {
     await rm(fixture.directory, { recursive: true, force: true });
   }
+});
+
+for (const signal of ['HUP', 'INT', 'TERM']) {
+  test(`cutover ${signal} restores bootstrap and retains recovery state`, async () => {
+    const fixture = await makeFixture({ signal });
+    try {
+      const result = spawnSync(cutoverScript, ['cutover', 'jarvis-command-bootstrap', 'none',
+        'jarvis-command-app.service', appImage, fixture.backupRoot], { encoding: 'utf8', env: fixture.env });
+      assert.notEqual(result.status, 0);
+      assert.doesNotMatch(result.stdout, /CUTOVER_STATE_DIR=/);
+      assert.equal((await readFile(fixture.bootstrapRunning, 'utf8')).trim(), 'true');
+      assert.equal((await readFile(fixture.bootstrapRestart, 'utf8')).trim(), 'unless-stopped');
+      assert.equal((await readFile(fixture.appRunning, 'utf8')).trim(), 'false');
+      assert.equal((await readFile(join(fixture.backupRoot, 'cutover-20260903T154500Z/status'), 'utf8')).trim(), 'bootstrap-restored');
+    } finally { await rm(fixture.directory, { recursive: true, force: true }); }
+  });
+}
+
+test('cutover root replacement never redirects writes or emits success', async () => {
+  const fixture = await makeFixture({ replaceRoot: true });
+  try {
+    const target = join(fixture.directory, 'sentinel');
+    await mkdir(target, { mode: 0o755 });
+    await writeFile(join(target, 'unrelated'), 'keep me');
+    const before = await stat(target);
+    const result = spawnSync(cutoverScript, ['cutover', 'jarvis-command-bootstrap', 'none',
+      'jarvis-command-app.service', appImage, fixture.backupRoot], { encoding: 'utf8', env: fixture.env });
+    assert.notEqual(result.status, 0);
+    assert.doesNotMatch(result.stdout, /CUTOVER_STATE_DIR=|BOOTSTRAP_RESTORED_FROM=/);
+    assert.equal((await stat(target)).mode, before.mode);
+    assert.equal(await readFile(join(target, 'unrelated'), 'utf8'), 'keep me');
+    assert.equal((await readFile(join(fixture.backupRoot + '.retained', 'cutover-20260903T154500Z/status'), 'utf8')).trim(), 'captured');
+    assert.equal((await readFile(fixture.bootstrapRunning, 'utf8')).trim(), 'true');
+  } finally { await rm(fixture.directory, { recursive: true, force: true }); }
+});
+
+test('failed rollback inspection cannot emit a restoration receipt', async () => {
+  const fixture = await makeFixture({ failAppStart: true, failRollbackInspection: true });
+  try {
+    const result = spawnSync(cutoverScript, ['cutover', 'jarvis-command-bootstrap', 'none',
+      'jarvis-command-app.service', appImage, fixture.backupRoot], { encoding: 'utf8', env: fixture.env });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /restoration also failed/);
+    assert.doesNotMatch(result.stdout, /CUTOVER_STATE_DIR=|BOOTSTRAP_RESTORED_FROM=/);
+    assert.equal((await readFile(join(fixture.backupRoot, 'cutover-20260903T154500Z/status'), 'utf8')).trim(), 'captured');
+  } finally { await rm(fixture.directory, { recursive: true, force: true }); }
 });
 
 test('a listener that survives bootstrap shutdown aborts cutover and restores bootstrap', async () => {
