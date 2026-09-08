@@ -90,6 +90,30 @@ function fakeClient(overrides: Partial<CommandProxyClient> = {}): CommandProxyCl
 }
 
 describe('LiveRoomService run identity and recovery', () => {
+  it('binds receipts to the admitted owner/run/session and leaves legacy responses unchanged', async () => {
+    const { ledger } = await createLedger();
+    const client = fakeClient();
+    const service = createLiveRoomService({ client, ledger, createPublicRunId: () => publicRunId });
+    await service.submitRun('operator', request);
+    const status = {
+      runId: upstreamRunId, sessionId, status: 'completed' as const,
+      updatedAt: '2026-09-04T14:00:02.000Z', approval: null, output: 'saved',
+      error: null, pendingSteer: null, usage: null,
+      historyBinding: { userMessageId: '3', assistantMessageId: '6' },
+    };
+    vi.mocked(client.getRun).mockResolvedValue(status);
+    const legacy = await service.getRun('operator', publicRunId);
+    expect(legacy).not.toHaveProperty('historyBinding');
+    expect(await service.getRun('operator', publicRunId, true)).toEqual({ ...legacy, historyBinding: status.historyBinding });
+    vi.mocked(client.getRun).mockClear();
+    await expect(service.getRun('foreign-operator', publicRunId, true)).rejects.toBeInstanceOf(LiveRoomNotFoundError);
+    expect(client.getRun).not.toHaveBeenCalled();
+    for (const changed of [{ runId: 'run_' + 'b'.repeat(32) }, { sessionId: 'jc_' + 'b'.repeat(32) }]) {
+      vi.mocked(client.getRun).mockResolvedValue({ ...status, ...changed });
+      await expect(service.getRun('operator', publicRunId, true)).rejects.toBeInstanceOf(LiveRoomNotFoundError);
+    }
+  });
+
   it.each([false, true])('rejects wrong-session replay without terminal audit (reopened=%s)', async (reopen) => {
     const { ledger, path } = await createLedger();
     const client = fakeClient();

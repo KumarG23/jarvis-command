@@ -156,6 +156,7 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
     ));
     routes.get('/api/live/runs/:publicRunId', { exposeHeadRoute: false }, async (request) => dependencies.liveRoom!.getRun(
       subjects.get(request)!, parse(runParamsSchema, request.params).publicRunId,
+      request.headers['x-jarvis-history-binding'] === '1',
     ));
     routes.post('/api/live/sessions/:sessionId/continue', async (request) => dependencies.liveRoom!.continueSession(
       subjects.get(request)!, parse(z.object({ sessionId: sessionIdSchema }).strict(), request.params).sessionId,

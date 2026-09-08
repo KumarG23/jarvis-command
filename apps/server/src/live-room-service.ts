@@ -104,6 +104,7 @@ export function createLiveRoomService({
   const projectStatus = async (
     record: AuditRunRecord,
     upstream: CommandRunStatus,
+    includeBinding = false,
   ): Promise<LiveRunStatus> => {
     if (upstream.runId !== record.upstreamRunId || upstream.sessionId !== record.sessionId) {
       throw new LiveRoomNotFoundError();
@@ -119,6 +120,7 @@ export function createLiveRoomService({
       error: upstream.error,
       pendingSteer: upstream.pendingSteer,
       usage: upstream.usage,
+      ...(includeBinding && upstream.status === 'completed' && upstream.historyBinding ? { historyBinding: upstream.historyBinding } : {}),
     });
   };
 
@@ -304,9 +306,9 @@ export function createLiveRoomService({
 
     submitRun,
 
-    async getRun(subject: string, publicRunId: string): Promise<LiveRunStatus> {
+    async getRun(subject: string, publicRunId: string, includeBinding = false): Promise<LiveRunStatus> {
       const record = findRun(subject, publicRunId);
-      return projectStatus(record, await client.getRun(record.upstreamRunId!));
+      return projectStatus(record, await client.getRun(record.upstreamRunId!), includeBinding);
     },
 
     async *streamRunEvents(

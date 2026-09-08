@@ -90,6 +90,11 @@ const UpstreamRunStatusSchema = z.object({
   error: z.string().max(4_096).nullable().optional(),
   pending_steer: z.string().max(4_000).nullable().optional(),
   usage: z.record(z.string(), z.unknown()).nullable().optional(),
+  history_binding: z.object({
+    run_id: z.string().regex(RUN_ID), session_id: SessionIdSchema,
+    user_message_id: z.string().regex(/^[1-9][0-9]{0,18}$/),
+    assistant_message_id: z.string().regex(/^[1-9][0-9]{0,18}$/),
+  }).strict().optional(),
 }).passthrough();
 
 const UpstreamApprovalResponseSchema = z.object({
@@ -325,11 +330,12 @@ export function buildCommandProxy({
       const upstream = UpstreamRunStatusSchema.parse(await requestJson({
         path: `/v1/runs/${runId}`,
         method: 'GET',
+        headers: request.headers['x-jarvis-history-binding'] === '1' ? { 'x-hermes-history-binding': '1' } : {},
         config,
         fetcher,
       }));
       if (upstream.run_id !== runId) throw new UpstreamProtocolError();
-      return projectRunStatus(upstream);
+      return projectRunStatus(upstream, request.headers['x-jarvis-history-binding'] === '1');
     } catch (error) {
       return sendProxyError(error, reply);
     }
@@ -590,8 +596,12 @@ function projectMessage(message: z.infer<typeof UpstreamMessageSchema>): Session
   };
 }
 
-function projectRunStatus(upstream: z.infer<typeof UpstreamRunStatusSchema>) {
+function projectRunStatus(upstream: z.infer<typeof UpstreamRunStatusSchema>, includeBinding = false) {
+  const binding = upstream.history_binding;
+  if (binding && (binding.run_id !== upstream.run_id || binding.session_id !== upstream.session_id
+    || upstream.status !== 'completed' || BigInt(binding.user_message_id) >= BigInt(binding.assistant_message_id))) throw new UpstreamProtocolError();
   return {
+    ...(includeBinding && binding ? { historyBinding: { userMessageId: binding.user_message_id, assistantMessageId: binding.assistant_message_id } } : {}),
     runId: upstream.run_id,
     sessionId: upstream.session_id,
     status: normalizeRunState(upstream.status),

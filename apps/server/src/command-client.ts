@@ -51,6 +51,7 @@ const InternalRunStatusSchema = z.object({
   error: z.string().max(4_096).nullable(),
   pendingSteer: z.string().max(4_000).nullable(),
   usage: LiveRunUsageSchema.nullable(),
+  historyBinding: z.object({ userMessageId: z.string().regex(/^[1-9][0-9]{0,18}$/), assistantMessageId: z.string().regex(/^[1-9][0-9]{0,18}$/) }).strict().optional(),
 }).strict();
 
 const InternalApprovalResponseSchema = z.object({
@@ -260,7 +261,7 @@ export function createCommandProxyClient(options: Readonly<{
     },
     getRun(runId) {
       if (!RUN_ID.test(runId)) return Promise.reject(new CommandProxyUnavailableError(400));
-      return requestJson(`/v1/runs/${runId}`, InternalRunStatusSchema.refine(value => value.runId === runId).transform(value => ({ ...value, error: value.error === null ? null : 'Hermes run unavailable' })));
+      return requestJson(`/v1/runs/${runId}`, InternalRunStatusSchema.refine(value => value.runId === runId).transform(value => ({ ...value, error: value.error === null ? null : 'Hermes run unavailable' })), { headers: { 'x-jarvis-history-binding': '1' } });
     },
     async *streamRunEvents(runId, signal) {
       if (!RUN_ID.test(runId)) throw new CommandProxyUnavailableError(400);

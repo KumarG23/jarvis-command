@@ -1,0 +1,38 @@
+import { createHash, randomBytes } from 'node:crypto';
+import fastifyStatic from '@fastify/static';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { exportJWK, generateKeyPair, SignJWT } from 'jose';
+import { createCommandServer } from '../apps/server/src/bootstrap';
+import { loadConfig } from '../apps/server/src/config';
+import { buildReadProxy } from '../apps/read-proxy/src/app';
+import { buildCommandProxy } from '../apps/command-proxy/src/app';
+
+// Local fixture identity is cryptographically verified by the real BFF. Not Cloudflare edge acceptance.
+const state = '/home/neal/code/jarvis-command-candidate-state';
+await mkdir(state + '/bff', { recursive: true, mode: 0o700 });
+const directory = state + '/bff';
+const pair = await generateKeyPair('RS256');
+const jwks = directory + '/jwks.json';
+await writeFile(jwks, JSON.stringify({ keys: [{ ...await exportJWK(pair.publicKey), alg: 'RS256', kid: 'candidate-fixture', use: 'sig' }] }), { mode: 0o600 });
+const email = 'fixture-operator@example.test';
+const assertion = await new SignJWT({ email, type: 'app' }).setProtectedHeader({ alg: 'RS256', kid: 'candidate-fixture' }).setIssuer('https://fixture.cloudflareaccess.com').setAudience('a'.repeat(64)).setSubject('fixture-operator').setIssuedAt().setExpirationTime('8h').sign(pair.privateKey);
+const hermesApiKey = (await readFile(state + '/home/api-key', 'utf8')).trim();
+const readKey = randomBytes(32).toString('hex');
+const commandKey = randomBytes(32).toString('hex');
+const upstream = 'http://127.0.0.1:18741';
+const readProxy = buildReadProxy({ config: { host: '127.0.0.1', port: 18742, hermesBaseUrl: upstream, readProxyKey: readKey, hermesApiKey } });
+const commandProxy = buildCommandProxy({ config: { host: '127.0.0.1', port: 18743, hermesBaseUrl: upstream, commandProxyKey: commandKey, hermesApiKey, maxStreamSeconds: 900 } });
+await readProxy.listen({ host: '127.0.0.1', port: 18742 });
+await commandProxy.listen({ host: '127.0.0.1', port: 18743 });
+const origin = 'http://127.0.0.1:18744';
+const config = loadConfig({ NODE_ENV: 'test', AUTH_MODE: 'cloudflare', CF_ACCESS_TEAM_DOMAIN: 'fixture.cloudflareaccess.com', CF_ACCESS_AUD: 'a'.repeat(64), CF_ACCESS_EMAIL_SHA256: createHash('sha256').update(email).digest('hex'), CF_ACCESS_JWKS_FILE: jwks, HERMES_API_BASE_URL: 'http://127.0.0.1:18742', HERMES_READ_PROXY_KEY: readKey, COMMAND_MODE: 'enabled', PUBLIC_ORIGIN: origin, HERMES_COMMAND_API_BASE_URL: 'http://127.0.0.1:18743', HERMES_COMMAND_PROXY_KEY: commandKey, COMMAND_AUDIT_LOG_PATH: directory + '/audit.jsonl', WEB_DIST_DIR: resolve('apps/web/dist') });
+const bff = createCommandServer(config);
+await bff.register(fastifyStatic, { root: resolve('apps/web/dist'), prefix: '/api/preview/chat-first/', decorateReply: false });
+await bff.listen({ host: '127.0.0.1', port: 18744 });
+await writeFile(directory + '/browser-auth.json', JSON.stringify({ origin, assertion }), { mode: 0o600 });
+console.log('REAL candidate frontend/BFF/read-proxy/command-proxy ready at ' + origin);
+let closing = false;
+const close = async () => { if (closing) return; closing = true; await bff.close(); await commandProxy.close(); await readProxy.close(); process.exit(0); };
+process.on('SIGTERM', () => void close());
+process.on('SIGINT', () => void close());

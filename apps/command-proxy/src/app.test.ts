@@ -66,6 +66,31 @@ function upstreamSession(id: string, source: string) {
 }
 
 describe('command proxy route boundary', () => {
+  it('projects opted-in receipts only and rejects cross-run/session or invalid receipts', async () => {
+    const binding = { run_id: runId, session_id: commandSessionId, user_message_id: '3', assistant_message_id: '6' };
+    const status = { run_id: runId, session_id: commandSessionId, status: 'completed', updated_at: 1788530400, history_binding: binding };
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => jsonResponse(status));
+    const app = createApp(fetcher);
+    const legacy = await app.inject({ url: `/v1/runs/${runId}`, headers: authHeaders() });
+    const opted = await app.inject({ url: `/v1/runs/${runId}`, headers: authHeaders({ 'x-jarvis-history-binding': '1' }) });
+    expect(legacy.statusCode).toBe(200);
+    expect(opted.statusCode).toBe(200);
+    expect(legacy.json()).not.toHaveProperty('historyBinding');
+    expect(opted.json()).toEqual({ ...legacy.json(), historyBinding: { userMessageId: '3', assistantMessageId: '6' } });
+    expect(new Headers(fetcher.mock.calls[0]![1]!.headers).has('x-hermes-history-binding')).toBe(false);
+    expect(new Headers(fetcher.mock.calls[1]![1]!.headers).get('x-hermes-history-binding')).toBe('1');
+    for (const bad of [
+      { ...status, history_binding: { ...binding, run_id: 'run_' + 'b'.repeat(32) } },
+      { ...status, history_binding: { ...binding, session_id: 'jc_' + 'b'.repeat(32) } },
+      { ...status, history_binding: { ...binding, user_message_id: '6' } },
+      { ...status, history_binding: { ...binding, assistant_message_id: '0' } },
+      { ...status, status: 'running' },
+    ]) {
+      fetcher.mockResolvedValueOnce(jsonResponse(bad));
+      expect((await app.inject({ url: `/v1/runs/${runId}`, headers: authHeaders({ 'x-jarvis-history-binding': '1' }) })).statusCode).toBe(503);
+    }
+  });
+
   it.each(['漢'.repeat(16_000), '\u0000'.repeat(16_000)])('accepts worst-case encoded input within the character cap', async (input) => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'jarvis-command'))).mockResolvedValueOnce(jsonResponse({ run_id: runId, status: 'running' }));
     const app = createApp(fetcher);
