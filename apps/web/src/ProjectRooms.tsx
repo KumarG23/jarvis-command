@@ -4,11 +4,14 @@ import { createPortal } from 'react-dom';
 import { ChevronDown, ChevronRight, Folder, MessageSquare, Plus, Search, X, FileText, Link, Pencil } from 'lucide-react';
 import { CreateSession } from './CreateSession';
 
-const KEY = 'jarvis-command:project-room:v1';
+import { appStorageKey } from './appEnvironment';
+
+const KEY = appStorageKey('jarvis-command:project-room:v1');
 async function request(path: string, body?: unknown) {
   const response = await fetch(path, { credentials: 'same-origin', redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(10_000),
     headers: { accept: 'application/json', ...(body === undefined ? {} : { 'content-type': 'application/json', 'x-jarvis-command': '1' }) },
     ...(body === undefined ? {} : { method: 'POST', body: JSON.stringify(body) }) });
+  if (response.status === 404 && body !== undefined && /^\/api\/rooms\/room_[a-f0-9]{32}$/.test(path)) throw Error('Project editing is unavailable on this server, or this project no longer exists. Your draft is kept here until you reload or cancel. Reload projects to check availability.');
   if (!response.ok) throw Error('Project operation could not be confirmed. Reload projects before retrying; the change may already have been saved.');
   return response.json() as Promise<unknown>;
 }

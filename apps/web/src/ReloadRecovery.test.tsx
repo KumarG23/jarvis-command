@@ -41,6 +41,26 @@ it.each(['running', 'completed'])('recovers %s by exact GET only with absent inp
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); sessionStorage.clear(); vi.useRealTimers(); });
 
+it('carries a verified terminal history binding through reload recovery and releases the local echo only when history confirms it', async () => {
+  sessionStorage.setItem(key, JSON.stringify(record));
+  const historyBinding = { userMessageId: 'persisted:user', assistantMessageId: 'persisted:answer' };
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json(status('completed', { output: 'same answer', historyBinding }))));
+  const { result, unmount } = readyHook();
+  await waitFor(() => expect(result.current.turn?.done).toBe(true));
+  expect(result.current.turn?.historyBinding).toEqual(historyBinding);
+  expect(result.current.turn?.historyMatched).toBe(false);
+  const messages = [
+    { id: historyBinding.userMessageId, sessionId, role: 'user' as const, content: 'question', timestamp: null, toolName: null, displayKind: null },
+    { id: historyBinding.assistantMessageId, sessionId, role: 'assistant' as const, content: 'same answer', timestamp: null, toolName: null, displayKind: null },
+  ];
+  act(() => result.current.history(sessionId, messages, false));
+  expect(result.current.turn?.historyMatched).toBe(false);
+  act(() => result.current.history(sessionId, messages, true));
+  expect(result.current.turn?.historyMatched).toBe(true);
+  expect(sessionStorage.getItem(key)).toBeNull();
+  unmount();
+});
+
 it.each([true, false])('shows recovered target without fabricating a bootstrap room (present=%s)', async (present) => {
   sessionStorage.setItem(key, JSON.stringify(record));
   vi.stubGlobal('fetch', vi.fn(async (url: string) => Response.json(url === '/api/rooms' ? { version: 1, rooms: [] } : url.includes('/messages?') ? { sessionId, messages: [], pagination: { limit: 50, offset: 0, returned: 0, hasMore: false } } : status())));
@@ -256,4 +276,3 @@ it('writes and verifies only opaque pending identifiers before POST, then binds 
   }
   unmount();
 });
-

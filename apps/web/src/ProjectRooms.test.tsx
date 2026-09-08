@@ -6,6 +6,21 @@ const room = { id: 'room_' + 'a'.repeat(32), name: 'Synthetic project', goal: 'E
 const session = { id: 'jc_' + 'b'.repeat(32), title: 'Created conversation', source: 'api_server', ownership: 'command', model: null, lastActive: '2026-09-06T12:00:00Z', messageCount: 0, toolCallCount: 0, pinned: false };
 afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); });
 
+it('explains a missing edit endpoint and retains the draft without retrying or fabricating a save', async () => {
+  sessionStorage.setItem('jarvis-command:project-room:v1', room.id);
+  const fetcher = vi.fn(async (_url: string, init?: RequestInit) => init?.method === 'POST' ? Response.json({}, { status: 404 }) : Response.json({ version: 1, rooms: [room] }));
+  vi.stubGlobal('fetch', fetcher);
+  render(<ProjectRooms sessions={[]} onScope={vi.fn()} onSession={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Project details' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Edit project' }));
+  const editor = screen.getByRole('form', { name: 'Edit project' });
+  fireEvent.change(within(editor).getByLabelText('Project name'), { target: { value: 'Keep this draft' } });
+  fireEvent.click(within(editor).getByRole('button', { name: 'Save changes' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Project editing is unavailable on this server, or this project no longer exists.');
+  expect(within(editor).getByLabelText('Project name')).toHaveValue('Keep this draft');
+  expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+});
+
 it('saves existing metadata without resetting the selected conversation and retains a failed draft until cancel', async () => {
   const linked = { ...room, sessionIds: [session.id], lastSessionId: session.id };
   sessionStorage.setItem('jarvis-command:project-room:v1', room.id);
@@ -153,4 +168,3 @@ it('coalesces rapid room form submissions and reloads an uncertain metadata writ
   await screen.findByRole('button', { name: room.name });
   expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
 });
-

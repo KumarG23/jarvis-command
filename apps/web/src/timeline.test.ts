@@ -27,3 +27,28 @@ it('does not match a response belonging to the next user', () => {
   const messages = [...old, pair[0]!, message('other:user', 'user', 'different'), pair[1]!];
   expect(matchTurn(turn, messages, true).assistant).toBeNull();
 });
+
+it('reconciles a recovered run only to its authoritative persisted pair, preserving older identical replies', () => {
+  const recovered: Turn = { ...turn, intent: { ...turn.intent, input: null }, historyBinding: { userMessageId: 'new:user', assistantMessageId: 'new:answer' } };
+  delete recovered.historyBaseline;
+  expect(matchTurn(recovered, [...old, ...pair], true).assistant?.id).toBe('new:answer');
+  expect(matchTurn(recovered, [...old, ...pair], false)).toMatchObject({ assistant: null, echo: pair[1] });
+  const other: Turn = { ...recovered, intent: { ...recovered.intent, clientRequestId: 'other' }, historyBinding: undefined };
+  expect(projectTurns([recovered, other], [...old, ...pair], true).map(item => item.turn.historyMatched)).toEqual([true, false]);
+  expect(projectTurns([other, recovered], [...old, ...pair], true).map(item => item.turn.historyMatched)).toEqual([false, true]);
+});
+it.each(['foreign', 'missing', 'role', 'order', 'next-user', 'unverified', 'active', 'limited', 'different-output', 'duplicate-id'])('retains recovered output for an invalid %s binding', mode => {
+  const recovered: Turn = { ...turn, intent: { ...turn.intent, input: null }, historyBinding: { userMessageId: 'new:user', assistantMessageId: 'new:answer' } };
+  let messages = [...old, ...pair];
+  if (mode === 'foreign') messages[3] = { ...pair[1]!, sessionId: 'jc_other' };
+  if (mode === 'missing') messages = old;
+  if (mode === 'role') messages[3] = { ...pair[1]!, role: 'tool' };
+  if (mode === 'order') messages = [...old, ...pair.slice().reverse()];
+  if (mode === 'next-user') messages.splice(3, 0, message('third:user', 'user', 'other'));
+  if (mode === 'unverified') recovered.identityVerified = false;
+  if (mode === 'active') recovered.done = false;
+  if (mode === 'limited') recovered.outputLimited = true;
+  if (mode === 'different-output') recovered.output = 'different';
+  if (mode === 'duplicate-id') messages.push(pair[1]!);
+  expect(matchTurn(recovered, messages, true).echo).toBeNull();
+});

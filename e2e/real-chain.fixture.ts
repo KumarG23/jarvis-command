@@ -15,8 +15,12 @@ import { buildCommandProxy } from '../apps/command-proxy/src/app';
 export async function startRealChain(mode: 'completed' | 'controls' = 'completed') {
   const directory = await mkdtemp(join(tmpdir(), 'jc-browser-chain-'));
   const owned: FastifyInstance[] = [];
+  const streams = new Set<ServerResponse>();
   const close = async () => {
     try {
+      // End owned upstream streams before closing downstream proxies. Otherwise
+      // a proxy close can wait for an SSE whose upstream preClose is never reached.
+      for (const stream of streams) stream.destroy();
       const errors: unknown[] = [];
       for (const server of [...owned].reverse()) {
         try { await server.close(); } catch (error) { errors.push(error); }
@@ -59,7 +63,6 @@ export async function startRealChain(mode: 'completed' | 'controls' = 'completed
     };
     const approval = { request_id: 'synthetic-approval-exact', command: 'printf synthetic-control ; printf /EXACT_SYNTHETIC_TARGET', description: 'Synthetic display-only command; never executed', tool: 'terminal' };
     const controls: { runId: string; body: unknown; path: string }[] = [];
-    const streams = new Set<ServerResponse>();
     const synthetic = Fastify(); owned.push(synthetic);
     synthetic.addHook('preClose', async () => { releaseStatus(); for (const stream of streams) stream.destroy(); });
     synthetic.addHook('onRequest', async (request, reply) => {
@@ -167,3 +170,4 @@ export async function startRealChain(mode: 'completed' | 'controls' = 'completed
     return { restart, origin, assertion, unapprovedAssertion, seedId, runId, prompt, output, email, secrets, requests, payloads, upstreamViolations, browserMutations, controls, holdStatus, finish: () => { cancelled = true; }, get runBody() { return runBody; }, get idempotencyKey() { return idempotencyKey; }, count: (method: string, path: string) => requests.filter(request => request.method === method && request.path === path).length, audit: () => readFile(auditPath, 'utf8'), close: async () => { releaseStatus(); await close(); } };
   } catch (error) { await close(); throw error; }
 }
+

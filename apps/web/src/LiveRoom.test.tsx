@@ -7,6 +7,19 @@ import type { Turn } from './useLiveTurn';
 const session = { id: 'jc_' + 'a'.repeat(32), title: 'Saved test room', source: 'api_server', ownership: 'command' as const, model: null, lastActive: '2026-09-05T12:00:00Z', messageCount: 1, toolCallCount: 0, pinned: false };
 const content = 'Saved reply\n  exact whitespace';
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+it('shows one recovered answer after its bound saved history arrives, retaining an older identical answer', async () => {
+  const turn: Turn = { intent: { sessionId: session.id, clientRequestId: 'recovered', input: null }, publicRunId: 'jcr_' + 'a'.repeat(32), phase: 'Run completed', done: true, output: content, outputLimited: false, historyMatched: false, identityVerified: true, approval: null, events: [], historyBinding: { userMessageId: 'new:u', assistantMessageId: 'new:a' } };
+  const messages = ['user', 'assistant', 'user', 'assistant'].map((role, index) => ({ id: ['old:u', 'old:a', 'new:u', 'new:a'][index], sessionId: session.id, role, content: role === 'user' ? 'question' : content, timestamp: null, toolName: null, displayKind: null }));
+  let resolve!: (value: Response) => void;
+  vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(done => { resolve = done; })));
+  render(<LiveRoom session={session} onHistory={vi.fn()} turns={[turn]} renderTurn={value => <TurnView turn={value} allowed={false} approve={vi.fn()} stop={vi.fn()} />} />);
+  expect(screen.getAllByRole('article', { name: 'Jarvis response' })).toHaveLength(1);
+  resolve(Response.json({ sessionId: session.id, messages, pagination: { limit: 50, offset: 0, returned: 4, hasMore: false } }));
+  await waitFor(() => expect(document.querySelector('[data-message-id="new:a"]')).not.toBeNull());
+  expect(document.querySelector('.turn-output')).toBeNull();
+  expect(screen.getAllByRole('article', { name: 'Jarvis response' })).toHaveLength(2);
+  expect(document.querySelector('[data-message-id="old:a"]')).not.toBeNull();
+});
 it.each([false, true])('renders an owned partial-page echo once while retaining local output (done=%s)', async done => {
   const turn: Turn = { intent: { sessionId: session.id, clientRequestId: 'local', input: 'question' }, publicRunId: 'jcr_' + 'a'.repeat(32), phase: 'Run running', done, output: content, outputLimited: false, historyMatched: false, identityVerified: true, approval: null, events: [], historyBaseline: ['old:u', 'old:a'] };
   const messages = ['user', 'assistant', 'user', 'assistant'].map((role, index) => ({ id: ['old:u', 'old:a', 'new:u', 'new:a'][index], sessionId: session.id, role, content: role === 'user' ? 'question' : content, timestamp: null, toolName: null, displayKind: null }));

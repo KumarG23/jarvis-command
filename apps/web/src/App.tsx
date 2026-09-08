@@ -6,6 +6,7 @@ import './styles.css';
 import { LiveRoom } from './LiveRoom';
 import { ProjectRooms, type ProjectRoomsHandle } from './ProjectRooms';
 import { ContextPane } from './ContextPane';
+import { appStorageKey, previewPath, recoverSignIn } from './appEnvironment';
 import { useLiveTurn } from './useLiveTurn';
 import { TurnComposer, TurnView } from './TurnView';
 
@@ -108,21 +109,7 @@ function FailureState({ kind }: Readonly<{ kind: BootstrapFailureKind }>) {
     setRecovering(true);
     setRecoveryFailed(false);
     try {
-      // Unregister only this app's root worker. Keep pending work and unrelated
-      // caches intact. A top-level navigation gets a new client without the old
-      // controller, including on the edge's subsequent callback redirect.
-      if ('serviceWorker' in navigator) {
-        const registration = await navigator.serviceWorker.getRegistration('/');
-        if (registration) {
-          const ownScript = `${window.location.origin}/sw.js`;
-          const workers = [registration.active, registration.waiting, registration.installing].filter(Boolean);
-          if (registration.scope !== `${window.location.origin}/` || workers.some((worker) => worker!.scriptURL !== ownScript)) {
-            throw new Error('recovery_unavailable');
-          }
-          if (!await registration.unregister()) throw new Error('recovery_unavailable');
-        }
-      }
-      window.location.replace('/api/auth/recover');
+      await recoverSignIn();
     } catch {
       setRecoveryFailed(true);
       setRecovering(false);
@@ -142,8 +129,8 @@ function FailureState({ kind }: Readonly<{ kind: BootstrapFailureKind }>) {
       <button className="primary-button" type="button" disabled={recovering} onClick={() => { void signIn(); }}>
         {recovering ? 'Opening sign-in…' : 'Sign in again'}
       </button>
-      <p className="boot-copy">Sign-in resets this app’s offline worker, not your saved pending work. Close other Command tabs first. If sign-in loops, open the site root in a fresh Incognito window, or clear this site’s storage in Chrome (clearing storage removes locally saved pending work).</p>
-      {recoveryFailed ? <p role="alert" className="boot-copy">Browser recovery could not finish. Use a fresh Incognito window or clear this site’s storage, then open the site root. Do not copy the sign-in callback URL.</p> : null}
+      <p className="boot-copy">{previewPath() ? 'Sign in again reopens this preview through Cloudflare Access. If sign-in loops, open the preview in a fresh private window.' : <>Sign-in resets this app’s offline worker, not your saved pending work. Close other Command tabs first. If sign-in loops, open the site root in a fresh Incognito window, or clear this site’s storage in Chrome (clearing storage removes locally saved pending work).</>}</p>
+      {recoveryFailed ? <p role="alert" className="boot-copy">Browser recovery could not finish. Open this app in a fresh private window. Do not copy the sign-in callback URL.</p> : null}
     </main>
   );
 }
@@ -154,7 +141,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
   const [projectName, setProjectName] = useState<string | null>(null);
   const [selectedSession, setSelectedSession] = useState<SessionSummary | null>(() => {
     if (!bootstrap.command.liveRoom.enabled) return null;
-    try { const id = sessionStorage.getItem('jarvis-command:selected-session:v1'); return bootstrap.sessions.find(session => session.id === id) ?? null; } catch { return null; }
+    try { const id = sessionStorage.getItem(appStorageKey('jarvis-command:selected-session:v1')); return bootstrap.sessions.find(session => session.id === id) ?? null; } catch { return null; }
   });
   const [sessions, setSessions] = useState(bootstrap.sessions);
   const [navigationOpen, setNavigationOpen] = useState(false);
@@ -163,7 +150,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
   const projects = useRef<ProjectRoomsHandle | null>(null), menu = useRef<HTMLButtonElement | null>(null), sidebar = useRef<HTMLElement | null>(null);
   const panelClose = useRef<HTMLButtonElement | null>(null), panelOpener = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    try { if (selectedSession) sessionStorage.setItem('jarvis-command:selected-session:v1', selectedSession.id); else sessionStorage.removeItem('jarvis-command:selected-session:v1'); } catch { /* Optional view hint. */ }
+    try { if (selectedSession) sessionStorage.setItem(appStorageKey('jarvis-command:selected-session:v1'), selectedSession.id); else sessionStorage.removeItem(appStorageKey('jarvis-command:selected-session:v1')); } catch { /* Optional view hint. */ }
   }, [selectedSession]);
   const recoveredSessionId = live.turn?.intent.input === null ? live.turn.intent.sessionId : null;
   useEffect(() => {

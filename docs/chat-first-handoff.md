@@ -1,5 +1,12 @@
 # Chat-first frontend handoff
 
+## Integration follow-up
+
+The next Codex fixes and required Hermes backend contract are recorded in
+[chat-first-integration-fixes.md](./chat-first-integration-fixes.md).
+That document supersedes the original remaining-check list below.
+
+
 Branch: `codex/chat-first-shell`, based directly on frontend checkpoint `ea7697166a6423a28fcc14400a379899792c709b` (tree `5329cd925f5777d9279b64f03c23da081b64e7fb`). Target the existing `feat/room-workspace-usability` branch for review. Do not merge into the older application state on main without reconciling its history.
 
 ## What changed
@@ -27,3 +34,8 @@ Everything in the preview is synthetic and held in memory; no Hermes endpoint or
 ## Hermes continuation prompt
 
 > Frontend ownership remains with Codex; keep overlapping UI jobs paused. Fetch `codex/chat-first-shell` and inspect the diff against `ea7697166a6423a28fcc14400a379899792c709b`. Keep `handoff/runtime-recovery-wip` separate. Run the adapted workspace integration check against this frontend when preparing runtime integration. Report concrete API or runtime incompatibilities for Codex to fix; do not redesign the shell. Deployment stays with Hermes and must use the existing release/rollback path when authorized. Do not treat this draft PR or local preview as deployment acceptance.
+# Integration follow-up
+
+The next Codex fixes and required Hermes backend contract are recorded in
+[chat-first-integration-fixes.md](./chat-first-integration-fixes.md).
+That document supersedes the original remaining-check list below.

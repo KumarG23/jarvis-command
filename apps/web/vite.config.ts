@@ -2,7 +2,11 @@ import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+const previewBase = process.env.JARVIS_PREVIEW_BASE;
+if (previewBase && !/^\/api\/preview\/[a-z0-9][a-z0-9-]*\/$/.test(previewBase)) throw new Error('Invalid JARVIS_PREVIEW_BASE');
+
 export default defineConfig({
+  base: previewBase ?? '/',
   plugins: [
     react(),
     // Only the explicitly requested synthetic HTTP preview needs UUID support.
@@ -16,6 +20,7 @@ export default defineConfig({
       },
     },
     VitePWA({
+      disable: !!previewBase,
       registerType: 'autoUpdate',
       includeAssets: ['jarvis-command.svg', 'pwa-192.png', 'pwa-512.png'],
       workbox: {

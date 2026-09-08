@@ -152,6 +152,12 @@ export const LiveRunStatusSchema = z.object({
   error: SafeTextSchema(4_096).nullable(),
   pendingSteer: SafeTextSchema(4_000).nullable(),
   usage: LiveRunUsageSchema.nullable(),
+  // Optional until the BFF can prove the persisted pair belongs to this exact
+  // public run and session. IDs use the same projection as session history.
+  historyBinding: z.object({
+    userMessageId: OpaqueIdentifierSchema,
+    assistantMessageId: OpaqueIdentifierSchema,
+  }).strict().optional(),
 }).strict();
 
 const RunEventBase = {

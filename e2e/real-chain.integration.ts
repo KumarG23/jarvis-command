@@ -1,6 +1,12 @@
 import { writeFile } from 'node:fs/promises';
-import { expect, test, type BrowserContext } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { startRealChain } from './real-chain.fixture';
+
+async function selectChat(page: Page, title: string) {
+  const menu = page.getByRole('button', { name: 'Open chat navigation', exact: true });
+  if (await menu.isVisible()) await menu.click();
+  await page.getByRole('navigation', { name: 'Recent chats', exact: true }).getByRole('button', { name: title, exact: true }).click();
+}
 
 test('compiled browser traverses authenticated BFF and both real proxies', async ({ browser }, testInfo) => {
   const chain = await startRealChain();
@@ -17,27 +23,30 @@ test('compiled browser traverses authenticated BFF and both real proxies', async
 
     await page.goto(chain.origin);
     await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
-    const picker = page.getByRole('combobox', { name: 'Session' });
-    await picker.selectOption(chain.seedId);
+    await selectChat(page, 'Synthetic existing Command room');
     await expect(page.getByText('Synthetic historical message', { exact: true })).toBeVisible();
     const createdResponse = page.waitForResponse(response => response.url().endsWith('/api/live/sessions') && response.request().method() === 'POST');
-    await page.getByRole('button', { name: 'New Command session', exact: true }).click();
+    const menu = page.getByRole('button', { name: 'Open chat navigation', exact: true });
+    if (await menu.isVisible()) await menu.click();
+    await page.getByRole('button', { name: 'New chat', exact: true }).click();
     const created = await (await createdResponse).json();
     const sessionId = created.session.id;
     expect(sessionId).toMatch(/^jc_[a-f0-9]{32}$/);
     expect(created.session).toMatchObject({ source: 'api_server', ownership: 'command' });
-    await expect(picker).toHaveValue(sessionId);
+    await expect(page.getByLabel('Selected session', { exact: true })).toHaveText(created.session.title);
+    expect(await page.evaluate(() => sessionStorage.getItem('jarvis-command:selected-session:v1'))).toBe(sessionId);
     // Refresh through the read-proxy/BFF projection, not only the POST response.
     await page.reload();
-    await expect(picker.locator(`option[value="${sessionId}"]`)).toHaveCount(1);
-    await picker.selectOption(sessionId);
+    await selectChat(page, created.session.title);
+    expect(await page.evaluate(() => sessionStorage.getItem('jarvis-command:selected-session:v1'))).toBe(sessionId);
     await expect(page.getByRole('textbox', { name: 'Message Jarvis' })).toBeEnabled();
     const admissionResponse = page.waitForResponse(response => response.url().endsWith('/api/live/runs') && response.request().method() === 'POST');
     await page.getByRole('textbox', { name: 'Message Jarvis' }).fill(chain.prompt);
-    await page.getByRole('button', { name: 'Send message' }).click();
+    await page.getByRole('button', { name: 'Send message', exact: true }).click();
     expect((await admissionResponse).status()).toBe(200);
     const admission = JSON.parse(chain.payloads.find(payload => payload.path === '/api/live/runs')!.text);
     expect(admission).toMatchObject({ sessionId, publicRunId: expect.stringMatching(/^jcr_[a-f0-9]{32}$/), status: 'running' });
+    await page.getByText(/View activity/).click();
     await expect(page.getByText('Tool started: synthetic-tool — Synthetic tool preview')).toBeVisible();
     await expect(page.getByText('Run completed', { exact: true })).toBeVisible();
     await expect(page.getByText(chain.output, { exact: true })).toHaveCount(1);
@@ -137,10 +146,10 @@ for (const choice of ['once', 'deny'] as const) test(`real-chain approval ${choi
     });
     await page.goto(chain.origin);
     await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
-    await page.getByRole('combobox', { name: 'Session' }).selectOption(chain.seedId);
+    await selectChat(page, 'Synthetic existing Command room');
     await page.getByRole('textbox', { name: 'Message Jarvis' }).fill(chain.prompt);
     const admitted = page.waitForResponse(response => response.url() === chain.origin + '/api/live/runs' && response.request().method() === 'POST');
-    await page.getByRole('button', { name: 'Send message' }).click();
+    await page.getByRole('button', { name: 'Send message', exact: true }).click();
     expect((await admitted).status()).toBe(200);
     const admission = JSON.parse(chain.payloads.find(payload => payload.path === '/api/live/runs')!.text);
     const card = page.getByRole('region', { name: 'Awaiting approval', exact: true });
@@ -227,7 +236,7 @@ for (const choice of ['once', 'deny'] as const) test(`real-chain approval ${choi
       await page.getByRole('button', { name: 'Stop run', exact: true }).click();
       await dialog.getByRole('button', { name: 'Confirm stop', exact: true }).click();
       await expect(page.getByText('Stop requested — outcome unconfirmed until status read-back', { exact: true })).toBeVisible();
-      await expect(page.getByText('Run stopping', { exact: true })).toBeVisible();
+      await expect(page.getByRole('region', { name: 'Current turn', exact: true }).getByText('Run stopping', { exact: true })).toBeVisible();
       await expect(page.getByRole('textbox', { name: 'Message Jarvis' })).toBeDisabled();
       expect(chain.count('POST', '/v1/runs/' + chain.runId + '/stop')).toBe(1);
       expect(chain.controls.at(-1)).toEqual({ runId: chain.runId, path: '/v1/runs/' + chain.runId + '/stop', body: {} });
@@ -237,7 +246,7 @@ for (const choice of ['once', 'deny'] as const) test(`real-chain approval ${choi
       await expect(page.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('Synthetic private queued guidance');
       expect(await stored()).toEqual({ local: {}, session: { 'jarvis-command:selected-session:v1': chain.seedId } });
       await page.getByRole('textbox', { name: 'Message Jarvis' }).fill('Edited in memory');
-      await page.getByRole('combobox', { name: 'Session' }).selectOption(chain.seedId);
+      await selectChat(page, 'Synthetic existing Command room');
       await expect(page.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('Edited in memory');
       await expect(page.getByRole('region', { name: 'Recover steer draft', exact: true })).toHaveCount(0);
       expect(chain.count('POST', '/v1/runs')).toBe(1);
@@ -268,3 +277,4 @@ for (const choice of ['once', 'deny'] as const) test(`real-chain approval ${choi
     try { await context?.close(); } finally { await chain.close(); }
   }
 });
+
