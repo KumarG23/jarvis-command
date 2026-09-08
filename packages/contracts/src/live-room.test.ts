@@ -24,6 +24,15 @@ const session = {
 };
 
 describe('Live Room session contracts', () => {
+  it('accepts optional exact persisted history IDs while rejecting malformed bindings', () => {
+    const status = { publicRunId: 'jcr_' + 'a'.repeat(32), sessionId: session.id, status: 'completed', updatedAt: '2026-09-04T14:00:00Z', approval: null, output: 'answer', error: null, pendingSteer: null, usage: null };
+    expect(LiveRunStatusSchema.safeParse(status).success).toBe(true);
+    const historyBinding = { userMessageId: 'user:exact', assistantMessageId: 'assistant:exact' };
+    expect(LiveRunStatusSchema.parse({ ...status, historyBinding }).historyBinding).toEqual(historyBinding);
+    for (const binding of [null, {}, { ...historyBinding, userMessageId: ' padded' }, { ...historyBinding, assistantMessageId: 'x'.repeat(161) }, { ...historyBinding, upstreamRunId: 'private' }]) {
+      expect(LiveRunStatusSchema.safeParse({ ...status, historyBinding: binding }).success).toBe(false);
+    }
+  });
   it('never normalizes message, tool or subagent identifiers in public contracts', () => {
     for (const id of [' padded', 'padded ', 'id\n', 'a b', 'é', 'x'.repeat(161)]) {
       const page = { sessionId: session.id, messages: [{ id, sessionId: session.id, role: 'assistant', content: '', timestamp: null, toolName: null, displayKind: null }], pagination: { limit: 1, offset: 0, returned: 1, hasMore: true } };

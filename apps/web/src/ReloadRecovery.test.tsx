@@ -41,13 +41,33 @@ it.each(['running', 'completed'])('recovers %s by exact GET only with absent inp
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); sessionStorage.clear(); vi.useRealTimers(); });
 
+it('carries a verified terminal history binding through reload recovery and releases the local echo only when history confirms it', async () => {
+  sessionStorage.setItem(key, JSON.stringify(record));
+  const historyBinding = { userMessageId: 'persisted:user', assistantMessageId: 'persisted:answer' };
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json(status('completed', { output: 'same answer', historyBinding }))));
+  const { result, unmount } = readyHook();
+  await waitFor(() => expect(result.current.turn?.done).toBe(true));
+  expect(result.current.turn?.historyBinding).toEqual(historyBinding);
+  expect(result.current.turn?.historyMatched).toBe(false);
+  const messages = [
+    { id: historyBinding.userMessageId, sessionId, role: 'user' as const, content: 'question', timestamp: null, toolName: null, displayKind: null },
+    { id: historyBinding.assistantMessageId, sessionId, role: 'assistant' as const, content: 'same answer', timestamp: null, toolName: null, displayKind: null },
+  ];
+  act(() => result.current.history(sessionId, messages, false));
+  expect(result.current.turn?.historyMatched).toBe(false);
+  act(() => result.current.history(sessionId, messages, true));
+  expect(result.current.turn?.historyMatched).toBe(true);
+  expect(sessionStorage.getItem(key)).toBeNull();
+  unmount();
+});
+
 it.each([true, false])('shows recovered target without fabricating a bootstrap room (present=%s)', async (present) => {
   sessionStorage.setItem(key, JSON.stringify(record));
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => Response.json(url.includes('/messages?') ? { sessionId, messages: [], pagination: { limit: 50, offset: 0, returned: 0, hasMore: false } } : status())));
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => Response.json(url === '/api/rooms' ? { version: 1, rooms: [] } : url.includes('/messages?') ? { sessionId, messages: [], pagination: { limit: 50, offset: 0, returned: 0, hasMore: false } } : status())));
   render(<App loadBootstrap={async () => ({ identity: { provider: 'development' }, command: { version: 'test', environment: 'test', generatedAt: '2026-09-04T12:00:00.000Z', liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 100, maxSteerCharacters: 100 } }, hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse'], readinessChecks: {} }, sessions: present ? [{ id: sessionId, title: 'Real bootstrap room', source: 'web', ownership: 'command', model: null, lastActive: '2026-09-04T12:00:00.000Z', messageCount: 0, toolCallCount: 0, pinned: false }] : [] })} />);
   await waitFor(() => expect(screen.getByText(/Original message unavailable/)).toBeInTheDocument());
   expect(screen.getByRole('region', { name: 'Current turn' })).toHaveTextContent(clientRequestId);
-  await waitFor(() => expect(screen.getByRole('combobox', { name: 'Session' })).toHaveValue(present ? sessionId : ''));
+  await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(present ? 'Real bootstrap room' : 'Jarvis Command'));
   if (present) expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toBeDisabled();
   else expect(screen.queryByText('Command-owned session')).not.toBeInTheDocument();
 });

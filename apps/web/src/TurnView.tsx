@@ -1,3 +1,4 @@
+import { ArrowUp, ChevronRight, Command, Copy } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { RunEvent } from '@jarvis-command/contracts';
 import type { DraftRecovery, Turn } from './useLiveTurn';
@@ -6,11 +7,11 @@ export function TurnView({ turn, allowed, approve, stop }: Readonly<{ turn: Turn
   const [confirmation, setConfirmation] = useState<Turn | null>(null);
   const canControl = allowed && turn.identityVerified;
   return <section className="live-turn" aria-label="Current turn">
-    <p role="status">{turn.phase}</p>
+    <p className="turn-phase" role="status">{turn.phase}</p>
     {turn.intent.input === null ? <><p>Original message unavailable after reload; no message was retransmitted.</p><p>Recovery target · Session: {turn.intent.sessionId} · Request: {turn.intent.clientRequestId} · Run: {turn.publicRunId ?? 'Unknown — admission lookup unsupported'}</p></> : !turn.userHistoryMatched ? <article className="timeline-event live-message" aria-label="Your message"><div className="event-icon violet" aria-hidden="true">You</div><div className="event-body"><div className="event-label">You</div><p className="turn-input">{turn.intent.input}</p></div></article> : null}
-    {turn.output && !turn.historyMatched ? <article className="timeline-event live-message" aria-label="Jarvis response"><div className="event-icon cyan" aria-hidden="true">J</div><div className="event-body"><div className="event-label">Jarvis</div><p className="turn-output">{turn.output}</p><CopyResponse key={JSON.stringify([turn.intent.sessionId, turn.intent.clientRequestId])} text={turn.output} limited={turn.outputLimited} /></div></article> : null}
+    {turn.output && !turn.historyMatched ? <article className="timeline-event live-message" aria-label="Jarvis response"><div className="event-icon cyan" aria-hidden="true"><Command size={21} /></div><div className="event-body"><div className="event-label">Jarvis</div><p className="turn-output">{turn.output}</p><CopyResponse key={JSON.stringify([turn.intent.sessionId, turn.intent.clientRequestId])} text={turn.output} limited={turn.outputLimited} /></div></article> : null}
     {turn.outputLimited ? <p role="status">Output preview limited. Full output may be available in session history.</p> : null}
-    {turn.events.length > 0 ? <ol className="turn-activity" aria-label="Run activity">{turn.events.map((event, index) => <li key={index}>{activity(event, turn.done)}</li>)}</ol> : null}
+    {turn.events.length > 0 ? <details className="activity-disclosure" open={turn.events.some(event => event.type === 'tool.completed' && event.error) || undefined}><summary><ChevronRight size={14} /> {turn.events.filter(event => event.type === 'tool.started').length ? `Used ${turn.events.filter(event => event.type === 'tool.started').length} tools` : 'Agent activity'} · View activity{turn.events.some(event => event.type === 'tool.completed' && event.error) ? ' · Tool failed' : ''}</summary><ol className="turn-activity" aria-label="Run activity">{turn.events.map((event, index) => <li key={index}>{activity(event, turn.done)}</li>)}</ol></details> : null}
     {turn.controlMessage ? <p role="status">{turn.done && /steer/i.test(turn.controlMessage)
       ? turn.terminalPendingSteer ? 'Run ended — unconsumed guidance was returned for draft recovery.' : 'Run ended — steer consumption was not reported.'
       : turn.controlMessage}</p> : null}
@@ -38,7 +39,7 @@ export function CopyResponse({ text, limited }: Readonly<{ text: string; limited
     }
   };
   return <div className="response-actions">
-    <button className="secondary-button" type="button" onClick={() => { void copy(); }}>{limited ? 'Copy preview' : 'Copy response'}</button>
+    <button className="icon-button" type="button" aria-label={limited ? 'Copy preview' : 'Copy response'} title={limited ? 'Copy preview' : 'Copy response'} onClick={() => { void copy(); }}><Copy size={16} /></button>
     <span role="status">{notice?.text === text ? notice.message : ''}</span>
   </div>;
 }
@@ -104,7 +105,7 @@ export function TurnComposer({ allowed, sessionId, max, maxSteer, turn, send, re
   const busy = blocked || (!!turn && !turn.done);
   const submit = () => { if (allowed && sessionId && !busy && draft.trim() && draft.length <= max && send(sessionId, draft, max)) setDraft(''); };
   return <>
-    {busy && turn ? <p role="status">{turn.phase} · {turn.intent.sessionId}</p> : null}
+    {busy && turn && !turn.done ? <p className="composer-feedback" role="status">{turn.phase}</p> : null}
     {turn?.phase === 'Admission uncertain — retry the same intent' ? <button className="primary-button" type="button" onClick={retry}>Retry same intent</button> : null}
     {turn && !turn.done && turn.publicRunId && turn.phase.startsWith('Disconnected') ? <button className="primary-button" type="button" onClick={resume}>Resume status check</button> : null}
     {allowed && turn && turn.identityVerified && !turn.done && turn.publicRunId && turn.intent.sessionId === sessionId ? <form className="turn-composer" onSubmit={(event) => { event.preventDefault(); void queue(); }}>
@@ -118,11 +119,12 @@ export function TurnComposer({ allowed, sessionId, max, maxSteer, turn, send, re
       <button type="button" onClick={() => handoff(item, true)}>Append to draft</button>
     </section>) : null}
     {allowed ? <form className="turn-composer" onSubmit={(event) => { event.preventDefault(); submit(); }}>
-      <textarea aria-label="Message Jarvis" maxLength={max} value={draft} disabled={busy} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => {
+      <textarea placeholder="Message Jarvis…" aria-label="Message Jarvis" maxLength={max} value={draft} disabled={busy} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => {
         if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); submit(); }
       }} />
-      <button className="primary-button" type="submit" disabled={busy || !draft.trim() || draft.length > max}>Send message</button>
-    </form> : <p>Messaging is unavailable for this session.</p>}
-    <p className="turn-limit">One writer in this tab; the server enforces cross-tab/session concurrency. Only opaque session, request and run identifiers are stored for reload recovery. Known runs resume by status reads, never message retransmission. Pending admission without a run ID remains locked for trusted operator reconciliation. Message bodies and drafts are never stored.</p>
+      <button className="primary-button" type="submit" disabled={busy || !draft.trim() || draft.length > max} aria-label="Send message" title="Send message"><ArrowUp size={20} /></button>
+    </form> : <p className="composer-feedback">{sessionId ? 'Messaging is unavailable for this chat.' : 'Choose New chat to begin.'}</p>}
+    <details className="turn-limit"><summary>Connection & recovery details</summary><p>One writer in this tab; the server enforces cross-tab/session concurrency. Only opaque session, request and run identifiers are stored for reload recovery. Known runs resume by status reads, never message retransmission. Pending admission without a run ID remains locked for trusted operator reconciliation. Message bodies and drafts are never stored.</p></details>
   </>;
 }
+

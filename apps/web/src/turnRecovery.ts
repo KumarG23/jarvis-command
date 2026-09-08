@@ -1,6 +1,8 @@
 import { LiveRunSubmissionResponseSchema } from '@jarvis-command/contracts';
 
-export const recoveryKey = 'jarvis-command:live-turn';
+import { appStorageKey } from './appEnvironment';
+
+export const recoveryKey = appStorageKey('jarvis-command:live-turn');
 const RecoverySchema = LiveRunSubmissionResponseSchema.pick({ sessionId: true, clientRequestId: true, publicRunId: true })
   .extend({ publicRunId: LiveRunSubmissionResponseSchema.shape.publicRunId.nullable() }).strict();
 export type RecoveryIdentity = ReturnType<typeof RecoverySchema.parse>;
@@ -26,3 +28,4 @@ export function clearRecovery(expected: RecoveryIdentity) {
   sessionStorage.removeItem(recoveryKey);
   if (readRecovery() !== null) throw new Error('recovery clear unverified');
 }
+
