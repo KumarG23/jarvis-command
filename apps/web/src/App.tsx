@@ -273,8 +273,8 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
             setSessions((previous) => [session, ...previous.filter((item) => item.id !== session.id)]);
             setSelectedSession(session);
           }} />
-          {selectedSession ? <p className="selected-session-title" aria-label="Selected session">{selectedSession.title}</p> : null}
         </div> : null}
+        {liveEnabled && selectedSession ? <p className="selected-session-title current-conversation" aria-label="Selected session">{selectedSession.title}</p> : null}
         <section className="timeline" aria-label="Mission timeline">
           {liveEnabled && selectedSession ? <LiveRoom key={`${selectedSession.id}:${live.refresh?.sessionId === selectedSession.id ? live.refresh.revision : ''}`} session={selectedSession} onHistory={live.history}
             turns={[...live.completedTurns, ...(live.turn ? [live.turn] : [])]}

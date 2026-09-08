@@ -10,6 +10,25 @@ const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
 const metadata = { name: 'Jarvis Command', goal: 'Persistent project room', repository: '/repo/jarvis-command', notes: ['vault/Jarvis Command.md'] };
 const headers = { 'cf-access-jwt-assertion': 'valid', origin: 'https://command.example', 'x-jarvis-command': '1', 'content-type': 'application/json' };
+it('updates only metadata atomically alongside attachment and persists exact identity on restart', async () => {
+  const id = 'jc_' + 'a'.repeat(32);
+  const session = { id, title: 'Synthetic conversation', source: 'api_server', ownership: 'command', model: null, lastActive: '2026-09-06T12:00:00Z', messageCount: 0, toolCallCount: 0, pinned: false };
+  const { make } = await fixture(vi.fn(async () => ({ session }))); const app = make();
+  const room = (await app.inject({ method: 'POST', url: '/api/rooms', headers, payload: metadata })).json().room;
+  const updated = { name: 'Renamed room', goal: 'Revised goal', repository: '/never/executed', notes: ['vault/New.md'] };
+  const results = await Promise.all([
+    app.inject({ method: 'POST', url: `/api/rooms/${room.id}`, headers, payload: updated }),
+    app.inject({ method: 'POST', url: `/api/rooms/${room.id}/sessions`, headers, payload: { sessionId: id } }),
+  ]);
+  expect(results.map(result => result.statusCode)).toEqual([200, 200]);
+  const expected = { ...room, ...updated, sessionIds: [id], lastSessionId: id };
+  expect((await app.inject({ url: '/api/rooms', headers })).json().rooms).toEqual([expected]);
+  await app.close(); const restarted = make();
+  expect((await restarted.inject({ url: '/api/rooms', headers })).json().rooms).toEqual([expected]);
+  const cleared = await restarted.inject({ method: 'POST', url: `/api/rooms/${room.id}`, headers, payload: { ...updated, repository: '', notes: [] } });
+  expect(cleared.json().room).toEqual({ ...expected, repository: '', notes: [] });
+  await restarted.close();
+});
 async function fixture(getSession = vi.fn()) {
   const root = await mkdtemp(join(tmpdir(), 'jc-rooms-')); roots.push(root);
   const config = loadConfig({ NODE_ENV: 'test', HERMES_READ_PROXY_KEY: 'r'.repeat(32), COMMAND_MODE: 'enabled', PUBLIC_ORIGIN: 'https://command.example', HERMES_COMMAND_API_BASE_URL: 'http://127.0.0.1:18643', HERMES_COMMAND_PROXY_KEY: 'c'.repeat(32), COMMAND_AUDIT_LOG_PATH: join(root, 'events.jsonl') });
@@ -47,6 +66,22 @@ it('creates, reads and reloads exact durable metadata in a fresh app instance', 
   expect((await restarted.inject({ url: '/api/rooms', headers })).json().rooms).toEqual([room]);
   expect(JSON.parse(await readFile(join(root, 'project-rooms.json'), 'utf8')).version).toBe(1);
   await restarted.close();
+});
+it('denies invalid metadata updates without registry or upstream mutation', async () => {
+  const upstream = vi.fn(); const { root, make } = await fixture(upstream); const app = make();
+  const room = (await app.inject({ method: 'POST', url: '/api/rooms', headers, payload: metadata })).json().room;
+  const path = join(root, 'project-rooms.json'); const before = await readFile(path);
+  const url = `/api/rooms/${room.id}`;
+  for (const [changed, status] of [[{ origin: 'https://evil.example' }, 403], [{ 'cf-access-jwt-assertion': '' }, 401], [{ 'cf-access-jwt-assertion': 'denied' }, 401], [{ 'x-jarvis-command': '' }, 403], [{ 'content-type': 'text/plain' }, 415]] as const) {
+    expect((await app.inject({ method: 'POST', url, headers: { ...headers, ...changed }, payload: JSON.stringify(metadata) })).statusCode).toBe(status);
+  }
+  for (const payload of [{ ...metadata, name: '' }, { ...metadata, sessionIds: [] }, { ...metadata, id: room.id }, { ...metadata, lastSessionId: null }, { ...metadata, notes: ['bad\nreference'] }, { ...metadata, goal: 'x'.repeat(2001) }]) {
+    expect((await app.inject({ method: 'POST', url, headers, payload })).statusCode).toBe(400);
+  }
+  expect((await app.inject({ method: 'POST', url, headers, payload: { ...metadata, goal: 'x'.repeat(20000) } })).statusCode).toBe(413);
+  expect((await app.inject({ method: 'POST', url: '/api/rooms/room_' + 'f'.repeat(32), headers, payload: metadata })).statusCode).toBe(404);
+  expect((await app.inject({ method: 'POST', url: '/api/rooms/invalid', headers, payload: metadata })).statusCode).toBe(400);
+  expect(await readFile(path)).toEqual(before); expect(upstream).not.toHaveBeenCalled(); await app.close();
 });
 it('rejects association gates with zero upstream calls or registry writes', async () => {
   const upstream = vi.fn();

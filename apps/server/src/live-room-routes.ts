@@ -117,6 +117,18 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
       await rooms.update(previous => [...previous, room]);
       return { room };
     });
+    routes.post('/api/rooms/:roomId', { bodyLimit: 16_384 }, async (request) => {
+      const { roomId } = parse(z.object({ roomId: ProjectRoomIdSchema }).strict(), request.params);
+      // Full metadata replacement uses the same strict fields/limits as creation.
+      const metadata = parse(ProjectRoomCreateSchema, request.body);
+      if (!rooms) throw new RoomStorageError();
+      const updated = await rooms.update(previous => {
+        if (!previous.some(room => room.id === roomId)) throw Object.assign(new Error('Room missing'), { statusCode: 404 });
+        // Merge inside the existing serialized transaction, never a stale list snapshot.
+        return previous.map(room => room.id === roomId ? { ...room, ...metadata } : room);
+      });
+      return { room: updated.find(room => room.id === roomId)! };
+    });
     routes.get('/api/live/sessions/:sessionId', { exposeHeadRoute: false }, async (request) => {
       const { sessionId } = parse(z.object({ sessionId: CommandSessionIdSchema }).strict(), request.params);
       return dependencies.liveRoom!.getSession(subjects.get(request)!, sessionId);
