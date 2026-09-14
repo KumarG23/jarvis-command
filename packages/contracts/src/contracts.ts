@@ -91,7 +91,6 @@ export const CommandBootstrapSchema = z
         liveRoom: z.object({
           enabled: z.boolean(),
           externalContinue: z.literal(false),
-          sessionContext: z.boolean().default(false),
           maxInputCharacters: z.number().int().min(1).max(16_000),
           maxSteerCharacters: z.number().int().min(1).max(4_000),
         }).strict(),

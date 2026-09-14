@@ -141,7 +141,6 @@ export function buildApp(dependencies: AppDependencies) {
         liveRoom: {
           enabled: liveRoomEnabled,
           externalContinue: false,
-          sessionContext: liveRoomEnabled,
           maxInputCharacters: 16_000,
           maxSteerCharacters: 4_000,
         },

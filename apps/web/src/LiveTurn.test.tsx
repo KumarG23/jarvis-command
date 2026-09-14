@@ -8,7 +8,7 @@ const id = 'jcr_' + 'a'.repeat(32);
 const timestamp = '2026-09-04T12:00:00.000Z';
 const session = { id: 'jc_test', title: 'Turn room', source: 'web', ownership: 'command' as const, model: null, lastActive: timestamp, messageCount: 0, toolCallCount: 0, pinned: false };
 const bootstrap: CommandBootstrap = {
-  identity: { provider: 'development' }, command: { version: 'test', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, sessionContext: false, maxInputCharacters: 100, maxSteerCharacters: 100 } },
+  identity: { provider: 'development' }, command: { version: 'test', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 100, maxSteerCharacters: 100 } },
   hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse'], readinessChecks: {} }, sessions: [session, { ...session, id: 'jc_second', title: 'Second room' }],
 };
 class Source {
@@ -32,6 +32,7 @@ function setup(admit?: (body: Record<string, string>) => Promise<Response>, fina
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/api/rooms') return Response.json({ version: 1, rooms: [] });
     if (url.includes('/messages?')) return Response.json({ sessionId: url.includes('jc_second') ? 'jc_second' : session.id, messages: [], pagination: { limit: 50, offset: 0, returned: 0, hasMore: false } });
+    if (url.endsWith('/context')) return Response.json({ sessionId: session.id, state: 'unavailable', updatedAt: null, receipt: null });
     if (url === '/api/live/model-options') return Response.json({
       default: { provider: 'openai-codex', model: 'gpt-5.6-sol' },
       options: [
