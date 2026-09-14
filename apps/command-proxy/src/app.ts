@@ -92,6 +92,41 @@ const UpstreamRunCreateSchema = z.object({
   replayed: z.boolean().optional(),
 }).passthrough();
 
+const UpstreamExecutionEndpointSchema = z.object({
+  provider: z.string().min(1).max(120).nullable(),
+  model: z.string().min(1).max(160).nullable(),
+  reasoning_effort: z.enum(['none', ...REASONING_EFFORTS]).nullable(),
+}).strict();
+
+const UpstreamExecutionReceiptSchema = z.object({
+  requested: UpstreamExecutionEndpointSchema,
+  executed: UpstreamExecutionEndpointSchema.extend({
+    reasoning_effort_source: z.enum(['wire', 'configured', 'unknown']),
+  }).strict(),
+  route_source: z.string().min(1).max(80).nullable(),
+  exact: z.boolean(),
+  fallback_used: z.boolean(),
+}).strict();
+
+const UpstreamRunUsageSchema = z.object({
+  input_tokens: z.number().int().nonnegative(),
+  output_tokens: z.number().int().nonnegative(),
+  total_tokens: z.number().int().nonnegative(),
+  reasoning_tokens: z.number().int().nonnegative().optional(),
+  cache_read_tokens: z.number().int().nonnegative().optional(),
+  cache_write_tokens: z.number().int().nonnegative().optional(),
+  api_calls: z.number().int().nonnegative().optional(),
+  provider_latency_ms: z.number().int().nonnegative().optional(),
+  end_to_end_latency_ms: z.number().int().nonnegative().optional(),
+  output_tokens_per_second: z.number().finite().nonnegative().nullable().optional(),
+  context: z.object({
+    used_tokens: z.number().int().nonnegative(),
+    limit_tokens: z.number().int().positive(),
+    source: z.literal('hermes_effective'),
+  }).strict().nullable().optional(),
+  execution: UpstreamExecutionReceiptSchema.nullable().optional(),
+}).passthrough();
+
 const UpstreamRunStatusSchema = z.object({
   run_id: z.string().regex(RUN_ID),
   session_id: SessionIdSchema,
@@ -101,7 +136,7 @@ const UpstreamRunStatusSchema = z.object({
   output: z.string().max(262_144).nullable().optional(),
   error: z.string().max(4_096).nullable().optional(),
   pending_steer: z.string().max(4_000).nullable().optional(),
-  usage: z.record(z.string(), z.unknown()).nullable().optional(),
+  usage: UpstreamRunUsageSchema.nullable().optional(),
 }).passthrough();
 
 const UpstreamApprovalResponseSchema = z.object({
@@ -536,6 +571,7 @@ function upstreamInference(inference: InferenceOverride) {
   return {
     provider: inference.provider,
     model: inference.model,
+    require_model_lock: true,
     model_options: {
       reasoning: { enabled: true, effort: inference.reasoningEffort },
     },
@@ -694,7 +730,55 @@ function projectUsage(value: Record<string, unknown> | null | undefined): LiveRu
   const inputTokens = nonnegativeInteger(value.input_tokens);
   const outputTokens = nonnegativeInteger(value.output_tokens);
   const totalTokens = nonnegativeInteger(value.total_tokens);
-  return { inputTokens, outputTokens, totalTokens };
+  const optionalInteger = (field: string) => value[field] === undefined
+    ? undefined : nonnegativeInteger(value[field]);
+  const reasoningTokens = optionalInteger('reasoning_tokens');
+  const cacheReadTokens = optionalInteger('cache_read_tokens');
+  const cacheWriteTokens = optionalInteger('cache_write_tokens');
+  const apiCalls = optionalInteger('api_calls');
+  const providerLatencyMs = optionalInteger('provider_latency_ms');
+  const endToEndLatencyMs = optionalInteger('end_to_end_latency_ms');
+  const context = value.context === null || value.context === undefined ? undefined : z.object({
+    used_tokens: z.number().int().nonnegative(),
+    limit_tokens: z.number().int().positive(),
+    source: z.literal('hermes_effective'),
+  }).strict().parse(value.context);
+  const execution = value.execution === null || value.execution === undefined
+    ? undefined : UpstreamExecutionReceiptSchema.parse(value.execution);
+  return {
+    inputTokens, outputTokens, totalTokens,
+    ...(reasoningTokens === undefined ? {} : { reasoningTokens }),
+    ...(cacheReadTokens === undefined ? {} : { cacheReadTokens }),
+    ...(cacheWriteTokens === undefined ? {} : { cacheWriteTokens }),
+    ...(apiCalls === undefined ? {} : { apiCalls }),
+    ...(providerLatencyMs === undefined ? {} : { providerLatencyMs }),
+    ...(endToEndLatencyMs === undefined ? {} : { endToEndLatencyMs }),
+    ...(value.output_tokens_per_second === undefined ? {} : {
+      outputTokensPerSecond: value.output_tokens_per_second === null ? null
+        : z.number().finite().nonnegative().parse(value.output_tokens_per_second),
+    }),
+    ...(context === undefined ? {} : { context: {
+      usedTokens: context.used_tokens,
+      limitTokens: context.limit_tokens,
+      source: context.source,
+    } }),
+    ...(execution === undefined ? {} : { execution: {
+      requested: {
+        provider: execution.requested.provider,
+        model: execution.requested.model,
+        reasoningEffort: execution.requested.reasoning_effort,
+      },
+      executed: {
+        provider: execution.executed.provider,
+        model: execution.executed.model,
+        reasoningEffort: execution.executed.reasoning_effort,
+        reasoningEffortSource: execution.executed.reasoning_effort_source,
+      },
+      routeSource: execution.route_source,
+      exact: execution.exact,
+      fallbackUsed: execution.fallback_used,
+    } }),
+  };
 }
 
 async function relayEventStream(

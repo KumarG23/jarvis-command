@@ -419,6 +419,7 @@ describe('run creation and control', () => {
       input: 'Use Luna.',
       provider: 'openai-codex',
       model: 'gpt-5.6-luna',
+      require_model_lock: true,
       model_options: { reasoning: { enabled: true, effort: 'low' } },
     });
   });
@@ -824,6 +825,40 @@ describe('run status and event projection', () => {
       pendingSteer: null,
       usage: null,
     });
+  });
+
+  it('projects a bounded authoritative execution receipt and provider telemetry', async () => {
+    const usage = {
+      input_tokens: 120, output_tokens: 40, total_tokens: 160,
+      reasoning_tokens: 8, cache_read_tokens: 80, cache_write_tokens: 0,
+      api_calls: 2, provider_latency_ms: 2000, end_to_end_latency_ms: 2400,
+      output_tokens_per_second: 20,
+      context: { used_tokens: 90, limit_tokens: 1000, source: 'hermes_effective' },
+      execution: {
+        requested: { provider: 'xai-oauth', model: 'grok-4.6', reasoning_effort: 'low' },
+        executed: { provider: 'xai-oauth', model: 'grok-4.6', reasoning_effort: 'low', reasoning_effort_source: 'wire' },
+        route_source: 'raw_request', exact: true, fallback_used: false,
+      },
+      ignored_future_field: 'not projected',
+    };
+    const app = createApp(vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({
+      run_id: runId, session_id: commandSessionId, status: 'completed', updated_at: 1788530400,
+      output: 'done', usage,
+    })));
+    const response = await app.inject({ url: `/v1/runs/${runId}`, headers: authHeaders() });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().usage).toEqual({
+      inputTokens: 120, outputTokens: 40, totalTokens: 160, reasoningTokens: 8,
+      cacheReadTokens: 80, cacheWriteTokens: 0, apiCalls: 2,
+      providerLatencyMs: 2000, endToEndLatencyMs: 2400, outputTokensPerSecond: 20,
+      context: { usedTokens: 90, limitTokens: 1000, source: 'hermes_effective' },
+      execution: {
+        requested: { provider: 'xai-oauth', model: 'grok-4.6', reasoningEffort: 'low' },
+        executed: { provider: 'xai-oauth', model: 'grok-4.6', reasoningEffort: 'low', reasoningEffortSource: 'wire' },
+        routeSource: 'raw_request', exact: true, fallbackUsed: false,
+      },
+    });
+    expect(response.payload).not.toContain('ignored_future_field');
   });
 
   it('re-emits only bounded typed SSE events and drops reasoning/unknown fields', async () => {

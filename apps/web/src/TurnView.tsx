@@ -8,7 +8,8 @@ export function TurnView({ turn, allowed, approve, stop }: Readonly<{ turn: Turn
   const canControl = allowed && turn.identityVerified;
   return <section className="live-turn" aria-label="Current turn">
     <p className="turn-phase" role="status">{turn.phase}</p>
-    {'inference' in turn.intent && turn.intent.inference ? <p className="turn-route">Requested route · {turn.intent.inference.model} · {turn.intent.inference.reasoningEffort}</p> : null}
+    {turn.usage?.execution ? <ExecutionReceipt usage={turn.usage} />
+      : 'inference' in turn.intent && turn.intent.inference ? <p className="turn-route">Requested route · {turn.intent.inference.model} · {turn.intent.inference.reasoningEffort}</p> : null}
     {turn.intent.input === null ? <><p>Original message unavailable after reload; no message was retransmitted.</p><p>Recovery target · Session: {turn.intent.sessionId} · Request: {turn.intent.clientRequestId} · Run: {turn.publicRunId ?? 'Unknown — admission lookup unsupported'}</p></> : !turn.userHistoryMatched ? <article className="timeline-event live-message" aria-label="Your message"><div className="event-icon violet" aria-hidden="true">You</div><div className="event-body"><div className="event-label">You</div><p className="turn-input">{turn.intent.input}</p></div></article> : null}
     {turn.output && !turn.historyMatched ? <article className="timeline-event live-message" aria-label="Jarvis response"><div className="event-icon cyan" aria-hidden="true"><Command size={21} /></div><div className="event-body"><div className="event-label">Jarvis</div><p className="turn-output">{turn.output}</p><CopyResponse key={JSON.stringify([turn.intent.sessionId, turn.intent.clientRequestId])} text={turn.output} limited={turn.outputLimited} /></div></article> : null}
     {turn.outputLimited ? <p role="status">Output preview limited. Full output may be available in session history.</p> : null}
@@ -28,6 +29,56 @@ export function TurnView({ turn, allowed, approve, stop }: Readonly<{ turn: Turn
     </> : null}
   </section>;
 }
+
+function ExecutionReceipt({ usage }: Readonly<{ usage: NonNullable<Turn['usage']> }>) {
+  const receipt = usage.execution!;
+  const context = usage.context;
+  const contextPercent = context ? Math.min(100, (context.usedTokens / context.limitTokens) * 100) : null;
+  const changed = receipt.fallbackUsed
+    || (receipt.requested.provider !== null && receipt.requested.provider !== receipt.executed.provider)
+    || (receipt.requested.model !== null && receipt.requested.model !== receipt.executed.model)
+    || (receipt.requested.reasoningEffort !== null && receipt.requested.reasoningEffort !== receipt.executed.reasoningEffort);
+  return <section className={`execution-receipt${changed ? ' warning' : ''}`} aria-label="Execution receipt">
+    <p className="receipt-title">Executed · {modelLabel(receipt.executed.model)} · {receipt.executed.reasoningEffort ?? 'effort unknown'} · {providerLabel(receipt.executed.provider)}</p>
+    <p>{formatInteger(usage.totalTokens)} tokens · {formatInteger(usage.inputTokens)} in / {formatInteger(usage.outputTokens)} out
+      {usage.outputTokensPerSecond == null ? ' · throughput unavailable' : ` · ${usage.outputTokensPerSecond.toFixed(1)} tok/s`}</p>
+    <p>{usage.apiCalls === undefined ? 'API calls unavailable' : `${usage.apiCalls} API ${usage.apiCalls === 1 ? 'call' : 'calls'}`}
+      {usage.providerLatencyMs === undefined ? '' : ` · ${formatDuration(usage.providerLatencyMs)} provider`}
+      {usage.endToEndLatencyMs === undefined ? '' : ` · ${formatDuration(usage.endToEndLatencyMs)} end-to-end`}</p>
+    {usage.reasoningTokens || usage.cacheReadTokens || usage.cacheWriteTokens ? <p>
+      {usage.reasoningTokens ? `${formatInteger(usage.reasoningTokens)} reasoning` : 'Reasoning unavailable'}
+      {usage.cacheReadTokens ? ` · ${formatInteger(usage.cacheReadTokens)} cache read` : ''}
+      {usage.cacheWriteTokens ? ` · ${formatInteger(usage.cacheWriteTokens)} cache write` : ''}
+    </p> : null}
+    {context && contextPercent !== null ? <div className="context-usage">
+      <span>Context · {contextPercent.toFixed(contextPercent < 10 ? 1 : 0)}% · {formatInteger(context.usedTokens)} / {formatInteger(context.limitTokens)}</span>
+      <progress aria-label="Context usage" max={100} value={contextPercent} />
+    </div> : <p>Context usage unavailable</p>}
+    {changed ? <p className="receipt-warning">Requested route changed during execution.</p> : null}
+    {!changed && receipt.exact ? <p>Exact route · {receipt.executed.reasoningEffortSource === 'wire' ? 'effort captured at provider wire' : 'effort not wire-confirmed'}</p> : null}
+  </section>;
+}
+
+function providerLabel(provider: string | null): string {
+  if (provider === 'openai-codex') return 'OpenAI';
+  if (provider === 'xai-oauth') return 'xAI';
+  return provider ?? 'provider unknown';
+}
+
+function modelLabel(model: string | null): string {
+  return ({
+    'gpt-6-astra': 'Astra',
+    'gpt-5.6-sol': 'Sol',
+    'gpt-5.6-terra': 'Terra',
+    'gpt-5.6-luna': 'Luna',
+    'grok-4.6': 'Grok 4.6',
+  } as Record<string, string>)[model ?? ''] ?? model ?? 'model unknown';
+}
+
+const formatInteger = (value: number) => value.toLocaleString('en-US');
+const formatDuration = (milliseconds: number) => milliseconds < 1000
+  ? `${milliseconds}ms` : `${(milliseconds / 1000).toFixed(milliseconds < 10_000 ? 1 : 0)}s`;
+
 export function CopyResponse({ text, limited }: Readonly<{ text: string; limited: boolean }>) {
   const [notice, setNotice] = useState<{ text: string; message: string } | null>(null);
   const copy = async () => {

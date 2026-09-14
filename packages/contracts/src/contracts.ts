@@ -160,10 +160,39 @@ export const LiveRunSubmissionResponseSchema = z.object({
   clientRequestId: ClientRequestIdSchema,
 }).strict();
 
+export const LiveExecutionEndpointSchema = z.object({
+  provider: NonBlankTextSchema(120).nullable(),
+  model: NonBlankTextSchema(160).nullable(),
+  reasoningEffort: z.enum(['none', 'minimal', 'low', 'medium', 'high', 'xhigh']).nullable(),
+}).strict();
+
+export const LiveExecutionReceiptSchema = z.object({
+  requested: LiveExecutionEndpointSchema,
+  executed: LiveExecutionEndpointSchema.extend({
+    reasoningEffortSource: z.enum(['wire', 'configured', 'unknown']),
+  }).strict(),
+  routeSource: SafeTextSchema(80).nullable(),
+  exact: z.boolean(),
+  fallbackUsed: z.boolean(),
+}).strict();
+
 export const LiveRunUsageSchema = z.object({
   inputTokens: z.number().int().nonnegative(),
   outputTokens: z.number().int().nonnegative(),
   totalTokens: z.number().int().nonnegative(),
+  reasoningTokens: z.number().int().nonnegative().optional(),
+  cacheReadTokens: z.number().int().nonnegative().optional(),
+  cacheWriteTokens: z.number().int().nonnegative().optional(),
+  apiCalls: z.number().int().nonnegative().optional(),
+  providerLatencyMs: z.number().int().nonnegative().optional(),
+  endToEndLatencyMs: z.number().int().nonnegative().optional(),
+  outputTokensPerSecond: z.number().finite().nonnegative().nullable().optional(),
+  context: z.object({
+    usedTokens: z.number().int().nonnegative(),
+    limitTokens: z.number().int().positive(),
+    source: z.literal('hermes_effective'),
+  }).strict().nullable().optional(),
+  execution: LiveExecutionReceiptSchema.nullable().optional(),
 }).strict();
 
 export const LiveApprovalSchema = z.object({
@@ -302,6 +331,7 @@ export type HermesState = z.infer<typeof HermesStateSchema>;
 export type InferenceOption = z.infer<typeof InferenceOptionSchema>;
 export type InferenceOptionsResponse = z.infer<typeof InferenceOptionsResponseSchema>;
 export type InferenceOverride = z.infer<typeof InferenceOverrideSchema>;
+export type LiveExecutionReceipt = z.infer<typeof LiveExecutionReceiptSchema>;
 export type LiveApproval = z.infer<typeof LiveApprovalSchema>;
 export type LiveRoomSessionContinueRequest = z.infer<typeof LiveRoomSessionContinueRequestSchema>;
 export type LiveRoomSessionCreateRequest = z.infer<typeof LiveRoomSessionCreateRequestSchema>;

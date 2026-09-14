@@ -167,6 +167,47 @@ it('sends a curated per-prompt model and reasoning override without changing per
   expect(screen.getByText('Requested route · gpt-5.6-luna · low')).toBeInTheDocument();
 });
 
+it('replaces requested settings with an authoritative receipt and measured context usage', async () => {
+  const usage = {
+    inputTokens: 120, outputTokens: 40, totalTokens: 160,
+    reasoningTokens: 8, cacheReadTokens: 80, cacheWriteTokens: 0,
+    apiCalls: 2, providerLatencyMs: 2000, endToEndLatencyMs: 2400,
+    outputTokensPerSecond: 20,
+    context: { usedTokens: 90, limitTokens: 1000, source: 'hermes_effective' as const },
+    execution: {
+      requested: { provider: 'xai-oauth', model: 'grok-4.6', reasoningEffort: 'low' as const },
+      executed: { provider: 'xai-oauth', model: 'grok-4.6', reasoningEffort: 'low' as const, reasoningEffortSource: 'wire' as const },
+      routeSource: 'raw_request', exact: true, fallbackUsed: false,
+    },
+  };
+  setup(undefined, status('completed', { usage })); await open(); await send();
+  act(() => Source.instances[0]!.emit('run.completed', { output: 'Streamed answer', pendingSteer: null, usage }));
+  const receipt = await screen.findByRole('region', { name: 'Execution receipt' });
+  expect(receipt).toHaveTextContent('Executed · Grok 4.6 · low · xAI');
+  expect(receipt).toHaveTextContent('160 tokens · 120 in / 40 out · 20.0 tok/s');
+  expect(receipt).toHaveTextContent('2 API calls · 2.0s provider · 2.4s end-to-end');
+  expect(receipt).toHaveTextContent('Context · 9.0% · 90 / 1,000');
+  expect(receipt).toHaveTextContent('Exact route · effort captured at provider wire');
+  expect(screen.getByRole('progressbar', { name: 'Context usage' })).toHaveAttribute('value', '9');
+});
+
+it('warns when the executed route differs from the request', async () => {
+  const usage = {
+    inputTokens: 10, outputTokens: 3, totalTokens: 13,
+    execution: {
+      requested: { provider: 'openai-codex', model: 'gpt-5.6-sol', reasoningEffort: 'high' as const },
+      executed: { provider: 'openai-codex', model: 'gpt-5.6-terra', reasoningEffort: 'medium' as const, reasoningEffortSource: 'wire' as const },
+      routeSource: 'fallback', exact: false, fallbackUsed: true,
+    },
+  };
+  setup(undefined, status('completed', { usage })); await open(); await send();
+  act(() => Source.instances[0]!.emit('run.completed', { output: 'Streamed answer', pendingSteer: null, usage }));
+  const receipt = await screen.findByRole('region', { name: 'Execution receipt' });
+  expect(receipt).toHaveTextContent('Executed · Terra · medium · OpenAI');
+  expect(receipt).toHaveTextContent('Requested route changed during execution.');
+  expect(receipt).toHaveTextContent('Context usage unavailable');
+});
+
 it('hands the submitted user and answer to saved history once, in conversation order', async () => {
   const fetchMock = setup(); await open(); await send();
   act(() => Source.instances[0]!.emit('message.delta', { delta: 'Streamed answer' }));

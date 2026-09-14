@@ -125,6 +125,14 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 .inference-fields select { min-width: 132px; color: var(--text); background: var(--panel); border: 1px solid #343c4c; border-radius: 6px; padding: 7px 9px; text-transform: none; }
 .inference-fields p { flex: 1 1 220px; margin: 0; color: var(--subtle); font-size: 9px; line-height: 1.45; }
 .turn-route { color: var(--subtle); font: 500 9px/1.4 'JetBrains Mono', monospace; }
+.execution-receipt { margin: 8px 0 12px; padding: 10px 12px; border: 1px solid #2d5360; border-radius: 9px; background: #0d1820; color: var(--muted); font: 500 9px/1.55 'JetBrains Mono', monospace; }
+.execution-receipt.warning { border-color: #8b6033; background: #1b1610; }
+.execution-receipt p { margin: 2px 0; }
+.execution-receipt .receipt-title { color: var(--cyan); font-size: 10px; }
+.execution-receipt .receipt-warning { color: #f2cb91; }
+.context-usage { display: grid; grid-template-columns: minmax(0, 1fr) 150px; align-items: center; gap: 10px; margin: 5px 0 2px; }
+.context-usage progress { width: 100%; height: 6px; accent-color: var(--cyan); }
+@media (max-width: 560px) { .context-usage { grid-template-columns: 1fr; gap: 3px; } }
 .composer-feedback { max-width: 730px; margin: 5px auto 12px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .turn-limit { max-width: 730px; margin: 9px auto 0; color: var(--subtle); font-size: 10px; line-height: 1.7; }
 .turn-limit summary { cursor: pointer; }

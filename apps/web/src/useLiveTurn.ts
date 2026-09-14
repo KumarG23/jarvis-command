@@ -64,6 +64,7 @@ export type Turn = {
   historyBaseline?: string[]; userHistoryMatched?: boolean;
   terminalPendingSteer?: boolean;
   historyBinding?: LiveRunStatus['historyBinding'];
+  usage?: LiveRunStatus['usage'];
 };
 export type DraftRecovery = { intent: TurnIntent; input: string; kind: 'terminal' | 'uncertain' };
 
@@ -165,6 +166,7 @@ export function useLiveTurn() {
           phase: !done && newerApproval ? current.current!.phase : `Run ${status.status}`,
           ...(status.output === null || (!done && (keepStream || !!current.current!.output)) ? {} : outputPreview(status.output)),
           approval: done ? null : preserveApproval || newerApproval ? current.current!.approval : status.approval,
+          usage: status.usage,
           done });
         preserveApproval = false;
         if (terminal(status.status)) {
