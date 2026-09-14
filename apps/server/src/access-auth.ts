@@ -98,7 +98,9 @@ function createFileJWKSet(path: string): JWTVerifyGetKey {
         throw new Error('Invalid local JWKS payload');
       }
 
-      return createLocalJWKSet(parsed)(protectedHeader, token);
+      // Await before finally closes the file: otherwise a fast resolver rejection can
+      // become unhandled while close() yields, terminating the BFF on an unknown kid.
+      return await createLocalJWKSet(parsed)(protectedHeader, token);
     } finally {
       await handle.close();
     }

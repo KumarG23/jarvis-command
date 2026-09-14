@@ -207,6 +207,26 @@ cp ${JSON.stringify(source)} "$output"
     });
   });
 
+  it('handles an unknown file-JWKS kid without an unhandled rejection while closing the file', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'access-unknown-kid-'));
+    try {
+      const jwksFile = join(directory, 'certs.json');
+      await writeFile(jwksFile, JSON.stringify({
+        keys: [{ ...await exportJWK(publicKey), alg: 'RS256', use: 'sig', kid: 'different-key' }],
+      }));
+      const verify = createAccessVerifier({
+        teamDomain: 'team.cloudflareaccess.com',
+        audience,
+        allowedEmailHash,
+        jwksFile,
+      });
+      await expect(verify(await makeToken())).rejects.toBeInstanceOf(AccessAuthorizationError);
+      await new Promise((resolve) => setImmediate(resolve));
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
   it('rejects another valid Cloudflare identity', async () => {
     const verify = createAccessVerifier({
       teamDomain: 'team.cloudflareaccess.com',
