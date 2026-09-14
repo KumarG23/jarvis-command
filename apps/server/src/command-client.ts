@@ -6,6 +6,7 @@ import {
   OpaqueIdentifierSchema,
   LiveRoomSessionContinueRequestSchema,
   LiveRoomSessionCreateRequestSchema,
+  LiveCompactionSchema,
   LiveRunApprovalRequestSchema,
   LiveRunStateSchema,
   LiveRunSteerRequestSchema,
@@ -55,6 +56,7 @@ const InternalRunStatusSchema = z.object({
   error: z.string().max(4_096).nullable(),
   pendingSteer: z.string().max(4_000).nullable(),
   usage: LiveRunUsageSchema.nullable(),
+  compaction: LiveCompactionSchema.nullable().optional(),
 }).strict();
 
 const InternalApprovalResponseSchema = z.object({
@@ -125,6 +127,10 @@ const InternalRunEventSchema = z.discriminatedUnion('type', [
     choice: ApprovalChoiceSchema,
   }).strict(),
   z.object({ ...EventBase, type: z.literal('run.steered'), accepted: z.literal(true) }).strict(),
+  z.object({ ...EventBase, type: z.literal('context.compaction.started'), state: z.literal('running') }).strict(),
+  z.object({ ...EventBase, type: z.literal('context.compaction.progress'), state: z.literal('running') }).strict(),
+  z.object({ ...EventBase, type: z.literal('context.compaction.completed'), state: z.literal('completed') }).strict(),
+  z.object({ ...EventBase, type: z.literal('context.compaction.aborted'), state: z.literal('aborted') }).strict(),
   z.object({
     ...EventBase,
     type: z.literal('run.completed'),
