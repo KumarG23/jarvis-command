@@ -31,7 +31,23 @@ function setup(admit?: (body: Record<string, string>) => Promise<Response>, fina
   vi.stubGlobal('EventSource', Source);
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (url.includes('/messages?')) return Response.json({ sessionId: url.includes('jc_second') ? 'jc_second' : session.id, messages: [], pagination: { limit: 50, offset: 0, returned: 0, hasMore: false } });
-    if (url === '/api/live/runs') { const body = JSON.parse(init!.body as string); return admit ? admit(body) : Response.json({ ...body, input: undefined, publicRunId: id, status: 'running', replayed: false }); }
+    if (url === '/api/live/model-options') return Response.json({
+      default: { provider: 'openai-codex', model: 'gpt-5.6-sol' },
+      options: [
+        { provider: 'openai-codex', model: 'gpt-5.6-sol', label: 'Sol', reasoningEfforts: ['low', 'medium', 'high', 'xhigh'] },
+        { provider: 'openai-codex', model: 'gpt-5.6-luna', label: 'Luna', reasoningEfforts: ['minimal', 'low', 'medium'] },
+      ],
+    });
+    if (url === '/api/live/runs') {
+      const body = JSON.parse(init!.body as string);
+      return admit ? admit(body) : Response.json({
+        sessionId: body.sessionId,
+        clientRequestId: body.clientRequestId,
+        publicRunId: id,
+        status: 'running',
+        replayed: false,
+      });
+    }
     return Response.json(final);
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -128,6 +144,22 @@ it('sends one exact intent, streams partial output and reconciles terminal statu
   expect(fetchMock.mock.calls.filter(([url]) => url.includes('/messages?'))).toHaveLength(2);
 });
 
+it('sends a curated per-prompt model and reasoning override without changing permissions', async () => {
+  const fetchMock = setup(); await open();
+  const model = await screen.findByRole('combobox', { name: 'Model for this prompt' });
+  await waitFor(() => expect(model).toBeEnabled());
+  fireEvent.change(model, { target: { value: 'openai-codex:gpt-5.6-luna' } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Reasoning for this prompt' }), { target: { value: 'low' } });
+  await send();
+  const request = fetchMock.mock.calls.find(([url]) => url === '/api/live/runs')!;
+  expect(JSON.parse(request[1]!.body as string)).toMatchObject({
+    sessionId: session.id,
+    input: 'Hello Jarvis',
+    inference: { provider: 'openai-codex', model: 'gpt-5.6-luna', reasoningEffort: 'low' },
+  });
+  expect(screen.getByText('Requested route · gpt-5.6-luna · low')).toBeInTheDocument();
+});
+
 it('hands the submitted user and answer to saved history once, in conversation order', async () => {
   const fetchMock = setup(); await open(); await send();
   act(() => Source.instances[0]!.emit('message.delta', { delta: 'Streamed answer' }));
@@ -156,9 +188,9 @@ it('retains unsaved completed turns when another identical message is submitted 
   await waitFor(() => expect(Source.instances).toHaveLength(2));
   expect(screen.getAllByText('Hello Jarvis')).toHaveLength(2);
   expect(screen.getByText('Streamed answer')).toBeInTheDocument();
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'jc_second' } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Session' }), { target: { value: 'jc_second' } });
   expect(screen.queryByText('Streamed answer')).not.toBeInTheDocument();
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: session.id } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Session' }), { target: { value: session.id } });
   expect(await screen.findByText('Streamed answer')).toBeInTheDocument();
   expect(screen.getAllByText('Hello Jarvis')).toHaveLength(2);
 });
@@ -176,8 +208,8 @@ it('reconciles two identical turns after delayed persistence without claiming ei
     ? { sessionId: session.id, messages, pagination: { limit: 50, offset: 0, returned: 4, hasMore: false } } : status()));
   await act(async () => Source.instances[1]!.onerror?.());
   // Real run IDs differ; switch forces a fresh history view even with this fixture's reused ID.
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'jc_second' } });
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: session.id } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Session' }), { target: { value: 'jc_second' } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Session' }), { target: { value: session.id } });
   await waitFor(() => expect(document.querySelector('[data-message-id="saved:3"]')).not.toBeNull());
   expect(screen.getAllByText('Hello Jarvis')).toHaveLength(2);
   expect(screen.getAllByText('Streamed answer')).toHaveLength(2);
@@ -186,8 +218,8 @@ it('reconciles two identical turns after delayed persistence without claiming ei
     expect.stringContaining('Hello Jarvis'), expect.stringContaining('Streamed answer'),
   ]);
   fetchMock.mockRejectedValue(new Error('history unavailable'));
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'jc_second' } });
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: session.id } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Session' }), { target: { value: 'jc_second' } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Session' }), { target: { value: session.id } });
   await screen.findByRole('alert');
   // Only unconfirmed bodies remain in memory after durable handoff.
   expect(screen.getAllByText('Hello Jarvis')).toHaveLength(1);
@@ -552,7 +584,7 @@ it.each(['publicRunId', 'sessionId', 'malformed'])('refuses unbound %s status an
 
 it('keeps supervision across rooms, ignores foreign events and closes on unmount', async () => {
   setup(undefined, status('running')); await open(); await send();
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'jc_second' } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Session' }), { target: { value: 'jc_second' } });
   act(() => Source.instances[0]!.emit('message.delta', { delta: 'Foreign', publicRunId: 'jcr_' + 'b'.repeat(32) }));
   expect(screen.queryByText('Foreign')).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
@@ -578,7 +610,7 @@ it('rejects blank/oversized input, preserves Shift Enter and IME, and renders co
 it('never sends another room draft to the selected session', async () => {
   const fetchMock = setup(); await open();
   fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Only room A' } });
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'jc_second' } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Session' }), { target: { value: 'jc_second' } });
   expect(screen.getByRole('textbox')).toHaveValue('');
   fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Only room B' } });
   await waitFor(() => expect(screen.getByRole('button', { name: 'Send message' })).toBeEnabled());
@@ -682,25 +714,25 @@ it('queues exact steer with shared locking and restores authoritative terminal i
   expect(screen.getByText(/Run ended.*unconsumed guidance/)).toBeInTheDocument();
   expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue(exact);
   fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: '' } });
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'jc_second' } });
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: session.id } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Session' }), { target: { value: 'jc_second' } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Session' }), { target: { value: session.id } });
   expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('');
 });
 it('offers explicit recovery for an edited room draft and does not auto-restore after clearing it', async () => {
   setup(undefined, status('completed', { pendingSteer: '  pending\nexact  ' })); await open(); await send();
   fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: 'Existing draft' } });
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'jc_second' } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Session' }), { target: { value: 'jc_second' } });
   fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: 'Room B only' } });
   await act(async () => Source.instances[0]!.onerror?.());
   expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('Room B only');
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: session.id } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Session' }), { target: { value: session.id } });
   expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('Existing draft');
   expect(screen.getByRole('button', { name: 'Restore to empty draft' })).toBeDisabled();
   fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: '' } });
   expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('');
   expect(screen.getByRole('button', { name: 'Restore to empty draft' })).toBeEnabled();
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: 'jc_second' } });
-  fireEvent.change(screen.getByRole('combobox'), { target: { value: session.id } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Session' }), { target: { value: 'jc_second' } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Session' }), { target: { value: session.id } });
   expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('');
   fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: 'New edit' } });
   fireEvent.click(screen.getByRole('button', { name: 'Append to draft' }));

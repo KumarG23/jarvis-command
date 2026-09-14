@@ -129,6 +129,9 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
       });
       return { room: updated.find(room => room.id === roomId)! };
     });
+    routes.get('/api/live/model-options', { exposeHeadRoute: false }, async (request) => (
+      dependencies.liveRoom!.getInferenceOptions(subjects.get(request)!)
+    ));
     routes.get('/api/live/sessions/:sessionId', { exposeHeadRoute: false }, async (request) => {
       const { sessionId } = parse(z.object({ sessionId: CommandSessionIdSchema }).strict(), request.params);
       return dependencies.liveRoom!.getSession(subjects.get(request)!, sessionId);

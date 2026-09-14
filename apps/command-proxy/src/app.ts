@@ -3,6 +3,8 @@ import { timingSafeEqual } from 'node:crypto';
 import {
   ApprovalChoiceSchema,
   ApprovalRequestIdSchema,
+  InferenceOptionsResponseSchema,
+  InferenceOverrideSchema,
   OpaqueIdentifierSchema,
   SessionIdSchema,
   LiveRoomSessionContinueRequestSchema,
@@ -13,6 +15,8 @@ import {
   SessionMessagesPageSchema,
   SessionMutationResponseSchema,
   type LiveApproval,
+  type InferenceOptionsResponse,
+  type InferenceOverride,
   type LiveRunState,
   type LiveRunUsage,
   type SessionMessage,
@@ -36,6 +40,14 @@ const COMMAND_SESSION_ID = /^jc_[a-f0-9]{32}$/;
 const RUN_ID = /^run_[a-f0-9]{32}$/;
 const IDEMPOTENCY_KEY = /^[!-~]{1,255}$/;
 const COMMAND_SOURCES = new Set(['jarvis-command', 'api_server']);
+const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh'] as const;
+const CURATED_INFERENCE_OPTIONS = [
+  { provider: 'openai-codex', model: 'gpt-6-astra', label: 'Astra' },
+  { provider: 'openai-codex', model: 'gpt-5.6-sol', label: 'Sol' },
+  { provider: 'openai-codex', model: 'gpt-5.6-terra', label: 'Terra' },
+  { provider: 'openai-codex', model: 'gpt-5.6-luna', label: 'Luna' },
+  { provider: 'xai-oauth', model: 'grok-4.6', label: 'Grok 4.6' },
+] as const;
 
 const UpstreamSessionSchema = z.object({
   id: SessionIdSchema,
@@ -109,9 +121,20 @@ const UpstreamStopResponseSchema = z.object({
   status: z.string(),
 }).passthrough();
 
+const UpstreamModelOptionsSchema = z.object({
+  provider: z.string().min(1).max(120),
+  model: z.string().min(1).max(160),
+  providers: z.array(z.object({
+    slug: z.string().min(1).max(120),
+    authenticated: z.boolean(),
+    models: z.array(z.string().min(1).max(160)).max(500),
+  }).passthrough()).max(100),
+}).passthrough();
+
 const RunCreateBodySchema = z.object({
   sessionId: z.string().regex(SESSION_ID),
   input: z.string().trim().min(1).max(16_000),
+  inference: InferenceOverrideSchema.optional(),
 }).strict();
 
 export type CommandProxyDependencies = Readonly<{
@@ -173,6 +196,15 @@ export function buildCommandProxy({
       }) }) }).parse(await requestJson({ path: '/v1/capabilities', method: 'GET', config, fetcher }));
       return { ready: true, durableIdempotency: true, retentionSeconds: capabilities.features.runs_idempotency.retention_seconds, externalContinue: false };
     } catch (error) { return sendProxyError(error, reply); }
+  });
+
+  app.get('/api/model/options', async (request, reply) => {
+    if (!authorize(request, reply, config.commandProxyKey)) return reply;
+    try {
+      return await readInferenceOptions(config, fetcher);
+    } catch (error) {
+      return sendProxyError(error, reply);
+    }
   });
 
   app.get('/api/sessions/:sessionId/messages', async (request, reply) => {
@@ -294,12 +326,21 @@ export function buildCommandProxy({
     try {
       const writable = await isWritableSession(parsed.data.sessionId, config, fetcher);
       if (!writable) return reply.code(403).send({ error: 'session_read_only' });
+      if (parsed.data.inference) {
+        const inventory = await readInferenceOptions(config, fetcher);
+        if (!inventory.options.some(option => option.provider === parsed.data.inference?.provider
+          && option.model === parsed.data.inference.model
+          && option.reasoningEfforts.includes(parsed.data.inference.reasoningEffort))) {
+          return reply.code(409).send({ error: 'inference_unavailable' });
+        }
+      }
       const upstream = UpstreamRunCreateSchema.parse(await requestJson({
         path: '/v1/runs',
         method: 'POST',
         body: {
           session_id: parsed.data.sessionId,
           input: parsed.data.input,
+          ...(parsed.data.inference ? upstreamInference(parsed.data.inference) : {}),
         },
         headers: { 'idempotency-key': idempotencyKey },
         config,
@@ -472,6 +513,33 @@ export function buildCommandProxy({
   ));
 
   return app;
+}
+
+async function readInferenceOptions(
+  config: CommandProxyConfig,
+  fetcher: typeof fetch,
+): Promise<InferenceOptionsResponse> {
+  const upstream = UpstreamModelOptionsSchema.parse(await requestJson({
+    path: '/api/model/options', method: 'GET', config, fetcher,
+  }));
+  const options = CURATED_INFERENCE_OPTIONS.filter((candidate) => {
+    const provider = upstream.providers.find(item => item.slug === candidate.provider);
+    return provider?.authenticated === true && provider.models.includes(candidate.model);
+  }).map(option => ({ ...option, reasoningEfforts: [...REASONING_EFFORTS] }));
+  return InferenceOptionsResponseSchema.parse({
+    default: { provider: upstream.provider, model: upstream.model },
+    options,
+  });
+}
+
+function upstreamInference(inference: InferenceOverride) {
+  return {
+    provider: inference.provider,
+    model: inference.model,
+    model_options: {
+      reasoning: { enabled: true, effort: inference.reasoningEffort },
+    },
+  };
 }
 
 async function isWritableSession(

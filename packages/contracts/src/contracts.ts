@@ -21,6 +21,36 @@ export const HermesStateSchema = z.enum(['online', 'degraded', 'offline']);
 export const GatewayStateSchema = z.enum(['idle', 'busy', 'unknown']);
 export const SessionOwnershipSchema = z.enum(['command', 'external']);
 export const ApprovalChoiceSchema = z.enum(['once', 'deny']);
+export const ReasoningEffortSchema = z.enum(['minimal', 'low', 'medium', 'high', 'xhigh']);
+const OpenAiCodexInferenceSchema = z.object({
+  provider: z.literal('openai-codex'),
+  model: z.enum(['gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']),
+  reasoningEffort: ReasoningEffortSchema,
+}).strict();
+const GrokInferenceSchema = z.object({
+  provider: z.literal('xai-oauth'),
+  model: z.literal('grok-4.6'),
+  reasoningEffort: ReasoningEffortSchema,
+}).strict();
+export const InferenceOverrideSchema = z.discriminatedUnion('provider', [
+  OpenAiCodexInferenceSchema,
+  GrokInferenceSchema,
+]);
+const InferenceOptionFields = {
+  label: NonBlankTextSchema(80),
+  reasoningEfforts: z.array(ReasoningEffortSchema).min(1).max(5),
+};
+export const InferenceOptionSchema = z.discriminatedUnion('provider', [
+  OpenAiCodexInferenceSchema.omit({ reasoningEffort: true }).extend(InferenceOptionFields).strict(),
+  GrokInferenceSchema.omit({ reasoningEffort: true }).extend(InferenceOptionFields).strict(),
+]);
+export const InferenceOptionsResponseSchema = z.object({
+  default: z.object({
+    provider: NonBlankTextSchema(120),
+    model: NonBlankTextSchema(160),
+  }).strict(),
+  options: z.array(InferenceOptionSchema).min(1).max(5),
+}).strict();
 export const LiveRunStateSchema = z.enum([
   'queued',
   'running',
@@ -119,6 +149,7 @@ export const LiveRunSubmissionRequestSchema = z.object({
   sessionId: SessionIdSchema,
   input: NonBlankTextSchema(16_000),
   clientRequestId: ClientRequestIdSchema,
+  inference: InferenceOverrideSchema.optional(),
 }).strict();
 
 export const LiveRunSubmissionResponseSchema = z.object({
@@ -262,6 +293,9 @@ export type ApprovalChoice = z.infer<typeof ApprovalChoiceSchema>;
 export type CheckState = z.infer<typeof CheckStateSchema>;
 export type CommandBootstrap = z.infer<typeof CommandBootstrapSchema>;
 export type HermesState = z.infer<typeof HermesStateSchema>;
+export type InferenceOption = z.infer<typeof InferenceOptionSchema>;
+export type InferenceOptionsResponse = z.infer<typeof InferenceOptionsResponseSchema>;
+export type InferenceOverride = z.infer<typeof InferenceOverrideSchema>;
 export type LiveApproval = z.infer<typeof LiveApprovalSchema>;
 export type LiveRoomSessionContinueRequest = z.infer<typeof LiveRoomSessionContinueRequestSchema>;
 export type LiveRoomSessionCreateRequest = z.infer<typeof LiveRoomSessionCreateRequestSchema>;
@@ -275,6 +309,7 @@ export type LiveRunStopResponse = z.infer<typeof LiveRunStopResponseSchema>;
 export type LiveRunSubmissionRequest = z.infer<typeof LiveRunSubmissionRequestSchema>;
 export type LiveRunSubmissionResponse = z.infer<typeof LiveRunSubmissionResponseSchema>;
 export type LiveRunUsage = z.infer<typeof LiveRunUsageSchema>;
+export type ReasoningEffort = z.infer<typeof ReasoningEffortSchema>;
 export type RunEvent = z.infer<typeof RunEventSchema>;
 export type SessionMessage = z.infer<typeof SessionMessageSchema>;
 export type SessionMessagesPage = z.infer<typeof SessionMessagesPageSchema>;

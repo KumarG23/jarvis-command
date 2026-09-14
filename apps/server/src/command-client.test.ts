@@ -127,6 +127,17 @@ describe('Command proxy client', () => {
     fetcher.mockResolvedValueOnce(jsonResponse({ ready: true, durableIdempotency: false, retentionSeconds: 86400, externalContinue: false }));
     await expect(client.readReadiness()).rejects.toEqual(new CommandProxyUnavailableError());
   });
+  it('reads the strict curated inference inventory', async () => {
+    const inventory = {
+      default: { provider: 'openai-codex', model: 'gpt-5.6-sol' },
+      options: [{ provider: 'openai-codex', model: 'gpt-5.6-luna', label: 'Luna', reasoningEfforts: ['minimal', 'low', 'medium'] }],
+    };
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(inventory));
+    const client = createCommandProxyClient({ baseUrl, commandProxyKey, fetcher });
+    await expect(client.getInferenceOptions()).resolves.toEqual(inventory);
+    expect(fetcher.mock.calls[0]![0]).toBe(`${baseUrl}/api/model/options`);
+  });
+
   it('sends the server-only credential and exact idempotent run body', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({
       runId,
@@ -149,6 +160,19 @@ describe('Command proxy client', () => {
     const headers = new Headers(init?.headers);
     expect(headers.get('authorization')).toBe(`Bearer ${commandProxyKey}`);
     expect(headers.get('idempotency-key')).toBe(`jc-v1-${'a'.repeat(64)}`);
+  });
+
+  it('forwards a validated per-prompt inference override exactly', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({ runId, sessionId, status: 'queued', replayed: false }, 202));
+    const client = createCommandProxyClient({ baseUrl, commandProxyKey, fetcher });
+    await client.startRun({
+      sessionId, input: 'Use Luna.', idempotencyKey: `jc-v1-${'a'.repeat(64)}`,
+      inference: { provider: 'openai-codex', model: 'gpt-5.6-luna', reasoningEffort: 'low' },
+    });
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).toEqual({
+      sessionId, input: 'Use Luna.',
+      inference: { provider: 'openai-codex', model: 'gpt-5.6-luna', reasoningEffort: 'low' },
+    });
   });
 
   it('projects session history and session mutations through exact routes', async () => {

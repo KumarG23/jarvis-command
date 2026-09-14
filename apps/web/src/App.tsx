@@ -264,7 +264,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
         }} /> : null}
         {liveEnabled && !projectName ? <div className="live-room-toolbar">
           <label className="session-picker">Session
-            <select value={selectedSession?.id ?? ''} onChange={(event) => setSelectedSession(sessions.find((session) => session.id === event.target.value) ?? null)}>
+            <select aria-label="Session" value={selectedSession?.id ?? ''} onChange={(event) => setSelectedSession(sessions.find((session) => session.id === event.target.value) ?? null)}>
               <option value="">Overview</option>
               {sessions.map((session) => <option key={session.id} value={session.id}>{session.title}</option>)}
             </select>

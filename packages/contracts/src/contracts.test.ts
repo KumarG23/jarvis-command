@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { CommandBootstrapSchema, SessionSummarySchema } from './contracts';
+import {
+  CommandBootstrapSchema,
+  InferenceOptionsResponseSchema,
+  LiveRunSubmissionRequestSchema,
+  SessionSummarySchema,
+} from './contracts';
 
 const validBootstrap = {
   identity: {
@@ -121,5 +126,43 @@ describe('SessionSummarySchema', () => {
     };
 
     expect(() => SessionSummarySchema.parse(candidate)).toThrow();
+  });
+});
+
+describe('per-prompt inference contracts', () => {
+  const request = {
+    sessionId: 'jc_1234567890abcdef1234567890abcdef',
+    input: 'Use the inexpensive lane for this turn.',
+    clientRequestId: 'c17cb7d5-99cf-4a06-a24b-d5d5417e7a7e',
+  };
+
+  it('accepts only curated provider/model pairs and bounded reasoning levels', () => {
+    expect(LiveRunSubmissionRequestSchema.parse({
+      ...request,
+      inference: { provider: 'openai-codex', model: 'gpt-5.6-luna', reasoningEffort: 'low' },
+    }).inference?.model).toBe('gpt-5.6-luna');
+    expect(LiveRunSubmissionRequestSchema.parse({
+      ...request,
+      inference: { provider: 'xai-oauth', model: 'grok-4.6', reasoningEffort: 'high' },
+    }).inference?.model).toBe('grok-4.6');
+
+    for (const inference of [
+      { provider: 'xai-oauth', model: 'gpt-5.6-sol', reasoningEffort: 'high' },
+      { provider: 'openai-codex', model: 'grok-4.6', reasoningEffort: 'high' },
+      { provider: 'openai-codex', model: 'private-model', reasoningEffort: 'high' },
+      { provider: 'openai-codex', model: 'gpt-5.6-sol', reasoningEffort: 'ultra' },
+    ]) expect(() => LiveRunSubmissionRequestSchema.parse({ ...request, inference })).toThrow();
+  });
+
+  it('projects a strict inventory without provider metadata', () => {
+    const payload = {
+      default: { provider: 'openai-codex', model: 'gpt-5.6-sol' },
+      options: [{
+        provider: 'openai-codex', model: 'gpt-5.6-sol', label: 'Sol',
+        reasoningEfforts: ['low', 'medium', 'high', 'xhigh'],
+      }],
+    };
+    expect(InferenceOptionsResponseSchema.parse(payload)).toEqual(payload);
+    expect(() => InferenceOptionsResponseSchema.parse({ ...payload, apiKey: 'nope' })).toThrow();
   });
 });

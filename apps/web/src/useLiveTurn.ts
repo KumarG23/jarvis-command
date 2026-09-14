@@ -1,4 +1,4 @@
-import { LiveRunSteerResponseSchema, LiveRunStopResponseSchema, LiveRunApprovalResponseSchema, LiveRunSubmissionResponseSchema, LiveRunStatusSchema, RunEventSchema, type LiveRunSubmissionRequest, type LiveRunStatus, type RunEvent, type SessionMessage } from '@jarvis-command/contracts';
+import { LiveRunSteerResponseSchema, LiveRunStopResponseSchema, LiveRunApprovalResponseSchema, LiveRunSubmissionResponseSchema, LiveRunStatusSchema, RunEventSchema, type InferenceOverride, type LiveRunSubmissionRequest, type LiveRunStatus, type RunEvent, type SessionMessage } from '@jarvis-command/contracts';
 import { useEffect, useRef, useState } from 'react';
 import { clearRecovery, readRecovery, writeRecovery, type RecoveryIdentity } from './turnRecovery';
 import { matchTurn, projectTurns } from './timeline';
@@ -8,7 +8,7 @@ const terminal = (status: string) => ['completed', 'failed', 'cancelled', 'inter
 const MAX_UNCONFIRMED_TURNS = 8;
 
 // Own the reader: transport cancellation must not depend on cooperative JSON parsing.
-async function boundedJson(url: string, init: RequestInit, controller: AbortController): Promise<unknown> {
+export async function boundedJson(url: string, init: RequestInit, controller: AbortController): Promise<unknown> {
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   const dispose = () => {
     if (!reader) return;
@@ -254,13 +254,13 @@ export function useLiveTurn() {
       supervise(current.current!);
     } catch { if (!cancelled && alive.current && current.current?.intent === intent) update({ phase: 'Admission uncertain — retry the same intent' }); }
   }
-  function send(sessionId: string, input: string, max: number) {
+  function send(sessionId: string, input: string, max: number, inference?: InferenceOverride) {
     const baseline = histories.current.get(sessionId);
     if (!baseline?.complete || (current.current?.done && !current.current.historyMatched && completed.current.length >= MAX_UNCONFIRMED_TURNS)) return false;
     if (recoveryBlocked.current || (current.current && !current.current.done) || !input.trim() || input.length > max) return false;
     cleanup.current();
     mutation.current?.abort(); mutation.current = null;
-    const intent = { sessionId, input, clientRequestId: crypto.randomUUID() };
+    const intent = { sessionId, input, clientRequestId: crypto.randomUUID(), ...(inference ? { inference } : {}) };
     const pending = { sessionId, clientRequestId: intent.clientRequestId, publicRunId: null };
     try { writeRecovery(pending, null); stored.current = pending; }
     catch { recoveryBlocked.current = true; setRecoveryError('Local reload recovery unavailable — message not sent; writer locked.'); return false; }

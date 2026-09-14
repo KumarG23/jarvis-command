@@ -1,6 +1,8 @@
 import {
   ApprovalChoiceSchema,
   ApprovalRequestIdSchema,
+  InferenceOptionsResponseSchema,
+  InferenceOverrideSchema,
   OpaqueIdentifierSchema,
   LiveRoomSessionContinueRequestSchema,
   LiveRoomSessionCreateRequestSchema,
@@ -11,6 +13,8 @@ import {
   SessionMessagesPageSchema,
   SessionMutationResponseSchema,
   type LiveApproval,
+  type InferenceOptionsResponse,
+  type InferenceOverride,
   type LiveRoomSessionContinueRequest,
   type LiveRoomSessionCreateRequest,
   type LiveRunApprovalRequest,
@@ -143,10 +147,11 @@ export type CommandStopResponse = z.infer<typeof InternalStopResponseSchema>;
 export type CommandProxyClient = Readonly<{
   getSession: (sessionId: string) => Promise<SessionMutationResponse>;
   readReadiness: () => Promise<{ ready: true; idempotencyRetentionSeconds: number }>;
+  getInferenceOptions: () => Promise<InferenceOptionsResponse>;
   getMessages: (sessionId: string, limit: number, offset: number) => Promise<SessionMessagesPage>;
   createSession: (request: LiveRoomSessionCreateRequest) => Promise<SessionMutationResponse>;
   continueSession: (sessionId: string, request: LiveRoomSessionContinueRequest) => Promise<SessionMutationResponse>;
-  startRun: (request: Readonly<{ sessionId: string; input: string; idempotencyKey: string }>) => Promise<CommandRunCreate>;
+  startRun: (request: Readonly<{ sessionId: string; input: string; idempotencyKey: string; inference?: InferenceOverride }>) => Promise<CommandRunCreate>;
   getRun: (runId: string) => Promise<CommandRunStatus>;
   streamRunEvents: (runId: string, signal: AbortSignal) => AsyncGenerator<CommandRunEvent>;
   approveRun: (runId: string, request: LiveRunApprovalRequest) => Promise<CommandApprovalResponse>;
@@ -212,6 +217,9 @@ export function createCommandProxyClient(options: Readonly<{
       const result = await requestJson('/_ready', z.object({ ready: z.literal(true), durableIdempotency: z.literal(true), retentionSeconds: z.number().int().min(86_400), externalContinue: z.literal(false) }).strict());
       return { ready: true as const, idempotencyRetentionSeconds: result.retentionSeconds };
     },
+    getInferenceOptions() {
+      return requestJson('/api/model/options', InferenceOptionsResponseSchema);
+    },
     getMessages(sessionId, limit, offset) {
       if (!SESSION_ID.test(sessionId)) return Promise.reject(new CommandProxyUnavailableError(400));
       return requestJson(
@@ -249,12 +257,17 @@ export function createCommandProxyClient(options: Readonly<{
         || !request.input.trim()
         || request.input.length > 16_000
         || !IDEMPOTENCY_KEY.test(request.idempotencyKey)
+        || (request.inference !== undefined && !InferenceOverrideSchema.safeParse(request.inference).success)
       ) {
         return Promise.reject(new CommandProxyUnavailableError(400));
       }
       return requestJson('/v1/runs', InternalRunCreateSchema.refine(value => value.sessionId === request.sessionId), {
         method: 'POST',
-        body: { sessionId: request.sessionId, input: request.input.trim() },
+        body: {
+          sessionId: request.sessionId,
+          input: request.input.trim(),
+          ...(request.inference ? { inference: request.inference } : {}),
+        },
         headers: { 'idempotency-key': request.idempotencyKey },
       });
     },

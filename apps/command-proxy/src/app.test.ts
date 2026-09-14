@@ -65,6 +65,18 @@ function upstreamSession(id: string, source: string) {
   };
 }
 
+function upstreamModelOptions(authenticated = true) {
+  return {
+    provider: 'openai-codex',
+    model: 'gpt-5.6-sol',
+    providers: [
+      { slug: 'openai-codex', authenticated, api_url: 'private', models: ['gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'unapproved-model'] },
+      { slug: 'xai-oauth', authenticated: true, warning: 'private', models: ['grok-4.6'] },
+    ],
+    api_key: 'must-not-cross-the-wire',
+  };
+}
+
 describe('command proxy route boundary', () => {
   it.each(['漢'.repeat(16_000), '\u0000'.repeat(16_000)])('accepts worst-case encoded input within the character cap', async (input) => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'jarvis-command'))).mockResolvedValueOnce(jsonResponse({ run_id: runId, status: 'running' }));
@@ -370,6 +382,61 @@ describe('session projection and ownership', () => {
 });
 
 describe('run creation and control', () => {
+  it('publishes only authenticated curated model choices without provider metadata', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(upstreamModelOptions()));
+    const app = createApp(fetcher);
+    const response = await app.inject({ url: '/api/model/options', headers: authHeaders() });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      default: { provider: 'openai-codex', model: 'gpt-5.6-sol' },
+      options: [
+        ['openai-codex', 'gpt-6-astra', 'Astra'],
+        ['openai-codex', 'gpt-5.6-sol', 'Sol'],
+        ['openai-codex', 'gpt-5.6-terra', 'Terra'],
+        ['openai-codex', 'gpt-5.6-luna', 'Luna'],
+        ['xai-oauth', 'grok-4.6', 'Grok 4.6'],
+      ].map(([provider, model, label]) => ({ provider, model, label, reasoningEfforts: ['minimal', 'low', 'medium', 'high', 'xhigh'] })),
+    });
+    expect(response.payload).not.toContain('api_key');
+    expect(response.payload).not.toContain('api_url');
+    expect(response.payload).not.toContain('unapproved-model');
+  });
+
+  it('validates an available override and translates it to the exact Hermes run contract', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'api_server')))
+      .mockResolvedValueOnce(jsonResponse(upstreamModelOptions()))
+      .mockResolvedValueOnce(jsonResponse({ run_id: runId, status: 'started', replayed: false }, 202));
+    const app = createApp(fetcher);
+    const response = await app.inject({
+      method: 'POST', url: '/v1/runs',
+      headers: authHeaders({ 'content-type': 'application/json', 'idempotency-key': 'jc-turn-override' }),
+      payload: { sessionId: commandSessionId, input: 'Use Luna.', inference: { provider: 'openai-codex', model: 'gpt-5.6-luna', reasoningEffort: 'low' } },
+    });
+    expect(response.statusCode).toBe(202);
+    expect(JSON.parse(String(fetcher.mock.calls[2]![1]!.body))).toEqual({
+      session_id: commandSessionId,
+      input: 'Use Luna.',
+      provider: 'openai-codex',
+      model: 'gpt-5.6-luna',
+      model_options: { reasoning: { enabled: true, effort: 'low' } },
+    });
+  });
+
+  it('fails closed when a curated model is no longer authenticated', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'api_server')))
+      .mockResolvedValueOnce(jsonResponse(upstreamModelOptions(false)));
+    const app = createApp(fetcher);
+    const response = await app.inject({
+      method: 'POST', url: '/v1/runs',
+      headers: authHeaders({ 'content-type': 'application/json', 'idempotency-key': 'jc-turn-override' }),
+      payload: { sessionId: commandSessionId, input: 'Do not route.', inference: { provider: 'openai-codex', model: 'gpt-5.6-sol', reasoningEffort: 'high' } },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: 'inference_unavailable' });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
   it.each(['jarvis-command', 'api_server'])('verifies %s command ownership then forwards one exact idempotent run request', async (source) => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, source)))
