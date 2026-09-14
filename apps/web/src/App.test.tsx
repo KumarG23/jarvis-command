@@ -12,7 +12,7 @@ const bootstrap: CommandBootstrap = {
     version: '0.1.0',
     environment: 'production',
     generatedAt: '2026-09-03T14:30:00.000Z',
-    liveRoom: { enabled: false, externalContinue: false, maxInputCharacters: 16_000, maxSteerCharacters: 4_000 },
+    liveRoom: { enabled: false, externalContinue: false, sessionContext: false, maxInputCharacters: 16_000, maxSteerCharacters: 4_000 },
   },
   hermes: {
     state: 'online',

@@ -18,6 +18,7 @@ const validBootstrap = {
     liveRoom: {
       enabled: true,
       externalContinue: false,
+      sessionContext: false,
       maxInputCharacters: 16_000,
       maxSteerCharacters: 4_000,
     },

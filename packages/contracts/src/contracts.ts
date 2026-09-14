@@ -91,6 +91,7 @@ export const CommandBootstrapSchema = z
         liveRoom: z.object({
           enabled: z.boolean(),
           externalContinue: z.literal(false),
+          sessionContext: z.boolean().default(false),
           maxInputCharacters: z.number().int().min(1).max(16_000),
           maxSteerCharacters: z.number().int().min(1).max(4_000),
         }).strict(),
@@ -195,6 +196,19 @@ export const LiveRunUsageSchema = z.object({
   execution: LiveExecutionReceiptSchema.nullable().optional(),
 }).strict();
 
+export const SessionContextResponseSchema = z.object({
+  sessionId: SessionIdSchema,
+  state: z.enum(['available', 'unavailable']),
+  updatedAt: IsoTimestampSchema.nullable(),
+  receipt: LiveRunUsageSchema.nullable(),
+}).strict();
+
+export const LiveCompactionSchema = z.object({
+  state: z.enum(['running', 'completed', 'aborted']),
+  startedAt: IsoTimestampSchema,
+  updatedAt: IsoTimestampSchema,
+}).strict();
+
 export const LiveApprovalSchema = z.object({
   requestId: ApprovalRequestIdSchema,
   command: NonBlankTextSchema(4_096),
@@ -212,6 +226,7 @@ export const LiveRunStatusSchema = z.object({
   error: SafeTextSchema(4_096).nullable(),
   pendingSteer: SafeTextSchema(4_000).nullable(),
   usage: LiveRunUsageSchema.nullable(),
+  compaction: LiveCompactionSchema.nullable().optional(),
   // Optional until the BFF can prove the persisted pair belongs to this exact
   // public run and session. IDs use the same projection as session history.
   historyBinding: z.object({
@@ -274,6 +289,10 @@ export const RunEventSchema = z.discriminatedUnion('type', [
     type: z.literal('run.steered'),
     accepted: z.literal(true),
   }).strict(),
+  z.object({ ...RunEventBase, type: z.literal('context.compaction.started'), state: z.literal('running') }).strict(),
+  z.object({ ...RunEventBase, type: z.literal('context.compaction.progress'), state: z.literal('running') }).strict(),
+  z.object({ ...RunEventBase, type: z.literal('context.compaction.completed'), state: z.literal('completed') }).strict(),
+  z.object({ ...RunEventBase, type: z.literal('context.compaction.aborted'), state: z.literal('aborted') }).strict(),
   z.object({
     ...RunEventBase,
     type: z.literal('run.completed'),
@@ -332,6 +351,8 @@ export type InferenceOption = z.infer<typeof InferenceOptionSchema>;
 export type InferenceOptionsResponse = z.infer<typeof InferenceOptionsResponseSchema>;
 export type InferenceOverride = z.infer<typeof InferenceOverrideSchema>;
 export type LiveExecutionReceipt = z.infer<typeof LiveExecutionReceiptSchema>;
+export type LiveCompaction = z.infer<typeof LiveCompactionSchema>;
+export type SessionContextResponse = z.infer<typeof SessionContextResponseSchema>;
 export type LiveApproval = z.infer<typeof LiveApprovalSchema>;
 export type LiveRoomSessionContinueRequest = z.infer<typeof LiveRoomSessionContinueRequestSchema>;
 export type LiveRoomSessionCreateRequest = z.infer<typeof LiveRoomSessionCreateRequestSchema>;

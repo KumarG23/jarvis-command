@@ -8,7 +8,7 @@ const id = 'jcr_' + 'a'.repeat(32);
 const timestamp = '2026-09-04T12:00:00.000Z';
 const session = { id: 'jc_test', title: 'Turn room', source: 'web', ownership: 'command' as const, model: null, lastActive: timestamp, messageCount: 0, toolCallCount: 0, pinned: false };
 const bootstrap: CommandBootstrap = {
-  identity: { provider: 'development' }, command: { version: 'test', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 100, maxSteerCharacters: 100 } },
+  identity: { provider: 'development' }, command: { version: 'test', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, sessionContext: false, maxInputCharacters: 100, maxSteerCharacters: 100 } },
   hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse'], readinessChecks: {} }, sessions: [session, { ...session, id: 'jc_second', title: 'Second room' }],
 };
 class Source {
@@ -71,6 +71,21 @@ async function send() {
   await waitFor(() => expect(Source.instances).toHaveLength(1));
 }
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); vi.restoreAllMocks(); });
+
+it('tracks typed compaction lifecycle events without inventing progress', async () => {
+  setup();
+  const { result } = readyHook();
+  await act(async () => result.current.send(session.id, 'compact lifecycle', 100));
+  await waitFor(() => expect(Source.instances).toHaveLength(1));
+
+  act(() => Source.instances[0]!.emit('context.compaction.started', { state: 'running' }));
+  expect(result.current.turn?.phase).toBe('Compacting context');
+  expect(result.current.turn?.compaction).toMatchObject({ state: 'running', startedAt: timestamp });
+
+  act(() => Source.instances[0]!.emit('context.compaction.completed', { state: 'completed' }));
+  expect(result.current.turn?.phase).toBe('Context compacted — continuing');
+  expect(result.current.turn?.compaction).toMatchObject({ state: 'completed', updatedAt: timestamp });
+});
 
 it.each(['wall', 'backward'])('expires retries at exactly 23 hours from first attempt with %s clock', async (clock) => {
   vi.useFakeTimers();

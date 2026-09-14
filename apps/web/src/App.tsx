@@ -9,6 +9,7 @@ import { ContextPane } from './ContextPane';
 import { appStorageKey, previewPath, recoverSignIn } from './appEnvironment';
 import { useLiveTurn } from './useLiveTurn';
 import { TurnComposer, TurnView } from './TurnView';
+import { SessionContextMeter } from './SessionContextMeter';
 
 type LoadBootstrap = () => Promise<CommandBootstrap>;
 type BootstrapFailureKind = 'signin' | 'denied' | 'network' | 'unavailable' | 'invalid';
@@ -198,6 +199,9 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
   }
   function closePanel() { if (pane === 'project') projects.current?.closeDetails(); setPane(null); panelOpener.current?.focus(); }
   const activeElsewhere = live.turn && !live.turn.done && live.turn.intent.sessionId !== selectedSession?.id;
+  const latestUsage = [...live.completedTurns, ...(live.turn ? [live.turn] : [])]
+    .reverse()
+    .find(item => item.intent.sessionId === selectedSession?.id && item.usage)?.usage ?? null;
   return <div className={`command-shell${pane ? ' has-context' : ''}`}>
     {navigationOpen ? <button type="button" className="navigation-scrim" aria-label="Close navigation" onClick={closeNavigation} /> : null}
     <aside ref={sidebar} className={`room-sidebar${navigationOpen ? ' is-open' : ''}`} aria-label="Chat navigation" onKeyDown={event => {
@@ -217,7 +221,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     <main className="command-main">
       <header className="command-header"><button ref={menu} className="icon-button menu-button" type="button" aria-label="Open chat navigation" aria-expanded={navigationOpen} onClick={() => setNavigationOpen(true)}><Menu size={21} /></button>
         <div className="room-breadcrumb">{projectName ? <><span aria-label="Selected project">{projectName}</span><ChevronRight size={14} /></> : null}<strong aria-label="Selected session">{selectedSession?.title ?? (projectName ? 'New conversation' : 'Jarvis Command')}</strong></div>
-        <div className="header-actions">{projectName ? <button className={`icon-button${pane === 'project' ? ' active' : ''}`} type="button" aria-label="Open project details" title="Project details" aria-expanded={pane === 'project'} onClick={event => { if (pane === 'project') projects.current?.closeDetails(); else projects.current?.openDetails(event.currentTarget); }}><PanelRight size={19} /></button> : null}
+        <div className="header-actions"><SessionContextMeter enabled={bootstrap.command.liveRoom.sessionContext} sessionId={selectedSession?.id ?? null} liveUsage={latestUsage} compaction={live.turn && live.turn.intent.sessionId === selectedSession?.id ? live.turn.compaction ?? null : null} />{projectName ? <button className={`icon-button${pane === 'project' ? ' active' : ''}`} type="button" aria-label="Open project details" title="Project details" aria-expanded={pane === 'project'} onClick={event => { if (pane === 'project') projects.current?.closeDetails(); else projects.current?.openDetails(event.currentTarget); }}><PanelRight size={19} /></button> : null}
           <button className={`health-button ${bootstrap.hermes.state}`} type="button" aria-label={health} title={health} onClick={event => openPanel('runtime', event.currentTarget)}><span className="status-dot" /><span>Hermes</span></button></div>
       </header>
       {bootstrap.identity.provider === 'development' ? <div className="preview-notice">Development preview · {bootstrap.command.version}</div> : null}

@@ -824,6 +824,7 @@ describe('run status and event projection', () => {
       error: null,
       pendingSteer: null,
       usage: null,
+      compaction: null,
     });
   });
 
@@ -844,6 +845,7 @@ describe('run status and event projection', () => {
     const app = createApp(vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({
       run_id: runId, session_id: commandSessionId, status: 'completed', updated_at: 1788530400,
       output: 'done', usage,
+      compaction: { state: 'completed', started_at: 1788530390, updated_at: 1788530399, ignored: 'drop me' },
     })));
     const response = await app.inject({ url: `/v1/runs/${runId}`, headers: authHeaders() });
     expect(response.statusCode).toBe(200);
@@ -858,6 +860,11 @@ describe('run status and event projection', () => {
         routeSource: 'raw_request', exact: true, fallbackUsed: false,
       },
     });
+    expect(response.json().compaction).toEqual({
+      state: 'completed',
+      startedAt: '2026-09-04T13:59:50.000Z',
+      updatedAt: '2026-09-04T13:59:59.000Z',
+    });
     expect(response.payload).not.toContain('ignored_future_field');
   });
 
@@ -870,6 +877,10 @@ describe('run status and event projection', () => {
       `data: ${JSON.stringify({ event: 'reasoning.available', run_id: runId, timestamp: 1_788_530_400, text: 'private thought' })}`,
       '',
       `data: ${JSON.stringify({ event: 'tool.started', run_id: runId, timestamp: 1_788_530_401, tool: 'terminal', preview: 'Check status', args: { token: 'nope' } })}`,
+      '',
+      `data: ${JSON.stringify({ event: 'context.compaction.started', run_id: runId, timestamp: 1_788_530_401, state: 'running', internal: 'drop me' })}`,
+      '',
+      `data: ${JSON.stringify({ event: 'context.compaction.completed', run_id: runId, timestamp: 1_788_530_401.5, state: 'completed' })}`,
       '',
       `data: ${JSON.stringify({ event: 'run.completed', run_id: runId, timestamp: 1_788_530_402, output: 'Healthy', usage: { input_tokens: 10, output_tokens: 3, total_tokens: 13 }, internal: 'nope' })}`,
       '',
@@ -893,6 +904,8 @@ describe('run status and event projection', () => {
     expect(response.payload).toContain(': keepalive');
     expect(response.payload).toContain('"type":"message.delta"');
     expect(response.payload).toContain('"type":"tool.started"');
+    expect(response.payload).toContain('"type":"context.compaction.started"');
+    expect(response.payload).toContain('"type":"context.compaction.completed"');
     expect(response.payload).toContain('"type":"run.completed"');
     expect(response.payload).not.toContain('reasoning');
     expect(response.payload).not.toContain('private thought');

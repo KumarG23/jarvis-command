@@ -127,6 +127,12 @@ const UpstreamRunUsageSchema = z.object({
   execution: UpstreamExecutionReceiptSchema.nullable().optional(),
 }).passthrough();
 
+const UpstreamCompactionSchema = z.object({
+  state: z.enum(['running', 'completed', 'aborted']),
+  started_at: z.union([z.number(), z.string()]),
+  updated_at: z.union([z.number(), z.string()]),
+}).passthrough();
+
 const UpstreamRunStatusSchema = z.object({
   run_id: z.string().regex(RUN_ID),
   session_id: SessionIdSchema,
@@ -137,6 +143,7 @@ const UpstreamRunStatusSchema = z.object({
   error: z.string().max(4_096).nullable().optional(),
   pending_steer: z.string().max(4_000).nullable().optional(),
   usage: UpstreamRunUsageSchema.nullable().optional(),
+  compaction: UpstreamCompactionSchema.nullable().optional(),
 }).passthrough();
 
 const UpstreamApprovalResponseSchema = z.object({
@@ -705,6 +712,11 @@ function projectRunStatus(upstream: z.infer<typeof UpstreamRunStatusSchema>) {
     error: upstream.error == null ? null : 'Hermes run unavailable',
     pendingSteer: upstream.pending_steer ?? null,
     usage: projectUsage(upstream.usage),
+    compaction: upstream.compaction ? {
+      state: upstream.compaction.state,
+      startedAt: toIsoTimestamp(upstream.compaction.started_at),
+      updatedAt: toIsoTimestamp(upstream.compaction.updated_at),
+    } : null,
   };
 }
 
@@ -929,6 +941,13 @@ function projectEvent(value: unknown, expectedRunId: string): Record<string, unk
     }
     case 'run.steered':
       return { runId: expectedRunId, type: 'run.steered', timestamp, accepted: true };
+    case 'context.compaction.started':
+    case 'context.compaction.progress':
+      return { runId: expectedRunId, type: event.event, timestamp, state: 'running' };
+    case 'context.compaction.completed':
+      return { runId: expectedRunId, type: event.event, timestamp, state: 'completed' };
+    case 'context.compaction.aborted':
+      return { runId: expectedRunId, type: event.event, timestamp, state: 'aborted' };
     case 'run.completed':
       return {
         runId: expectedRunId,

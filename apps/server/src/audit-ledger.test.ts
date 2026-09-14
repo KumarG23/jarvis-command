@@ -111,6 +111,38 @@ describe('AuditLedger', () => {
     expect(lines[0].hash).toBe(lines[1].previousHash);
   });
 
+  it('indexes the latest bounded receipt by actor and session across restart', async () => {
+    const path = await temporaryLedgerPath();
+    const ledger = await AuditLedger.open(path, {
+      now: () => new Date('2026-09-04T15:00:00.000Z'),
+    });
+    ledgers.push(ledger);
+    const receipt = {
+      inputTokens: 120,
+      outputTokens: 40,
+      totalTokens: 160,
+      context: { usedTokens: 12_000, limitTokens: 128_000, source: 'hermes_effective' as const },
+    };
+
+    await ledger.append({
+      action: 'run.completed', actor, sessionId, publicRunId, clientRequestId, upstreamRunId,
+      requestId: null, requestFingerprint, outcome: 'succeeded', status: 'completed', choice: null,
+      receipt,
+    });
+    expect(ledger.latestReceiptForSession(actor, sessionId)).toEqual({
+      sessionId,
+      updatedAt: '2026-09-04T15:00:00.000Z',
+      receipt,
+    });
+    expect(ledger.latestReceiptForSession('c'.repeat(64), sessionId)).toBeNull();
+
+    await ledger.close();
+    ledgers.pop();
+    const reopened = await AuditLedger.open(path);
+    ledgers.push(reopened);
+    expect(reopened.latestReceiptForSession(actor, sessionId)?.receipt).toEqual(receipt);
+  });
+
   it('deduplicates the same semantic receipt instead of appending twice', async () => {
     const path = await temporaryLedgerPath();
     const ledger = await AuditLedger.open(path);

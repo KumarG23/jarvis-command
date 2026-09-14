@@ -71,6 +71,20 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 .room-breadcrumb > svg { flex-shrink: 0; }
 .room-breadcrumb strong { font-weight: 500; color: var(--text); overflow-wrap: anywhere; line-height: 1.5; }
 .header-actions { display: flex; align-items: center; gap: 11px; flex: 0 0 auto; }
+.session-context { display: grid; grid-template-columns: auto 110px auto; align-items: center; gap: 7px; color: var(--subtle); font: 500 9px/1 'JetBrains Mono', monospace; }
+.session-context strong { color: #a9b7c8; font-size: 9px; min-width: 27px; text-align: right; }
+.session-context-track { position: relative; width: 110px; height: 7px; overflow: hidden; border: 1px solid #303946; border-radius: 999px; background: #111722; }
+.session-context-fill { display: block; height: 100%; border-radius: inherit; background: var(--cyan); transition: width .18s ease-out, background .18s ease-out; }
+.session-context.warning .session-context-fill { background: var(--amber); }
+.session-context.critical .session-context-fill { background: var(--red); }
+.session-context.compacting .session-context-fill { animation: context-pulse 1.15s ease-in-out infinite alternate; }
+@keyframes context-pulse { from { opacity: .42; filter: saturate(.7); } to { opacity: 1; filter: saturate(1.25); } }
+@media (prefers-reduced-motion: reduce) { .session-context.compacting .session-context-fill { animation: none; } }
+.session-context-marker { position: absolute; top: -1px; bottom: -1px; width: 1px; background: #fff5; }
+.session-context-marker.warning-marker { left: 70%; }
+.session-context-marker.critical-marker { left: 85%; }
+.session-context.unavailable { grid-template-columns: auto auto; }
+.session-context.unavailable small { color: #596373; font-size: 11px; }
 .health-button { display: inline-flex; align-items: center; gap: 8px; min-height: 30px; padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border); background: var(--panel); font-size: 11px; color: #c0c8d7; }
 .status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
 .health-button.degraded .status-dot { background: var(--amber); }
@@ -193,6 +207,13 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
   .room-breadcrumb > svg { display: none; }
   .room-breadcrumb strong { display: block; font-size: 12px; }
   .header-actions { gap: 3px; }
+  .session-context { grid-template-columns: 72px auto; gap: 5px; }
+  .session-context > span { display: none; }
+  .session-context-track { width: 72px; }
+  .session-context.unavailable:not(.compacting) { display: none; }
+  .session-context.unavailable.compacting { display: grid; grid-template-columns: auto; }
+  .session-context.unavailable.compacting > span { display: inline; }
+  .session-context.unavailable.compacting > small { display: none; }
   .health-button { padding: 5px 7px; font-size: 10px; gap: 6px; }
   .timeline { padding: 24px 16px 25px; }
   .composer-wrap { padding: 8px 12px max(12px, env(safe-area-inset-bottom)); }

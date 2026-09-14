@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import {
   LiveRoomSessionContinueRequestSchema,
   LiveRoomSessionCreateRequestSchema,
+  SessionContextResponseSchema,
   LiveRunApprovalRequestSchema,
   LiveRunApprovalResponseSchema,
   LiveRunStatusSchema,
@@ -19,6 +20,7 @@ import {
   type LiveRunApprovalResponse,
   type LiveRunState,
   type LiveRunStatus,
+  type LiveRunUsage,
   type LiveRunSteerRequest,
   type LiveRunSteerResponse,
   type LiveRunStopResponse,
@@ -26,6 +28,7 @@ import {
   type LiveRunSubmissionResponse,
   type RunEvent,
   type SessionMessagesPage,
+  type SessionContextResponse,
   type SessionMutationResponse,
 } from '@jarvis-command/contracts';
 
@@ -92,6 +95,7 @@ export function createLiveRoomService({
   const auditTerminal = async (
     record: AuditRunRecord,
     status: LiveRunState,
+    receipt: LiveRunUsage | null = null,
   ): Promise<void> => {
     if (!TERMINAL_STATES.has(status)) return;
     const action = `run.${status}` as AuditDraft['action'];
@@ -99,6 +103,7 @@ export function createLiveRoomService({
       action,
       outcome: status === 'completed' ? 'succeeded' : 'failed',
       status,
+      receipt,
     }));
   };
 
@@ -109,7 +114,7 @@ export function createLiveRoomService({
     if (upstream.runId !== record.upstreamRunId || upstream.sessionId !== record.sessionId) {
       throw new LiveRoomNotFoundError();
     }
-    await auditTerminal(record, upstream.status);
+    await auditTerminal(record, upstream.status, upstream.usage);
     return LiveRunStatusSchema.parse({
       publicRunId: record.publicRunId,
       sessionId: record.sessionId,
@@ -120,6 +125,7 @@ export function createLiveRoomService({
       error: upstream.error,
       pendingSteer: upstream.pendingSteer,
       usage: upstream.usage,
+      ...(upstream.compaction !== undefined ? { compaction: upstream.compaction } : {}),
     });
   };
 
@@ -204,6 +210,7 @@ export function createLiveRoomService({
         requestFingerprint,
         status: requested.status ?? 'queued',
         requestedAt: requested.timestamp,
+        receipt: null,
       });
       return admitUpstreamRun(pendingRecord, request, false);
     })();
@@ -321,6 +328,16 @@ export function createLiveRoomService({
       return projectStatus(record, await client.getRun(record.upstreamRunId!));
     },
 
+    async getSessionContext(subject: string, sessionId: string): Promise<SessionContextResponse> {
+      const latest = ledger.latestReceiptForSession(actorFingerprint(subject), sessionId);
+      return SessionContextResponseSchema.parse({
+        sessionId,
+        state: latest ? 'available' : 'unavailable',
+        updatedAt: latest?.updatedAt ?? null,
+        receipt: latest?.receipt ?? null,
+      });
+    },
+
     async *streamRunEvents(
       subject: string,
       publicRunId: string,
@@ -330,7 +347,13 @@ export function createLiveRoomService({
       for await (const upstream of client.streamRunEvents(record.upstreamRunId!, signal)) {
         if (upstream.runId !== record.upstreamRunId) throw new LiveRoomNotFoundError();
         const event = projectEvent(record.publicRunId, upstream);
-        if (isTerminalEvent(event)) await auditTerminal(record, terminalEventStatus(event));
+        if (isTerminalEvent(event)) {
+          await auditTerminal(
+            record,
+            terminalEventStatus(event),
+            event.type === 'run.completed' ? event.usage : null,
+          );
+        }
         yield event;
       }
     },
@@ -439,6 +462,7 @@ function auditDraft(
     status?: LiveRunState | null;
     requestId?: string | null;
     choice?: AuditDraft['choice'];
+    receipt?: LiveRunUsage | null;
   }>,
 ): AuditDraft {
   return {
@@ -453,6 +477,7 @@ function auditDraft(
     outcome: values.outcome,
     status: values.status ?? null,
     choice: values.choice ?? null,
+    ...(values.receipt !== undefined ? { receipt: values.receipt } : {}),
   };
 }
 

@@ -138,7 +138,13 @@ export function buildApp(dependencies: AppDependencies) {
         version: dependencies.config.appVersion,
         environment: dependencies.config.nodeEnv,
         generatedAt: now().toISOString(),
-        liveRoom: { enabled: liveRoomEnabled, externalContinue: false, maxInputCharacters: 16_000, maxSteerCharacters: 4_000 },
+        liveRoom: {
+          enabled: liveRoomEnabled,
+          externalContinue: false,
+          sessionContext: liveRoomEnabled,
+          maxInputCharacters: 16_000,
+          maxSteerCharacters: 4_000,
+        },
       },
       hermes: {
         state: snapshot.state,

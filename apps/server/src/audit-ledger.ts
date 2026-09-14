@@ -3,7 +3,12 @@ import { constants } from 'node:fs';
 import { lstat, open, type FileHandle } from 'node:fs/promises';
 import { dirname, isAbsolute } from 'node:path';
 
-import { ApprovalChoiceSchema, LiveRunStateSchema } from '@jarvis-command/contracts';
+import {
+  ApprovalChoiceSchema,
+  LiveRunStateSchema,
+  LiveRunUsageSchema,
+  type LiveRunUsage,
+} from '@jarvis-command/contracts';
 import { z } from 'zod';
 
 const MAX_AUDIT_BYTES = 16_777_216;
@@ -43,6 +48,7 @@ const AuditDraftSchema = z.object({
   outcome: AuditOutcomeSchema,
   status: LiveRunStateSchema.nullable(),
   choice: ApprovalChoiceSchema.nullable(),
+  receipt: LiveRunUsageSchema.nullable().optional(),
 }).strict();
 
 const AuditEntrySchema = AuditDraftSchema.extend({
@@ -66,6 +72,13 @@ export type AuditRunRecord = Readonly<{
   requestFingerprint: string;
   status: z.infer<typeof LiveRunStateSchema>;
   requestedAt: string;
+  receipt: LiveRunUsage | null;
+}>;
+
+export type AuditSessionReceipt = Readonly<{
+  sessionId: string;
+  updatedAt: string;
+  receipt: LiveRunUsage;
 }>;
 
 export class AuditIntegrityError extends Error {
@@ -181,6 +194,17 @@ export class AuditLedger {
       record.sessionId === sessionId
       && !terminal.has(record.status)
     ));
+  }
+
+  public latestReceiptForSession(actor: string, sessionId: string): AuditSessionReceipt | null {
+    this.assertHealthy();
+    for (let index = this.#entries.length - 1; index >= 0; index -= 1) {
+      const entry = this.#entries[index]!;
+      if (entry.actor === actor && entry.sessionId === sessionId && entry.receipt) {
+        return Object.freeze({ sessionId, updatedAt: entry.timestamp, receipt: entry.receipt });
+      }
+    }
+    return null;
   }
 
   public assertHealthy(): void {
@@ -337,6 +361,7 @@ export class AuditLedger {
         requestFingerprint: entry.requestFingerprint,
         status: entry.status,
         requestedAt: this.#runsByPublic.get(runPublicKey(entry.actor, entry.publicRunId))?.requestedAt ?? entry.timestamp,
+        receipt: entry.receipt ?? null,
       });
       this.#runsByClient.set(runClientKey(entry.actor, entry.clientRequestId), record);
       this.#runsByPublic.set(runPublicKey(entry.actor, entry.publicRunId), record);
@@ -347,7 +372,11 @@ export class AuditLedger {
       const key = runPublicKey(entry.actor, entry.publicRunId);
       const existing = this.#runsByPublic.get(key);
       if (existing) {
-        const updated = Object.freeze({ ...existing, status: entry.status });
+        const updated = Object.freeze({
+          ...existing,
+          status: entry.status,
+          receipt: entry.receipt ?? existing.receipt,
+        });
         this.#runsByPublic.set(key, updated);
         this.#runsByClient.set(runClientKey(existing.actor, existing.clientRequestId), updated);
       }
@@ -420,6 +449,7 @@ function projectDraft(entry: AuditEntry): z.infer<typeof AuditDraftSchema> {
     outcome: entry.outcome,
     status: entry.status,
     choice: entry.choice,
+    ...(entry.receipt !== undefined ? { receipt: entry.receipt } : {}),
   };
 }
 

@@ -136,6 +136,10 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
       const { sessionId } = parse(z.object({ sessionId: CommandSessionIdSchema }).strict(), request.params);
       return dependencies.liveRoom!.getSession(subjects.get(request)!, sessionId);
     });
+    routes.get('/api/live/sessions/:sessionId/context', { exposeHeadRoute: false }, async (request) => {
+      const { sessionId } = parse(z.object({ sessionId: CommandSessionIdSchema }).strict(), request.params);
+      return dependencies.liveRoom!.getSessionContext(subjects.get(request)!, sessionId);
+    });
     routes.post('/api/rooms/:roomId/sessions', { bodyLimit: 1024 }, async (request) => {
       const { roomId } = parse(z.object({ roomId: ProjectRoomIdSchema }).strict(), request.params);
       const { sessionId } = parse(z.object({ sessionId: CommandSessionIdSchema }).strict(), request.body);

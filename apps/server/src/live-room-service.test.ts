@@ -286,6 +286,18 @@ describe('LiveRoomService projection, controls, and audit', () => {
     expect(audit.match(/"action":"run.completed"/g)).toHaveLength(1);
     expect(audit).not.toContain('Healthy.');
     expect(audit).not.toContain('Use the safe follow-up.');
+    expect(await service.getSessionContext('operator-subject', sessionId)).toEqual({
+      sessionId,
+      state: 'available',
+      updatedAt: '2026-09-04T14:00:00.000Z',
+      receipt: { inputTokens: 10, outputTokens: 3, totalTokens: 13 },
+    });
+    expect(await service.getSessionContext('other-operator', sessionId)).toEqual({
+      sessionId,
+      state: 'unavailable',
+      updatedAt: null,
+      receipt: null,
+    });
   });
 
   it('maps typed stream events to the public run and records one terminal receipt', async () => {

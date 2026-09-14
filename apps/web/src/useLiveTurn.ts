@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { clearRecovery, readRecovery, writeRecovery, type RecoveryIdentity } from './turnRecovery';
 import { matchTurn, projectTurns } from './timeline';
 
-const eventNames = ['message.delta', 'tool.started', 'tool.completed', 'subagent.start', 'subagent.complete', 'approval.request', 'approval.responded', 'run.steered', 'run.completed', 'run.failed', 'run.cancelled', 'run.interrupted'] as const;
+const eventNames = ['message.delta', 'tool.started', 'tool.completed', 'subagent.start', 'subagent.complete', 'approval.request', 'approval.responded', 'run.steered', 'context.compaction.started', 'context.compaction.progress', 'context.compaction.completed', 'context.compaction.aborted', 'run.completed', 'run.failed', 'run.cancelled', 'run.interrupted'] as const;
 const terminal = (status: string) => ['completed', 'failed', 'cancelled', 'interrupted'].includes(status);
 const MAX_UNCONFIRMED_TURNS = 8;
 
@@ -65,6 +65,7 @@ export type Turn = {
   terminalPendingSteer?: boolean;
   historyBinding?: LiveRunStatus['historyBinding'];
   usage?: LiveRunStatus['usage'];
+  compaction?: LiveRunStatus['compaction'];
 };
 export type DraftRecovery = { intent: TurnIntent; input: string; kind: 'terminal' | 'uncertain' };
 
@@ -167,6 +168,7 @@ export function useLiveTurn() {
           ...(status.output === null || (!done && (keepStream || !!current.current!.output)) ? {} : outputPreview(status.output)),
           approval: done ? null : preserveApproval || newerApproval ? current.current!.approval : status.approval,
           usage: status.usage,
+          ...(status.compaction !== undefined ? { compaction: status.compaction } : {}),
           done });
         preserveApproval = false;
         if (terminal(status.status)) {
@@ -222,6 +224,22 @@ export function useLiveTurn() {
         }
         else if (event.type.startsWith('run.') && event.type !== 'run.steered') {
           terminalObserved = true; recover();
+        } else if (
+          event.type === 'context.compaction.started'
+          || event.type === 'context.compaction.progress'
+          || event.type === 'context.compaction.completed'
+          || event.type === 'context.compaction.aborted'
+        ) {
+          const state = event.state;
+          update({
+            phase: state === 'running' ? 'Compacting context' : state === 'completed' ? 'Context compacted — continuing' : 'Compaction stopped — continuing',
+            compaction: {
+              state,
+              startedAt: current.current!.compaction?.startedAt ?? event.timestamp,
+              updatedAt: event.timestamp,
+            },
+            events: [...current.current!.events, event],
+          });
         } else if (event.type === 'approval.request') {
           approvalRevision++; update({ phase: 'Awaiting approval', approval: event.approval });
         } else if (event.type === 'approval.responded') {
