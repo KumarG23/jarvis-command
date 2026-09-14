@@ -63,6 +63,7 @@ export type Turn = {
   identityVerified: boolean; controlBusy?: boolean; controlMessage?: string;
   historyBaseline?: string[]; userHistoryMatched?: boolean;
   terminalPendingSteer?: boolean;
+  historyBinding?: LiveRunStatus['historyBinding'];
 };
 export type DraftRecovery = { intent: TurnIntent; input: string; kind: 'terminal' | 'uncertain' };
 
@@ -151,7 +152,7 @@ export function useLiveTurn() {
       const revisionAtStart = approvalRevision;
       try {
         controller = new AbortController();
-        const status = LiveRunStatusSchema.parse(await boundedJson(`/api/live/runs/${run.publicRunId}`, { credentials: 'same-origin', headers: { accept: 'application/json' } }, controller));
+        const status = LiveRunStatusSchema.parse(await boundedJson(`/api/live/runs/${run.publicRunId}`, { credentials: 'same-origin', headers: { accept: 'application/json', 'x-jarvis-history-binding': '1' } }, controller));
         if (status.publicRunId !== run.publicRunId || status.sessionId !== run.intent.sessionId) throw new Error('binding');
         if (!valid()) return;
         // Healthy nonterminal work is not a failed recovery attempt.
@@ -160,7 +161,7 @@ export function useLiveTurn() {
         const newerApproval = approvalRevision !== revisionAtStart || current.current!.approval !== approvalAtStart;
         // A status snapshot has no stream cursor: applying it during a healthy
         // stream can rewind output or double-count later deltas. Terminal wins.
-        update({ identityVerified: true,
+        update({ identityVerified: true, historyBinding: done ? status.historyBinding : undefined,
           phase: !done && newerApproval ? current.current!.phase : `Run ${status.status}`,
           ...(status.output === null || (!done && (keepStream || !!current.current!.output)) ? {} : outputPreview(status.output)),
           approval: done ? null : preserveApproval || newerApproval ? current.current!.approval : status.approval,

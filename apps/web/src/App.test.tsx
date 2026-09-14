@@ -66,6 +66,16 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+function stubFetch(fetcher: typeof fetch) {
+  vi.stubGlobal('fetch', (url: string, init?: RequestInit) => url === '/api/rooms' ? Promise.resolve(Response.json({ version: 1, rooms: [] })) : fetcher(url, init));
+}
+
+async function clickEnabled(name: string | RegExp) {
+  const button = await screen.findByRole('button', { name });
+  await waitFor(() => expect(button).toBeEnabled());
+  fireEvent.click(button);
+}
+
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Selected room recovery', () => {
@@ -85,47 +95,52 @@ describe('Selected room recovery', () => {
     vi.stubGlobal('fetch', fetchMock);
     const load = async () => ({ ...liveBootstrap, hermes: { ...liveBootstrap.hermes, model: 'hermes-agent', provider: null }, sessions: [] });
     const view = render(<App loadBootstrap={load} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'Project rooms' }));
-    fireEvent.change(await screen.findByLabelText('Room name'), { target: { value: room.name } });
-    fireEvent.change(screen.getByLabelText('Room goal'), { target: { value: room.goal } });
-    fireEvent.change(screen.getByLabelText('Repository / workdir reference'), { target: { value: room.repository } });
-    fireEvent.change(screen.getByLabelText('Pinned note references (one per line)'), { target: { value: room.notes[0] } });
-    fireEvent.click(screen.getByRole('button', { name: 'Create project room' }));
+    const newProject = await screen.findByRole('button', { name: 'New project' });
+    await waitFor(() => expect(newProject).toBeEnabled());
+    fireEvent.click(newProject);
+    fireEvent.change(await screen.findByLabelText('Project name'), { target: { value: room.name } });
+    fireEvent.change(screen.getByLabelText('Project goal'), { target: { value: room.goal } });
+    fireEvent.change(screen.getByLabelText('Repository reference'), { target: { value: room.repository } });
+    fireEvent.change(screen.getByLabelText('Note references (one per line)'), { target: { value: room.notes[0] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create project' }));
     await screen.findByText(room.goal);
-    fireEvent.click(screen.getByRole('button', { name: 'New Command session' }));
-    await screen.findByRole('heading', { name: session.title });
-    expect(screen.getByText(/Associated metadata only/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'New chat' }));
+    await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(session.title));
+    expect(screen.getByText(/Context is not applied automatically/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Hermes available' }));
     expect(screen.getByText('Adapter label: hermes-agent')).toBeInTheDocument();
     view.unmount(); render(<App loadBootstrap={load} />);
-    await screen.findByRole('heading', { name: session.title });
+    await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(session.title));
     expect(fetchMock).toHaveBeenCalledWith(`/api/live/sessions/${session.id}`, expect.anything());
-    fireEvent.click(screen.getByRole('button', { name: 'All sessions' }));
+    fireEvent.click(within(screen.getByRole('navigation', { name: 'Recent chats' })).getByRole('button', { name: session.title }));
     expect(screen.queryByText(room.goal)).not.toBeInTheDocument();
     sessionStorage.removeItem('jarvis-command:project-room:v1');
   });
   it.each(['unknown', 'disabled', 'storage-denied'])('ignores unusable remembered selection: %s', async (mode) => {
     sessionStorage.setItem('jarvis-command:selected-session:v1', mode === 'unknown' ? 'not-in-bootstrap' : 'session_123');
     const read = mode === 'storage-denied' ? vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied'); }) : null;
-    const fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock);
+    const fetchMock = vi.fn(); stubFetch(fetchMock);
     try {
       render(<App loadBootstrap={async () => mode === 'disabled' ? bootstrap : liveBootstrap} />);
-      await screen.findByRole('heading', { name: 'Jarvis Command' });
+      await screen.findByRole('heading', { name: 'What are we working on?' });
       expect(fetchMock).not.toHaveBeenCalled();
       expect(screen.queryByText('Assistant answer')).not.toBeInTheDocument();
     } finally { read?.mockRestore(); }
   });
   it('returns to the selected room after reload without storing message contents', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => Response.json(history())));
+    stubFetch(vi.fn(async () => Response.json(history())));
     const first = render(<App loadBootstrap={async () => liveBootstrap} />);
-    fireEvent.change(await screen.findByRole('combobox', { name: 'Session' }), { target: { value: 'session_123' } });
+    const recent = await screen.findByRole('button', { name: /^Jarvis Command/ });
+    await waitFor(() => expect(recent).toBeEnabled());
+    fireEvent.click(recent);
     await screen.findByText('Assistant answer');
     expect(sessionStorage.getItem('jarvis-command:selected-session:v1')).toBe('session_123');
     first.unmount();
     render(<App loadBootstrap={async () => liveBootstrap} />);
     expect(await screen.findByText('Assistant answer')).toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: 'Session' })).toHaveValue('session_123');
-    fireEvent.change(screen.getByRole('combobox', { name: 'Session' }), { target: { value: '' } });
-    expect(sessionStorage.getItem('jarvis-command:selected-session:v1')).toBeNull();
+    expect(screen.getByLabelText('Selected session')).toHaveTextContent('Jarvis Command');
+    expect(sessionStorage.getItem('jarvis-command:selected-session:v1')).toBe('session_123');
+    expect(sessionStorage.getItem('jarvis-command:selected-session:v1')).not.toContain('Assistant answer');
   });
 });
 
@@ -134,9 +149,10 @@ describe('Command session creation', () => {
     const pending = deferred<Response>();
     const created = { ...bootstrap.sessions[0]!, id: 'jc_new:session+exact', title: 'New Command session', ownership: 'command', source: 'web', messageCount: 0 };
     const fetchMock = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValueOnce(Response.json(history(created.id, 0, [])));
-    vi.stubGlobal('fetch', fetchMock);
+    stubFetch(fetchMock);
     render(<App loadBootstrap={async () => liveBootstrap} />);
-    const create = await screen.findByRole('button', { name: 'New Command session' });
+    const create = await screen.findByRole('button', { name: 'New chat' });
+    await waitFor(() => expect(create).toBeEnabled());
     fireEvent.click(create);
     fireEvent.click(create);
     expect(create).toBeDisabled();
@@ -146,33 +162,31 @@ describe('Command session creation', () => {
     });
     await act(async () => pending.resolve(Response.json({ session: created })));
     expect(await screen.findByText('No saved messages in session history yet.')).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: created.title })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /New Command session.*0 messages/ })).toHaveAttribute('aria-current', 'page');
-    expect(screen.getByText('Command-owned session')).toBeInTheDocument();
+    expect(screen.getByLabelText('Selected session')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: created.title })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toBeInTheDocument();
   });
 
   it.each(['http', 'access', 'malformed', 'external'])('reports honest creation failure for %s without adding a session', async (fault) => {
     const session = { ...bootstrap.sessions[0]!, id: 'jc_new', title: 'Must not appear', ownership: 'command' };
     if (fault === 'external') session.ownership = 'external';
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(fault === 'malformed' ? { secret: 'private detail' } : { session }, { status: fault === 'http' ? 502 : fault === 'access' ? 401 : 200 })));
+    stubFetch(vi.fn().mockResolvedValue(Response.json(fault === 'malformed' ? { secret: 'private detail' } : { session }, { status: fault === 'http' ? 502 : fault === 'access' ? 401 : 200 })));
     render(<App loadBootstrap={async () => liveBootstrap} />);
-    fireEvent.click(await screen.findByRole('button', { name: 'New Command session' }));
+    await clickEnabled('New chat');
     expect(await screen.findByRole('alert')).toHaveTextContent(fault === 'access' ? 'Access expired or denied.' : 'Session creation could not be confirmed.');
     expect(screen.queryByText('Must not appear')).not.toBeInTheDocument();
     expect(screen.queryByText('private detail')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'New Command session' })).not.toBeDisabled();
+    expect(screen.getByRole('button', { name: 'New chat' })).not.toBeDisabled();
   });
 
   it('does not activate session selection or creation when the capability is disabled', async () => {
     const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
+    stubFetch(fetchMock);
     render(<App loadBootstrap={async () => bootstrap} />);
-    const session = await screen.findByRole('button', { name: /18 messages/ });
-    expect(session).toBeDisabled();
-    fireEvent.click(session);
+    await screen.findByText('Live chat is unavailable.');
+    expect(screen.queryByRole('button', { name: /^Jarvis Command/ })).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: 'New Command session' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'New chat' })).not.toBeInTheDocument();
   });
 });
 
@@ -182,9 +196,9 @@ describe('Live Room history', () => {
     const first = history('session_123', 0, Array.from({ length: 50 }, (_, i) => `Initial ${i}`), true);
     const fetchMock = vi.fn().mockResolvedValueOnce(Response.json(first)).mockReturnValueOnce(pending.promise)
       .mockResolvedValueOnce(Response.json(history('session_123', 50, [])));
-    vi.stubGlobal('fetch', fetchMock);
+    stubFetch(fetchMock);
     render(<App loadBootstrap={async () => liveBootstrap} />);
-    fireEvent.click(await screen.findByRole('button', { name: /18 messages/ }));
+    await clickEnabled(/^Jarvis Command/);
     const more = await screen.findByRole('button', { name: 'Load more messages' });
     fireEvent.click(more);
     fireEvent.click(more);
@@ -204,9 +218,9 @@ describe('Live Room history', () => {
   it.each(['network', 'non-json', 'redirect'])('bounds a %s history failure without exposing response content', async (fault) => {
     const response = new Response('<html>private upstream</html>');
     if (fault === 'redirect') Object.defineProperty(response, 'redirected', { value: true });
-    vi.stubGlobal('fetch', fault === 'network' ? vi.fn().mockRejectedValue(new Error('private upstream')) : vi.fn().mockResolvedValue(response));
+    stubFetch(fault === 'network' ? vi.fn().mockRejectedValue(new Error('private upstream')) : vi.fn().mockResolvedValue(response));
     render(<App loadBootstrap={async () => liveBootstrap} />);
-    fireEvent.click(await screen.findByRole('button', { name: /18 messages/ }));
+    await clickEnabled(/^Jarvis Command/);
     expect(await screen.findByRole('alert')).toHaveTextContent(fault === 'redirect' ? 'Access expired or denied.' : 'Could not load messages.');
     expect(screen.queryByText(/private upstream/)).not.toBeInTheDocument();
   });
@@ -216,9 +230,9 @@ describe('Live Room history', () => {
       const offset = Number(new URL(url, 'http://localhost').searchParams.get('offset'));
       return Promise.resolve(Response.json(history('session_123', offset, Array.from({ length: 50 }, (_, i) => `Row ${offset + i}`), true)));
     });
-    vi.stubGlobal('fetch', fetchMock);
+    stubFetch(fetchMock);
     render(<App loadBootstrap={async () => liveBootstrap} />);
-    fireEvent.click(await screen.findByRole('button', { name: /18 messages/ }));
+    await clickEnabled(/^Jarvis Command/);
     for (let page = 1; page < 10; page += 1) {
       await screen.findByText(`Row ${page * 50 - 1}`);
       fireEvent.click(screen.getByRole('button', { name: 'Load more messages' }));
@@ -230,24 +244,26 @@ describe('Live Room history', () => {
     expect(fetchMock).toHaveBeenCalledTimes(10);
   }, 20_000);
 
-  it('selects sessions with a compact picker without needing the desktop sidebar', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(history())));
+  it('opens mobile navigation and selects a chat without a second session picker', async () => {
+    stubFetch(vi.fn().mockResolvedValue(Response.json(history())));
     render(<App loadBootstrap={async () => liveBootstrap} />);
-    const picker = await screen.findByRole('combobox', { name: 'Session' });
-    fireEvent.change(picker, { target: { value: 'session_123' } });
+    const menu = await screen.findByRole('button', { name: 'Open chat navigation' });
+    fireEvent.click(menu);
+    expect(menu).toHaveAttribute('aria-expanded', 'true');
+    const recent = screen.getByRole('button', { name: /^Jarvis Command/ });
+    await waitFor(() => expect(recent).toBeEnabled());
+    fireEvent.click(recent);
     expect(await screen.findByText('First question')).toBeInTheDocument();
-    expect(picker).toHaveValue('session_123');
-    fireEvent.change(picker, { target: { value: '' } });
-    expect(screen.queryByText('First question')).not.toBeInTheDocument();
-    expect(screen.getByText('Operational snapshot')).toBeInTheDocument();
+    expect(menu).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByLabelText('Selected session')).toHaveTextContent('Jarvis Command');
   });
 
   it.each([401, 403, 502])('handles HTTP %s without exposing upstream details and can retry', async (status) => {
     const fetchMock = vi.fn().mockResolvedValueOnce(Response.json({ secret: 'private upstream error' }, { status }))
       .mockResolvedValueOnce(Response.json(history()));
-    vi.stubGlobal('fetch', fetchMock);
+    stubFetch(fetchMock);
     render(<App loadBootstrap={async () => liveBootstrap} />);
-    fireEvent.click(await screen.findByRole('button', { name: /18 messages/ }));
+    await clickEnabled(/^Jarvis Command/);
     expect(await screen.findByRole('alert')).toHaveTextContent(status === 502 ? 'Could not load messages.' : 'Access expired or denied.');
     expect(screen.queryByText(/private upstream error/)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry history' }));
@@ -262,9 +278,9 @@ describe('Live Room history', () => {
     if (fault === 'limit') page.pagination.limit = 100;
     if (fault === 'count') page.pagination.returned = 2;
     if (fault === 'no-progress') { page.messages = []; page.pagination.returned = 0; page.pagination.hasMore = true; }
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(page)));
+    stubFetch(vi.fn().mockResolvedValue(Response.json(page)));
     render(<App loadBootstrap={async () => liveBootstrap} />);
-    fireEvent.click(await screen.findByRole('button', { name: /18 messages/ }));
+    await clickEnabled(/^Jarvis Command/);
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not load messages.');
     expect(screen.queryByText('First question')).not.toBeInTheDocument();
   });
@@ -274,14 +290,14 @@ describe('Live Room history', () => {
     const fetchMock = vi.fn().mockReturnValueOnce(old.promise)
       .mockResolvedValueOnce(Response.json(history('second:session+exact', 0, ['Second room'])))
       .mockResolvedValueOnce(Response.json(history('session_123', 0, ['Fresh first room'])));
-    vi.stubGlobal('fetch', fetchMock);
+    stubFetch(fetchMock);
     render(<App loadBootstrap={async () => ({ ...liveBootstrap, sessions: [...liveBootstrap.sessions, { ...liveBootstrap.sessions[0]!, id: 'second:session+exact', title: 'Second session' }] })} />);
-    fireEvent.click(await screen.findByRole('button', { name: /Jarvis Command.*18 messages/ }));
-    fireEvent.click(screen.getByRole('button', { name: /Second session/ }));
+    await clickEnabled(/^Jarvis Command/);
+    await clickEnabled(/Second session/);
     expect(await screen.findByText('Second room')).toBeInTheDocument();
     expect(fetchMock.mock.calls[0]![1].signal.aborted).toBe(true);
     expect(fetchMock.mock.calls[1]![0]).toContain('second%3Asession%2Bexact');
-    fireEvent.click(screen.getByRole('button', { name: /Jarvis Command.*18 messages/ }));
+    await clickEnabled(/^Jarvis Command/);
     expect(await screen.findByText('Fresh first room')).toBeInTheDocument();
     await act(async () => old.resolve(Response.json(history('session_123', 0, ['Stale first room']))));
     expect(screen.queryByText('Stale first room')).not.toBeInTheDocument();
@@ -293,9 +309,9 @@ describe('Live Room history', () => {
     const next = history('session_123', 1, ['Duplicate', 'Last answer'], false);
     next.messages[0]!.id = first.messages[0]!.id;
     const fetchMock = vi.fn().mockResolvedValueOnce(Response.json(first)).mockResolvedValueOnce(Response.json(next));
-    vi.stubGlobal('fetch', fetchMock);
+    stubFetch(fetchMock);
     render(<App loadBootstrap={async () => liveBootstrap} />);
-    fireEvent.click(await screen.findByRole('button', { name: /18 messages/ }));
+    await clickEnabled(/^Jarvis Command/);
     fireEvent.click(await screen.findByRole('button', { name: 'Load more messages' }));
     expect(await screen.findByText('Last answer')).toBeInTheDocument();
     expect(screen.getAllByText('First question')).toHaveLength(1);
@@ -306,128 +322,82 @@ describe('Live Room history', () => {
   });
 
   it('shows an explicit empty history', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json(history('session_123', 0, []))));
+    stubFetch(vi.fn().mockResolvedValue(Response.json(history('session_123', 0, []))));
     render(<App loadBootstrap={async () => liveBootstrap} />);
-    fireEvent.click(await screen.findByRole('button', { name: /18 messages/ }));
+    await clickEnabled(/^Jarvis Command/);
     expect(await screen.findByText('No saved messages in session history yet.')).toBeInTheDocument();
   });
 
   it('selects a recent session and renders oldest-first typed history through the BFF', async () => {
     const pending = deferred<Response>();
     const fetchMock = vi.fn().mockReturnValue(pending.promise);
-    vi.stubGlobal('fetch', fetchMock);
+    stubFetch(fetchMock);
     render(<App loadBootstrap={async () => liveBootstrap} />);
-    fireEvent.click(await screen.findByRole('button', { name: /18 messages/ }));
-    expect(screen.getByText('Loading messages…')).toBeInTheDocument();
+    await clickEnabled(/^Jarvis Command/);
+    expect(await screen.findByText('Loading messages…')).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith('/api/sessions/session_123/messages?limit=50&offset=0', expect.objectContaining({
       credentials: 'same-origin', headers: { accept: 'application/json' }, signal: expect.any(AbortSignal),
     }));
     await act(async () => pending.resolve(Response.json(history())));
-    const timeline = screen.getByRole('region', { name: 'Mission timeline' });
+    const timeline = screen.getByRole('region', { name: 'Conversation' });
     expect(within(timeline).getAllByRole('article').map((row) => row.textContent)).toEqual([
       expect.stringContaining('First question'), expect.stringContaining('Assistant answer'), expect.stringContaining('Tool output'),
     ]);
     expect(within(timeline).getByText('terminal')).toBeInTheDocument();
-    expect(within(timeline).getByText('External session · Read-only')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Continue in Command' })).toBeDisabled();
-    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(within(timeline).getByText(/External chat · Read-only/)).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Message Jarvis' })).not.toBeInTheDocument();
   });
 });
 
 describe('Jarvis Command shell', () => {
-  it('renders a useful command room from the live bootstrap contract', async () => {
+  it('keeps connection details optional while preserving honest read-only capability', async () => {
     render(<App loadBootstrap={async () => bootstrap} />);
-
     expect(screen.getByLabelText('Jarvis Command is loading')).toBeInTheDocument();
-    expect(await screen.findByRole('heading', { name: 'Jarvis Command' })).toBeInTheDocument();
-    expect(screen.getAllByText('Hermes available')).toHaveLength(2);
+    const health = await screen.findByRole('button', { name: 'Hermes available' });
+    expect(screen.getByRole('region', { name: 'Conversation' })).toBeInTheDocument();
+    expect(screen.queryByRole('complementary', { name: 'Context workspace' })).not.toBeInTheDocument();
+    expect(screen.queryByText('gpt-5.6-sol')).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Message Jarvis' })).not.toBeInTheDocument();
+    fireEvent.click(health);
+    expect(screen.getByRole('heading', { name: 'Hermes connection' })).toBeInTheDocument();
     expect(screen.getByText('gpt-5.6-sol')).toBeInTheDocument();
     expect(screen.getByText('OpenAI Codex')).toBeInTheDocument();
-    expect(screen.queryByText('Max reasoning')).not.toBeInTheDocument();
-    expect(screen.queryByText('272K default')).not.toBeInTheDocument();
-    expect(screen.getByText('1 active agent')).toBeInTheDocument();
-
-    const sessions = screen.getByRole('navigation', { name: 'Project rooms' });
-    expect(within(sessions).getByText('18 messages · 7 tools')).toBeInTheDocument();
-    expect(screen.getByRole('region', { name: 'Mission timeline' })).toBeInTheDocument();
-    expect(screen.getByText('Operational snapshot')).toBeInTheDocument();
-    expect(screen.queryByText('Preview')).not.toBeInTheDocument();
-    expect(screen.getByText('Static snapshot')).toBeInTheDocument();
-    expect(screen.queryByText('LIVE')).not.toBeInTheDocument();
-    expect(screen.getByRole('complementary', { name: 'Operations deck' })).toBeInTheDocument();
-    const mobileNavigation = screen.getByRole('navigation', { name: 'Mobile navigation' });
-    expect(mobileNavigation).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Send message' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('textbox', { name: 'Message Jarvis' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Search command room' })).not.toBeInTheDocument();
-    expect(screen.getByText('Messaging is unavailable in this read-only slice.')).toBeInTheDocument();
-    expect(within(sessions).getByRole('button', { name: 'Artifacts' })).toBeDisabled();
-    expect(within(mobileNavigation).getByRole('button', { name: 'Agents' })).toBeDisabled();
-    expect(within(mobileNavigation).getByRole('button', { name: 'Approve' })).toBeDisabled();
-    expect(within(mobileNavigation).getByRole('button', { name: 'Artifacts' })).toBeDisabled();
-    expect(screen.getByText('Read-only bridge')).toBeInTheDocument();
-    expect(screen.getAllByText('Access verified')).toHaveLength(2);
-    expect(screen.getByText('Hermes available', { selector: '.state-badge' })).toHaveClass('online');
+    expect(screen.getByText('Reported connection snapshot')).toBeInTheDocument();
+    expect(screen.getByText('Access verified')).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Close context' }), { key: 'Escape' });
+    expect(screen.queryByText('Reported connection snapshot')).not.toBeInTheDocument();
+    expect(health).toHaveFocus();
   });
 
   it('keeps the command shell honest when Hermes is offline', async () => {
-    render(
-      <App
-        loadBootstrap={async () => ({
-          ...bootstrap,
-          hermes: {
-            ...bootstrap.hermes,
-            state: 'offline',
-            model: null,
-            provider: null,
-            gatewayState: 'unknown',
-            activeAgents: 0,
-            readinessChecks: { hermesBridge: 'fail' },
-          },
-          sessions: [],
-        })}
-      />,
-    );
-
-    expect((await screen.findAllByText('Hermes unavailable')).length).toBeGreaterThanOrEqual(3);
-    expect(screen.getByRole('heading', { name: 'Hermes unavailable' })).toBeInTheDocument();
-    expect(screen.getByText('No sessions returned by Hermes.')).toBeInTheDocument();
-    expect(screen.getAllByText('Hermes unavailable').length).toBeGreaterThanOrEqual(3);
-    expect(screen.getByText('Hermes unavailable', { selector: '.state-badge' })).toHaveClass('offline');
-    expect(screen.getByText('Model not reported')).toBeInTheDocument();
-    expect(screen.getByText('Provider not reported')).toBeInTheDocument();
+    render(<App loadBootstrap={async () => ({ ...bootstrap, hermes: { ...bootstrap.hermes,
+      state: 'offline', model: null, provider: null, gatewayState: 'unknown', activeAgents: 0,
+      readinessChecks: { hermesBridge: 'fail' },
+    }, sessions: [] })} />);
+    const health = await screen.findByRole('button', { name: 'Hermes unavailable' });
+    expect(screen.getByRole('status')).toHaveTextContent('Check the connection before sending.');
+    expect(health).toHaveClass('offline');
+    fireEvent.click(health);
+    expect(screen.getAllByText('Not reported')).toHaveLength(2);
+    expect(screen.queryByRole('textbox', { name: 'Message Jarvis' })).not.toBeInTheDocument();
   });
 
   it('labels development authentication without claiming Cloudflare Access', async () => {
-    render(<App loadBootstrap={async () => ({
-      ...bootstrap,
-      identity: { provider: 'development' },
+    render(<App loadBootstrap={async () => ({ ...bootstrap, identity: { provider: 'development' },
       command: { ...bootstrap.command, environment: 'development' },
     })} />);
-
-    expect(await screen.findAllByText('Development identity')).toHaveLength(2);
+    expect(await screen.findByText('Development preview · 0.1.0')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    expect(screen.getByText('Development identity')).toBeInTheDocument();
     expect(screen.queryByText('Access verified')).not.toBeInTheDocument();
-    expect(screen.getByLabelText('Authenticated operator')).toHaveAttribute(
-      'title',
-      'Development identity verified',
-    );
-    expect(screen.getByText('Development identity', { selector: '.identity-badge' })).toHaveClass('development');
   });
 
-  it('renders degraded Hermes as reachable but unhealthy', async () => {
-    render(<App loadBootstrap={async () => ({
-      ...bootstrap,
-      hermes: {
-        ...bootstrap.hermes,
-        state: 'degraded',
-        gatewayState: 'unknown',
-        readinessChecks: { config: 'pass', disk: 'warn' },
-      },
-    })} />);
-
-    expect(await screen.findByRole('heading', { name: 'Hermes degraded' })).toBeInTheDocument();
-    expect(screen.getByText(/private snapshot arrived, but readiness checks/i)).toBeInTheDocument();
-    expect(screen.queryByText(/did not answer the private upstream probe/i)).not.toBeInTheDocument();
+  it('keeps degraded health visible with the context pane closed', async () => {
+    render(<App loadBootstrap={async () => ({ ...bootstrap, hermes: { ...bootstrap.hermes,
+      state: 'degraded', gatewayState: 'unknown', readinessChecks: { config: 'pass', disk: 'warn' },
+    } })} />);
+    expect(await screen.findByRole('button', { name: 'Hermes degraded' })).toHaveClass('degraded');
+    expect(screen.getByRole('status')).toHaveTextContent('Some capabilities may be unavailable.');
   });
 
   it('shows a bounded failure state for an unclassified bootstrap failure', async () => {
@@ -445,3 +415,4 @@ describe('Jarvis Command shell', () => {
     expect(screen.queryByText('sensitive upstream details')).not.toBeInTheDocument();
   });
 });
+

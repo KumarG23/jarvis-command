@@ -9,7 +9,7 @@
   ],
   "scripts": {
     "build": "npm run build -w @jarvis-command/web && npm run build -w @jarvis-command/server && npm run build -w @jarvis-command/read-proxy && npm run build -w @jarvis-command/command-proxy",
-    "dev": "concurrently -n server,web -c green,cyan \"npm run dev -w @jarvis-command/server\" \"npm run dev -w @jarvis-command/web\"",
+    "dev": "node scripts/dev.mjs",
     "lint": "eslint . --max-warnings=0",
     "test": "node --test deploy/*.test.mjs && npm run test --workspaces --if-present",
     "test:e2e": "playwright test",

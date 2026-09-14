@@ -1,7 +1,8 @@
 import { SessionMutationResponseSchema, type SessionSummary } from '@jarvis-command/contracts';
+import { Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
-export function CreateSession({ onCreated }: Readonly<{ onCreated: (session: SessionSummary) => void }>) {
+export function CreateSession({ onCreated, disabled = false }: Readonly<{ disabled?: boolean; onCreated: (session: SessionSummary) => void }>) {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const busy = useRef(false);
@@ -12,7 +13,7 @@ export function CreateSession({ onCreated }: Readonly<{ onCreated: (session: Ses
   }, []);
 
   async function create() {
-    if (busy.current) return;
+    if (busy.current || disabled) return;
     busy.current = true;
     setCreating(true);
     setError(null);
@@ -38,7 +39,8 @@ export function CreateSession({ onCreated }: Readonly<{ onCreated: (session: Ses
   }
 
   return <div className="create-session">
-    <button type="button" className="primary-button" disabled={creating} onClick={() => void create()}>{creating ? 'Creating session…' : 'New Command session'}</button>
+    <button type="button" className="primary-button new-chat" disabled={creating || disabled} onClick={() => void create()}><Plus size={18} />{creating ? 'Creating chat…' : 'New chat'}</button>
     {error ? <p role="alert">{error}</p> : null}
   </div>;
 }
+

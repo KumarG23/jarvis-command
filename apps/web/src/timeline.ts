@@ -1,10 +1,27 @@
 import type { SessionMessage } from '@jarvis-command/contracts';
 import type { Turn } from './useLiveTurn';
 
-// The public history contract has message IDs, but no run/request link. Only
-// reconcile the first user after an exact, complete pre-submission prefix.
-// Never search all history for matching text: repeated turns are legitimate.
+// Prefer authoritative message IDs from verified run status. Older backends
+// need the exact, complete pre-submission prefix and original input. Never
+// search all history for matching text: repeated turns are legitimate.
 export function matchTurn(turn: Turn, messages: SessionMessage[], complete: boolean) {
+  const empty = { user: null, assistant: null, echo: null };
+  if (!turn.identityVerified || messages.some(message => message.sessionId !== turn.intent.sessionId)) return empty;
+  if (turn.historyBinding) {
+    // A verified status read binds these projected message IDs to this run.
+    // Never fall back to text matching when an explicit binding disagrees.
+    const binding = turn.historyBinding;
+    const users = messages.filter(message => message.id === binding.userMessageId);
+    const replies = messages.filter(message => message.id === binding.assistantMessageId);
+    const user = users.length === 1 ? users[0]! : null;
+    const reply = replies.length === 1 ? replies[0]! : null;
+    if (!turn.publicRunId || !turn.done || !user || !reply || user.role !== 'user' || reply.role !== 'assistant'
+      || messages.indexOf(reply) <= messages.indexOf(user)
+      || messages.slice(messages.indexOf(user) + 1, messages.indexOf(reply)).some(message => message.role === 'user')
+      || (turn.intent.input !== null && user.content !== turn.intent.input)
+      || turn.outputLimited || !turn.output || reply.content !== turn.output) return empty;
+    return { user, assistant: complete ? reply : null, echo: reply };
+  }
   const baseline = turn.historyBaseline;
   if (!baseline || turn.intent.input === null || !turn.identityVerified
     || messages.some((message) => message.sessionId !== turn.intent.sessionId)
@@ -27,7 +44,7 @@ export function projectTurns(turns: Turn[], messages: SessionMessage[], complete
     const baseline = turn.historyBaseline;
     const candidate = baseline && !blocked && baseline.length < floor
       ? { ...turn, historyBaseline: messages.slice(0, floor).map((message) => message.id) } : turn;
-    const match = blocked ? { user: null, assistant: null, echo: null } : matchTurn(candidate, messages, complete);
+    const match = blocked && !turn.historyBinding ? { user: null, assistant: null, echo: null } : matchTurn(candidate, messages, complete);
     if (match.echo) floor = messages.indexOf(match.echo) + 1;
     else blocked = true; // An unresolved earlier submission cannot share a later turn's IDs.
     const nextUser = match.user ? messages.findIndex((message, index) => index > messages.indexOf(match.user!) && message.role === 'user') : -1;
