@@ -110,7 +110,7 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 .live-turn > section p { font-size: 12px; line-height: 1.7; }
 .live-turn > button, .live-turn > section button { min-height: 44px; margin: 5px 8px 0 0; padding: 9px 14px; border: 1px solid var(--border); border-radius: 7px; color: var(--text); background: var(--surface); }
 .composer-wrap { flex: 0 0 auto; padding: 12px clamp(20px, 4vw, 64px) max(18px, env(safe-area-inset-bottom)); }
-.turn-composer { display: flex; align-items: flex-end; gap: 12px; max-width: 730px; margin: 0 auto; padding: 12px; border: 1px solid #343c4c; border-radius: 14px; background: #10151e; }
+.turn-composer { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; max-width: 730px; margin: 0 auto; padding: 12px; border: 1px solid #343c4c; border-radius: 14px; background: #10151e; }
 .turn-composer textarea { min-width: 0; flex: 1; resize: vertical; max-height: 190px; min-height: 43px; padding: 10px 8px; border: 0; color: var(--text); background: transparent; font-size: 14px; line-height: 1.6; }
 .turn-composer textarea::placeholder { color: #8e99ac; }
 .turn-composer textarea:focus-visible { outline-offset: 0; border-radius: 6px; }
@@ -118,6 +118,13 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 .turn-composer:has(textarea[aria-label="Steer Jarvis"]) { flex-wrap: wrap; margin-bottom: 10px; }
 .turn-composer:has(textarea[aria-label="Steer Jarvis"]) button { width: auto; }
 .turn-composer > p { width: 100%; color: var(--muted); font-size: 11px; }
+.inference-control { flex: 0 0 100%; color: var(--muted); font-size: 10px; }
+.inference-control summary { width: fit-content; cursor: pointer; color: var(--cyan); font: 500 9px/1.4 'JetBrains Mono', monospace; letter-spacing: .04em; }
+.inference-fields { display: flex; flex-wrap: wrap; align-items: end; gap: 8px 12px; margin-top: 8px; padding: 9px; border: 1px solid var(--border); border-radius: 8px; background: #10151d; }
+.inference-fields label { display: grid; gap: 4px; color: var(--subtle); font: 500 8px/1.3 'JetBrains Mono', monospace; letter-spacing: .06em; text-transform: uppercase; }
+.inference-fields select { min-width: 132px; color: var(--text); background: var(--panel); border: 1px solid #343c4c; border-radius: 6px; padding: 7px 9px; text-transform: none; }
+.inference-fields p { flex: 1 1 220px; margin: 0; color: var(--subtle); font-size: 9px; line-height: 1.45; }
+.turn-route { color: var(--subtle); font: 500 9px/1.4 'JetBrains Mono', monospace; }
 .composer-feedback { max-width: 730px; margin: 5px auto 12px; color: var(--muted); font-size: 12px; line-height: 1.5; }
 .turn-limit { max-width: 730px; margin: 9px auto 0; color: var(--subtle); font-size: 10px; line-height: 1.7; }
 .turn-limit summary { cursor: pointer; }

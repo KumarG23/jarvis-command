@@ -14,6 +14,7 @@ import {
   RunEventSchema,
   type LiveRoomSessionContinueRequest,
   type LiveRoomSessionCreateRequest,
+  type InferenceOptionsResponse,
   type LiveRunApprovalRequest,
   type LiveRunApprovalResponse,
   type LiveRunState,
@@ -129,7 +130,11 @@ export function createLiveRoomService({
     const request = LiveRunSubmissionRequestSchema.parse(rawRequest);
     const actor = actorFingerprint(subject);
     const submissionKey = `${actor}\0${request.clientRequestId}`;
-    const requestFingerprint = sha256(canonicalJson({ input: request.input, sessionId: request.sessionId }));
+    const requestFingerprint = sha256(canonicalJson({
+      inference: request.inference ? JSON.stringify(request.inference) : '',
+      input: request.input,
+      sessionId: request.sessionId,
+    }));
     const pending = submissions.get(submissionKey);
     if (pending) {
       if (pending.fingerprint !== requestFingerprint) throw new LiveRoomConflictError();
@@ -221,6 +226,7 @@ export function createLiveRoomService({
       sessionId: request.sessionId,
       input: request.input,
       idempotencyKey: `jc-v1-${sha256(`${record.actor}\0${record.clientRequestId}`)}`,
+      ...(request.inference ? { inference: request.inference } : {}),
     });
     if (upstream.sessionId !== record.sessionId) throw new LiveRoomConflictError();
     await ledger.appendOnce(`started:${record.publicRunId}`, auditDraft({
@@ -241,6 +247,12 @@ export function createLiveRoomService({
   };
 
   return Object.freeze({
+    async getInferenceOptions(subject: string): Promise<InferenceOptionsResponse> {
+      void subject;
+      ledger.assertHealthy();
+      return client.getInferenceOptions();
+    },
+
     async getMessages(
       _subject: string,
       sessionId: string,

@@ -51,6 +51,10 @@ async function createLedger() {
 function fakeClient(overrides: Partial<CommandProxyClient> = {}): CommandProxyClient {
   return {
     readReadiness: vi.fn().mockResolvedValue({ ready: true, idempotencyRetentionSeconds: 86_400 }),
+    getInferenceOptions: vi.fn().mockResolvedValue({
+      default: { provider: 'openai-codex', model: 'gpt-5.6-sol' },
+      options: [{ provider: 'openai-codex', model: 'gpt-5.6-sol', label: 'Sol', reasoningEfforts: ['low', 'medium', 'high', 'xhigh'] }],
+    }),
     getSession: vi.fn(),
     getMessages: vi.fn().mockResolvedValue({
       sessionId,
@@ -200,6 +204,19 @@ describe('LiveRoomService run identity and recovery', () => {
     expect(replay).toEqual({ ...original, replayed: true });
     expect(secondClient.startRun).not.toHaveBeenCalled();
     expect(secondClient.getRun).toHaveBeenCalledWith(upstreamRunId);
+  });
+
+  it('binds inference routing into idempotency and forwards it exactly', async () => {
+    const { ledger } = await createLedger();
+    const client = fakeClient();
+    const service = createLiveRoomService({ client, ledger, createPublicRunId: () => publicRunId });
+    const routed = {
+      ...request,
+      inference: { provider: 'openai-codex' as const, model: 'gpt-5.6-luna' as const, reasoningEffort: 'low' as const },
+    };
+    await service.submitRun('operator-subject', routed);
+    expect(client.startRun).toHaveBeenCalledWith(expect.objectContaining({ inference: routed.inference }));
+    await expect(service.submitRun('operator-subject', { ...request, input: request.input })).rejects.toBeInstanceOf(LiveRoomConflictError);
   });
 
   it('rejects client request ID reuse with a different payload', async () => {

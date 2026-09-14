@@ -1,13 +1,14 @@
 import { ArrowUp, ChevronRight, Command, Copy } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import type { RunEvent } from '@jarvis-command/contracts';
-import type { DraftRecovery, Turn } from './useLiveTurn';
+import { InferenceOptionsResponseSchema, type InferenceOptionsResponse, type InferenceOverride, type ReasoningEffort, type RunEvent } from '@jarvis-command/contracts';
+import { boundedJson, type DraftRecovery, type Turn } from './useLiveTurn';
 
 export function TurnView({ turn, allowed, approve, stop }: Readonly<{ turn: Turn; allowed: boolean; approve: (run: Turn, choice: 'once' | 'deny') => void; stop: (run: Turn) => void }>) {
   const [confirmation, setConfirmation] = useState<Turn | null>(null);
   const canControl = allowed && turn.identityVerified;
   return <section className="live-turn" aria-label="Current turn">
     <p className="turn-phase" role="status">{turn.phase}</p>
+    {'inference' in turn.intent && turn.intent.inference ? <p className="turn-route">Requested route · {turn.intent.inference.model} · {turn.intent.inference.reasoningEffort}</p> : null}
     {turn.intent.input === null ? <><p>Original message unavailable after reload; no message was retransmitted.</p><p>Recovery target · Session: {turn.intent.sessionId} · Request: {turn.intent.clientRequestId} · Run: {turn.publicRunId ?? 'Unknown — admission lookup unsupported'}</p></> : !turn.userHistoryMatched ? <article className="timeline-event live-message" aria-label="Your message"><div className="event-icon violet" aria-hidden="true">You</div><div className="event-body"><div className="event-label">You</div><p className="turn-input">{turn.intent.input}</p></div></article> : null}
     {turn.output && !turn.historyMatched ? <article className="timeline-event live-message" aria-label="Jarvis response"><div className="event-icon cyan" aria-hidden="true"><Command size={21} /></div><div className="event-body"><div className="event-label">Jarvis</div><p className="turn-output">{turn.output}</p><CopyResponse key={JSON.stringify([turn.intent.sessionId, turn.intent.clientRequestId])} text={turn.output} limited={turn.outputLimited} /></div></article> : null}
     {turn.outputLimited ? <p role="status">Output preview limited. Full output may be available in session history.</p> : null}
@@ -60,7 +61,7 @@ export function TurnComposer({ allowed, sessionId, max, maxSteer, turn, send, re
   allowed: boolean; sessionId: string | undefined; max: number; turn: Turn | null;
   maxSteer: number; steer: (run: Turn, input: string, max: number) => Promise<boolean | undefined>;
   recoveries: DraftRecovery[]; consumeRecovery: (recovery: DraftRecovery) => void;
-  send: (sessionId: string, input: string, max: number) => boolean; retry: () => void; resume: () => void;
+  send: (sessionId: string, input: string, max: number, inference?: InferenceOverride) => boolean; retry: () => void; resume: () => void;
 }>) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const draftsRef = useRef(drafts);
@@ -68,6 +69,10 @@ export function TurnComposer({ allowed, sessionId, max, maxSteer, turn, send, re
   const [steers, setSteers] = useState<Record<string, string>>({});
   const steerVersions = useRef<Record<string, number>>({});
   const latestTurn = useRef(turn); latestTurn.current = turn;
+  const [inferenceOptions, setInferenceOptions] = useState<InferenceOptionsResponse | null>(null);
+  const [inferenceError, setInferenceError] = useState(false);
+  const [selectedModel, setSelectedModel] = useState('inherit');
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>('medium');
   const draft = sessionId ? drafts[sessionId] ?? '' : '';
   const setRoomDraft = (room: string, value: string) => { draftsRef.current = { ...draftsRef.current, [room]: value }; setDrafts(draftsRef.current); };
   const setDraft = (value: string) => { if (sessionId) setRoomDraft(sessionId, value); };
@@ -96,6 +101,17 @@ export function TurnComposer({ allowed, sessionId, max, maxSteer, turn, send, re
       }
     }
   }, [allowed, sessionId, recoveries, consumeRecovery]);
+  useEffect(() => {
+    if (!allowed) return;
+    const controller = new AbortController();
+    void boundedJson('/api/live/model-options', {
+      credentials: 'same-origin', headers: { accept: 'application/json' },
+    }, controller).then((body) => {
+      setInferenceOptions(InferenceOptionsResponseSchema.parse(body));
+      setInferenceError(false);
+    }).catch(() => { if (!controller.signal.aborted) setInferenceError(true); });
+    return () => controller.abort();
+  }, [allowed]);
   const queue = async () => {
     if (!allowed || !sessionId || !turn || !turn.identityVerified || turn.done || turn.intent.sessionId !== sessionId || turn.controlBusy || !steerDraft.trim() || steerDraft.length > maxSteer) return;
     const room = sessionId; const run = turn; const version = steerVersions.current[room];
@@ -103,7 +119,13 @@ export function TurnComposer({ allowed, sessionId, max, maxSteer, turn, send, re
     if (accepted && latestTurn.current?.intent === run.intent && steerVersions.current[room] === version) setSteerDraft(room, '');
   };
   const busy = blocked || (!!turn && !turn.done);
-  const submit = () => { if (allowed && sessionId && !busy && draft.trim() && draft.length <= max && send(sessionId, draft, max)) setDraft(''); };
+  const selectedOption = inferenceOptions?.options.find(option => `${option.provider}:${option.model}` === selectedModel);
+  const inference = selectedOption ? {
+    provider: selectedOption.provider,
+    model: selectedOption.model,
+    reasoningEffort,
+  } as InferenceOverride : undefined;
+  const submit = () => { if (allowed && sessionId && !busy && draft.trim() && draft.length <= max && send(sessionId, draft, max, inference)) setDraft(''); };
   return <>
     {busy && turn && !turn.done ? <p className="composer-feedback" role="status">{turn.phase}</p> : null}
     {turn?.phase === 'Admission uncertain — retry the same intent' ? <button className="primary-button" type="button" onClick={retry}>Retry same intent</button> : null}
@@ -119,6 +141,20 @@ export function TurnComposer({ allowed, sessionId, max, maxSteer, turn, send, re
       <button type="button" onClick={() => handoff(item, true)}>Append to draft</button>
     </section>) : null}
     {allowed ? <form className="turn-composer" onSubmit={(event) => { event.preventDefault(); submit(); }}>
+      <details className="inference-control">
+        <summary>{selectedOption ? `${selectedOption.label} · ${reasoningEffort}` : 'Model · Inherit'}</summary>
+        <div className="inference-fields">
+          <label>Model<select aria-label="Model for this prompt" value={selectedModel} disabled={busy || !inferenceOptions} onChange={(event) => setSelectedModel(event.target.value)}>
+            <option value="inherit">Inherit ({inferenceOptions?.default.model ?? 'session default'})</option>
+            {inferenceOptions?.options.map(option => <option key={`${option.provider}:${option.model}`} value={`${option.provider}:${option.model}`}>{option.label}</option>)}
+          </select></label>
+          <label>Reasoning<select aria-label="Reasoning for this prompt" value={reasoningEffort} disabled={busy || !selectedOption} onChange={(event) => setReasoningEffort(event.target.value as ReasoningEffort)}>
+            {(selectedOption?.reasoningEfforts ?? ['medium']).map(effort => <option key={effort} value={effort}>{effort}</option>)}
+          </select></label>
+          <p>Applies to this prompt. Permissions and tools do not change.</p>
+        </div>
+      </details>
+      {inferenceError ? <p role="status">Model choices unavailable; inherited routing remains available.</p> : null}
       <textarea placeholder="Message Jarvis…" aria-label="Message Jarvis" maxLength={max} value={draft} disabled={busy} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => {
         if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); submit(); }
       }} />

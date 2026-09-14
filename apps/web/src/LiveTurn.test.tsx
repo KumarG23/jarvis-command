@@ -32,7 +32,23 @@ function setup(admit?: (body: Record<string, string>) => Promise<Response>, fina
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/api/rooms') return Response.json({ version: 1, rooms: [] });
     if (url.includes('/messages?')) return Response.json({ sessionId: url.includes('jc_second') ? 'jc_second' : session.id, messages: [], pagination: { limit: 50, offset: 0, returned: 0, hasMore: false } });
-    if (url === '/api/live/runs') { const body = JSON.parse(init!.body as string); return admit ? admit(body) : Response.json({ ...body, input: undefined, publicRunId: id, status: 'running', replayed: false }); }
+    if (url === '/api/live/model-options') return Response.json({
+      default: { provider: 'openai-codex', model: 'gpt-5.6-sol' },
+      options: [
+        { provider: 'openai-codex', model: 'gpt-5.6-sol', label: 'Sol', reasoningEfforts: ['low', 'medium', 'high', 'xhigh'] },
+        { provider: 'openai-codex', model: 'gpt-5.6-luna', label: 'Luna', reasoningEfforts: ['minimal', 'low', 'medium'] },
+      ],
+    });
+    if (url === '/api/live/runs') {
+      const body = JSON.parse(init!.body as string);
+      return admit ? admit(body) : Response.json({
+        sessionId: body.sessionId,
+        clientRequestId: body.clientRequestId,
+        publicRunId: id,
+        status: 'running',
+        replayed: false,
+      });
+    }
     return Response.json(final);
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -133,6 +149,22 @@ it('sends one exact intent, streams partial output and reconciles terminal statu
   expect(screen.getAllByText('Streamed answer')).toHaveLength(1);
   expect(Source.instances[0]!.close).toHaveBeenCalled();
   expect(fetchMock.mock.calls.filter(([url]) => url.includes('/messages?'))).toHaveLength(2);
+});
+
+it('sends a curated per-prompt model and reasoning override without changing permissions', async () => {
+  const fetchMock = setup(); await open();
+  const model = await screen.findByRole('combobox', { name: 'Model for this prompt' });
+  await waitFor(() => expect(model).toBeEnabled());
+  fireEvent.change(model, { target: { value: 'openai-codex:gpt-5.6-luna' } });
+  fireEvent.change(screen.getByRole('combobox', { name: 'Reasoning for this prompt' }), { target: { value: 'low' } });
+  await send();
+  const request = fetchMock.mock.calls.find(([url]) => url === '/api/live/runs')!;
+  expect(JSON.parse(request[1]!.body as string)).toMatchObject({
+    sessionId: session.id,
+    input: 'Hello Jarvis',
+    inference: { provider: 'openai-codex', model: 'gpt-5.6-luna', reasoningEffort: 'low' },
+  });
+  expect(screen.getByText('Requested route · gpt-5.6-luna · low')).toBeInTheDocument();
 });
 
 it('hands the submitted user and answer to saved history once, in conversation order', async () => {
