@@ -122,8 +122,10 @@ describe('Command proxy client', () => {
   it('reads durable readiness through the exact authenticated bridge contract', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({ ready: true, durableIdempotency: true, retentionSeconds: 86400, externalContinue: false }));
     const client = createCommandProxyClient({ baseUrl, commandProxyKey, fetcher });
-    await expect(client.readReadiness()).resolves.toEqual({ ready: true, idempotencyRetentionSeconds: 86400 });
+    await expect(client.readReadiness()).resolves.toEqual({ ready: true, idempotencyRetentionSeconds: 86400, sessionForkPreservesSource: false, sessionCompactionRuns: false });
     expect(fetcher.mock.calls[0]![0]).toBe(`${baseUrl}/_ready`);
+    fetcher.mockResolvedValueOnce(jsonResponse({ ready: true, durableIdempotency: true, retentionSeconds: 86400, externalContinue: false, sessionForkPreservesSource: true, sessionCompactionRuns: true }));
+    await expect(client.readReadiness()).resolves.toEqual({ ready: true, idempotencyRetentionSeconds: 86400, sessionForkPreservesSource: true, sessionCompactionRuns: true });
     fetcher.mockResolvedValueOnce(jsonResponse({ ready: true, durableIdempotency: false, retentionSeconds: 86400, externalContinue: false }));
     await expect(client.readReadiness()).rejects.toEqual(new CommandProxyUnavailableError());
   });

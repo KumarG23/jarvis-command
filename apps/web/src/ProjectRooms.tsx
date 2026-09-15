@@ -15,7 +15,7 @@ async function request(path: string, body?: unknown) {
   if (!response.ok) throw Error('Project operation could not be confirmed. Reload projects before retrying; the change may already have been saved.');
   return response.json() as Promise<unknown>;
 }
-export type ProjectRoomsHandle = { openDetails: (opener?: HTMLElement) => void; closeDetails: () => void; focusSearch: () => void; selectChat: (session: SessionSummary) => void };
+export type ProjectRoomsHandle = { openDetails: (opener?: HTMLElement) => void; closeDetails: () => void; focusSearch: () => void; selectChat: (session: SessionSummary) => void; adoptSession: (session: SessionSummary) => Promise<void> };
 type Props = Readonly<{
   ref?: Ref<ProjectRoomsHandle>;
   sessions: SessionSummary[];
@@ -53,7 +53,23 @@ export function ProjectRooms({ ref, sessions, selectedSessionId, onScope, onSess
     if (opener.current && !opener.current.getClientRects().length) callbacks.current.onNavigate?.();
   }
   function showDetails(element?: HTMLElement, create = false) { opener.current = element ?? null; setCreatingRoom(create); setOpen(true); }
-  useImperativeHandle(ref, () => ({ openDetails: element => showDetails(element), closeDetails: closeDrawer, focusSearch: () => search.current?.focus(), selectChat: session => { if (!draft && !creationPending) void perform(() => chooseChat(session)); } }));
+  useImperativeHandle(ref, () => ({
+    openDetails: element => showDetails(element),
+    closeDetails: closeDrawer,
+    focusSearch: () => search.current?.focus(),
+    selectChat: session => { if (!draft && !creationPending) void perform(() => chooseChat(session)); },
+    adoptSession: async session => {
+      if (draft || creationPending || working.current) throw Error('Finish the current project operation before switching chats.');
+      working.current = true; setBusy(true); setError(null);
+      try {
+        if (selected) await attach(session.id);
+        else await chooseChat(session);
+      } finally {
+        working.current = false;
+        if (mounted.current) setBusy(false);
+      }
+    },
+  }));
   function remember(id: string | null) { try { if (id) sessionStorage.setItem(KEY, id); else sessionStorage.removeItem(KEY); } catch { /* Optional view hint, never the room database. */ } }
   async function perform(operation: () => Promise<void>) {
     if (working.current) return;

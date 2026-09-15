@@ -85,6 +85,11 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 .session-context-marker.critical-marker { left: 85%; }
 .session-context.unavailable { grid-template-columns: auto auto; }
 .session-context.unavailable small { color: #596373; font-size: 11px; }
+.session-lifecycle-controls { position: relative; display: inline-flex; align-items: center; gap: 3px; }
+.session-lifecycle-controls .icon-button { width: 30px; height: 30px; color: #8492a5; }
+.session-lifecycle-controls .icon-button:hover:not(:disabled) { color: var(--cyan); border-color: #31556a; background: #101d27; }
+.session-lifecycle-controls .icon-button:disabled { opacity: .42; cursor: not-allowed; }
+.session-lifecycle-feedback { position: absolute; z-index: 4; top: calc(100% + 13px); right: 0; width: max-content; max-width: min(360px, 82vw); padding: 7px 10px; border: 1px solid #2c3745; border-radius: 8px; background: #111722f5; box-shadow: 0 8px 24px #0008; color: #b6c3d3; font-size: 10px; line-height: 1.45; }
 .health-button { display: inline-flex; align-items: center; gap: 8px; min-height: 30px; padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border); background: var(--panel); font-size: 11px; color: #c0c8d7; }
 .status-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
 .health-button.degraded .status-dot { background: var(--amber); }

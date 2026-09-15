@@ -1,6 +1,7 @@
 import {
   ApprovalChoiceSchema,
   ApprovalRequestIdSchema,
+  ContextCompactionResultSchema,
   InferenceOptionsResponseSchema,
   InferenceOverrideSchema,
   OpaqueIdentifierSchema,
@@ -57,6 +58,8 @@ const InternalRunStatusSchema = z.object({
   pendingSteer: z.string().max(4_000).nullable(),
   usage: LiveRunUsageSchema.nullable(),
   compaction: LiveCompactionSchema.nullable().optional(),
+  kind: z.literal('context_compaction').optional(),
+  result: ContextCompactionResultSchema.nullable().optional(),
 }).strict();
 
 const InternalApprovalResponseSchema = z.object({
@@ -152,12 +155,13 @@ export type CommandStopResponse = z.infer<typeof InternalStopResponseSchema>;
 
 export type CommandProxyClient = Readonly<{
   getSession: (sessionId: string) => Promise<SessionMutationResponse>;
-  readReadiness: () => Promise<{ ready: true; idempotencyRetentionSeconds: number }>;
+  readReadiness: () => Promise<{ ready: true; idempotencyRetentionSeconds: number; sessionForkPreservesSource: boolean; sessionCompactionRuns: boolean }>;
   getInferenceOptions: () => Promise<InferenceOptionsResponse>;
   getMessages: (sessionId: string, limit: number, offset: number) => Promise<SessionMessagesPage>;
   createSession: (request: LiveRoomSessionCreateRequest) => Promise<SessionMutationResponse>;
   continueSession: (sessionId: string, request: LiveRoomSessionContinueRequest) => Promise<SessionMutationResponse>;
   startRun: (request: Readonly<{ sessionId: string; input: string; idempotencyKey: string; inference?: InferenceOverride }>) => Promise<CommandRunCreate>;
+  startContextCompaction: (request: Readonly<{ sessionId: string; idempotencyKey: string }>) => Promise<CommandRunCreate>;
   getRun: (runId: string) => Promise<CommandRunStatus>;
   streamRunEvents: (runId: string, signal: AbortSignal) => AsyncGenerator<CommandRunEvent>;
   approveRun: (runId: string, request: LiveRunApprovalRequest) => Promise<CommandApprovalResponse>;
@@ -220,8 +224,20 @@ export function createCommandProxyClient(options: Readonly<{
       return requestJson(`/api/sessions/${sessionId}`, SessionMutationResponseSchema.refine(value => value.session.id === sessionId && value.session.ownership === 'command' && ['api_server', 'jarvis-command'].includes(value.session.source)));
     },
     async readReadiness() {
-      const result = await requestJson('/_ready', z.object({ ready: z.literal(true), durableIdempotency: z.literal(true), retentionSeconds: z.number().int().min(86_400), externalContinue: z.literal(false) }).strict());
-      return { ready: true as const, idempotencyRetentionSeconds: result.retentionSeconds };
+      const result = await requestJson('/_ready', z.object({
+        ready: z.literal(true),
+        durableIdempotency: z.literal(true),
+        retentionSeconds: z.number().int().min(86_400),
+        externalContinue: z.literal(false),
+        sessionForkPreservesSource: z.boolean().optional(),
+        sessionCompactionRuns: z.boolean().optional(),
+      }).strict());
+      return {
+        ready: true as const,
+        idempotencyRetentionSeconds: result.retentionSeconds,
+        sessionForkPreservesSource: result.sessionForkPreservesSource ?? false,
+        sessionCompactionRuns: result.sessionCompactionRuns ?? false,
+      };
     },
     getInferenceOptions() {
       return requestJson('/api/model/options', InferenceOptionsResponseSchema);
@@ -274,6 +290,16 @@ export function createCommandProxyClient(options: Readonly<{
           input: request.input.trim(),
           ...(request.inference ? { inference: request.inference } : {}),
         },
+        headers: { 'idempotency-key': request.idempotencyKey },
+      });
+    },
+    startContextCompaction(request) {
+      if (!SESSION_ID.test(request.sessionId) || !IDEMPOTENCY_KEY.test(request.idempotencyKey)) {
+        return Promise.reject(new CommandProxyUnavailableError(400));
+      }
+      return requestJson('/v1/runs/context-compactions', InternalRunCreateSchema.refine(value => value.sessionId === request.sessionId), {
+        method: 'POST',
+        body: { sessionId: request.sessionId },
         headers: { 'idempotency-key': request.idempotencyKey },
       });
     },

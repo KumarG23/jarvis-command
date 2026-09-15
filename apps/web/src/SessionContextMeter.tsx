@@ -13,9 +13,11 @@ type Props = Readonly<{
   sessionId: string | null;
   liveUsage: LiveRunUsage | null;
   compaction?: LiveCompaction | null;
+  refreshVersion?: number;
+  compactedContext?: Readonly<{ sessionId: string; usedTokens: number }> | null;
 }>;
 
-export function SessionContextMeter({ enabled, sessionId, liveUsage, compaction }: Props) {
+export function SessionContextMeter({ enabled, sessionId, liveUsage, compaction, refreshVersion = 0, compactedContext = null }: Props) {
   const [snapshot, setSnapshot] = useState<SessionContextResponse | null>(null);
 
   useEffect(() => {
@@ -45,10 +47,13 @@ export function SessionContextMeter({ enabled, sessionId, liveUsage, compaction 
       }
     });
     return () => controller.abort();
-  }, [enabled, sessionId, liveUsage]);
+  }, [enabled, sessionId, liveUsage, refreshVersion]);
 
   if (!enabled || !sessionId) return null;
-  const context = snapshot?.receipt?.context;
+  const reportedContext = snapshot?.receipt?.context;
+  const context = reportedContext && compactedContext?.sessionId === sessionId
+    ? { ...reportedContext, usedTokens: compactedContext.usedTokens }
+    : reportedContext;
   const lifecycleLabel = compaction?.state === 'running'
     ? 'Compacting'
     : compaction?.state === 'completed'

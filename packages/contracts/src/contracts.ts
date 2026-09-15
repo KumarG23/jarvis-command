@@ -208,6 +208,45 @@ export const LiveCompactionSchema = z.object({
   updatedAt: IsoTimestampSchema,
 }).strict();
 
+export const SessionControlCapabilitiesSchema = z.object({
+  sessionForkPreservesSource: z.boolean(),
+  sessionCompactionRuns: z.boolean(),
+}).strict();
+
+export const ContextCompactionSubmissionRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+  clientRequestId: ClientRequestIdSchema,
+}).strict();
+
+export const ContextCompactionSubmissionResponseSchema = z.object({
+  publicOperationId: PublicRunIdSchema,
+  sessionId: SessionIdSchema,
+  status: LiveRunStateSchema,
+  replayed: z.boolean(),
+  clientRequestId: ClientRequestIdSchema,
+}).strict();
+
+export const ContextCompactionResultSchema = z.object({
+  outcome: z.enum(['compacted', 'not_needed']),
+  sourceSessionId: SessionIdSchema,
+  resultSessionId: SessionIdSchema,
+  beforeTokens: z.number().int().nonnegative(),
+  afterTokens: z.number().int().nonnegative(),
+  beforeMessages: z.number().int().nonnegative(),
+  afterMessages: z.number().int().nonnegative(),
+  inPlace: z.boolean(),
+}).strict();
+
+export const ContextCompactionStatusSchema = z.object({
+  publicOperationId: PublicRunIdSchema,
+  sessionId: SessionIdSchema,
+  status: LiveRunStateSchema,
+  updatedAt: IsoTimestampSchema,
+  compaction: LiveCompactionSchema.nullable(),
+  result: ContextCompactionResultSchema.nullable(),
+  error: SafeTextSchema(256).nullable(),
+}).strict();
+
 export const LiveApprovalSchema = z.object({
   requestId: ApprovalRequestIdSchema,
   command: NonBlankTextSchema(4_096),
@@ -352,6 +391,11 @@ export type InferenceOverride = z.infer<typeof InferenceOverrideSchema>;
 export type LiveExecutionReceipt = z.infer<typeof LiveExecutionReceiptSchema>;
 export type LiveCompaction = z.infer<typeof LiveCompactionSchema>;
 export type SessionContextResponse = z.infer<typeof SessionContextResponseSchema>;
+export type SessionControlCapabilities = z.infer<typeof SessionControlCapabilitiesSchema>;
+export type ContextCompactionSubmissionRequest = z.infer<typeof ContextCompactionSubmissionRequestSchema>;
+export type ContextCompactionSubmissionResponse = z.infer<typeof ContextCompactionSubmissionResponseSchema>;
+export type ContextCompactionResult = z.infer<typeof ContextCompactionResultSchema>;
+export type ContextCompactionStatus = z.infer<typeof ContextCompactionStatusSchema>;
 export type LiveApproval = z.infer<typeof LiveApprovalSchema>;
 export type LiveRoomSessionContinueRequest = z.infer<typeof LiveRoomSessionContinueRequestSchema>;
 export type LiveRoomSessionCreateRequest = z.infer<typeof LiveRoomSessionCreateRequestSchema>;

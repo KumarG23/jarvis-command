@@ -1,10 +1,35 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { ProjectRooms } from './ProjectRooms';
+import { createRef } from 'react';
+import { ProjectRooms, type ProjectRoomsHandle } from './ProjectRooms';
 
 const room = { id: 'room_' + 'a'.repeat(32), name: 'Synthetic project', goal: 'Exact metadata', repository: '/not/read', notes: [], sessionIds: [], lastSessionId: null };
 const session = { id: 'jc_' + 'b'.repeat(32), title: 'Created conversation', source: 'api_server', ownership: 'command', model: null, lastActive: '2026-09-06T12:00:00Z', messageCount: 0, toolCallCount: 0, pinned: false };
 afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); });
+
+it('attaches an adopted fork to the selected project before selecting it', async () => {
+  const child = { ...session, id: 'jc_' + 'd'.repeat(32), title: 'Created conversation · Fork' };
+  const attached = { ...room, sessionIds: [child.id], lastSessionId: child.id };
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/rooms') return Response.json({ version: 1, rooms: [room] });
+    if (url === `/api/rooms/${room.id}/sessions` && init?.method === 'POST') {
+      return Response.json({ room: attached, session: child });
+    }
+    throw Error(`unexpected ${url}`);
+  });
+  vi.stubGlobal('fetch', fetcher);
+  const ref = createRef<ProjectRoomsHandle>();
+  const onSession = vi.fn();
+  render(<ProjectRooms ref={ref} sessions={[]} onScope={vi.fn()} onSession={onSession} />);
+  fireEvent.click(await screen.findByRole('button', { name: room.name }));
+  await waitFor(() => expect(ref.current).not.toBeNull());
+  await act(async () => ref.current!.adoptSession(child as never));
+  expect(fetcher).toHaveBeenCalledWith(
+    `/api/rooms/${room.id}/sessions`,
+    expect.objectContaining({ method: 'POST', body: JSON.stringify({ sessionId: child.id }) }),
+  );
+  expect(onSession).toHaveBeenLastCalledWith(child);
+});
 
 it('explains a missing edit endpoint and retains the draft without retrying or fabricating a save', async () => {
   sessionStorage.setItem('jarvis-command:project-room:v1', room.id);

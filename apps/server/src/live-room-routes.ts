@@ -4,7 +4,7 @@ import { dirname } from 'node:path';
 import { ProjectRoomCreateSchema, ProjectRoomIdSchema, CommandSessionIdSchema } from '@jarvis-command/contracts';
 import { ProjectRoomStore, RoomStorageError } from './project-room-store';
 import { z } from 'zod';
-import { LiveRoomSessionCreateRequestSchema, LiveRunSubmissionRequestSchema, LiveRoomSessionContinueRequestSchema, LiveRunApprovalRequestSchema, LiveRunSteerRequestSchema, RunEventSchema, type RunEvent } from '@jarvis-command/contracts';
+import { ContextCompactionSubmissionRequestSchema, LiveRoomSessionCreateRequestSchema, LiveRunSubmissionRequestSchema, LiveRoomSessionContinueRequestSchema, LiveRunApprovalRequestSchema, LiveRunSteerRequestSchema, RunEventSchema, type RunEvent } from '@jarvis-command/contracts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { AppConfig } from './config';
 import type { createLiveRoomService } from './live-room-service';
@@ -21,6 +21,7 @@ type Dependencies = Readonly<{
 
 const sessionIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:@+-]{0,159}$/);
 const runParamsSchema = z.object({ publicRunId: z.string().regex(/^jcr_[a-f0-9]{32}$/) }).strict();
+const operationParamsSchema = z.object({ publicOperationId: z.string().regex(/^jcr_[a-f0-9]{32}$/) }).strict();
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value);
   if (!result.success) throw Object.assign(new Error('Invalid request'), { statusCode: 400 });
@@ -132,6 +133,9 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
     routes.get('/api/live/model-options', { exposeHeadRoute: false }, async (request) => (
       dependencies.liveRoom!.getInferenceOptions(subjects.get(request)!)
     ));
+    routes.get('/api/live/session-controls', { exposeHeadRoute: false }, async (request) => (
+      dependencies.liveRoom!.getSessionControls(subjects.get(request)!)
+    ));
     routes.get('/api/live/sessions/:sessionId', { exposeHeadRoute: false }, async (request) => {
       const { sessionId } = parse(z.object({ sessionId: CommandSessionIdSchema }).strict(), request.params);
       return dependencies.liveRoom!.getSession(subjects.get(request)!, sessionId);
@@ -161,6 +165,14 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
     routes.post('/api/live/runs', async (request) => dependencies.liveRoom!.submitRun(
       subjects.get(request)!, parse(LiveRunSubmissionRequestSchema, request.body),
     ));
+    routes.post('/api/live/context-compactions', async (request) => dependencies.liveRoom!.submitContextCompaction(
+      subjects.get(request)!, parse(ContextCompactionSubmissionRequestSchema, request.body),
+    ));
+    routes.get('/api/live/context-compactions/:publicOperationId', { exposeHeadRoute: false }, async (request) => {
+      return dependencies.liveRoom!.getContextCompaction(
+        subjects.get(request)!, parse(operationParamsSchema, request.params).publicOperationId,
+      );
+    });
     routes.get('/api/live/runs/:publicRunId', { exposeHeadRoute: false }, async (request) => dependencies.liveRoom!.getRun(
       subjects.get(request)!, parse(runParamsSchema, request.params).publicRunId,
     ));

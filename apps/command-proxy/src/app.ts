@@ -133,6 +133,17 @@ const UpstreamCompactionSchema = z.object({
   updated_at: z.union([z.number(), z.string()]),
 }).passthrough();
 
+const UpstreamContextCompactionResultSchema = z.object({
+  outcome: z.enum(['compacted', 'not_needed']),
+  source_session_id: SessionIdSchema,
+  result_session_id: SessionIdSchema,
+  before_tokens: z.number().int().nonnegative(),
+  after_tokens: z.number().int().nonnegative(),
+  before_messages: z.number().int().nonnegative(),
+  after_messages: z.number().int().nonnegative(),
+  in_place: z.boolean(),
+}).strict();
+
 const UpstreamRunStatusSchema = z.object({
   run_id: z.string().regex(RUN_ID),
   session_id: SessionIdSchema,
@@ -144,6 +155,8 @@ const UpstreamRunStatusSchema = z.object({
   pending_steer: z.string().max(4_000).nullable().optional(),
   usage: UpstreamRunUsageSchema.nullable().optional(),
   compaction: UpstreamCompactionSchema.nullable().optional(),
+  kind: z.literal('context_compaction').optional(),
+  result: UpstreamContextCompactionResultSchema.nullable().optional(),
 }).passthrough();
 
 const UpstreamApprovalResponseSchema = z.object({
@@ -232,11 +245,22 @@ export function buildCommandProxy({
   app.get('/_ready', async (request, reply) => {
     if (!authorize(request, reply, config.commandProxyKey)) return reply;
     try {
-      const capabilities = z.object({ features: z.object({ runs_idempotency: z.object({
-        supported: z.literal(true), durable: z.literal(true),
-        retention_seconds: z.number().int().min(86_400),
-      }) }) }).parse(await requestJson({ path: '/v1/capabilities', method: 'GET', config, fetcher }));
-      return { ready: true, durableIdempotency: true, retentionSeconds: capabilities.features.runs_idempotency.retention_seconds, externalContinue: false };
+      const capabilities = z.object({ features: z.object({
+        runs_idempotency: z.object({
+          supported: z.literal(true), durable: z.literal(true),
+          retention_seconds: z.number().int().min(86_400),
+        }),
+        session_fork_preserves_source: z.literal(true).optional(),
+        session_compaction_runs: z.literal(true).optional(),
+      }).passthrough() }).parse(await requestJson({ path: '/v1/capabilities', method: 'GET', config, fetcher }));
+      return {
+        ready: true,
+        durableIdempotency: true,
+        retentionSeconds: capabilities.features.runs_idempotency.retention_seconds,
+        externalContinue: false,
+        sessionForkPreservesSource: capabilities.features.session_fork_preserves_source === true,
+        sessionCompactionRuns: capabilities.features.session_compaction_runs === true,
+      };
     } catch (error) { return sendProxyError(error, reply); }
   });
 
@@ -397,6 +421,35 @@ export function buildCommandProxy({
     } catch (error) {
       return sendProxyError(error, reply);
     }
+  });
+
+  app.post('/v1/runs/context-compactions', async (request, reply) => {
+    if (!authorize(request, reply, config.commandProxyKey)) return reply;
+    const parsed = z.object({ sessionId: SessionIdSchema }).strict().safeParse(request.body);
+    const idempotencyKey = headerValue(request, 'idempotency-key');
+    if (!parsed.success || !idempotencyKey || !IDEMPOTENCY_KEY.test(idempotencyKey)) return invalidRequest(reply);
+
+    try {
+      if (!await isWritableSession(parsed.data.sessionId, config, fetcher)) {
+        return reply.code(403).send({ error: 'session_read_only' });
+      }
+      z.object({ features: z.object({ session_compaction_runs: z.literal(true) }).passthrough() })
+        .parse(await requestJson({ path: '/v1/capabilities', method: 'GET', config, fetcher }));
+      const upstream = UpstreamRunCreateSchema.parse(await requestJson({
+        path: '/v1/runs/context-compactions',
+        method: 'POST',
+        body: { session_id: parsed.data.sessionId },
+        headers: { 'idempotency-key': idempotencyKey },
+        config,
+        fetcher,
+      }));
+      return reply.code(202).send({
+        runId: upstream.run_id,
+        sessionId: parsed.data.sessionId,
+        status: normalizeRunState(upstream.status),
+        replayed: upstream.replayed ?? false,
+      });
+    } catch (error) { return sendProxyError(error, reply); }
   });
 
   app.get('/v1/runs/:runId', async (request, reply) => {
@@ -717,6 +770,17 @@ function projectRunStatus(upstream: z.infer<typeof UpstreamRunStatusSchema>) {
       startedAt: toIsoTimestamp(upstream.compaction.started_at),
       updatedAt: toIsoTimestamp(upstream.compaction.updated_at),
     } : null,
+    ...(upstream.kind ? { kind: upstream.kind } : {}),
+    ...(upstream.result ? { result: {
+      outcome: upstream.result.outcome,
+      sourceSessionId: upstream.result.source_session_id,
+      resultSessionId: upstream.result.result_session_id,
+      beforeTokens: upstream.result.before_tokens,
+      afterTokens: upstream.result.after_tokens,
+      beforeMessages: upstream.result.before_messages,
+      afterMessages: upstream.result.after_messages,
+      inPlace: upstream.result.in_place,
+    } } : {}),
   };
 }
 

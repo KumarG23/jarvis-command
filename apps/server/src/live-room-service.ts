@@ -1,6 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto';
 
 import {
+  ContextCompactionStatusSchema,
+  ContextCompactionSubmissionRequestSchema,
+  ContextCompactionSubmissionResponseSchema,
   LiveRoomSessionContinueRequestSchema,
   LiveRoomSessionCreateRequestSchema,
   SessionContextResponseSchema,
@@ -15,6 +18,9 @@ import {
   RunEventSchema,
   type LiveRoomSessionContinueRequest,
   type LiveRoomSessionCreateRequest,
+  type ContextCompactionStatus,
+  type ContextCompactionSubmissionRequest,
+  type ContextCompactionSubmissionResponse,
   type InferenceOptionsResponse,
   type LiveRunApprovalRequest,
   type LiveRunApprovalResponse,
@@ -29,6 +35,7 @@ import {
   type RunEvent,
   type SessionMessagesPage,
   type SessionContextResponse,
+  type SessionControlCapabilities,
   type SessionMutationResponse,
 } from '@jarvis-command/contracts';
 
@@ -81,6 +88,7 @@ export function createLiveRoomService({
   now = () => new Date(),
 }: LiveRoomServiceOptions) {
   const submissions = new Map<string, { fingerprint: string; operation: Promise<LiveRunSubmissionResponse> }>();
+  const compactionSubmissions = new Map<string, { fingerprint: string; operation: Promise<ContextCompactionSubmissionResponse> }>();
 
   const submittingSessions = new Set<string>();
 
@@ -253,7 +261,129 @@ export function createLiveRoomService({
     });
   };
 
+  const projectContextCompactionStatus = async (
+    record: AuditRunRecord,
+    upstream: CommandRunStatus,
+  ): Promise<ContextCompactionStatus> => {
+    if (
+      upstream.runId !== record.upstreamRunId
+      || upstream.sessionId !== record.sessionId
+      || upstream.kind !== 'context_compaction'
+    ) throw new LiveRoomNotFoundError();
+    await auditTerminal(record, upstream.status);
+    return ContextCompactionStatusSchema.parse({
+      publicOperationId: record.publicRunId,
+      sessionId: record.sessionId,
+      status: upstream.status,
+      updatedAt: upstream.updatedAt,
+      compaction: upstream.compaction ?? null,
+      result: upstream.result ?? null,
+      error: upstream.error,
+    });
+  };
+
+  const admitContextCompaction = async (
+    record: AuditRunRecord,
+    request: ContextCompactionSubmissionRequest,
+    recoveredAdmission: boolean,
+  ): Promise<ContextCompactionSubmissionResponse> => {
+    const upstream = await client.startContextCompaction({
+      sessionId: request.sessionId,
+      idempotencyKey: `jc-context-v1-${sha256(`${record.actor}\0${record.clientRequestId}`)}`,
+    });
+    if (upstream.sessionId !== record.sessionId) throw new LiveRoomConflictError();
+    await ledger.appendOnce(`started:${record.publicRunId}`, auditDraft({
+      ...record,
+      upstreamRunId: upstream.runId,
+    }, {
+      action: 'run.started',
+      outcome: upstream.replayed || recoveredAdmission ? 'replayed' : 'succeeded',
+      status: upstream.status,
+    }));
+    return ContextCompactionSubmissionResponseSchema.parse({
+      publicOperationId: record.publicRunId,
+      sessionId: record.sessionId,
+      status: upstream.status,
+      replayed: upstream.replayed || recoveredAdmission,
+      clientRequestId: record.clientRequestId,
+    });
+  };
+
+  const submitContextCompaction = async (
+    subject: string,
+    rawRequest: ContextCompactionSubmissionRequest,
+  ): Promise<ContextCompactionSubmissionResponse> => {
+    const request = ContextCompactionSubmissionRequestSchema.parse(rawRequest);
+    const readiness = await client.readReadiness();
+    if (!readiness.sessionCompactionRuns) throw new LiveRoomConflictError('Context compaction is unavailable');
+    const actor = actorFingerprint(subject);
+    const submissionKey = `${actor}\0${request.clientRequestId}`;
+    const requestFingerprint = sha256(canonicalJson({ kind: 'context_compaction', sessionId: request.sessionId }));
+    const pending = compactionSubmissions.get(submissionKey);
+    if (pending) {
+      if (pending.fingerprint !== requestFingerprint) throw new LiveRoomConflictError();
+      return pending.operation;
+    }
+    if (submittingSessions.has(request.sessionId)) throw new LiveRoomConflictError();
+    submittingSessions.add(request.sessionId);
+    const operation = (async () => {
+      const existing = ledger.findRunByClientRequest(actor, request.clientRequestId);
+      if (existing) {
+        if (existing.requestFingerprint !== requestFingerprint || existing.sessionId !== request.sessionId) {
+          throw new LiveRoomConflictError('Client request ID was already used for another payload');
+        }
+        if (!existing.upstreamRunId) {
+          const age = now().getTime() - Date.parse(existing.requestedAt);
+          if (age < 0 || age >= 23 * 60 * 60 * 1000) throw new LiveRoomConflictError();
+          await ledger.verifyStorage();
+          return admitContextCompaction(existing, request, true);
+        }
+        const status = await projectContextCompactionStatus(existing, await client.getRun(existing.upstreamRunId));
+        return ContextCompactionSubmissionResponseSchema.parse({
+          publicOperationId: existing.publicRunId,
+          sessionId: existing.sessionId,
+          status: status.status,
+          replayed: true,
+          clientRequestId: existing.clientRequestId,
+        });
+      }
+      for (const active of ledger.activeRunsForSession(request.sessionId)) {
+        if (!active.upstreamRunId) throw new LiveRoomConflictError('Session already has a pending operation');
+        const status = await client.getRun(active.upstreamRunId);
+        if (!TERMINAL_STATES.has(status.status)) throw new LiveRoomConflictError('Session already has an active operation');
+      }
+      const publicRunId = createPublicRunId();
+      if (!PUBLIC_RUN_ID.test(publicRunId)) throw new Error('Public run ID factory returned an invalid ID');
+      const requested = await ledger.appendOnce(`request:${actor}:${request.clientRequestId}`, {
+        action: 'run.requested', actor, sessionId: request.sessionId, publicRunId,
+        clientRequestId: request.clientRequestId, upstreamRunId: null, requestId: null,
+        requestFingerprint, outcome: 'requested', status: 'queued', choice: null,
+      });
+      const pendingRecord: AuditRunRecord = Object.freeze({
+        actor, sessionId: request.sessionId, publicRunId,
+        clientRequestId: request.clientRequestId, upstreamRunId: null,
+        requestFingerprint, status: requested.status ?? 'queued',
+        requestedAt: requested.timestamp, receipt: null,
+      });
+      return admitContextCompaction(pendingRecord, request, false);
+    })();
+    compactionSubmissions.set(submissionKey, { fingerprint: requestFingerprint, operation });
+    try { return await operation; } finally {
+      compactionSubmissions.delete(submissionKey);
+      submittingSessions.delete(request.sessionId);
+    }
+  };
+
   return Object.freeze({
+    async getSessionControls(subject: string): Promise<SessionControlCapabilities> {
+      void subject;
+      const readiness = await client.readReadiness();
+      return {
+        sessionForkPreservesSource: readiness.sessionForkPreservesSource,
+        sessionCompactionRuns: readiness.sessionCompactionRuns,
+      };
+    },
+
     async getInferenceOptions(subject: string): Promise<InferenceOptionsResponse> {
       void subject;
       ledger.assertHealthy();
@@ -303,6 +433,9 @@ export function createLiveRoomService({
       rawRequest: LiveRoomSessionContinueRequest,
     ): Promise<SessionMutationResponse> {
       ledger.assertHealthy();
+      if (!(await client.readReadiness()).sessionForkPreservesSource) {
+        throw new LiveRoomConflictError('Source-preserving fork is unavailable');
+      }
       const request = LiveRoomSessionContinueRequestSchema.parse(rawRequest);
       await ledger.append(sessionAdmission(actorFingerprint(subject), 'session.continued', sessionId));
       const response = await client.continueSession(sessionId, request);
@@ -322,6 +455,12 @@ export function createLiveRoomService({
     },
 
     submitRun,
+    submitContextCompaction,
+
+    async getContextCompaction(subject: string, publicOperationId: string): Promise<ContextCompactionStatus> {
+      const record = findRun(subject, publicOperationId);
+      return projectContextCompactionStatus(record, await client.getRun(record.upstreamRunId));
+    },
 
     async getRun(subject: string, publicRunId: string): Promise<LiveRunStatus> {
       const record = findRun(subject, publicRunId);

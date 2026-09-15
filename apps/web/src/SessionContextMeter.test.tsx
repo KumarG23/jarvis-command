@@ -71,4 +71,16 @@ describe('SessionContextMeter', () => {
     await waitFor(() => expect(screen.getByLabelText('Context usage unavailable')).toBeInTheDocument());
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
   });
+
+  it('uses the measured compact result instead of the stale pre-compact receipt', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({
+      sessionId: 'jc_context', state: 'available', updatedAt: '2026-09-14T20:00:00.000Z', receipt,
+    })));
+    render(<SessionContextMeter
+      enabled sessionId="jc_context" liveUsage={null}
+      compactedContext={{ sessionId: 'jc_context', usedTokens: 16_000 }}
+    />);
+    expect(await screen.findByText('13%')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar', { name: 'Context usage' })).toHaveAttribute('aria-valuenow', '13');
+  });
 });

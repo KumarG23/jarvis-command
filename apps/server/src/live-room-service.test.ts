@@ -50,7 +50,7 @@ async function createLedger() {
 
 function fakeClient(overrides: Partial<CommandProxyClient> = {}): CommandProxyClient {
   return {
-    readReadiness: vi.fn().mockResolvedValue({ ready: true, idempotencyRetentionSeconds: 86_400 }),
+    readReadiness: vi.fn().mockResolvedValue({ ready: true, idempotencyRetentionSeconds: 86_400, sessionForkPreservesSource: true, sessionCompactionRuns: true }),
     getInferenceOptions: vi.fn().mockResolvedValue({
       default: { provider: 'openai-codex', model: 'gpt-5.6-sol' },
       options: [{ provider: 'openai-codex', model: 'gpt-5.6-sol', label: 'Sol', reasoningEfforts: ['low', 'medium', 'high', 'xhigh'] }],
@@ -64,6 +64,12 @@ function fakeClient(overrides: Partial<CommandProxyClient> = {}): CommandProxyCl
     createSession: vi.fn().mockResolvedValue({ session }),
     continueSession: vi.fn().mockResolvedValue({ session }),
     startRun: vi.fn().mockResolvedValue({
+      runId: upstreamRunId,
+      sessionId,
+      status: 'running',
+      replayed: false,
+    }),
+    startContextCompaction: vi.fn().mockResolvedValue({
       runId: upstreamRunId,
       sessionId,
       status: 'running',
@@ -434,6 +440,68 @@ it('revalidates durable admission before retrying after live audit truncation', 
   await writeFile(path, '');
   await expect(service.submitRun('operator', request)).rejects.toThrow();
   expect(startRun).toHaveBeenCalledTimes(1);
+});
+
+it('gates fork execution on the live source-preservation capability', async () => {
+  const { ledger } = await createLedger();
+  const client = fakeClient({
+    readReadiness: vi.fn().mockResolvedValue({
+      ready: true, idempotencyRetentionSeconds: 86_400,
+      sessionForkPreservesSource: false, sessionCompactionRuns: true,
+    }),
+  });
+  const service = createLiveRoomService({ client, ledger });
+  await expect(service.continueSession('operator', sessionId, {})).rejects.toBeInstanceOf(LiveRoomConflictError);
+  expect(client.continueSession).not.toHaveBeenCalled();
+});
+
+it('durably replays a context compaction and projects its measured terminal result', async () => {
+  const { ledger } = await createLedger();
+  const result = {
+    outcome: 'compacted' as const,
+    sourceSessionId: sessionId,
+    resultSessionId: sessionId,
+    beforeTokens: 96_000,
+    afterTokens: 18_000,
+    beforeMessages: 120,
+    afterMessages: 24,
+    inPlace: true,
+  };
+  const client = fakeClient({
+    getRun: vi.fn().mockResolvedValue({
+      runId: upstreamRunId,
+      sessionId,
+      status: 'completed',
+      updatedAt: '2026-09-04T14:00:03.000Z',
+      approval: null,
+      output: null,
+      error: null,
+      pendingSteer: null,
+      usage: null,
+      kind: 'context_compaction',
+      compaction: {
+        state: 'completed',
+        startedAt: '2026-09-04T14:00:01.000Z',
+        updatedAt: '2026-09-04T14:00:03.000Z',
+      },
+      result,
+    }),
+  });
+  const service = createLiveRoomService({ client, ledger, createPublicRunId: () => publicRunId });
+  const compactRequest = {
+    sessionId,
+    clientRequestId: 'f68e1bc3-d6d8-4eec-b50c-20fbfdafd515',
+  };
+  const admitted = await service.submitContextCompaction('operator', compactRequest);
+  const replayed = await service.submitContextCompaction('operator', compactRequest);
+  expect(admitted).toMatchObject({ publicOperationId: publicRunId, replayed: false });
+  expect(replayed).toMatchObject({ publicOperationId: publicRunId, replayed: true, status: 'completed' });
+  expect(client.startContextCompaction).toHaveBeenCalledTimes(1);
+  await expect(service.getContextCompaction('operator', publicRunId)).resolves.toMatchObject({
+    publicOperationId: publicRunId,
+    status: 'completed',
+    result,
+  });
 });
 
 it('recovers an uncertain upstream admission after restart with the same durable key', async () => {

@@ -86,6 +86,44 @@ describe('command proxy route boundary', () => {
     expect(JSON.parse(String(fetcher.mock.calls[1]![1]!.body)).input).toBe(input);
   });
 
+  it('forwards capability-gated context compaction and projects only bounded measured results', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'api_server')))
+      .mockResolvedValueOnce(jsonResponse({ features: { session_compaction_runs: true } }))
+      .mockResolvedValueOnce(jsonResponse({ run_id: runId, status: 'queued', replayed: false }, 202))
+      .mockResolvedValueOnce(jsonResponse({
+        run_id: runId,
+        session_id: commandSessionId,
+        status: 'completed',
+        updated_at: '2026-09-04T14:00:03.000Z',
+        kind: 'context_compaction',
+        compaction: { state: 'completed', started_at: '2026-09-04T14:00:01.000Z', updated_at: '2026-09-04T14:00:03.000Z' },
+        result: {
+          outcome: 'compacted', source_session_id: commandSessionId, result_session_id: commandSessionId,
+          before_tokens: 96_000, after_tokens: 18_000, before_messages: 120, after_messages: 24, in_place: true,
+        },
+        provider_secret: 'must-not-cross-boundary',
+      }));
+    const app = createApp(fetcher);
+    const admitted = await app.inject({
+      method: 'POST', url: '/v1/runs/context-compactions',
+      headers: authHeaders({ 'content-type': 'application/json', 'idempotency-key': 'jc-context-test' }),
+      payload: { sessionId: commandSessionId },
+    });
+    expect(admitted.statusCode).toBe(202);
+    expect(admitted.json()).toEqual({ runId, sessionId: commandSessionId, status: 'queued', replayed: false });
+    expect(JSON.parse(String(fetcher.mock.calls[2]![1]!.body))).toEqual({ session_id: commandSessionId });
+    expect((fetcher.mock.calls[2]![1]!.headers as Record<string, string>)['idempotency-key']).toBe('jc-context-test');
+
+    const status = await app.inject({ url: `/v1/runs/${runId}`, headers: authHeaders() });
+    expect(status.statusCode).toBe(200);
+    expect(status.json()).toMatchObject({
+      runId, sessionId: commandSessionId, status: 'completed', kind: 'context_compaction',
+      result: { outcome: 'compacted', beforeTokens: 96_000, afterTokens: 18_000, inPlace: true },
+    });
+    expect(status.body).not.toContain('must-not-cross-boundary');
+  });
+
   it('cancels and releases rejected upstream JSON bodies', async () => {
     for (const mode of ['http', 'declared', 'oversize']) {
       const cancel = vi.fn();
