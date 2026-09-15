@@ -9,6 +9,7 @@ ssh_target=${2-}
 ssh_key=${3-}
 app_image_id=${4-}
 read_proxy_image_id=${5-}
+command_proxy_image_id=${6-}
 release_result=''
 
 cleanup_release_stage() {
@@ -65,16 +66,17 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-if (( $# != 5 )); then
-  printf 'usage: %s APP_ENV_SOURCE SSH_TARGET SSH_KEY APP_IMAGE_ID READ_PROXY_IMAGE_ID\n' "$0" >&2
+if (( $# != 5 && $# != 6 )); then
+  printf 'usage: %s APP_ENV_SOURCE SSH_TARGET SSH_KEY APP_IMAGE_ID READ_PROXY_IMAGE_ID [COMMAND_PROXY_IMAGE_ID]\n' "$0" >&2
   exit 64
 fi
 
-readonly app_env_source ssh_target ssh_key app_image_id read_proxy_image_id
+readonly app_env_source ssh_target ssh_key app_image_id read_proxy_image_id command_proxy_image_id
 [[ ${ssh_target} =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+$ ]]
 [[ ${ssh_key} == /* && -f ${ssh_key} && ! -L ${ssh_key} ]]
 [[ ${app_image_id} =~ ^sha256:[0-9a-f]{64}$ ]]
 [[ ${read_proxy_image_id} =~ ^sha256:[0-9a-f]{64}$ ]]
+[[ -z ${command_proxy_image_id} || ${command_proxy_image_id} =~ ^sha256:[0-9a-f]{64}$ ]]
 
 operator_uid=$(id -u)
 [[ ${operator_uid} =~ ^[0-9]+$ ]]
@@ -107,6 +109,9 @@ docker save "${app_image_id}" | gzip -1 > "${local_stage}/app-image.tar.gz"
 chmod 0600 "${local_stage}/app-image.tar.gz"
 printf 'JARVIS_COMMAND_APP_IMAGE=%s\nJARVIS_COMMAND_READ_PROXY_IMAGE=%s\n' \
   "${app_image_id}" "${read_proxy_image_id}" > "${local_stage}/release.env"
+if [[ -n ${command_proxy_image_id} ]]; then
+  printf 'JARVIS_COMMAND_COMMAND_PROXY_IMAGE=%s\n' "${command_proxy_image_id}" >> "${local_stage}/release.env"
+fi
 chmod 0600 "${local_stage}/release.env"
 install -m 0644 "${script_dir}/app.compose.yaml" "${local_stage}/app.compose.yaml"
 install -m 0644 "${script_dir}/jarvis-command-app.service" "${local_stage}/app.service"

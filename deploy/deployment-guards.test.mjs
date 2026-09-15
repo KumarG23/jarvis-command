@@ -140,6 +140,9 @@ test('egress policy replacement and container startup fail closed as one lifecyc
     runbook,
     /CUTOVER_STATE_DIR=\$\(deploy\/release-app\.sh \\\n\s+"\$\{APP_ENV_SOURCE\}" "\$\{SSH_TARGET\}" "\$\{SSH_KEY\}"/,
   );
+  assert.match(releaseOrchestrator, /\[COMMAND_PROXY_IMAGE_ID\]/);
+  assert.match(releaseOrchestrator, /JARVIS_COMMAND_COMMAND_PROXY_IMAGE=%s/);
+  assert.match(releaseOrchestrator, /\$\{command_proxy_image_id\} =~ \^sha256:/);
 
   for (const script of [releaseAppScript, allocateReleaseStageScript, installAppReleaseScript]) {
     assert.notEqual((await fsStat(script)).mode & 0o111, 0, `${script} must be executable`);
