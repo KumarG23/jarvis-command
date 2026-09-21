@@ -1,5 +1,5 @@
 import type { CommandBootstrap } from '@jarvis-command/contracts';
-import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { App } from './App';
 import { useLiveTurn } from './useLiveTurn';
@@ -101,6 +101,7 @@ it.each(['wall', 'backward'])('expires retries at exactly 23 hours from first at
   await act(async () => result.current.retry());
   expect(fetchMock).toHaveBeenCalledTimes(2);
   expect(fetchMock.mock.calls[1]![1]!.body).toBe(fetchMock.mock.calls[0]![1]!.body);
+  expect(result.current.turn?.telemetry?.admissionAttempts).toBe(2);
   elapsed++;
   if (clock === 'wall') vi.setSystemTime(start + elapsed);
   await act(async () => result.current.retry());
@@ -204,7 +205,7 @@ it('replaces requested settings with an authoritative receipt and measured conte
   expect(receipt).toHaveTextContent('2 API calls · 2.0s provider · 2.4s end-to-end');
   expect(receipt).toHaveTextContent('Context · 9.0% · 90 / 1,000');
   expect(receipt).toHaveTextContent('Exact route · effort captured at provider wire');
-  expect(screen.getByRole('progressbar', { name: 'Context usage' })).toHaveAttribute('value', '9');
+  expect(within(receipt).getByRole('progressbar', { name: 'Context usage' })).toHaveAttribute('value', '9');
 });
 
 it('warns when the executed route differs from the request', async () => {
@@ -322,6 +323,7 @@ it('does not replace a live preview with a concurrent nonterminal status snapsho
   act(() => Source.instances[0]!.emit('message.delta', { delta: 'answer' }));
   await act(async () => deliver(Response.json(status('running', { output: 'Streamed ' }))));
   expect(result.current.turn?.output).toBe('Streamed answer');
+  expect(result.current.turn?.telemetry).toEqual({ admissionAttempts: 1, streamConnections: 1, statusChecks: 1 });
   act(() => Source.instances[0]!.emit('message.delta', { delta: '!' }));
   expect(result.current.turn?.output).toBe('Streamed answer!');
   expect(Source.instances[0]!.close).not.toHaveBeenCalled();

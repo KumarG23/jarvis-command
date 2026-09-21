@@ -24,6 +24,21 @@ FIXTURE = json.loads(SOURCE.with_name('fixtures').joinpath('app-supervisor-real.
 
 
 class HardeningTests(unittest.TestCase):
+    def test_access_jwks_path_is_exact_and_host_artifact_is_trusted(self):
+        valid = {'CF_ACCESS_JWKS_FILE': '/run/jarvis-command/cloudflare-jwks/certs.json'}
+        with patch.object(app, 'trusted_bytes', return_value=b'{"keys":[]}') as trusted:
+            app.validate_access_jwks(valid)
+            trusted.assert_called_once_with('/var/lib/jarvis-command/cloudflare-jwks/certs.json')
+        for value in (None, '', '/run/jarvis-command/cloudflare-jwks/jwks.json',
+                      '/var/lib/jarvis-command/cloudflare-jwks/certs.json'):
+            with self.subTest(value=value), patch.object(app, 'trusted_bytes') as trusted:
+                with self.assertRaises(app.Refused):
+                    app.validate_access_jwks({'CF_ACCESS_JWKS_FILE': value} if value is not None else {})
+                trusted.assert_not_called()
+        with patch.object(app, 'trusted_bytes', side_effect=FileNotFoundError):
+            with self.assertRaises(FileNotFoundError):
+                app.validate_access_jwks(valid)
+
     def test_target_compose2_and_local_compose5_bind_normalizations(self):
         captures = json.loads(SOURCE.with_name('fixtures').joinpath('compose-bind-normalization.json').read_text())['captures']
         self.assertEqual([c['compose_version'] for c in captures], ['2.40.3+ds1-0ubuntu1~24.04.1', '5.5.0'])

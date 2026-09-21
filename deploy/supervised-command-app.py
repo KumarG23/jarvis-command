@@ -41,6 +41,8 @@ PROTECTED = {
     "/run/jarvis-command/cloudflare-jwks": "/var/lib/jarvis-command/cloudflare-jwks",
     "/app/apps/web/dist/.well-known": "/srv/jarvis-command/public/.well-known",
 }
+CONTAINER_JWKS = "/run/jarvis-command/cloudflare-jwks/certs.json"
+HOST_JWKS = PROTECTED["/run/jarvis-command/cloudflare-jwks"] + "/certs.json"
 requested_signal = 0
 child = None
 
@@ -147,6 +149,12 @@ def environment(data):
             raise Refused("malformed or duplicate environment input")
         result[match[1]] = match[2]
     return result
+
+
+def validate_access_jwks(app_env):
+    if app_env.get("CF_ACCESS_JWKS_FILE") != CONTAINER_JWKS:
+        raise Refused("Access JWKS path mismatch")
+    trusted_bytes(HOST_JWKS)
 
 
 def check_mounts(mounts, *, actual=False):
@@ -500,6 +508,7 @@ def launch(directory, invocation):
                 or app_env.get("COMMAND_MODE") != "enabled"
                 or app_env.get("COMMAND_AUDIT_LOG_PATH") != AUDIT + "/events.jsonl"):
             raise Refused("explicit enabled mode, exact audit path and immutable image required", 65)
+        validate_access_jwks(app_env)
         ownership = {'invocation': invocation, 'token': secrets.token_hex(16), 'image': image, 'id': None}
         compose = [DOCKER, "compose", "--project-name", PROJECT + '-' + ownership['token'], "--env-file", RELEASE,
                    "-f", BASE, "-f", STORAGE]

@@ -13,7 +13,7 @@ export function TurnView({ turn, allowed, approve, stop }: Readonly<{ turn: Turn
     {turn.intent.input === null ? <><p>Original message unavailable after reload; no message was retransmitted.</p><p>Recovery target · Session: {turn.intent.sessionId} · Request: {turn.intent.clientRequestId} · Run: {turn.publicRunId ?? 'Unknown — admission lookup unsupported'}</p></> : !turn.userHistoryMatched ? <article className="timeline-event live-message" aria-label="Your message"><div className="event-icon violet" aria-hidden="true">You</div><div className="event-body"><div className="event-label">You</div><p className="turn-input">{turn.intent.input}</p></div></article> : null}
     {turn.output && !turn.historyMatched ? <article className="timeline-event live-message" aria-label="Jarvis response"><div className="event-icon cyan" aria-hidden="true"><Command size={21} /></div><div className="event-body"><div className="event-label">Jarvis</div><p className="turn-output">{turn.output}</p><CopyResponse key={JSON.stringify([turn.intent.sessionId, turn.intent.clientRequestId])} text={turn.output} limited={turn.outputLimited} /></div></article> : null}
     {turn.outputLimited ? <p role="status">Output preview limited. Full output may be available in session history.</p> : null}
-    {turn.events.length > 0 ? <details className="activity-disclosure" open={turn.events.some(event => event.type === 'tool.completed' && event.error) || undefined}><summary><ChevronRight size={14} /> {turn.events.filter(event => event.type === 'tool.started').length ? `Used ${turn.events.filter(event => event.type === 'tool.started').length} tools` : 'Agent activity'} · View activity{turn.events.some(event => event.type === 'tool.completed' && event.error) ? ' · Tool failed' : ''}</summary><ol className="turn-activity" aria-label="Run activity">{turn.events.map((event, index) => <li key={index}>{activity(event, turn.done)}</li>)}</ol></details> : null}
+    {turn.publicRunId || turn.events.length > 0 || turn.usage?.execution ? <RunInspector turn={turn} /> : null}
     {turn.controlMessage ? <p role="status">{turn.done && /steer/i.test(turn.controlMessage)
       ? turn.terminalPendingSteer ? 'Run ended — unconsumed guidance was returned for draft recovery.' : 'Run ended — steer consumption was not reported.'
       : turn.controlMessage}</p> : null}
@@ -28,6 +28,71 @@ export function TurnView({ turn, allowed, approve, stop }: Readonly<{ turn: Turn
       </section> : <button type="button" disabled={turn.controlBusy} onClick={() => setConfirmation(turn)}>Stop run</button>}
     </> : null}
   </section>;
+}
+
+function RunInspector({ turn }: Readonly<{ turn: Turn }>) {
+  const [copyMessage, setCopyMessage] = useState('');
+  const tools = turn.events.filter(event => event.type === 'tool.started').length;
+  const failedTool = turn.events.some(event => event.type === 'tool.completed' && event.error);
+  const failed = !!turn.error || failedTool || turn.phase === 'Run failed' || turn.phase === 'Run interrupted';
+  const telemetry = turn.telemetry ?? { admissionAttempts: turn.publicRunId ? 1 : 0, streamConnections: 0, statusChecks: 0 };
+  const execution = turn.usage?.execution;
+  const receipt = JSON.stringify({
+    version: 1,
+    run: {
+      publicRunId: turn.publicRunId,
+      sessionId: turn.intent.sessionId,
+      clientRequestId: turn.intent.clientRequestId,
+      phase: turn.phase,
+      error: turn.error ?? null,
+    },
+    route: execution ?? (turn.intent.input !== null && 'inference' in turn.intent ? turn.intent.inference ?? null : null),
+    usage: turn.usage ?? null,
+    recovery: {
+      admissionAttempts: telemetry.admissionAttempts,
+      streamConnections: telemetry.streamConnections,
+      streamReconnects: Math.max(0, telemetry.streamConnections - 1),
+      statusChecks: telemetry.statusChecks,
+    },
+    activity: turn.events.map(receiptActivity),
+  }, null, 2);
+  const copy = async () => {
+    setCopyMessage('');
+    try {
+      await navigator.clipboard.writeText(receipt);
+      setCopyMessage('Run receipt copied');
+    } catch {
+      setCopyMessage('Could not copy receipt.');
+    }
+  };
+  return <details className={`run-inspector${failed ? ' failed' : ''}`} open={failed || undefined}>
+    <summary><ChevronRight size={14} /><span>Run details</span><small>{tools} {tools === 1 ? 'tool' : 'tools'} · {turn.phase.replace(/^Run /, '')}{failed ? ' · Attention needed' : ''}</small></summary>
+    <div className="run-inspector-body" role="region" aria-label="Run inspector">
+      <div className="inspector-heading"><h3>Run receipt</h3><button className="secondary-button copy-receipt" type="button" onClick={() => { void copy(); }}><Copy size={14} /> Copy receipt</button></div>
+      <span className="copy-status" role="status">{copyMessage}</span>
+      <dl className="inspector-facts">
+        <div><dt>Status</dt><dd>{turn.phase.replace(/^Run /, '')}</dd></div>
+        <div><dt>Run</dt><dd>{turn.publicRunId ?? 'Not admitted'}</dd></div>
+        <div><dt>Admission attempts</dt><dd>{telemetry.admissionAttempts}</dd></div>
+        <div><dt>Stream reconnects</dt><dd>{Math.max(0, telemetry.streamConnections - 1)}</dd></div>
+        <div><dt>Status checks</dt><dd>{telemetry.statusChecks}</dd></div>
+      </dl>
+      {turn.error ? <p className="inspector-error" role="alert">{turn.error}</p> : null}
+      {execution ? <section className="route-decision" aria-label="Route decision">
+        <h4>Route decision</h4>
+        <dl className="inspector-facts">
+          <div><dt>Requested</dt><dd>{routeLabel(execution.requested)}</dd></div>
+          <div><dt>Executed</dt><dd>{routeLabel(execution.executed)}</dd></div>
+          <div><dt>Decision</dt><dd>{execution.fallbackUsed ? 'Fallback used' : execution.exact ? 'Exact route' : 'Route changed'}{execution.routeSource ? ` · ${execution.routeSource}` : ''}</dd></div>
+        </dl>
+      </section> : null}
+      {turn.events.length > 0 ? <section className="activity-timeline" aria-label="Activity timeline"><h4>Activity</h4><ol className="turn-activity" aria-label="Run activity">{turn.events.map((event, index) => <li className={event.type === 'tool.completed' && event.error ? 'failed' : ''} key={`${event.timestamp}:${event.type}:${index}`}><time dateTime={event.timestamp}>{event.timestamp.slice(11, 19)}</time><span>{activity(event, turn.done)}</span></li>)}</ol></section> : <p className="empty-activity">No tool or agent activity reported.</p>}
+    </div>
+  </details>;
+}
+
+function routeLabel(route: { provider: string | null; model: string | null; reasoningEffort: string | null }): string {
+  return `${modelLabel(route.model)} · ${route.reasoningEffort ?? 'effort unknown'} · ${providerLabel(route.provider)}`;
 }
 
 function ExecutionReceipt({ usage }: Readonly<{ usage: NonNullable<Turn['usage']> }>) {
@@ -94,6 +159,18 @@ export function CopyResponse({ text, limited }: Readonly<{ text: string; limited
     <button className="icon-button" type="button" aria-label={limited ? 'Copy preview' : 'Copy response'} title={limited ? 'Copy preview' : 'Copy response'} onClick={() => { void copy(); }}><Copy size={16} /></button>
     <span role="status">{notice?.text === text ? notice.message : ''}</span>
   </div>;
+}
+
+function receiptActivity(event: RunEvent) {
+  const base = { type: event.type, timestamp: event.timestamp };
+  switch (event.type) {
+    case 'tool.started': return { ...base, tool: event.tool };
+    case 'tool.completed': return { ...base, tool: event.tool, error: event.error, durationSeconds: event.durationSeconds };
+    case 'subagent.start': return { ...base, subagentId: event.subagentId };
+    case 'subagent.complete': return { ...base, subagentId: event.subagentId };
+    case 'approval.responded': return { ...base, choice: event.choice };
+    default: return base;
+  }
 }
 
 function activity(event: RunEvent, done: boolean): string {

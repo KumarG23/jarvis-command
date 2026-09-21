@@ -66,6 +66,8 @@ export type Turn = {
   historyBinding?: LiveRunStatus['historyBinding'];
   usage?: LiveRunStatus['usage'];
   compaction?: LiveRunStatus['compaction'];
+  error?: string | null;
+  telemetry?: { admissionAttempts: number; streamConnections: number; statusChecks: number };
 };
 export type DraftRecovery = { intent: TurnIntent; input: string; kind: 'terminal' | 'uncertain' };
 
@@ -149,7 +151,14 @@ export function useLiveTurn() {
       if (!valid() || reconciling) return;
       reconciling = true;
       polls++;
-      update({ phase: 'Recovering status' });
+      update({
+        phase: 'Recovering status',
+        telemetry: {
+          admissionAttempts: current.current!.telemetry?.admissionAttempts ?? 0,
+          streamConnections: current.current!.telemetry?.streamConnections ?? 0,
+          statusChecks: (current.current!.telemetry?.statusChecks ?? 0) + 1,
+        },
+      });
       const approvalAtStart = current.current!.approval;
       const revisionAtStart = approvalRevision;
       try {
@@ -168,6 +177,7 @@ export function useLiveTurn() {
           ...(status.output === null || (!done && (keepStream || !!current.current!.output)) ? {} : outputPreview(status.output)),
           approval: done ? null : preserveApproval || newerApproval ? current.current!.approval : status.approval,
           usage: status.usage,
+          error: status.error,
           ...(status.compaction !== undefined ? { compaction: status.compaction } : {}),
           done });
         preserveApproval = false;
@@ -202,6 +212,11 @@ export function useLiveTurn() {
       // Hermes consumes a shared queue; replacement streams do not replay their
       // prefix. Preserve visible data and cumulative per-run limits.
       if (reconnects) update({ phase: 'Reconnecting — preview retained' });
+      update({ telemetry: {
+        admissionAttempts: current.current!.telemetry?.admissionAttempts ?? 0,
+        streamConnections: (current.current!.telemetry?.streamConnections ?? 0) + 1,
+        statusChecks: current.current!.telemetry?.statusChecks ?? 0,
+      } });
       const connection = new EventSource(`/api/live/runs/${run.publicRunId}/events`);
       source = connection;
       streamOpen = true;
@@ -261,6 +276,11 @@ export function useLiveTurn() {
     const controller = new AbortController();
     let cancelled = false;
     cleanup.current = () => { cancelled = true; controller.abort(); };
+    update({ telemetry: {
+      admissionAttempts: (current.current!.telemetry?.admissionAttempts ?? 0) + 1,
+      streamConnections: current.current!.telemetry?.streamConnections ?? 0,
+      statusChecks: current.current!.telemetry?.statusChecks ?? 0,
+    } });
     try {
       const accepted = LiveRunSubmissionResponseSchema.parse(await boundedJson('/api/live/runs', {
         method: 'POST', credentials: 'same-origin', headers: { accept: 'application/json', 'content-type': 'application/json', 'x-jarvis-command': '1' },

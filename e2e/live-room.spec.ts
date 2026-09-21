@@ -1,7 +1,32 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 // Synthetic browser fixtures only: no privileged upstream or production mutation.
 test.use({ serviceWorkers: 'block' });
+
+async function mockCurrentShell(page: Page) {
+  await page.route('**/api/rooms', route => route.fulfill({ json: { version: 1, rooms: [] } }));
+  await page.route('**/api/live/session-controls', route => route.fulfill({ json: { sessionForkPreservesSource: true, sessionCompactionRuns: true } }));
+  await page.route('**/api/live/model-options', route => route.fulfill({ json: {
+    default: { provider: 'openai-codex', model: 'gpt-5.6-sol' },
+    options: [{ provider: 'openai-codex', model: 'gpt-5.6-sol', label: 'Sol', reasoningEfforts: ['medium'] }],
+  } }));
+  await page.route('**/api/live/sessions/*/context', route => {
+    const sessionId = new URL(route.request().url()).pathname.split('/')[4]!;
+    return route.fulfill({ json: { sessionId, state: 'unavailable', updatedAt: null, receipt: null } });
+  });
+}
+
+async function selectSession(page: Page, title: string) {
+  const navigation = page.getByRole('button', { name: 'Open chat navigation' });
+  const session = page.getByRole('button', { name: title });
+  await expect(session.or(navigation)).toBeVisible();
+  if (await navigation.isVisible()) {
+    await navigation.click();
+    await expect(session).toBeVisible();
+  }
+  await session.click();
+  await expect(page.getByLabel('Selected session')).toHaveText(title);
+}
 test('streams a synthetic turn through the compiled UI', async ({ page, context }, testInfo) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -10,6 +35,7 @@ test('streams a synthetic turn through the compiled UI', async ({ page, context 
   const sessionId = 'jc_browser_turn';
   const publicRunId = 'jcr_' + 'a'.repeat(32);
   const session = { id: sessionId, title: 'Synthetic live conversation with a long project title for phone readability', ownership: 'command', source: 'web', model: null, lastActive: timestamp, messageCount: 0, toolCallCount: 0, pinned: false };
+  await mockCurrentShell(page);
   await page.route('**/api/bootstrap', (route) => route.fulfill({ json: {
     identity: { provider: 'development' }, command: { version: 'test', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 100, maxSteerCharacters: 100 } },
     hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse'], readinessChecks: {} }, sessions: [session],
@@ -35,12 +61,13 @@ test('streams a synthetic turn through the compiled UI', async ({ page, context 
   ].map((event) => `event: ${event.type}\ndata: ${JSON.stringify({ ...event, publicRunId, timestamp })}\n\n`).join('') }));
   await page.route(`**/api/live/runs/${publicRunId}`, (route) => { saved = true; return route.fulfill({ json: { publicRunId, sessionId, status: 'completed', updatedAt: timestamp, approval: null, output: 'Browser streamed answer', error: null, pendingSteer: null, usage: null } }); });
   await page.goto('/');
-  await page.getByRole('combobox', { name: 'Session' }).selectOption(sessionId);
+  await selectSession(page, session.title);
   await page.getByRole('textbox', { name: 'Message Jarvis' }).fill('Synthetic hello');
   await expect(page.getByText('No saved messages in session history yet.', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Send message' }).click();
   await expect(page.getByText('Run completed', { exact: true })).toBeVisible();
   await expect(page.getByText('Browser streamed answer', { exact: true })).toHaveCount(1);
+  await page.getByText('Run details', { exact: true }).click();
   await expect(page.getByText('Tool started: synthetic — No real commands')).toBeVisible();
   await expect(page.locator('[data-message-id="saved:answer"]')).toBeVisible();
   await expect(page.getByText('Synthetic hello', { exact: true })).toHaveCount(1);
@@ -76,6 +103,7 @@ test('reloads a known synthetic run with identifiers only and no second admissio
   const key = 'jarvis-command:live-turn'; const input = 'Synthetic private input not persisted';
   let state = 'running'; let posts = 0; let reads = 0;
   const session = { id: sessionId, title: 'Synthetic reload', ownership: 'command', source: 'web', model: null, lastActive: timestamp, messageCount: 0, toolCallCount: 0, pinned: false };
+  await mockCurrentShell(page);
   await page.route('**/api/bootstrap', (route) => route.fulfill({ json: {
     identity: { provider: 'development' }, command: { version: 'test', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 100, maxSteerCharacters: 100 } },
     hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse'], readinessChecks: {} }, sessions: [session],
@@ -94,7 +122,7 @@ test('reloads a known synthetic run with identifiers only and no second admissio
     return route.fulfill({ json: { sessionId, publicRunId, status: state, updatedAt: timestamp, approval: null, output: null, error: null, pendingSteer: state === 'completed' ? 'Recovered memory-only guidance' : null, usage: null } });
   });
   await page.goto('/');
-  await page.getByRole('combobox', { name: 'Session' }).selectOption(sessionId);
+  await selectSession(page, session.title);
   await page.getByRole('textbox', { name: 'Message Jarvis' }).fill(input);
   await page.getByRole('button', { name: 'Send message' }).click();
   await expect.poll(async () => JSON.parse(await page.evaluate((key) => sessionStorage.getItem(key), key) ?? 'null')?.publicRunId).toBe(publicRunId);
@@ -104,7 +132,7 @@ test('reloads a known synthetic run with identifiers only and no second admissio
   const before = reads;
   await page.reload();
   await expect(page.getByText(/Original message unavailable/)).toBeVisible();
-  await expect(page.getByRole('combobox', { name: 'Session' })).toHaveValue(sessionId);
+  await expect(page.getByLabel('Selected session')).toHaveText(session.title);
   await expect(page.getByRole('textbox', { name: 'Message Jarvis' })).toBeDisabled();
   await expect.poll(() => reads).toBeGreaterThan(before);
   expect(JSON.parse((await page.evaluate((key) => sessionStorage.getItem(key), key))!)).toEqual(saved);
@@ -125,6 +153,7 @@ for (const choice of ['once', 'deny'] as const) test(`performs synthetic ${choic
   const publicRunId = 'jcr_' + 'b'.repeat(32);
   const approval = { requestId: 'approval:browser', command: `Synthetic command ${'complete-target-'.repeat(40)} END-TARGET`, description: 'Synthetic only; no real command', tool: 'synthetic' };
   const session = { id: sessionId, title: 'Synthetic controls', ownership: 'command', source: 'web', model: null, lastActive: timestamp, messageCount: 0, toolCallCount: 0, pinned: false };
+  await mockCurrentShell(page);
   let state = 'waiting_for_approval';
   let approvals = 0;
   let stops = 0;
@@ -157,7 +186,7 @@ for (const choice of ['once', 'deny'] as const) test(`performs synthetic ${choic
     return route.fulfill({ json: { publicRunId, status: 'stopping' } });
   });
   await page.goto('/');
-  await page.getByRole('combobox', { name: 'Session' }).selectOption(sessionId);
+  await selectSession(page, session.title);
   await page.getByRole('textbox', { name: 'Message Jarvis' }).fill('Synthetic controls');
   await page.getByRole('button', { name: 'Send message' }).click();
   const card = page.getByRole('region', { name: 'Awaiting approval' });
@@ -199,6 +228,7 @@ test('queues synthetic steer and recovers terminal guidance to the same room dra
   const sessionId = 'jc_browser_steer'; const publicRunId = 'jcr_' + 'c'.repeat(32);
   const input = '  Synthetic guidance\nkeep exact  ';
   const session = { id: sessionId, title: 'Synthetic steer', ownership: 'command', source: 'web', model: null, lastActive: timestamp, messageCount: 0, toolCallCount: 0, pinned: false };
+  await mockCurrentShell(page);
   let steers = 0; let sends = 0; let terminal = false;
   await page.route('**/api/bootstrap', (route) => route.fulfill({ json: {
     identity: { provider: 'development' }, command: { version: 'test', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 100, maxSteerCharacters: 100 } },
@@ -216,19 +246,18 @@ test('queues synthetic steer and recovers terminal guidance to the same room dra
     return route.fulfill({ json: { publicRunId, accepted: true, state: 'queued' } });
   });
   await page.goto('/');
-  const picker = page.getByRole('combobox', { name: 'Session' });
   const draft = page.getByRole('textbox', { name: 'Message Jarvis' });
-  await picker.selectOption(sessionId); await draft.fill('Synthetic hello');
+  await selectSession(page, session.title); await draft.fill('Synthetic hello');
   await page.getByRole('button', { name: 'Send message' }).click();
   await page.getByRole('textbox', { name: 'Steer Jarvis' }).fill(input);
   await page.getByRole('button', { name: 'Queue steer' }).click();
   await expect(page.getByText('Steer queued — not executed. Checking status.')).toBeVisible();
   await expect(draft).toBeDisabled();
-  await picker.selectOption('jc_other'); terminal = true;
+  await selectSession(page, 'Other room'); terminal = true;
   await expect(draft).toBeEnabled(); await expect(draft).toHaveValue('');
-  await picker.selectOption(sessionId); await expect(draft).toHaveValue(input);
+  await selectSession(page, session.title); await expect(draft).toHaveValue(input);
   await draft.fill('Edited after restoration');
-  await picker.selectOption('jc_other'); await picker.selectOption(sessionId);
+  await selectSession(page, 'Other room'); await selectSession(page, session.title);
   await expect(draft).toHaveValue('Edited after restoration');
   expect(steers).toBe(1); expect(sends).toBe(1); expect(errors).toEqual([]);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
@@ -242,6 +271,7 @@ test('selects history and creates a room at desktop and phone widths', async ({ 
   const session = { id: 'browser:external+exact', title: 'Synthetic history room', ownership: 'external', source: 'discord', model: null, lastActive: '2026-09-04T12:00:00.000Z', messageCount: 1, toolCallCount: 0, pinned: false };
   const created = { ...session, id: 'jc_browser', title: 'Synthetic Command room', ownership: 'command', source: 'web', messageCount: 0 };
   const content = `First line\nSecond line\n${'long-output-'.repeat(80)}`;
+  await mockCurrentShell(page);
   await page.route('**/api/bootstrap', async (route) => {
     const response = await route.fetch();
     const body = await response.json();
@@ -266,20 +296,19 @@ test('selects history and creates a room at desktop and phone widths', async ({ 
     await route.fulfill({ json: { session: created } });
   });
   await page.goto('/');
-  const picker = page.getByRole('combobox', { name: 'Session' });
-  await expect(picker).toBeVisible();
-  await picker.selectOption(session.id);
-  await expect(page.getByText('External session · Read-only')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Continue in Command' })).toBeDisabled();
+  await selectSession(page, session.title);
+  await expect(page.getByText('External chat · Read-only. Continuation is unavailable.')).toBeVisible();
+  await expect(page.getByText('Messaging is unavailable for this chat.')).toBeVisible();
   const output = page.locator('.history-message .event-body p');
   await expect(output).toHaveText(content);
   expect(await output.evaluate((element) => getComputedStyle(element).whiteSpace)).toBe('pre-wrap');
   expect(await page.locator('.timeline').evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath('history.png'), fullPage: true });
-  await page.getByRole('button', { name: 'New Command session', exact: true }).click();
-  await expect(page.getByRole('heading', { name: created.title })).toBeVisible();
-  await expect(picker).toHaveValue(created.id);
+  const navigation = page.getByRole('button', { name: 'Open chat navigation' });
+  if (await navigation.isVisible()) await navigation.click();
+  await page.getByRole('button', { name: 'New chat', exact: true }).click();
+  await expect(page.getByLabel('Selected session')).toHaveText(created.title);
   await expect(page.getByText('No saved messages in session history yet.')).toBeVisible();
   expect(creations).toBe(1);
   expect(errors).toEqual([]);

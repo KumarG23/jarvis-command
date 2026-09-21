@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -29,6 +29,7 @@ async function scenario(options = {}) {
       '/srv/jarvis-command/app-command-storage.compose.yaml': `${root}/storage.yaml`,
       '/etc/jarvis-command/release.env': `${root}/release.env`,
       '/etc/jarvis-command/app.env': `${root}/app.env`,
+      '/var/lib/jarvis-command/cloudflare-jwks': `${root}/jwks`,
       '/var/lib/jarvis-command-supervisor': root,
     };
     for (const [from, to] of Object.entries(paths)) source = source.replaceAll(from, to);
@@ -38,10 +39,12 @@ async function scenario(options = {}) {
     await writeFile(join(root, 'runner.py'), source);
     await writeFile(join(root, 'base.yaml'), 'services: {}\n');
     await writeFile(join(root, 'storage.yaml'), options.storage ?? await readFile('deploy/app-command-storage.compose.yaml', 'utf8'));
-    const env = { COMMAND_MODE: 'enabled', COMMAND_AUDIT_LOG_PATH: `${audit}/events.jsonl`, SYNTHETIC_KEY: 'never-print-fixture-secret' };
+    await mkdir(join(root, 'jwks'));
+    await writeFile(join(root, 'jwks', 'certs.json'), '{"keys":[]}\n');
+    const env = { COMMAND_MODE: 'enabled', COMMAND_AUDIT_LOG_PATH: `${audit}/events.jsonl`, CF_ACCESS_JWKS_FILE: '/run/jarvis-command/cloudflare-jwks/certs.json', SYNTHETIC_KEY: 'never-print-fixture-secret' };
     await writeFile(join(root, 'app.env'), options.env ?? Object.entries(env).map(([k,v]) => `${k}=${v}\n`).join(''), { mode: 0o600 });
     await writeFile(join(root, 'release.env'), `JARVIS_COMMAND_APP_IMAGE=${image}\n`, { mode: 0o600 });
-    const volumes = [...protectedMounts.map(([s,t]) => ({ type: 'bind', source: s, target: t, read_only: true, bind: { create_host_path: true } })), { type: 'bind', source: audit, target: audit, read_only: false, bind: { create_host_path: false } }];
+    const volumes = [...protectedMounts.map(([s,t]) => ({ type: 'bind', source: s === '/var/lib/jarvis-command/cloudflare-jwks' ? join(root, 'jwks') : s, target: t, read_only: true, bind: { create_host_path: true } })), { type: 'bind', source: audit, target: audit, read_only: false, bind: { create_host_path: false } }];
     const config = { services: { app: { ...real.compose.services.app, image, container_name: 'jarvis-command-app', user: '10001:10001', read_only: true, environment: env, volumes } } };
     options.config?.(config.services.app);
     const state = { ...JSON.parse(JSON.stringify(real.created)), Id: 'c'.repeat(64), Image: image, State: { Status: 'created', Running: true, Health: { Status: 'healthy' } }, Config: { ...real.created.Config, User: '10001:10001', Labels: { 'com.docker.compose.project': 'jarvis-command-supervised', 'com.docker.compose.service': 'app' }, Env: [...real.image.Config.Env, ...Object.entries(env).map(([k,v]) => `${k}=${v}`)] }, HostConfig: { ...real.created.HostConfig, NetworkMode: 'host' }, NetworkSettings: { Ports: {}, Networks: { host: { Aliases: null, Links: null, DriverOpts: null, IPAMConfig: null } } }, Mounts: volumes.map(v => ({ Type: 'bind', Source: v.source, Destination: v.target, RW: !v.read_only, Propagation: 'rprivate' })) };
@@ -202,6 +205,7 @@ for (const [name, options, ready] of [
   ['already running', { running: true }, false],
   ['absent mode', { env: `COMMAND_AUDIT_LOG_PATH=${audit}/events.jsonl\n` }, false],
   ['disabled mode', { env: 'COMMAND_MODE=disabled\n' }, false],
+  ['stale JWKS filename', { env: `COMMAND_MODE=enabled\nCOMMAND_AUDIT_LOG_PATH=${audit}/events.jsonl\nCF_ACCESS_JWKS_FILE=/run/jarvis-command/cloudflare-jwks/jwks.json\n` }, false],
   ['duplicate mode', { env: 'COMMAND_MODE=enabled\nCOMMAND_MODE=disabled\n' }, false],
   ['shell env', { env: 'COMMAND_MODE=$(touch /NOT-EXECUTED)\n' }, false],
   ['ambient compose', { ambient: { COMPOSE_FILE: '/NOT-USED' } }, false],

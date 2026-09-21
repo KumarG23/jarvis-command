@@ -38,7 +38,7 @@ it('labels copying bounded output as a preview and hides history-matched output'
   expect(writeText).toHaveBeenCalledExactlyOnceWith(turn.output);
   rerender(<TurnView {...props} turn={{ ...turn, historyMatched: true }} />);
   expect(screen.queryByRole('article', { name: 'Jarvis response' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: /Copy/ })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /Copy (response|preview)/ })).not.toBeInTheDocument();
 });
 
 it('does not label a changed response with a prior clipboard result', async () => {
@@ -59,7 +59,64 @@ it('groups typed activity into an ordered, labeled list without losing event tex
   const activity = screen.getByRole('list', { name: 'Run activity' });
   expect(activity.tagName).toBe('OL');
   const items = within(activity).getAllByRole('listitem');
-  expect(items.map((item) => item.textContent)).toEqual(['Tool started: synthetic — Exact preview', 'Tool completed: synthetic']);
+  expect(items.map((item) => item.querySelector('span')?.textContent)).toEqual(['Tool started: synthetic — Exact preview', 'Tool completed: synthetic']);
+  expect(items.map((item) => item.querySelector('time')?.textContent)).toEqual(['12:00:00', '12:00:00']);
+});
+
+it('shows route, recovery and failure details and copies a sanitized run receipt', async () => {
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal('navigator', { clipboard: { writeText } });
+  const inspected: Turn = {
+    ...turn,
+    phase: 'Run failed',
+    error: 'Provider unavailable.',
+    events: [{
+      type: 'tool.started', tool: 'synthetic', preview: 'Exact preview',
+      publicRunId: turn.publicRunId!, timestamp: '2026-09-04T12:00:00.000Z',
+    }],
+    telemetry: { admissionAttempts: 2, streamConnections: 3, statusChecks: 4 },
+    usage: {
+      inputTokens: 10,
+      outputTokens: 2,
+      totalTokens: 12,
+      execution: {
+        requested: { provider: 'openai-codex', model: 'gpt-5.6-sol', reasoningEffort: 'high' },
+        executed: { provider: 'openai-codex', model: 'gpt-5.6-terra', reasoningEffort: 'medium', reasoningEffortSource: 'wire' },
+        routeSource: 'fallback',
+        exact: false,
+        fallbackUsed: true,
+      },
+    },
+  };
+  render(<TurnView {...props} turn={inspected} />);
+  expect(screen.getByText('Run details').closest('details')).toHaveAttribute('open');
+  const inspector = screen.getByRole('region', { name: 'Run inspector' });
+  expect(inspector).toHaveTextContent('Provider unavailable.');
+  expect(inspector).toHaveTextContent('Admission attempts2');
+  expect(inspector).toHaveTextContent('Stream reconnects2');
+  expect(within(screen.getByRole('region', { name: 'Route decision' })).getByText('Fallback used · fallback')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Copy receipt' }));
+  await screen.findByText('Run receipt copied');
+  expect(writeText).toHaveBeenCalledTimes(1);
+  const copied = JSON.parse(writeText.mock.calls[0]![0]);
+  expect(copied).toMatchObject({
+    version: 1,
+    run: { publicRunId: turn.publicRunId, sessionId: turn.intent.sessionId, error: 'Provider unavailable.' },
+    recovery: { admissionAttempts: 2, streamConnections: 3, streamReconnects: 2, statusChecks: 4 },
+    route: { fallbackUsed: true },
+  });
+  expect(copied.activity[0]).toEqual({ type: 'tool.started', timestamp: '2026-09-04T12:00:00.000Z', tool: 'synthetic' });
+  expect(JSON.stringify(copied.activity)).not.toContain('Exact preview');
+  expect(copied.run).not.toHaveProperty('input');
+  expect(copied).not.toHaveProperty('output');
+});
+
+it('reports receipt clipboard failure without claiming success', async () => {
+  vi.stubGlobal('navigator', {});
+  render(<TurnView {...props} turn={turn} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Copy receipt' }));
+  await screen.findByText('Could not copy receipt.');
+  expect(screen.queryByText('Run receipt copied')).not.toBeInTheDocument();
 });
 
 it('presents exact input and answer as distinct labeled conversation cards', () => {
