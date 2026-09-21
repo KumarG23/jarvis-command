@@ -8,6 +8,7 @@ import { ContextCompactionSubmissionRequestSchema, LiveRoomSessionCreateRequestS
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { AppConfig } from './config';
 import type { createLiveRoomService } from './live-room-service';
+import { KeyedSerialQueue } from './keyed-serial-queue';
 
 export type LiveStreamLimits = Readonly<{ maxStreams?: number; lifetimeMs?: number; keepaliveMs?: number; maximumBytes?: number }>;
 
@@ -66,6 +67,7 @@ async function* encodeEventStream(events: AsyncIterable<RunEvent>, controller: A
 
 export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Dependencies) {
   const rooms = dependencies.config.command ? new ProjectRoomStore(dirname(dependencies.config.command.auditLogPath)) : undefined;
+  const sessionMutations = new KeyedSerialQueue();
   app.register(async (routes) => {
     const subjects = new WeakMap<FastifyRequest, string>();
     const activeStreams = new Set<AbortController>();
@@ -144,14 +146,16 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
     routes.delete('/api/live/sessions/:sessionId', async (request) => {
       const { sessionId } = parse(z.object({ sessionId: CommandSessionIdSchema }).strict(), request.params);
       if (!rooms) throw new RoomStorageError();
-      await rooms.list();
-      const result = await dependencies.liveRoom!.deleteSession(subjects.get(request)!, sessionId);
-      await rooms.update(previous => previous.map(room => {
-        if (!room.sessionIds.includes(sessionId)) return room;
-        const sessionIds = room.sessionIds.filter(id => id !== sessionId);
-        return { ...room, sessionIds, lastSessionId: room.lastSessionId === sessionId ? sessionIds.at(-1) ?? null : room.lastSessionId };
-      }));
-      return result;
+      return sessionMutations.run(sessionId, async () => {
+        await rooms.list();
+        const result = await dependencies.liveRoom!.deleteSession(subjects.get(request)!, sessionId);
+        await rooms.update(previous => previous.map(room => {
+          if (!room.sessionIds.includes(sessionId)) return room;
+          const sessionIds = room.sessionIds.filter(id => id !== sessionId);
+          return { ...room, sessionIds, lastSessionId: room.lastSessionId === sessionId ? sessionIds.at(-1) ?? null : room.lastSessionId };
+        }));
+        return result;
+      });
     });
     routes.get('/api/live/sessions/:sessionId/context', { exposeHeadRoute: false }, async (request) => {
       const { sessionId } = parse(z.object({ sessionId: CommandSessionIdSchema }).strict(), request.params);
@@ -161,11 +165,13 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
       const { roomId } = parse(z.object({ roomId: ProjectRoomIdSchema }).strict(), request.params);
       const { sessionId } = parse(z.object({ sessionId: sessionIdSchema }).strict(), request.body);
       if (!rooms) throw new RoomStorageError();
-      if (!(await rooms.list()).some(room => room.id === roomId)) throw Object.assign(new Error('Room missing'), { statusCode: 404 });
-      const { session } = await dependencies.liveRoom!.getSession(subjects.get(request)!, sessionId);
-      if (session.id !== sessionId) throw new RoomStorageError();
-      const updated = await rooms.update(previous => previous.map(room => room.id !== roomId ? room : { ...room, sessionIds: [...new Set([...room.sessionIds, sessionId])], lastSessionId: sessionId }));
-      return { room: updated.find(room => room.id === roomId)!, session };
+      return sessionMutations.run(sessionId, async () => {
+        if (!(await rooms.list()).some(room => room.id === roomId)) throw Object.assign(new Error('Room missing'), { statusCode: 404 });
+        const { session } = await dependencies.liveRoom!.getSession(subjects.get(request)!, sessionId);
+        if (session.id !== sessionId) throw new RoomStorageError();
+        const updated = await rooms.update(previous => previous.map(room => room.id !== roomId ? room : { ...room, sessionIds: [...new Set([...room.sessionIds, sessionId])], lastSessionId: sessionId }));
+        return { room: updated.find(room => room.id === roomId)!, session };
+      });
     });
     routes.get('/api/sessions/:sessionId/messages', { exposeHeadRoute: false }, async (request) => {
       const { sessionId } = parse(z.object({ sessionId: sessionIdSchema }).strict(), request.params);

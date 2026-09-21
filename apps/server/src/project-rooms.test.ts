@@ -5,9 +5,10 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { buildApp } from './app';
 import { createCommandProxyClient } from './command-client';
 import { loadConfig } from './config';
+import { KeyedSerialQueue } from './keyed-serial-queue';
 
 const roots: string[] = [];
-afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
+afterEach(async () => { vi.restoreAllMocks(); for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
 const metadata = { name: 'Jarvis Command', goal: 'Persistent project room', repository: '/repo/jarvis-command', notes: ['vault/Jarvis Command.md'] };
 const headers = { 'cf-access-jwt-assertion': 'valid', origin: 'https://command.example', 'x-jarvis-command': '1', 'content-type': 'application/json' };
 it('updates only metadata atomically alongside attachment and persists exact identity on restart', async () => {
@@ -52,6 +53,27 @@ it('deletes a Command chat and removes it from every project', async () => {
   const response = await app.inject({ method: 'DELETE', url: `/api/live/sessions/${id}`, headers: deleteHeaders });
   expect({ status: response.statusCode, body: response.json() }).toEqual({ status: 200, body: { deleted: true, sessionId: id } });
   expect(deleteSession).toHaveBeenCalledWith('operator', id);
+  expect((await app.inject({ url: '/api/rooms', headers })).json().rooms[0]).toMatchObject({ sessionIds: [], lastSessionId: null });
+  await app.close();
+});
+it('routes project attachment and deletion through the same per-session queue', async () => {
+  const id = 'jc_' + 'b'.repeat(32);
+  const session = { id, title: 'Racing chat', source: 'api_server', ownership: 'command', model: null, lastActive: '2026-09-06T12:00:00Z', messageCount: 0, toolCallCount: 0, pinned: false };
+  const queueRun = vi.spyOn(KeyedSerialQueue.prototype, 'run');
+  const deleteSession = vi.fn(async () => ({ deleted: true, sessionId: id }));
+  const { make } = await fixture(vi.fn(async () => ({ session })), { deleteSession });
+  const app = make();
+  const room = (await app.inject({ method: 'POST', url: '/api/rooms', headers, payload: metadata })).json().room;
+
+  expect((await app.inject({ method: 'POST', url: `/api/rooms/${room.id}/sessions`, headers, payload: { sessionId: id } })).statusCode).toBe(200);
+  expect((await app.inject({
+    method: 'DELETE',
+    url: `/api/live/sessions/${id}`,
+    headers: { 'cf-access-jwt-assertion': 'valid', origin: 'https://command.example', 'x-jarvis-command': '1' },
+  })).statusCode).toBe(200);
+
+  expect(queueRun.mock.calls.map(([key]) => key)).toEqual([id, id]);
+  expect(queueRun.mock.instances[0]).toBe(queueRun.mock.instances[1]);
   expect((await app.inject({ url: '/api/rooms', headers })).json().rooms[0]).toMatchObject({ sessionIds: [], lastSessionId: null });
   await app.close();
 });
