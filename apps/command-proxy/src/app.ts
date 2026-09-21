@@ -64,6 +64,10 @@ const UpstreamSessionSchema = z.object({
 const UpstreamSessionEnvelopeSchema = z.object({
   session: UpstreamSessionSchema,
 }).passthrough();
+const UpstreamSessionDeleteSchema = z.object({
+  deleted: z.literal(true),
+  session_id: z.string().regex(COMMAND_SESSION_ID),
+}).strict();
 
 const UpstreamMessageSchema = z.object({
   id: z.union([OpaqueIdentifierSchema, z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)]),
@@ -313,12 +317,22 @@ export function buildCommandProxy({
   app.get('/api/sessions/:sessionId', async (request, reply) => {
     if (!authorize(request, reply, config.commandProxyKey)) return reply;
     const sessionId = pathParameter(request, 'sessionId');
+    if (typeof sessionId !== 'string' || !SESSION_ID.test(sessionId)) return invalidRequest(reply);
+    try {
+      const upstream = UpstreamSessionEnvelopeSchema.parse(await requestJson({ path: `/api/sessions/${encodeURIComponent(sessionId)}`, method: 'GET', config, fetcher }));
+      if (upstream.session.id !== sessionId) throw new UpstreamProtocolError();
+      return SessionMutationResponseSchema.parse({ session: projectSession(upstream.session, now(), false) });
+    } catch (error) { return sendProxyError(error, reply); }
+  });
+  app.delete('/api/sessions/:sessionId', async (request, reply) => {
+    if (!authorize(request, reply, config.commandProxyKey)) return reply;
+    const sessionId = pathParameter(request, 'sessionId');
     if (typeof sessionId !== 'string' || !COMMAND_SESSION_ID.test(sessionId)) return invalidRequest(reply);
     try {
-      const upstream = UpstreamSessionEnvelopeSchema.parse(await requestJson({ path: `/api/sessions/${sessionId}`, method: 'GET', config, fetcher }));
-      if (upstream.session.id !== sessionId) throw new UpstreamProtocolError();
-      if (!COMMAND_SOURCES.has(upstream.session.source ?? '')) return reply.code(403).send({ error: 'session_read_only' });
-      return SessionMutationResponseSchema.parse({ session: projectSession(upstream.session, now(), true) });
+      if (!await isWritableSession(sessionId, config, fetcher)) return reply.code(403).send({ error: 'session_read_only' });
+      const upstream = UpstreamSessionDeleteSchema.parse(await requestJson({ path: `/api/sessions/${sessionId}`, method: 'DELETE', config, fetcher }));
+      if (upstream.session_id !== sessionId) throw new UpstreamProtocolError();
+      return { deleted: true, sessionId };
     } catch (error) { return sendProxyError(error, reply); }
   });
   app.post('/api/sessions', async (request, reply) => {
@@ -657,7 +671,7 @@ async function isWritableSession(
 
 type RequestJsonOptions = Readonly<{
   path: string;
-  method: 'GET' | 'POST';
+  method: 'GET' | 'POST' | 'DELETE';
   body?: Readonly<Record<string, unknown>>;
   headers?: Readonly<Record<string, string>>;
   config: CommandProxyConfig;

@@ -18,7 +18,7 @@ async function mockCurrentShell(page: Page) {
 
 async function selectSession(page: Page, title: string) {
   const navigation = page.getByRole('button', { name: 'Open chat navigation' });
-  const session = page.getByRole('button', { name: title });
+  const session = page.getByRole('button', { name: title, exact: true });
   await expect(session.or(navigation)).toBeVisible();
   if (await navigation.isVisible()) {
     await navigation.click();
@@ -314,4 +314,46 @@ test('selects history and creates a room at desktop and phone widths', async ({ 
   expect(errors).toEqual([]);
   expect(failed).toEqual([]);
   await page.screenshot({ path: testInfo.outputPath('created.png'), fullPage: true });
+});
+
+test('adds an external chat to a project and confirms deletion of a Command chat', async ({ page }) => {
+  const timestamp = '2026-09-04T12:00:00.000Z';
+  const command = { id: 'jc_' + 'c'.repeat(32), title: 'Disposable Command chat', ownership: 'command', source: 'api_server', model: null, lastActive: timestamp, messageCount: 0, toolCallCount: 0, pinned: false };
+  const external = { ...command, id: 'discord:channel+message', title: 'External project chat', ownership: 'external', source: 'discord' };
+  const room = { id: 'room_' + 'd'.repeat(32), name: 'Synthetic project', goal: 'Browser acceptance', repository: '', notes: [], sessionIds: [], lastSessionId: null };
+  await mockCurrentShell(page);
+  await page.unroute('**/api/rooms');
+  await page.route('**/api/rooms', route => route.fulfill({ json: { version: 1, rooms: [room] } }));
+  await page.route(`**/api/rooms/${room.id}/sessions`, async route => {
+    expect(route.request().method()).toBe('POST');
+    expect(route.request().postDataJSON()).toEqual({ sessionId: external.id });
+    await route.fulfill({ json: { room: { ...room, sessionIds: [external.id], lastSessionId: external.id }, session: external } });
+  });
+  await page.route(`**/api/live/sessions/${command.id}`, async route => {
+    expect(route.request().method()).toBe('DELETE');
+    expect(route.request().headers()['x-jarvis-command']).toBe('1');
+    await route.fulfill({ json: { deleted: true, sessionId: command.id } });
+  });
+  await page.route('**/api/bootstrap', route => route.fulfill({ json: {
+    identity: { provider: 'development' },
+    command: { version: 'test', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 100, maxSteerCharacters: 100 } },
+    hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse'], readinessChecks: {} },
+    sessions: [external, command],
+  } }));
+  await page.goto('/');
+
+  const navigation = page.getByRole('button', { name: 'Open chat navigation' });
+  const addExternal = page.getByRole('button', { name: `Add ${external.title} to project`, exact: true });
+  await expect(addExternal.or(navigation)).toBeVisible();
+  if (await navigation.isVisible()) { await navigation.click(); await expect(addExternal).toBeVisible(); }
+  await addExternal.click();
+  await expect(page.getByRole('dialog', { name: 'Add chat to project' })).toBeVisible();
+  await page.getByRole('button', { name: 'Add to project', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: 'Add chat to project' })).toBeHidden();
+
+  await page.getByRole('button', { name: `Delete ${command.title}`, exact: true }).click();
+  const confirmation = page.getByRole('dialog', { name: 'Delete this chat permanently?' });
+  await expect(confirmation).toContainText('cannot be undone');
+  await confirmation.getByRole('button', { name: 'Delete permanently' }).click();
+  await expect(page.getByRole('button', { name: command.title, exact: true })).toHaveCount(0);
 });

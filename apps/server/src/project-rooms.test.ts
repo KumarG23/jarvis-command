@@ -29,15 +29,35 @@ it('updates only metadata atomically alongside attachment and persists exact ide
   expect(cleared.json().room).toEqual({ ...expected, repository: '', notes: [] });
   await restarted.close();
 });
-async function fixture(getSession = vi.fn()) {
+async function fixture(getSession = vi.fn(), extraLiveRoom: Record<string, unknown> = {}) {
   const root = await mkdtemp(join(tmpdir(), 'jc-rooms-')); roots.push(root);
   const config = loadConfig({ NODE_ENV: 'test', HERMES_READ_PROXY_KEY: 'r'.repeat(32), COMMAND_MODE: 'enabled', PUBLIC_ORIGIN: 'https://command.example', HERMES_COMMAND_API_BASE_URL: 'http://127.0.0.1:18643', HERMES_COMMAND_PROXY_KEY: 'c'.repeat(32), COMMAND_AUDIT_LOG_PATH: join(root, 'events.jsonl') });
-  const make = () => buildApp({ config, verifyAccess: async assertion => { if (assertion !== 'valid') throw Error(); return { subject: 'operator', provider: 'cloudflare-access' }; }, hermes: { readSnapshot: vi.fn() }, liveRoom: { getSession } as never });
+  const make = () => buildApp({ config, verifyAccess: async assertion => { if (assertion !== 'valid') throw Error(); return { subject: 'operator', provider: 'cloudflare-access' }; }, hermes: { readSnapshot: vi.fn() }, liveRoom: { getSession, ...extraLiveRoom } as never });
   return { root, make };
 }
-it('links and resumes an exact verified session outside bootstrap recents; rejects invalid and substituted identity', async () => {
+it('deletes a Command chat and removes it from every project', async () => {
   const id = 'jc_' + 'a'.repeat(32);
-  const session = { id, title: 'Real reference fixture', source: 'api_server', ownership: 'command', model: null, lastActive: '2026-09-06T12:00:00Z', messageCount: 0, toolCallCount: 0, pinned: false };
+  const session = { id, title: 'Disposable chat', source: 'api_server', ownership: 'command', model: null, lastActive: '2026-09-06T12:00:00Z', messageCount: 0, toolCallCount: 0, pinned: false };
+  const deleteSession = vi.fn(async () => ({ deleted: true, sessionId: id }));
+  const { make } = await fixture(vi.fn(async () => ({ session })), { deleteSession });
+  const app = make();
+  const room = (await app.inject({ method: 'POST', url: '/api/rooms', headers, payload: metadata })).json().room;
+  await app.inject({ method: 'POST', url: `/api/rooms/${room.id}/sessions`, headers, payload: { sessionId: id } });
+  const deleteHeaders = { 'cf-access-jwt-assertion': 'valid', origin: 'https://command.example', 'x-jarvis-command': '1' };
+  for (const changed of [{ origin: 'https://evil.example' }, { 'cf-access-jwt-assertion': '' }, { 'x-jarvis-command': '' }]) {
+    expect((await app.inject({ method: 'DELETE', url: `/api/live/sessions/${id}`, headers: { ...deleteHeaders, ...changed } })).statusCode).toBe(changed['cf-access-jwt-assertion'] === '' ? 401 : 403);
+  }
+  expect((await app.inject({ method: 'DELETE', url: '/api/live/sessions/discord:external', headers: deleteHeaders })).statusCode).toBe(400);
+  expect(deleteSession).not.toHaveBeenCalled();
+  const response = await app.inject({ method: 'DELETE', url: `/api/live/sessions/${id}`, headers: deleteHeaders });
+  expect({ status: response.statusCode, body: response.json() }).toEqual({ status: 200, body: { deleted: true, sessionId: id } });
+  expect(deleteSession).toHaveBeenCalledWith('operator', id);
+  expect((await app.inject({ url: '/api/rooms', headers })).json().rooms[0]).toMatchObject({ sessionIds: [], lastSessionId: null });
+  await app.close();
+});
+it('links and resumes an exact verified session outside bootstrap recents; rejects invalid and substituted identity', async () => {
+  const id = 'discord:channel+message';
+  const session = { id, title: 'Real reference fixture', source: 'discord', ownership: 'external', model: null, lastActive: '2026-09-06T12:00:00Z', messageCount: 0, toolCallCount: 0, pinned: false };
   const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => Response.json({ session }));
   const client = createCommandProxyClient({ baseUrl: 'http://127.0.0.1:18643', commandProxyKey: 'c'.repeat(32), fetcher });
   const getSession = vi.fn(async (_subject, value: string) => client.getSession(value));
@@ -51,7 +71,7 @@ it('links and resumes an exact verified session outside bootstrap recents; rejec
   await app.close(); const restarted = make();
   expect((await restarted.inject({ url: '/api/rooms', headers })).json().rooms[0].lastSessionId).toBe(id);
   expect((await restarted.inject({ url: `/api/live/sessions/${id}`, headers })).json()).toEqual({ session });
-  session.id = 'jc_' + 'b'.repeat(32);
+  session.id = 'discord:substituted';
   expect((await restarted.inject({ method: 'POST', url, headers, payload: { sessionId: id } })).statusCode).toBe(503);
   expect((await restarted.inject({ url: '/api/rooms', headers })).json().rooms[0].lastSessionId).toBe(id);
   await restarted.close();

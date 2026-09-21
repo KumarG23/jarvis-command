@@ -220,7 +220,10 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
       }
     }}>
       <div className="sidebar-brand"><Command size={29} /><strong>Jarvis Command</strong><button className="icon-button close-navigation" type="button" aria-label="Close chat navigation" onClick={closeNavigation}><X size={20} /></button></div>
-      {liveEnabled ? <ProjectRooms ref={projects} sessions={sessions} selectedSessionId={selectedSession?.id} onScope={setProjectName} onSession={selectSession} contextTarget={contextTarget}
+      {liveEnabled ? <ProjectRooms ref={projects} sessions={sessions} selectedSessionId={selectedSession?.id} onScope={setProjectName} onSession={selectSession} onDeleted={sessionId => {
+        setSessions(previous => previous.filter(session => session.id !== sessionId));
+        if (selectedSession?.id === sessionId) { setSelectedSession(null); setProjectName(null); }
+      }} contextTarget={contextTarget}
         onOpenChange={open => { setPane(previous => open ? 'project' : previous === 'project' ? null : previous); if (open) setNavigationOpen(false); }} onNavigate={() => { if (navigationOpen || (typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 760px)').matches)) closeNavigation(); }} /> : <div className="sidebar-scroll"><p className="empty-copy">Live chat is unavailable.</p>{sessions.map(session => <div key={session.id} className="sidebar-item"><MessageSquare size={17} /><span>{session.title}</span></div>)}</div>}
       <footer className="sidebar-footer"><button className="sidebar-item" type="button" onClick={event => openPanel('settings', event.currentTarget)}><Settings2 size={18} /><span>Settings</span></button><div className="account-row"><span className="operator-avatar">NS</span><span>My account<small>{bootstrap.identity.provider === 'development' ? 'Development preview' : 'Personal workspace'}</small></span></div></footer>
     </aside>

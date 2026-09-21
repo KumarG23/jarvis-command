@@ -79,20 +79,21 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
       } catch {
         return reply.code(401).send({ error: 'unauthorized' });
       }
-      if (request.method === 'POST') {
+      const mutating = request.method === 'POST' || request.method === 'DELETE';
+      if (mutating) {
         if (request.headers.origin !== dependencies.config.command?.publicOrigin
           || request.headers['x-jarvis-command'] !== '1') {
           return reply.code(403).send({ error: 'forbidden' });
         }
-        if (!/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(request.headers['content-type'] ?? '')) {
+        if (request.method === 'POST' && !/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(request.headers['content-type'] ?? '')) {
           return reply.code(415).send({ error: 'json_required' });
         }
       }
       const now = Date.now();
       for (const [key, rate] of rates) if (rate.reset <= now) rates.delete(key);
-      const key = `${subjects.get(request)}:${request.method === 'POST' ? 'write' : 'read'}`;
+      const key = `${subjects.get(request)}:${mutating ? 'write' : 'read'}`;
       const rate = rates.get(key) ?? { reset: now + 60_000, count: 0 };
-      if (rate.count >= (request.method === 'POST' ? 30 : 240) || (!rates.has(key) && rates.size >= 2048)) {
+      if (rate.count >= (mutating ? 30 : 240) || (!rates.has(key) && rates.size >= 2048)) {
         return reply.header('retry-after', '60').code(429).send({ error: 'rate_limited' });
       }
       rate.count++;
@@ -101,7 +102,7 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
         return reply.code(503).send({ error: 'live_room_unavailable' });
       }
       if (request.routeOptions.url !== '/api/sessions/:sessionId/messages') parse(z.object({}).strict(), request.query);
-      if (request.method === 'POST') {
+      if (mutating) {
         try { await dependencies.checkLiveRoom?.(); } catch {
           return reply.code(503).send({ error: 'live_room_unavailable' });
         }
@@ -137,8 +138,20 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
       dependencies.liveRoom!.getSessionControls(subjects.get(request)!)
     ));
     routes.get('/api/live/sessions/:sessionId', { exposeHeadRoute: false }, async (request) => {
-      const { sessionId } = parse(z.object({ sessionId: CommandSessionIdSchema }).strict(), request.params);
+      const { sessionId } = parse(z.object({ sessionId: sessionIdSchema }).strict(), request.params);
       return dependencies.liveRoom!.getSession(subjects.get(request)!, sessionId);
+    });
+    routes.delete('/api/live/sessions/:sessionId', async (request) => {
+      const { sessionId } = parse(z.object({ sessionId: CommandSessionIdSchema }).strict(), request.params);
+      if (!rooms) throw new RoomStorageError();
+      await rooms.list();
+      const result = await dependencies.liveRoom!.deleteSession(subjects.get(request)!, sessionId);
+      await rooms.update(previous => previous.map(room => {
+        if (!room.sessionIds.includes(sessionId)) return room;
+        const sessionIds = room.sessionIds.filter(id => id !== sessionId);
+        return { ...room, sessionIds, lastSessionId: room.lastSessionId === sessionId ? sessionIds.at(-1) ?? null : room.lastSessionId };
+      }));
+      return result;
     });
     routes.get('/api/live/sessions/:sessionId/context', { exposeHeadRoute: false }, async (request) => {
       const { sessionId } = parse(z.object({ sessionId: CommandSessionIdSchema }).strict(), request.params);
@@ -146,11 +159,11 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
     });
     routes.post('/api/rooms/:roomId/sessions', { bodyLimit: 1024 }, async (request) => {
       const { roomId } = parse(z.object({ roomId: ProjectRoomIdSchema }).strict(), request.params);
-      const { sessionId } = parse(z.object({ sessionId: CommandSessionIdSchema }).strict(), request.body);
+      const { sessionId } = parse(z.object({ sessionId: sessionIdSchema }).strict(), request.body);
       if (!rooms) throw new RoomStorageError();
       if (!(await rooms.list()).some(room => room.id === roomId)) throw Object.assign(new Error('Room missing'), { statusCode: 404 });
       const { session } = await dependencies.liveRoom!.getSession(subjects.get(request)!, sessionId);
-      if (session.id !== sessionId || session.ownership !== 'command' || !['api_server', 'jarvis-command'].includes(session.source)) throw new RoomStorageError();
+      if (session.id !== sessionId) throw new RoomStorageError();
       const updated = await rooms.update(previous => previous.map(room => room.id !== roomId ? room : { ...room, sessionIds: [...new Set([...room.sessionIds, sessionId])], lastSessionId: sessionId }));
       return { room: updated.find(room => room.id === roomId)!, session };
     });

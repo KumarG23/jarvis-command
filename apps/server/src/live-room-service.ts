@@ -404,6 +404,30 @@ export function createLiveRoomService({
       ledger.assertHealthy();
       return client.getSession(sessionId);
     },
+
+    async deleteSession(subject: string, sessionId: string): Promise<{ deleted: true; sessionId: string }> {
+      ledger.assertHealthy();
+      if (submittingSessions.has(sessionId) || ledger.activeRunsForSession(sessionId).length) throw new LiveRoomConflictError('Session has an active run');
+      submittingSessions.add(sessionId);
+      try {
+        const actor = actorFingerprint(subject);
+        await ledger.append({
+          action: 'session.delete.requested', actor, sessionId,
+          publicRunId: null, clientRequestId: null, upstreamRunId: null,
+          requestId: null, requestFingerprint: null, outcome: 'requested', status: null, choice: null,
+        });
+        const result = await client.deleteSession(sessionId);
+        if (!result.deleted || result.sessionId !== sessionId) throw new Error('Command proxy returned a mismatched deletion receipt');
+        await ledger.append({
+          action: 'session.deleted', actor, sessionId,
+          publicRunId: null, clientRequestId: null, upstreamRunId: null,
+          requestId: null, requestFingerprint: null, outcome: 'succeeded', status: null, choice: null,
+        });
+        return result;
+      } finally {
+        submittingSessions.delete(sessionId);
+      }
+    },
     async createSession(
       subject: string,
       rawRequest: LiveRoomSessionCreateRequest,

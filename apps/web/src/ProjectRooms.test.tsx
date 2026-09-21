@@ -5,7 +5,75 @@ import { ProjectRooms, type ProjectRoomsHandle } from './ProjectRooms';
 
 const room = { id: 'room_' + 'a'.repeat(32), name: 'Synthetic project', goal: 'Exact metadata', repository: '/not/read', notes: [], sessionIds: [], lastSessionId: null };
 const session = { id: 'jc_' + 'b'.repeat(32), title: 'Created conversation', source: 'api_server', ownership: 'command', model: null, lastActive: '2026-09-06T12:00:00Z', messageCount: 0, toolCallCount: 0, pinned: false };
+const external = { ...session, id: 'discord:channel+message', title: 'This Discord chat', source: 'discord', ownership: 'external' };
+it('adds an external recent chat directly to a chosen project', async () => {
+  const linked = { ...room, sessionIds: [external.id], lastSessionId: external.id };
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === '/api/rooms') return Response.json({ version: 1, rooms: [room] });
+    expect(String(input)).toBe(`/api/rooms/${room.id}/sessions`);
+    expect(JSON.parse(String(init?.body))).toEqual({ sessionId: external.id });
+    return Response.json({ room: linked, session: external });
+  });
+  vi.stubGlobal('fetch', fetcher);
+  render(<ProjectRooms sessions={[external] as never} onScope={vi.fn()} onSession={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: `Add ${external.title} to project` }));
+  expect(screen.getByRole('dialog', { name: 'Add chat to project' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Add to project' }));
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+  expect(screen.queryByRole('dialog', { name: 'Add chat to project' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: `Delete ${external.title}` })).not.toBeInTheDocument();
+});
+
+it('requires confirmation before permanently deleting a Command chat', async () => {
+  const onDeleted = vi.fn();
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input) === '/api/rooms') return Response.json({ version: 1, rooms: [room] });
+    expect(init?.method).toBe('DELETE');
+    return Response.json({ deleted: true, sessionId: session.id });
+  });
+  vi.stubGlobal('fetch', fetcher);
+  render(<ProjectRooms sessions={[session] as never} onScope={vi.fn()} onSession={vi.fn()} onDeleted={onDeleted} />);
+  fireEvent.click(await screen.findByRole('button', { name: `Delete ${session.title}` }));
+  expect(screen.getByRole('dialog', { name: 'Delete this chat permanently?' })).toHaveTextContent('cannot be undone');
+  expect(onDeleted).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Delete permanently' }));
+  await waitFor(() => expect(onDeleted).toHaveBeenCalledWith(session.id));
+  expect(screen.queryByRole('dialog', { name: 'Delete this chat permanently?' })).not.toBeInTheDocument();
+});
+
 afterEach(() => { vi.unstubAllGlobals(); sessionStorage.clear(); });
+
+it('offers both Command and external recent chats when adding one to a project', async () => {
+  sessionStorage.setItem('jarvis-command:project-room:v1', room.id);
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ version: 1, rooms: [room] })));
+  render(<ProjectRooms sessions={[session, external] as never} onScope={vi.fn()} onSession={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Project details' }));
+  const picker = screen.getByLabelText('Chat');
+  expect(within(picker).getByRole('option', { name: session.title })).toBeInTheDocument();
+  expect(within(picker).getByRole('option', { name: external.title })).toBeInTheDocument();
+});
+
+it('reopens a saved external project chat after it leaves recent chats', async () => {
+  const linked = { ...room, sessionIds: [external.id], lastSessionId: external.id };
+  sessionStorage.setItem('jarvis-command:project-room:v1', room.id);
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input) === '/api/rooms'
+    ? Response.json({ version: 1, rooms: [linked] })
+    : Response.json({ session: external })));
+  const onSession = vi.fn();
+  render(<ProjectRooms sessions={[]} onScope={vi.fn()} onSession={onSession} />);
+  await waitFor(() => expect(onSession).toHaveBeenCalledWith(external));
+  expect(await screen.findByRole('button', { name: external.title })).toBeInTheDocument();
+});
+
+it('hydrates an external saved-chat title when it is not the project default', async () => {
+  const linked = { ...room, sessionIds: [external.id], lastSessionId: null };
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input) === '/api/rooms'
+    ? Response.json({ version: 1, rooms: [linked] })
+    : Response.json({ session: external })));
+  render(<ProjectRooms sessions={[]} onScope={vi.fn()} onSession={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: room.name }));
+  expect(await screen.findByRole('button', { name: external.title })).toBeInTheDocument();
+});
 
 it('attaches an adopted fork to the selected project before selecting it', async () => {
   const child = { ...session, id: 'jc_' + 'd'.repeat(32), title: 'Created conversation · Fork' };

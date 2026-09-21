@@ -6,6 +6,15 @@ import {
   LiveRunSubmissionRequestSchema,
   SessionSummarySchema,
 } from './contracts';
+import { ProjectRoomSchema } from './project-rooms';
+
+it('allows a validated external Hermes session to belong to a project', () => {
+  const externalId = 'discord:channel+message';
+  expect(ProjectRoomSchema.parse({
+    id: 'room_' + 'a'.repeat(32), name: 'External work', goal: 'Keep context together',
+    repository: '', notes: [], sessionIds: [externalId], lastSessionId: externalId,
+  }).sessionIds).toEqual([externalId]);
+});
 
 const validBootstrap = {
   identity: {

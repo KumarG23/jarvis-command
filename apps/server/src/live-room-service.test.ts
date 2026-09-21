@@ -56,6 +56,7 @@ function fakeClient(overrides: Partial<CommandProxyClient> = {}): CommandProxyCl
       options: [{ provider: 'openai-codex', model: 'gpt-5.6-sol', label: 'Sol', reasoningEfforts: ['low', 'medium', 'high', 'xhigh'] }],
     }),
     getSession: vi.fn(),
+    deleteSession: vi.fn().mockResolvedValue({ deleted: true, sessionId }),
     getMessages: vi.fn().mockResolvedValue({
       sessionId,
       messages: [],
@@ -98,6 +99,24 @@ function fakeClient(overrides: Partial<CommandProxyClient> = {}): CommandProxyCl
     ...overrides,
   };
 }
+
+it('deletes an idle Command session and records the destructive action', async () => {
+  const { ledger, path } = await createLedger();
+  const client = fakeClient({ getSession: vi.fn().mockResolvedValue({ session }) });
+  const service = createLiveRoomService({ client, ledger });
+  await expect(service.deleteSession('operator', sessionId)).resolves.toEqual({ deleted: true, sessionId });
+  expect(client.deleteSession).toHaveBeenCalledWith(sessionId);
+  expect(await readFile(path, 'utf8')).toContain('"action":"session.deleted"');
+});
+
+it('refuses to delete a session with a nonterminal admitted run', async () => {
+  const { ledger } = await createLedger();
+  const client = fakeClient({ getSession: vi.fn().mockResolvedValue({ session }) });
+  const service = createLiveRoomService({ client, ledger });
+  await service.submitRun('operator', request);
+  await expect(service.deleteSession('operator', sessionId)).rejects.toMatchObject({ statusCode: 409 });
+  expect(client.deleteSession).not.toHaveBeenCalled();
+});
 
 describe('LiveRoomService run identity and recovery', () => {
   it.each([false, true])('rejects wrong-session replay without terminal audit (reopened=%s)', async (reopen) => {

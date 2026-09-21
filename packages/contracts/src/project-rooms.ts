@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SessionIdSchema } from './contracts';
 export const ProjectRoomIdSchema = z.string().regex(/^room_[a-f0-9]{32}$/);
 export const CommandSessionIdSchema = z.string().regex(/^jc_[a-f0-9]{32}$/);
 const reference = z.string().max(512).refine(value => [...value].every(character => character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127));
@@ -10,8 +11,8 @@ export const ProjectRoomCreateSchema = z.object({
 }).strict();
 export const ProjectRoomSchema = ProjectRoomCreateSchema.extend({
   id: ProjectRoomIdSchema,
-  sessionIds: z.array(CommandSessionIdSchema).max(100),
-  lastSessionId: CommandSessionIdSchema.nullable(),
+  sessionIds: z.array(SessionIdSchema).max(100),
+  lastSessionId: SessionIdSchema.nullable(),
 }).strict().refine(room => new Set(room.sessionIds).size === room.sessionIds.length && (room.lastSessionId === null || room.sessionIds.includes(room.lastSessionId)));
 export const ProjectRoomsSchema = z.object({ version: z.literal(1), rooms: z.array(ProjectRoomSchema).max(100) }).strict()
   .refine(store => new Set(store.rooms.map(room => room.id)).size === store.rooms.length);

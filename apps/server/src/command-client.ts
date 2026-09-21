@@ -32,6 +32,11 @@ const MAX_JSON_BYTES = 2_097_152;
 const MAX_SSE_FRAME_BYTES = 524_288;
 const MAX_SSE_TOTAL_BYTES = 33_554_432;
 const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9_.:@+-]{0,159}$/;
+const COMMAND_SESSION_ID = /^jc_[a-f0-9]{32}$/;
+const SessionDeleteResponseSchema = z.object({
+  deleted: z.literal(true),
+  sessionId: z.string().regex(COMMAND_SESSION_ID),
+}).strict();
 const RUN_ID = /^run_[a-f0-9]{32}$/;
 const IDEMPOTENCY_KEY = /^[!-~]{1,255}$/;
 
@@ -155,6 +160,7 @@ export type CommandStopResponse = z.infer<typeof InternalStopResponseSchema>;
 
 export type CommandProxyClient = Readonly<{
   getSession: (sessionId: string) => Promise<SessionMutationResponse>;
+  deleteSession: (sessionId: string) => Promise<{ deleted: true; sessionId: string }>;
   readReadiness: () => Promise<{ ready: true; idempotencyRetentionSeconds: number; sessionForkPreservesSource: boolean; sessionCompactionRuns: boolean }>;
   getInferenceOptions: () => Promise<InferenceOptionsResponse>;
   getMessages: (sessionId: string, limit: number, offset: number) => Promise<SessionMessagesPage>;
@@ -188,7 +194,7 @@ export function createCommandProxyClient(options: Readonly<{
     path: string,
     schema: z.ZodType<T>,
     init: Readonly<{
-      method?: 'GET' | 'POST';
+      method?: 'GET' | 'POST' | 'DELETE';
       body?: unknown;
       headers?: Record<string, string>;
     }> = {},
@@ -220,8 +226,12 @@ export function createCommandProxyClient(options: Readonly<{
 
   return Object.freeze({
     getSession(sessionId) {
-      if (!/^jc_[a-f0-9]{32}$/.test(sessionId)) return Promise.reject(new CommandProxyUnavailableError(400));
-      return requestJson(`/api/sessions/${sessionId}`, SessionMutationResponseSchema.refine(value => value.session.id === sessionId && value.session.ownership === 'command' && ['api_server', 'jarvis-command'].includes(value.session.source)));
+      if (!SESSION_ID.test(sessionId)) return Promise.reject(new CommandProxyUnavailableError(400));
+      return requestJson(`/api/sessions/${encodeURIComponent(sessionId)}`, SessionMutationResponseSchema.refine(value => value.session.id === sessionId));
+    },
+    deleteSession(sessionId) {
+      if (!COMMAND_SESSION_ID.test(sessionId)) return Promise.reject(new CommandProxyUnavailableError(400));
+      return requestJson(`/api/sessions/${sessionId}`, SessionDeleteResponseSchema.refine(value => value.sessionId === sessionId), { method: 'DELETE' });
     },
     async readReadiness() {
       const result = await requestJson('/_ready', z.object({

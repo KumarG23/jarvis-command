@@ -21,6 +21,8 @@ const UPSTREAM_RUN_ID = /^run_[a-f0-9]{32}$/;
 const AuditActionSchema = z.enum([
   'session.created',
   'session.continued',
+  'session.delete.requested',
+  'session.deleted',
   'run.requested',
   'run.started',
   'run.replayed',

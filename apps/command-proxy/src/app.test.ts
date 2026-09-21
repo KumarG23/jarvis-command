@@ -220,18 +220,45 @@ describe('command proxy route boundary', () => {
 });
 
 describe('session projection and ownership', () => {
-  it('looks up an exact owned session independently of recent listings and refuses substituted/external identities', async () => {
-    for (const [id, source, status] of [[commandSessionId, 'api_server', 200], [commandSessionId, 'discord', 403], ['jc_' + 'b'.repeat(32), 'api_server', 503]] as const) {
+  it('looks up exact Command and external sessions independently of recent listings and refuses substituted identities', async () => {
+    for (const [requested, id, source, status, ownership] of [
+      [commandSessionId, commandSessionId, 'api_server', 200, 'command'],
+      [externalSessionId, externalSessionId, 'discord', 200, 'external'],
+      [commandSessionId, 'jc_' + 'b'.repeat(32), 'api_server', 503, null],
+    ] as const) {
       const fetcher = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse(upstreamSession(id, source)));
       const app = createApp(fetcher);
-      expect((await app.inject({ url: `/api/sessions/${commandSessionId}`, headers: authHeaders() })).statusCode).toBe(status);
-      expect(fetcher.mock.calls[0]?.[0]).toBe(`http://127.0.0.1:8642/api/sessions/${commandSessionId}`);
+      const response = await app.inject({ url: `/api/sessions/${requested}`, headers: authHeaders() });
+      expect(response.statusCode).toBe(status);
+      if (ownership) expect(response.json().session).toMatchObject({ id: requested, source, ownership });
+      expect(fetcher.mock.calls[0]?.[0]).toBe(`http://127.0.0.1:8642/api/sessions/${encodeURIComponent(requested)}`);
     }
     const fetcher = vi.fn<typeof fetch>(); const app = createApp(fetcher);
-    expect((await app.inject({ url: '/api/sessions/jc_bad', headers: authHeaders() })).statusCode).toBe(400);
+    expect((await app.inject({ url: '/api/sessions/bad id', headers: authHeaders() })).statusCode).toBe(400);
     expect((await app.inject({ url: `/api/sessions/${commandSessionId}` })).statusCode).toBe(401);
     expect(fetcher).not.toHaveBeenCalled();
   });
+  it('permanently deletes only an exact verified Command-owned session', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'api_server')))
+      .mockResolvedValueOnce(jsonResponse({ deleted: true, session_id: commandSessionId }));
+    const response = await createApp(fetcher).inject({ method: 'DELETE', url: `/api/sessions/${commandSessionId}`, headers: authHeaders() });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ deleted: true, sessionId: commandSessionId });
+    expect(fetcher.mock.calls.map(call => [call[0], (call[1] as RequestInit).method])).toEqual([
+      [`http://127.0.0.1:8642/api/sessions/${commandSessionId}`, 'GET'],
+      [`http://127.0.0.1:8642/api/sessions/${commandSessionId}`, 'DELETE'],
+    ]);
+  });
+
+  it('refuses to delete external sessions before issuing an upstream DELETE', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'discord')));
+    const response = await createApp(fetcher).inject({ method: 'DELETE', url: `/api/sessions/${commandSessionId}`, headers: authHeaders() });
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toEqual({ error: 'session_read_only' });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it.each([' padded', 'padded ', 'id\n', 'a b', 'é', 9007199254740992, 1.5])('rejects noncanonical message identity %j', async (id) => {
     const body = { session_id: commandSessionId, data: [{ id, session_id: commandSessionId, role: 'assistant', content: 'Synthetic' }], pagination: { limit: 1, offset: 0, returned: 1, order: 'oldest' } };
     const app = createApp(vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(body)));

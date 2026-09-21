@@ -297,7 +297,7 @@ describe('Live Room history', () => {
     stubFetch(fetchMock);
     render(<App loadBootstrap={async () => ({ ...liveBootstrap, sessions: [...liveBootstrap.sessions, { ...liveBootstrap.sessions[0]!, id: 'second:session+exact', title: 'Second session' }] })} />);
     await clickEnabled(/^Jarvis Command/);
-    await clickEnabled(/Second session/);
+    await clickEnabled(/^Second session$/);
     expect(await screen.findByText('Second room')).toBeInTheDocument();
     expect(fetchMock.mock.calls[0]![1].signal.aborted).toBe(true);
     expect(fetchMock.mock.calls[1]![0]).toContain('second%3Asession%2Bexact');
