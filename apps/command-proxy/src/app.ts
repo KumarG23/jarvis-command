@@ -65,8 +65,9 @@ const UpstreamSessionEnvelopeSchema = z.object({
   session: UpstreamSessionSchema,
 }).passthrough();
 const UpstreamSessionDeleteSchema = z.object({
+  object: z.literal('hermes.session.deleted'),
+  id: z.string().regex(SESSION_ID),
   deleted: z.literal(true),
-  session_id: z.string().regex(COMMAND_SESSION_ID),
 }).strict();
 
 const UpstreamMessageSchema = z.object({
@@ -329,9 +330,14 @@ export function buildCommandProxy({
     const sessionId = pathParameter(request, 'sessionId');
     if (typeof sessionId !== 'string' || !COMMAND_SESSION_ID.test(sessionId)) return invalidRequest(reply);
     try {
-      if (!await isWritableSession(sessionId, config, fetcher)) return reply.code(403).send({ error: 'session_read_only' });
-      const upstream = UpstreamSessionDeleteSchema.parse(await requestJson({ path: `/api/sessions/${sessionId}`, method: 'DELETE', config, fetcher }));
-      if (upstream.session_id !== sessionId) throw new UpstreamProtocolError();
+      try {
+        if (!await isWritableSession(sessionId, config, fetcher)) return reply.code(403).send({ error: 'session_read_only' });
+      } catch (error) {
+        if (error instanceof UpstreamHttpError && error.status === 404) return { deleted: true, sessionId };
+        throw error;
+      }
+      const upstream = UpstreamSessionDeleteSchema.parse(await requestJson({ path: `/api/sessions/${encodeURIComponent(sessionId)}`, method: 'DELETE', config, fetcher }));
+      if (upstream.id !== sessionId) throw new UpstreamProtocolError();
       return { deleted: true, sessionId };
     } catch (error) { return sendProxyError(error, reply); }
   });

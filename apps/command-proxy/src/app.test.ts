@@ -241,7 +241,7 @@ describe('session projection and ownership', () => {
   it('permanently deletes only an exact verified Command-owned session', async () => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'api_server')))
-      .mockResolvedValueOnce(jsonResponse({ deleted: true, session_id: commandSessionId }));
+      .mockResolvedValueOnce(jsonResponse({ object: 'hermes.session.deleted', id: commandSessionId, deleted: true }));
     const response = await createApp(fetcher).inject({ method: 'DELETE', url: `/api/sessions/${commandSessionId}`, headers: authHeaders() });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ deleted: true, sessionId: commandSessionId });
@@ -249,6 +249,14 @@ describe('session projection and ownership', () => {
       [`http://127.0.0.1:8642/api/sessions/${commandSessionId}`, 'GET'],
       [`http://127.0.0.1:8642/api/sessions/${commandSessionId}`, 'DELETE'],
     ]);
+  });
+
+  it('treats an already-absent Command id as an idempotent deletion success', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({ error: { code: 'session_not_found' } }, 404));
+    const response = await createApp(fetcher).inject({ method: 'DELETE', url: `/api/sessions/${commandSessionId}`, headers: authHeaders() });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ deleted: true, sessionId: commandSessionId });
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
   it('refuses to delete external sessions before issuing an upstream DELETE', async () => {
