@@ -39,6 +39,8 @@ const SessionDeleteResponseSchema = z.object({
 }).strict();
 const RUN_ID = /^run_[a-f0-9]{32}$/;
 const IDEMPOTENCY_KEY = /^[!-~]{1,255}$/;
+const CHAT_IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+const MAX_CHAT_IMAGE_BYTES = 6 * 1024 * 1024;
 
 const InternalRunCreateSchema = z.object({
   runId: z.string().regex(RUN_ID),
@@ -166,7 +168,13 @@ export type CommandProxyClient = Readonly<{
   getMessages: (sessionId: string, limit: number, offset: number) => Promise<SessionMessagesPage>;
   createSession: (request: LiveRoomSessionCreateRequest) => Promise<SessionMutationResponse>;
   continueSession: (sessionId: string, request: LiveRoomSessionContinueRequest) => Promise<SessionMutationResponse>;
-  startRun: (request: Readonly<{ sessionId: string; input: string; idempotencyKey: string; inference?: InferenceOverride }>) => Promise<CommandRunCreate>;
+  startRun: (request: Readonly<{
+    sessionId: string;
+    input: string;
+    idempotencyKey: string;
+    inference?: InferenceOverride;
+    images?: ReadonlyArray<Readonly<{ mime: string; bytes: Buffer }>>;
+  }>) => Promise<CommandRunCreate>;
   startContextCompaction: (request: Readonly<{ sessionId: string; idempotencyKey: string }>) => Promise<CommandRunCreate>;
   getRun: (runId: string) => Promise<CommandRunStatus>;
   streamRunEvents: (runId: string, signal: AbortSignal) => AsyncGenerator<CommandRunEvent>;
@@ -284,21 +292,27 @@ export function createCommandProxyClient(options: Readonly<{
       );
     },
     startRun(request) {
+      const images = request.images ?? [];
+      const imageBytes = images.reduce((total, image) => total + image.bytes.length, 0);
       if (
         !SESSION_ID.test(request.sessionId)
         || !request.input.trim()
         || request.input.length > 16_000
         || !IDEMPOTENCY_KEY.test(request.idempotencyKey)
         || (request.inference !== undefined && !InferenceOverrideSchema.safeParse(request.inference).success)
+        || images.length > 4
+        || imageBytes > MAX_CHAT_IMAGE_BYTES
+        || images.some(image => !CHAT_IMAGE_MIMES.has(image.mime) || image.bytes.length < 1)
       ) {
         return Promise.reject(new CommandProxyUnavailableError(400));
       }
-      return requestJson('/v1/runs', InternalRunCreateSchema.refine(value => value.sessionId === request.sessionId), {
+      return requestJson(images.length ? '/v1/runs-with-images' : '/v1/runs', InternalRunCreateSchema.refine(value => value.sessionId === request.sessionId), {
         method: 'POST',
         body: {
           sessionId: request.sessionId,
           input: request.input.trim(),
           ...(request.inference ? { inference: request.inference } : {}),
+          ...(images.length ? { images: images.map(image => ({ mime: image.mime, dataBase64: image.bytes.toString('base64') })) } : {}),
         },
         headers: { 'idempotency-key': request.idempotencyKey },
       });

@@ -1,6 +1,6 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import { TurnView } from './TurnView';
+import { TurnComposer, TurnView } from './TurnView';
 import type { Turn } from './useLiveTurn';
 
 const turn: Turn = {
@@ -125,4 +125,33 @@ it('presents exact input and answer as distinct labeled conversation cards', () 
   const answer = screen.getByRole('article', { name: 'Jarvis response' });
   expect(within(input).getByText('Exact input', { exact: false }).textContent).toBe(turn.intent.input);
   expect(within(answer).getByText('Exact answer', { exact: false }).textContent).toBe(turn.output);
+});
+
+it('pastes an image into chat, persists it as an artifact, and submits its exact version', async () => {
+  const sessionId = `jc_${'a'.repeat(32)}`;
+  const artifactId = `art_${'b'.repeat(32)}`;
+  const send = vi.fn(() => true);
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url === '/api/live/model-options') return Response.json({ default: { provider: 'openai-codex', model: 'gpt-5.6-sol' }, options: [] });
+    if (url === '/api/artifacts/upload') return Response.json({ artifact: {
+      id: artifactId, title: 'clipboard.png', type: 'image', mime: 'image/png',
+      createdAt: '2026-09-22T18:00:00.000Z', updatedAt: '2026-09-22T18:00:00.000Z',
+      creator: { subject: 'operator', source: 'upload' }, sessionId, projectId: null, runId: null,
+      sourceRequestId: null, size: 4, sha256: 'c'.repeat(64), currentVersion: 1,
+      canonical: false, privateMode: 'private', originalFilename: 'clipboard.png',
+      versions: [{ version: 1, parentVersion: null, baseVersion: null, createdAt: '2026-09-22T18:00:00.000Z', creator: { subject: 'operator', source: 'upload' }, type: 'image', mime: 'image/png', size: 4, sha256: 'c'.repeat(64), revisionNote: null, feedback: null, originalFilename: 'clipboard.png' }],
+      comments: [],
+    } });
+    throw new Error(`unexpected ${url}`);
+  }));
+  render(<TurnComposer allowed imageAttachmentsEnabled sessionId={sessionId} projectId={null} max={16000} maxSteer={4000} turn={null}
+    send={send} retry={vi.fn()} resume={vi.fn()} steer={vi.fn()} recoveries={[]} consumeRecovery={vi.fn()} />);
+  const composer = screen.getByRole('textbox', { name: 'Message Jarvis' });
+  const image = new File([new Uint8Array([1, 2, 3, 4])], 'clipboard.png', { type: 'image/png' });
+  fireEvent.paste(composer, { clipboardData: { files: [image], items: [] } });
+  await screen.findByText('clipboard.png');
+  fireEvent.change(composer, { target: { value: 'Make a new version.' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  await waitFor(() => expect(send).toHaveBeenCalledWith(sessionId, 'Make a new version.', 16000, undefined, [{ artifactId, version: 1 }]));
 });

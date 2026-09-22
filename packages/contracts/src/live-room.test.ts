@@ -102,6 +102,18 @@ describe('Live Room run request and status contracts', () => {
     expect(LiveRunSubmissionRequestSchema.parse(request)).toEqual(request);
   });
 
+  it('accepts bounded exact artifact image versions and rejects malformed references', () => {
+    const request = {
+      sessionId: session.id,
+      input: 'Make a new version of this image.',
+      clientRequestId: 'c17cb7d5-99cf-4a06-a24b-d5d5417e7a7e',
+      images: [{ artifactId: `art_${'a'.repeat(32)}`, version: 2 }],
+    };
+    expect(LiveRunSubmissionRequestSchema.parse(request)).toEqual(request);
+    expect(() => LiveRunSubmissionRequestSchema.parse({ ...request, images: [{ artifactId: 'bad', version: 2 }] })).toThrow();
+    expect(() => LiveRunSubmissionRequestSchema.parse({ ...request, images: Array(5).fill(request.images[0]) })).toThrow();
+  });
+
   it('rejects blank and oversized turn input', () => {
     expect(() => LiveRunSubmissionRequestSchema.parse({
       sessionId: session.id,

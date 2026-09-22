@@ -39,6 +39,8 @@ const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9_.:@+-]{0,159}$/;
 const COMMAND_SESSION_ID = /^jc_[a-f0-9]{32}$/;
 const RUN_ID = /^run_[a-f0-9]{32}$/;
 const IDEMPOTENCY_KEY = /^[!-~]{1,255}$/;
+const CHAT_IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const;
+const MAX_CHAT_IMAGE_BYTES = 6 * 1024 * 1024;
 const COMMAND_SOURCES = new Set(['jarvis-command', 'api_server']);
 const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh'] as const;
 const CURATED_INFERENCE_OPTIONS = [
@@ -196,7 +198,22 @@ const RunCreateBodySchema = z.object({
   sessionId: z.string().regex(SESSION_ID),
   input: z.string().trim().min(1).max(16_000),
   inference: InferenceOverrideSchema.optional(),
-}).strict();
+  images: z.array(z.object({
+    mime: z.enum(CHAT_IMAGE_MIMES),
+    dataBase64: z.string().min(4).max(Math.ceil(MAX_CHAT_IMAGE_BYTES * 4 / 3) + 8),
+  }).strict()).max(4).optional(),
+}).strict().superRefine((body, context) => {
+  let total = 0;
+  for (const image of body.images ?? []) {
+    const bytes = Buffer.from(image.dataBase64, 'base64');
+    if (!bytes.length || bytes.toString('base64') !== image.dataBase64) {
+      context.addIssue({ code: 'custom', message: 'Invalid image encoding', path: ['images'] });
+      return;
+    }
+    total += bytes.length;
+  }
+  if (total > MAX_CHAT_IMAGE_BYTES) context.addIssue({ code: 'custom', message: 'Image payload too large', path: ['images'] });
+});
 
 export type CommandProxyDependencies = Readonly<{
   config: CommandProxyConfig;
@@ -402,11 +419,12 @@ export function buildCommandProxy({
     }
   });
 
-  app.post('/v1/runs', async (request, reply) => {
+  const startRun = (allowImages: boolean) => async (request: FastifyRequest, reply: FastifyReply) => {
     if (!authorize(request, reply, config.commandProxyKey)) return reply;
     const parsed = RunCreateBodySchema.safeParse(request.body);
     const idempotencyKey = headerValue(request, 'idempotency-key');
-    if (!parsed.success || !idempotencyKey || !IDEMPOTENCY_KEY.test(idempotencyKey)) {
+    if (!parsed.success || !idempotencyKey || !IDEMPOTENCY_KEY.test(idempotencyKey)
+      || (!allowImages && !!parsed.data.images?.length)) {
       return invalidRequest(reply);
     }
 
@@ -426,7 +444,16 @@ export function buildCommandProxy({
         method: 'POST',
         body: {
           session_id: parsed.data.sessionId,
-          input: parsed.data.input,
+          input: parsed.data.images?.length ? [{
+            role: 'user',
+            content: [
+              { type: 'text', text: parsed.data.input },
+              ...parsed.data.images.map(image => ({
+                type: 'image_url',
+                image_url: { url: `data:${image.mime};base64,${image.dataBase64}` },
+              })),
+            ],
+          }] : parsed.data.input,
           ...(parsed.data.inference ? upstreamInference(parsed.data.inference) : {}),
         },
         headers: { 'idempotency-key': idempotencyKey },
@@ -442,7 +469,9 @@ export function buildCommandProxy({
     } catch (error) {
       return sendProxyError(error, reply);
     }
-  });
+  };
+  app.post('/v1/runs', startRun(false));
+  app.post('/v1/runs-with-images', { bodyLimit: 9_000_000 }, startRun(true));
 
   app.post('/v1/runs/context-compactions', async (request, reply) => {
     if (!authorize(request, reply, config.commandProxyKey)) return reply;

@@ -151,6 +151,10 @@ export const LiveRunSubmissionRequestSchema = z.object({
   input: NonBlankTextSchema(16_000),
   clientRequestId: ClientRequestIdSchema,
   inference: InferenceOverrideSchema.optional(),
+  images: z.array(z.object({
+    artifactId: z.string().regex(/^art_[a-f0-9]{32}$/),
+    version: z.number().int().min(1).max(10_000),
+  }).strict()).max(4).optional(),
 }).strict();
 
 export const LiveRunSubmissionResponseSchema = z.object({

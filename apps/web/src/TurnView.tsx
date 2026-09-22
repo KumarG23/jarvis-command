@@ -1,6 +1,6 @@
-import { ArrowUp, ChevronRight, Command, Copy, FilePlus2 } from 'lucide-react';
+import { ArrowUp, ChevronRight, Command, Copy, FilePlus2, ImagePlus, X } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import { InferenceOptionsResponseSchema, type InferenceOptionsResponse, type InferenceOverride, type ReasoningEffort, type RunEvent } from '@jarvis-command/contracts';
+import { ArtifactMutationResponseSchema, InferenceOptionsResponseSchema, type InferenceOptionsResponse, type InferenceOverride, type LiveRunSubmissionRequest, type ReasoningEffort, type RunEvent } from '@jarvis-command/contracts';
 import { boundedJson, type DraftRecovery, type Turn } from './useLiveTurn';
 
 export function TurnView({ turn, allowed, approve, stop, onSaveResponse }: Readonly<{ turn: Turn; allowed: boolean; approve: (run: Turn, choice: 'once' | 'deny') => void; stop: (run: Turn) => void; onSaveResponse?: (text: string, runId: string | null) => void }>) {
@@ -186,12 +186,14 @@ function activity(event: RunEvent, done: boolean): string {
     default: return event.type;
   }
 }
-export function TurnComposer({ allowed, sessionId, max, maxSteer, turn, send, retry, resume, steer, recoveries, consumeRecovery, blocked = false }: Readonly<{
+type PendingChatImage = NonNullable<LiveRunSubmissionRequest['images']>[number] & Readonly<{ name: string; size: number }>;
+
+export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, projectId, max, maxSteer, turn, send, retry, resume, steer, recoveries, consumeRecovery, blocked = false }: Readonly<{
   blocked?: boolean;
-  allowed: boolean; sessionId: string | undefined; max: number; turn: Turn | null;
+  allowed: boolean; imageAttachmentsEnabled: boolean; sessionId: string | undefined; projectId: string | null; max: number; turn: Turn | null;
   maxSteer: number; steer: (run: Turn, input: string, max: number) => Promise<boolean | undefined>;
   recoveries: DraftRecovery[]; consumeRecovery: (recovery: DraftRecovery) => void;
-  send: (sessionId: string, input: string, max: number, inference?: InferenceOverride) => boolean; retry: () => void; resume: () => void;
+  send: (sessionId: string, input: string, max: number, inference?: InferenceOverride, images?: LiveRunSubmissionRequest['images']) => boolean; retry: () => void; resume: () => void;
 }>) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const draftsRef = useRef(drafts);
@@ -203,7 +205,12 @@ export function TurnComposer({ allowed, sessionId, max, maxSteer, turn, send, re
   const [inferenceError, setInferenceError] = useState(false);
   const [selectedModel, setSelectedModel] = useState('inherit');
   const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>('medium');
+  const [imagesBySession, setImagesBySession] = useState<Record<string, PendingChatImage[]>>({});
+  const [imageBusy, setImageBusy] = useState(false);
+  const [imageError, setImageError] = useState('');
+  const imageInput = useRef<HTMLInputElement>(null);
   const draft = sessionId ? drafts[sessionId] ?? '' : '';
+  const images = sessionId ? imagesBySession[sessionId] ?? [] : [];
   const setRoomDraft = (room: string, value: string) => { draftsRef.current = { ...draftsRef.current, [room]: value }; setDrafts(draftsRef.current); };
   const setDraft = (value: string) => { if (sessionId) setRoomDraft(sessionId, value); };
   const steerDraft = sessionId ? steers[sessionId] ?? '' : '';
@@ -255,7 +262,51 @@ export function TurnComposer({ allowed, sessionId, max, maxSteer, turn, send, re
     model: selectedOption.model,
     reasoningEffort,
   } as InferenceOverride : undefined;
-  const submit = () => { if (allowed && sessionId && !busy && draft.trim() && draft.length <= max && send(sessionId, draft, max, inference)) setDraft(''); };
+  const attachImages = async (files: FileList | File[] | null) => {
+    if (!allowed || !imageAttachmentsEnabled || !sessionId || busy || imageBusy) return;
+    const candidates = Array.from(files ?? []).filter(file => file.type.startsWith('image/'));
+    if (!candidates.length) return;
+    if (images.length + candidates.length > 4) { setImageError('Attach at most four images.'); return; }
+    const allowedMimes = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
+    if (candidates.some(file => !allowedMimes.has(file.type))) { setImageError('Chat supports PNG, JPEG, GIF and WebP images.'); return; }
+    if (images.reduce((total, image) => total + image.size, 0) + candidates.reduce((total, file) => total + file.size, 0) > 6 * 1024 * 1024) {
+      setImageError('Attached images must total 6 MB or less.'); return;
+    }
+    setImageBusy(true); setImageError('');
+    const uploaded: PendingChatImage[] = [];
+    let failures = 0;
+    try {
+      for (const file of candidates) {
+        try {
+          const form = new FormData();
+          form.append('metadata', JSON.stringify({ title: file.name || 'Pasted image', sessionId, projectId }));
+          form.append('file', file, file.name || 'clipboard.png');
+          const response = await fetch('/api/artifacts/upload', {
+            method: 'POST', credentials: 'same-origin', headers: { accept: 'application/json', 'x-jarvis-command': '1' }, body: form,
+          });
+          if (!response.ok || response.redirected) throw new Error('upload failed');
+          const artifact = ArtifactMutationResponseSchema.parse(await response.json()).artifact;
+          if (artifact.type !== 'image') throw new Error('not an image');
+          uploaded.push({ artifactId: artifact.id, version: artifact.currentVersion, name: artifact.originalFilename ?? artifact.title, size: artifact.size });
+        } catch {
+          failures += 1;
+        }
+      }
+      if (uploaded.length) setImagesBySession(previous => ({ ...previous, [sessionId]: [...(previous[sessionId] ?? []), ...uploaded] }));
+      if (failures) setImageError(uploaded.length ? 'Some images could not be attached.' : 'Image upload failed. Nothing was attached to this message.');
+    } finally {
+      setImageBusy(false);
+      if (imageInput.current) imageInput.current.value = '';
+    }
+  };
+  const submit = () => {
+    const input = draft.trim() || (images.length ? 'Review the attached image.' : '');
+    if (allowed && sessionId && !busy && !imageBusy && input && input.length <= max
+      && send(sessionId, input, max, inference, images.map(({ artifactId, version }) => ({ artifactId, version })))) {
+      setDraft('');
+      setImagesBySession(previous => ({ ...previous, [sessionId]: [] }));
+    }
+  };
   return <>
     {busy && turn && !turn.done ? <p className="composer-feedback" role="status">{turn.phase}</p> : null}
     {turn?.phase === 'Admission uncertain — retry the same intent' ? <button className="primary-button" type="button" onClick={retry}>Retry same intent</button> : null}
@@ -270,7 +321,10 @@ export function TurnComposer({ allowed, sessionId, max, maxSteer, turn, send, re
       <button type="button" disabled={!!draft} onClick={() => handoff(item, false)}>Restore to empty draft</button>
       <button type="button" onClick={() => handoff(item, true)}>Append to draft</button>
     </section>) : null}
-    {allowed ? <form className="turn-composer" onSubmit={(event) => { event.preventDefault(); submit(); }}>
+    {allowed ? <form className="turn-composer" onSubmit={(event) => { event.preventDefault(); submit(); }} onDragOver={(event) => {
+      if (!imageAttachmentsEnabled) return;
+      if (Array.from(event.dataTransfer.items).some(item => item.kind === 'file' && item.type.startsWith('image/'))) event.preventDefault();
+    }} onDrop={(event) => { if (!imageAttachmentsEnabled) return; const files = Array.from(event.dataTransfer.files); if (files.some(file => file.type.startsWith('image/'))) { event.preventDefault(); void attachImages(files); } }}>
       <details className="inference-control">
         <summary>{selectedOption ? `${selectedOption.label} · ${reasoningEffort}` : 'Model · Inherit'}</summary>
         <div className="inference-fields">
@@ -285,10 +339,19 @@ export function TurnComposer({ allowed, sessionId, max, maxSteer, turn, send, re
         </div>
       </details>
       {inferenceError ? <p role="status">Model choices unavailable; inherited routing remains available.</p> : null}
-      <textarea placeholder="Message Jarvis…" aria-label="Message Jarvis" maxLength={max} value={draft} disabled={busy} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => {
+      {images.length ? <div className="chat-images" aria-label="Attached images">{images.map(image => <span key={`${image.artifactId}:${image.version}`}><ImagePlus size={14} />{image.name}<button type="button" aria-label={`Remove ${image.name}`} onClick={() => setImagesBySession(previous => ({ ...previous, [sessionId!]: (previous[sessionId!] ?? []).filter(item => item !== image) }))}><X size={13} /></button></span>)}</div> : null}
+      {imageBusy ? <p role="status">Uploading image…</p> : null}
+      {imageError ? <p role="alert">{imageError}</p> : null}
+      {imageAttachmentsEnabled ? <><input ref={imageInput} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-label="Attach images" onChange={event => { void attachImages(event.target.files); }} />
+      <button className="icon-button attach-image" type="button" disabled={busy || imageBusy || images.length >= 4} aria-label="Attach image" title="Attach image" onClick={() => imageInput.current?.click()}><ImagePlus size={19} /></button></> : null}
+      <textarea placeholder="Message Jarvis…" aria-label="Message Jarvis" maxLength={max} value={draft} disabled={busy} onPaste={(event) => {
+        if (!imageAttachmentsEnabled) return;
+        const pasted = Array.from(event.clipboardData.files).filter(file => file.type.startsWith('image/'));
+        if (pasted.length) { event.preventDefault(); void attachImages(pasted); }
+      }} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => {
         if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); submit(); }
       }} />
-      <button className="primary-button" type="submit" disabled={busy || !draft.trim() || draft.length > max} aria-label="Send message" title="Send message"><ArrowUp size={20} /></button>
+      <button className="primary-button" type="submit" disabled={busy || imageBusy || (!draft.trim() && !images.length) || draft.length > max} aria-label="Send message" title="Send message"><ArrowUp size={20} /></button>
     </form> : <p className="composer-feedback">{sessionId ? 'Messaging is unavailable for this chat.' : 'Choose New chat to begin.'}</p>}
     <details className="turn-limit"><summary>Connection & recovery details</summary><p>One writer in this tab; the server enforces cross-tab/session concurrency. Only opaque session, request and run identifiers are stored for reload recovery. Known runs resume by status reads, never message retransmission. Pending admission without a run ID remains locked for trusted operator reconciliation. Message bodies and drafts are never stored.</p></details>
   </>;

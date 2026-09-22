@@ -182,6 +182,10 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 .turn-composer:has(textarea[aria-label="Steer Jarvis"]) { flex-wrap: wrap; margin-bottom: 10px; }
 .turn-composer:has(textarea[aria-label="Steer Jarvis"]) button { width: auto; }
 .turn-composer > p { width: 100%; color: var(--muted); font-size: 11px; }
+.turn-composer .attach-image { flex: 0 0 40px; min-width: 40px; min-height: 40px; padding: 8px; border: 1px solid var(--border); border-radius: 9px; color: var(--cyan); background: var(--surface); }
+.chat-images { display: flex; flex: 0 0 100%; flex-wrap: wrap; gap: 7px; }
+.chat-images > span { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; color: var(--text); background: var(--surface); font-size: 11px; }
+.chat-images > span > button { display: inline-grid; place-items: center; padding: 1px; border: 0; color: var(--muted); background: transparent; cursor: pointer; }
 .inference-control { flex: 0 0 100%; color: var(--muted); font-size: 10px; }
 .inference-control summary { width: fit-content; cursor: pointer; color: var(--cyan); font: 500 9px/1.4 'JetBrains Mono', monospace; letter-spacing: .04em; }
 .inference-fields { display: flex; flex-wrap: wrap; align-items: end; gap: 8px 12px; margin-top: 8px; padding: 9px; border: 1px solid var(--border); border-radius: 8px; background: #10151d; }

@@ -57,6 +57,7 @@ const TERMINAL_STATES = new Set<LiveRunState>([
 type LiveRoomServiceOptions = Readonly<{
   client: CommandProxyClient;
   ledger: AuditLedger;
+  resolveImages?: (references: NonNullable<LiveRunSubmissionRequest['images']>) => Promise<ReadonlyArray<Readonly<{ mime: string; bytes: Buffer }>>>;
   createPublicRunId?: () => string;
   now?: () => Date;
 }>;
@@ -84,6 +85,7 @@ export class LiveRoomNotFoundError extends Error {
 export function createLiveRoomService({
   client,
   ledger,
+  resolveImages,
   createPublicRunId = () => `jcr_${randomBytes(16).toString('hex')}`,
   now = () => new Date(),
 }: LiveRoomServiceOptions) {
@@ -146,6 +148,7 @@ export function createLiveRoomService({
     const submissionKey = `${actor}\0${request.clientRequestId}`;
     const requestFingerprint = sha256(canonicalJson({
       inference: request.inference ? JSON.stringify(request.inference) : '',
+      images: request.images ? JSON.stringify(request.images) : '',
       input: request.input,
       sessionId: request.sessionId,
     }));
@@ -237,11 +240,16 @@ export function createLiveRoomService({
     request: LiveRunSubmissionRequest,
     recoveredAdmission: boolean,
   ): Promise<LiveRunSubmissionResponse> => {
+    const images = request.images?.length
+      ? await resolveImages?.(request.images)
+      : undefined;
+    if (request.images?.length && !images) throw new Error('Artifact image resolver unavailable');
     const upstream = await client.startRun({
       sessionId: request.sessionId,
       input: request.input,
       idempotencyKey: `jc-v1-${sha256(`${record.actor}\0${record.clientRequestId}`)}`,
       ...(request.inference ? { inference: request.inference } : {}),
+      ...(images?.length ? { images } : {}),
     });
     if (upstream.sessionId !== record.sessionId) throw new LiveRoomConflictError();
     await ledger.appendOnce(`started:${record.publicRunId}`, auditDraft({

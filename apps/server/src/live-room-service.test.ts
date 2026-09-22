@@ -204,6 +204,23 @@ describe('LiveRoomService run identity and recovery', () => {
     expect(submitted).toMatchObject({ sessionId, input: request.input });
   });
 
+  it('binds exact artifact image versions into idempotency and resolves bytes before admission', async () => {
+    const { ledger } = await createLedger();
+    const client = fakeClient();
+    const resolveImages = vi.fn().mockResolvedValue([{ mime: 'image/png', bytes: Buffer.from('image-one') }]);
+    const service = createLiveRoomService({ client, ledger, createPublicRunId: () => publicRunId, resolveImages });
+    const withImage = { ...request, images: [{ artifactId: `art_${'c'.repeat(32)}`, version: 2 }] };
+    await service.submitRun('operator-subject', withImage);
+    expect(resolveImages).toHaveBeenCalledExactlyOnceWith(withImage.images);
+    expect(client.startRun).toHaveBeenCalledWith(expect.objectContaining({
+      images: [{ mime: 'image/png', bytes: Buffer.from('image-one') }],
+    }));
+    await expect(service.submitRun('operator-subject', {
+      ...request,
+      images: [{ artifactId: `art_${'c'.repeat(32)}`, version: 1 }],
+    })).rejects.toBeInstanceOf(LiveRoomConflictError);
+  });
+
   it('recovers the same public run after service restart without resubmitting the turn', async () => {
     const { ledger, path } = await createLedger();
     const firstClient = fakeClient();

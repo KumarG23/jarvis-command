@@ -164,6 +164,23 @@ describe('Command proxy client', () => {
     expect(headers.get('idempotency-key')).toBe(`jc-v1-${'a'.repeat(64)}`);
   });
 
+  it('forwards bounded image bytes only across the private command bridge', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({ runId, sessionId, status: 'queued', replayed: false }, 202));
+    const client = createCommandProxyClient({ baseUrl, commandProxyKey, fetcher });
+    await client.startRun({
+      sessionId,
+      input: 'Revise this image.',
+      idempotencyKey: `jc-v1-${'b'.repeat(64)}`,
+      images: [{ mime: 'image/png', bytes: Buffer.from('synthetic-png') }],
+    });
+    expect(fetcher.mock.calls[0]![0]).toBe(`${baseUrl}/v1/runs-with-images`);
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).toEqual({
+      sessionId,
+      input: 'Revise this image.',
+      images: [{ mime: 'image/png', dataBase64: Buffer.from('synthetic-png').toString('base64') }],
+    });
+  });
+
   it('forwards a validated per-prompt inference override exactly', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({ runId, sessionId, status: 'queued', replayed: false }, 202));
     const client = createCommandProxyClient({ baseUrl, commandProxyKey, fetcher });

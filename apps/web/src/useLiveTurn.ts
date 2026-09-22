@@ -295,13 +295,26 @@ export function useLiveTurn() {
       supervise(current.current!);
     } catch { if (!cancelled && alive.current && current.current?.intent === intent) update({ phase: 'Admission uncertain — retry the same intent' }); }
   }
-  function send(sessionId: string, input: string, max: number, inference?: InferenceOverride, clientRequestId?: string) {
+  function send(
+    sessionId: string,
+    input: string,
+    max: number,
+    inference?: InferenceOverride,
+    images?: LiveRunSubmissionRequest['images'],
+    clientRequestId?: string,
+  ) {
     const baseline = histories.current.get(sessionId);
     if (!baseline?.complete || (current.current?.done && !current.current.historyMatched && completed.current.length >= MAX_UNCONFIRMED_TURNS)) return false;
     if (recoveryBlocked.current || (current.current && !current.current.done) || !input.trim() || input.length > max) return false;
     cleanup.current();
     mutation.current?.abort(); mutation.current = null;
-    const intent = { sessionId, input, clientRequestId: clientRequestId ?? crypto.randomUUID(), ...(inference ? { inference } : {}) };
+    const intent = {
+      sessionId,
+      input,
+      clientRequestId: clientRequestId ?? crypto.randomUUID(),
+      ...(inference ? { inference } : {}),
+      ...(images?.length ? { images } : {}),
+    };
     const pending = { sessionId, clientRequestId: intent.clientRequestId, publicRunId: null };
     try { writeRecovery(pending, null); stored.current = pending; }
     catch { recoveryBlocked.current = true; setRecoveryError('Local reload recovery unavailable — message not sent; writer locked.'); return false; }

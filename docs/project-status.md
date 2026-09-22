@@ -6,7 +6,7 @@ Follow `../AGENTS.md` and `/home/neal/AGENTS.md`. Build first, validate proporti
 
 ## Branch and product state
 
-This checkout is `feat/artifact-studio`. It preserves the deployed navigation fix and Grok 4.7 roster while adding the complete Artifact Studio scope. The product now has typed durable artifacts; immutable versions and compare; provenance, comments and canonical promotion; Markdown/code/diff/log/report/Mermaid/image/PDF/file previews; isolated script-capable HTML/SVG previews; upload, camera and paste intake; session/project scopes; desktop side panel and mobile full-screen workspace; download/delete; approval-routed Obsidian and repository export prompts; and a `Create with Jarvis` flow that binds an exact run and persists its terminal output idempotently.
+This checkout is `feat/artifact-studio`. It preserves the deployed navigation fix and Grok 4.7 roster while adding the complete Artifact Studio scope. The product now has typed durable artifacts; immutable versions and compare; provenance, comments and canonical promotion; Markdown/code/diff/log/report/Mermaid/image/PDF/file previews; isolated script-capable HTML/SVG previews; upload, camera and paste intake; session/project scopes; desktop side panel and mobile full-screen workspace; download/delete; approval-routed Obsidian and repository export prompts; and a `Create with Jarvis` flow that binds an exact run and persists its terminal output idempotently. The chat composer now accepts pasted/dropped/picked images, persists them as linked private artifacts, and submits exact artifact versions to Hermes as bounded multimodal input.
 
 Browser Workbench and the later coding/IDE workbench remain intentionally deferred. Product sequencing is one finished scope at a time.
 

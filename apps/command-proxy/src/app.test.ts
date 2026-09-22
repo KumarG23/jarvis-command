@@ -569,6 +569,37 @@ describe('run creation and control', () => {
     expect(headers.get('authorization')).toBe(`Bearer ${hermesKey}`);
   });
 
+  it('projects validated private image bytes into the Hermes multimodal run contract', async () => {
+    const encoded = Buffer.from('synthetic-png').toString('base64');
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'jarvis-command')))
+      .mockResolvedValueOnce(jsonResponse({ run_id: runId, status: 'started', replayed: false }, 202));
+    const app = createApp(fetcher);
+    const response = await app.inject({
+      method: 'POST', url: '/v1/runs-with-images',
+      headers: authHeaders({ 'content-type': 'application/json', 'idempotency-key': 'jc-image-turn' }),
+      payload: { sessionId: commandSessionId, input: 'Revise this image.', images: [{ mime: 'image/png', dataBase64: encoded }] },
+    });
+    expect(response.statusCode).toBe(202);
+    expect(JSON.parse(String(fetcher.mock.calls[1]![1]!.body))).toEqual({
+      session_id: commandSessionId,
+      input: [{ role: 'user', content: [
+        { type: 'text', text: 'Revise this image.' },
+        { type: 'image_url', image_url: { url: `data:image/png;base64,${encoded}` } },
+      ] }],
+    });
+  });
+
+  it('keeps the ordinary run route on its smaller body boundary and refuses image payloads there', async () => {
+    const app = createApp(vi.fn<typeof fetch>());
+    const response = await app.inject({
+      method: 'POST', url: '/v1/runs',
+      headers: authHeaders({ 'content-type': 'application/json', 'idempotency-key': 'jc-wrong-image-route' }),
+      payload: { sessionId: commandSessionId, input: 'Inspect.', images: [{ mime: 'image/png', dataBase64: Buffer.from('png').toString('base64') }] },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
   it('rejects a run for an external or forged session before mutation', async () => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse(upstreamSession(externalSessionId, 'discord')))

@@ -430,7 +430,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
       message: 'Create with Jarvis is starting.',
     };
     setPendingGeneration(pending);
-    const accepted = live.send(selectedSession.id, prompt, bootstrap.command.liveRoom.maxInputCharacters, undefined, clientRequestId);
+    const accepted = live.send(selectedSession.id, prompt, bootstrap.command.liveRoom.maxInputCharacters, undefined, undefined, clientRequestId);
     if (!accepted) {
       setPendingGeneration({ ...pending, state: 'failed', message: 'Jarvis could not start this artifact request. Retry after the active run clears.' });
       return false;
@@ -451,7 +451,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
       message: 'Create with Jarvis is retrying.',
     };
     setPendingGeneration(next);
-    const accepted = live.send(next.sessionId, next.prompt, bootstrap.command.liveRoom.maxInputCharacters, undefined, clientRequestId);
+    const accepted = live.send(next.sessionId, next.prompt, bootstrap.command.liveRoom.maxInputCharacters, undefined, undefined, clientRequestId);
     if (!accepted) setPendingGeneration({ ...next, state: 'failed', message: 'Retry could not start. Check that no run is active and try again.' });
   }
   function cancelArtifactGeneration() {
@@ -505,7 +505,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
       <footer className="composer-wrap">
         {liveEnabled && selectedSession?.ownership === 'command' && !live.historyReady(selectedSession.id) ? <p className="composer-feedback" role="status">Load complete chat history before sending. Retry history or load remaining pages.</p> : null}
         {live.historyBacklogFull ? <p role="alert" className="notice">Unconfirmed reply limit reached. Your replies are retained; retry history before sending more.</p> : null}
-        {liveEnabled ? <TurnComposer blocked={!!live.recoveryError || !live.historyReady(selectedSession?.id) || live.historyBacklogFull} allowed={!!writeAllowed} sessionId={selectedSession?.id} max={bootstrap.command.liveRoom.maxInputCharacters} maxSteer={bootstrap.command.liveRoom.maxSteerCharacters} turn={live.turn} send={live.send} retry={live.retry} resume={live.resume} steer={live.steer} recoveries={live.recoveries} consumeRecovery={live.consumeRecovery} /> : <p className="composer-feedback">Messaging is unavailable in this read-only connection.</p>}
+        {liveEnabled ? <TurnComposer blocked={!!live.recoveryError || !live.historyReady(selectedSession?.id) || live.historyBacklogFull} allowed={!!writeAllowed} imageAttachmentsEnabled={artifactStudioEnabled} sessionId={selectedSession?.id} projectId={projectId} max={bootstrap.command.liveRoom.maxInputCharacters} maxSteer={bootstrap.command.liveRoom.maxSteerCharacters} turn={live.turn} send={live.send} retry={live.retry} resume={live.resume} steer={live.steer} recoveries={live.recoveries} consumeRecovery={live.consumeRecovery} /> : <p className="composer-feedback">Messaging is unavailable in this read-only connection.</p>}
       </footer>
     </main>
     <ContextPane open={pane !== null} fullScreen={pane === 'artifacts' && artifactPaneFullScreen}>
