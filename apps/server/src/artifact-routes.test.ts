@@ -122,6 +122,9 @@ describe('artifact routes', () => {
       expect(download.body).toBe('# Two\nhello\nworld');
       const deleted = await reopened.inject({ method: 'DELETE', url: `/api/artifacts/${artifact.id}`, headers, payload: JSON.stringify({ confirmArtifactId: artifact.id, currentVersion: 2 }) });
       expect(deleted.json()).toEqual({ deleted: true, artifactId: artifact.id });
+      const missing = await reopened.inject({ method: 'GET', url: `/api/artifacts/${artifact.id}`, headers: { 'cf-access-jwt-assertion': 'valid' } });
+      expect(missing.statusCode).toBe(404);
+      expect(missing.json()).toEqual({ error: 'artifact_not_found' });
       await reopened.close();
     } finally {
       await app.close();

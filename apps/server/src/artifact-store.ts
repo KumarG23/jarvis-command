@@ -48,6 +48,14 @@ export class ArtifactDeletedError extends Error {
   }
 }
 
+export class ArtifactNotFoundError extends Error {
+  public readonly statusCode = 404;
+  public constructor(message = 'Artifact not found') {
+    super(message);
+    this.name = 'ArtifactNotFoundError';
+  }
+}
+
 export type ArtifactStoreOptions = Readonly<{
   root: string;
   maxFileBytes: number;
@@ -247,7 +255,10 @@ export class ArtifactStore {
 
   public async readMetadata(id: string): Promise<ArtifactMetadata> {
     await this.init();
-    return this.#readMetadataFile(ArtifactIdSchema.parse(id));
+    return this.#readMetadataFile(ArtifactIdSchema.parse(id)).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') throw new ArtifactNotFoundError();
+      throw error;
+    });
   }
 
   async #readMetadataFile(artifactId: string): Promise<ArtifactMetadata> {

@@ -6,7 +6,7 @@ import { registerLiveRoomRoutes, type LiveStreamLimits } from './live-room-route
 import { registerArtifactRoutes } from './artifact-routes';
 import type { createLiveRoomService } from './live-room-service';
 import { AuditIntegrityError } from './audit-ledger';
-import { ArtifactConflictError, ArtifactDeletedError, ArtifactStorageError, ArtifactStore } from './artifact-store';
+import { ArtifactConflictError, ArtifactDeletedError, ArtifactNotFoundError, ArtifactStorageError, ArtifactStore } from './artifact-store';
 import { RoomStorageError } from './project-room-store';
 import { CommandProxyUnavailableError } from './command-client';
 import type { AppConfig } from './config';
@@ -63,6 +63,7 @@ export function buildApp(dependencies: AppDependencies) {
     if (error instanceof ArtifactStorageError) return reply.code(503).send({ error: 'artifact_storage_unavailable' });
     if (error instanceof ArtifactConflictError) return reply.code(409).send({ error: 'artifact_conflict' });
     if (error instanceof ArtifactDeletedError) return reply.code(410).send({ error: 'artifact_deleted' });
+    if (error instanceof ArtifactNotFoundError) return reply.code(404).send({ error: 'artifact_not_found' });
     if (error instanceof AuditIntegrityError || (error instanceof CommandProxyUnavailableError && error.statusCode === 503)) {
       return reply.code(503).send({ error: 'live_room_unavailable' });
     }
