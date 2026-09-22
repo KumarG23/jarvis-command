@@ -6,13 +6,17 @@ Follow `../AGENTS.md` and `/home/neal/AGENTS.md`. Build first, validate proporti
 
 ## Branch and product state
 
-This checkout is `feat/grok-4.7-roster`, branched from the production navigation commit `2524fd82db40a61d52e228f93ce59b8ea74157b9`. Other worktrees and their WIP remain untouched.
+This checkout is `feat/artifact-studio`. It preserves the deployed navigation fix and Grok 4.7 roster while adding the complete Artifact Studio scope. The product now has typed durable artifacts; immutable versions and compare; provenance, comments and canonical promotion; Markdown/code/diff/log/report/Mermaid/image/PDF/file previews; isolated script-capable HTML/SVG previews; upload, camera and paste intake; session/project scopes; desktop side panel and mobile full-screen workspace; download/delete; approval-routed Obsidian and repository export prompts; and a `Create with Jarvis` flow that binds an exact run and persists its terminal output idempotently.
 
-The per-prompt model/reasoning controls expose Astra, Sol, Terra, Luna, Grok 4.7, and Grok 4.6 only when each route is present in Hermes's live authenticated inventory. The command proxy validates availability again before admission, translates the selection to Hermes's native per-run contract, and binds it into the durable request fingerprint. Inherited routing remains the default; inference selection does not alter tools or permissions. Grok 4.7 is the preferred explicit Grok lane; 4.6 remains available as rollback during qualification.
+Browser Workbench and the later coding/IDE workbench remain intentionally deferred. Product sequencing is one finished scope at a time.
 
-Production was updated on 2026-09-22 at 10:52 ET from source commit `9bf5aaf862d3f3aa5bd4a9213f841f0145c39da6`. The app and command proxy run `jarvis-command-app:9bf5aaf` and `jarvis-command-command-proxy:9bf5aaf`; the public UI exposed Grok 4.7 and completed an exact `xai-oauth/grok-4.7` medium-effort run with `COMMAND_GROK47_OK`. App rollback is retained on VM 113 at `/var/lib/jarvis-command/release-backups/20260922T105201-0400-grok47-roster`; command-proxy rollback is retained on VM 108 at `/var/backups/jarvis-command/20260922T105201-0400-grok47-command-proxy`. The prior image tags remain available.
+Production was updated on 2026-09-22 at 13:49 ET from runtime source commit `c483d8b3f9197065b7c48d2f2f70774064a4e990`. The running immutable app image is `sha256:1e2af2167c541b9f0612cfd8711b59602752efefd3718c75c960d970dd6cbcc4`; rollback image `sha256:25ec7f76a787a6974bfbdecc1a22e300b23dcf281e0f6296bdded42ba1ebc9c2` is retained. Recovery state is retained under `/var/lib/jarvis-command/release-backups/20260922T174911Z-artifact-hotfix-c483d8b`.
 
-The concise canonical product/state/priorities/issues note is `05 Coding Projects/Jarvis Command/Jarvis Command.md` in the vault. Prepared deployments verify requested artifact/provenance, recovery, health and affected behavior without repeating development review.
+Live acceptance created a Markdown artifact, saved immutable v2, compared v1→v2, promoted it canonical, added feedback, restarted the service, and read back the exact persisted checksum. A script-capable HTML artifact rendered in an `allow-scripts` opaque-origin sandbox without parent access. Desktop and 390×844 mobile geometry passed. Both synthetic artifacts were deleted and exact 404 responses plus an empty artifact list were verified after the deletion-semantics hotfix.
+
+Focused server/web/contracts tests, typecheck, lint, production build, deployment helper/supervisor tests, desktop/mobile Playwright acceptance, dependency audit, authenticated public-path checks, restart persistence and live cleanup passed. The independent security/correctness review findings were repaired before release.
+
+The concise canonical product/state/priorities note is `05 Coding Projects/Jarvis Command/Jarvis Command.md` in the vault. Prepared deployments verify requested artifact/provenance, recovery, health and affected behavior without repeating development review.
 
 ## History
 
