@@ -24,7 +24,7 @@ export const ApprovalChoiceSchema = z.enum(['once', 'deny']);
 export const ReasoningEffortSchema = z.enum(['minimal', 'low', 'medium', 'high', 'xhigh']);
 const OpenAiCodexInferenceSchema = z.object({
   provider: z.literal('openai-codex'),
-  model: z.enum(['gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']),
+  model: z.enum(['gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']),
   reasoningEffort: ReasoningEffortSchema,
 }).strict();
 const GrokInferenceSchema = z.object({
@@ -49,7 +49,7 @@ export const InferenceOptionsResponseSchema = z.object({
     provider: NonBlankTextSchema(120),
     model: NonBlankTextSchema(160),
   }).strict(),
-  options: z.array(InferenceOptionSchema).min(1).max(6),
+  options: z.array(InferenceOptionSchema).min(1).max(8),
 }).strict();
 export const LiveRunStateSchema = z.enum([
   'queued',
