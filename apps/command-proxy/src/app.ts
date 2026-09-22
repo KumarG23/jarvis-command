@@ -46,6 +46,7 @@ const CURATED_INFERENCE_OPTIONS = [
   { provider: 'openai-codex', model: 'gpt-5.6-sol', label: 'Sol' },
   { provider: 'openai-codex', model: 'gpt-5.6-terra', label: 'Terra' },
   { provider: 'openai-codex', model: 'gpt-5.6-luna', label: 'Luna' },
+  { provider: 'xai-oauth', model: 'grok-4.7', label: 'Grok 4.7' },
   { provider: 'xai-oauth', model: 'grok-4.6', label: 'Grok 4.6' },
 ] as const;
 

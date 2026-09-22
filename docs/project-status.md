@@ -6,9 +6,9 @@ Follow `../AGENTS.md` and `/home/neal/AGENTS.md`. Build first, validate proporti
 
 ## Branch and product state
 
-This checkout is `feat/room-workspace-usability`. Preserve all implementation WIP, including the pre-existing `AGENTS.md` edit. Latest recorded production checkpoint is project rooms `584c3fc6f45dbc60cc8768ecd39c59e92cd219f8`; check live state before operating.
+This checkout is `feat/grok-4.7-roster`, branched from the production navigation commit `2524fd82db40a61d52e228f93ce59b8ea74157b9`. Other worktrees and their WIP remain untouched.
 
-The current candidate adds compact per-prompt model/reasoning controls. The browser can select only Astra, Sol, Terra, Luna, or Grok 4.6 from a sanitized inventory derived from Hermes's live authenticated providers. The command proxy validates availability again before admission, translates the selection to Hermes's native per-run contract, and binds it into the durable request fingerprint. Inherited routing remains the default; inference selection does not alter tools or permissions. Local contract/proxy/server/web tests, lint, typecheck, build, and a credential-safe live inventory probe pass. Feature checkpoint `9e0e23a0f8704d973b74052de4a0a7a88f5f5414` is pushed to `origin/feat/room-workspace-usability`; it is not merged or deployed.
+The per-prompt model/reasoning controls expose Astra, Sol, Terra, Luna, Grok 4.7, and Grok 4.6 only when each route is present in Hermes's live authenticated inventory. The command proxy validates availability again before admission, translates the selection to Hermes's native per-run contract, and binds it into the durable request fingerprint. Inherited routing remains the default; inference selection does not alter tools or permissions. Grok 4.7 is the preferred explicit Grok lane; 4.6 remains available as rollback during qualification.
 
 The concise canonical product/state/priorities/issues note is `05 Coding Projects/Jarvis Command/Jarvis Command.md` in the vault. Prepared deployments verify requested artifact/provenance, recovery, health and affected behavior without repeating development review.
 

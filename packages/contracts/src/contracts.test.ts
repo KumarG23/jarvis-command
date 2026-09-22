@@ -154,6 +154,10 @@ describe('per-prompt inference contracts', () => {
       ...request,
       inference: { provider: 'xai-oauth', model: 'grok-4.6', reasoningEffort: 'high' },
     }).inference?.model).toBe('grok-4.6');
+    expect(LiveRunSubmissionRequestSchema.parse({
+      ...request,
+      inference: { provider: 'xai-oauth', model: 'grok-4.7', reasoningEffort: 'xhigh' },
+    }).inference?.model).toBe('grok-4.7');
 
     for (const inference of [
       { provider: 'xai-oauth', model: 'gpt-5.6-sol', reasoningEffort: 'high' },

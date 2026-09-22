@@ -71,7 +71,7 @@ function upstreamModelOptions(authenticated = true) {
     model: 'gpt-5.6-sol',
     providers: [
       { slug: 'openai-codex', authenticated, api_url: 'private', models: ['gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'unapproved-model'] },
-      { slug: 'xai-oauth', authenticated: true, warning: 'private', models: ['grok-4.6'] },
+      { slug: 'xai-oauth', authenticated: true, warning: 'private', models: ['grok-4.6', 'grok-4.7'] },
     ],
     api_key: 'must-not-cross-the-wire',
   };
@@ -467,6 +467,7 @@ describe('run creation and control', () => {
         ['openai-codex', 'gpt-5.6-sol', 'Sol'],
         ['openai-codex', 'gpt-5.6-terra', 'Terra'],
         ['openai-codex', 'gpt-5.6-luna', 'Luna'],
+        ['xai-oauth', 'grok-4.7', 'Grok 4.7'],
         ['xai-oauth', 'grok-4.6', 'Grok 4.6'],
       ].map(([provider, model, label]) => ({ provider, model, label, reasoningEfforts: ['minimal', 'low', 'medium', 'high', 'xhigh'] })),
     });
@@ -494,6 +495,28 @@ describe('run creation and control', () => {
       model: 'gpt-5.6-luna',
       require_model_lock: true,
       model_options: { reasoning: { enabled: true, effort: 'low' } },
+    });
+  });
+
+  it('validates Grok 4.7 and locks the exact xAI route', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'api_server')))
+      .mockResolvedValueOnce(jsonResponse(upstreamModelOptions()))
+      .mockResolvedValueOnce(jsonResponse({ run_id: runId, status: 'started', replayed: false }, 202));
+    const app = createApp(fetcher);
+    const response = await app.inject({
+      method: 'POST', url: '/v1/runs',
+      headers: authHeaders({ 'content-type': 'application/json', 'idempotency-key': 'jc-grok47-override' }),
+      payload: { sessionId: commandSessionId, input: 'Use Grok 4.7.', inference: { provider: 'xai-oauth', model: 'grok-4.7', reasoningEffort: 'xhigh' } },
+    });
+    expect(response.statusCode).toBe(202);
+    expect(JSON.parse(String(fetcher.mock.calls[2]![1]!.body))).toEqual({
+      session_id: commandSessionId,
+      input: 'Use Grok 4.7.',
+      provider: 'xai-oauth',
+      model: 'grok-4.7',
+      require_model_lock: true,
+      model_options: { reasoning: { enabled: true, effort: 'xhigh' } },
     });
   });
 

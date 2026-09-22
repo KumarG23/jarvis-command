@@ -136,6 +136,7 @@ function modelLabel(model: string | null): string {
     'gpt-5.6-sol': 'Sol',
     'gpt-5.6-terra': 'Terra',
     'gpt-5.6-luna': 'Luna',
+    'grok-4.7': 'Grok 4.7',
     'grok-4.6': 'Grok 4.6',
   } as Record<string, string>)[model ?? ''] ?? model ?? 'model unknown';
 }
