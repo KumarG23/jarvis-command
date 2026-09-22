@@ -139,6 +139,7 @@ describe('ArtifactStudio', () => {
     renderStudio({ pendingSave: { key: 'response-1', sessionId: baseArtifact.sessionId, projectId: baseArtifact.projectId, title: 'Actual response', content: 'assistant body' }, onConsumedSave: consumed, onSendPrompt: sent });
     await waitFor(() => expect(consumed).toHaveBeenCalledWith('response-1'));
     expect(fetchMock).toHaveBeenCalledWith('/api/artifacts/text', expect.objectContaining({ body: expect.stringContaining('assistant body') }));
+    fireEvent.click(screen.getByText('New text artifact'));
     const manual = screen.getByRole('form', { name: 'Create text artifact' });
     fireEvent.change(within(manual).getByLabelText('Title'), { target: { value: 'Manual note' } });
     fireEvent.change(within(manual).getByLabelText('Source'), { target: { value: 'note body' } });

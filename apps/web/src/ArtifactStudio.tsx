@@ -409,15 +409,18 @@ export function ArtifactStudio({ open, selectedSessionId, projectId, canSendProm
             {Object.entries(typeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select></label>
         </div>
-        <form className="artifact-create" aria-label="Create text artifact" onSubmit={event => { event.preventDefault(); void createText(); }}>
-          <h3><FilePlus2 size={16} /> New text artifact</h3>
+        <details className="artifact-create-disclosure">
+          <summary><FilePlus2 size={16} /> New text artifact</summary>
+          <form className="artifact-create" aria-label="Create text artifact" onSubmit={event => { event.preventDefault(); void createText(); }}>
           <label>Title<input value={draft.title} maxLength={160} required onChange={event => setDraft({ ...draft, title: event.target.value })} /></label>
           <label>Type<select value={draft.type} aria-label="New artifact type" onChange={event => setDraft({ ...draft, type: event.target.value as ArtifactType })}>{textTypes.map(item => <option key={item} value={item}>{typeLabels[item]}</option>)}</select></label>
           <label>Source<textarea value={draft.content} maxLength={1_048_576} required onChange={event => setDraft({ ...draft, content: event.target.value })} /></label>
           <button className="primary-button" type="submit" disabled={busy || !draft.title.trim() || !draft.content.trim()}>Create</button>
-        </form>
-        <form className="artifact-create jarvis-create" aria-label="Create with Jarvis" onSubmit={event => { event.preventDefault(); createWithJarvis(); }}>
-          <h3><Sparkles size={16} /> Create with Jarvis</h3>
+          </form>
+        </details>
+        <details className="artifact-create-disclosure">
+          <summary><Sparkles size={16} /> Create with Jarvis</summary>
+          <form className="artifact-create jarvis-create" aria-label="Create with Jarvis" onSubmit={event => { event.preventDefault(); createWithJarvis(); }}>
           <label>Title<input value={generationDraft.title} maxLength={160} required onChange={event => setGenerationDraft({ ...generationDraft, title: event.target.value })} /></label>
           <label>Type<select value={generationDraft.type} aria-label="Generated artifact type" onChange={event => setGenerationDraft({ ...generationDraft, type: event.target.value as ArtifactType })}>{textTypes.map(item => <option key={item} value={item}>{typeLabels[item]}</option>)}</select></label>
           <label>Instructions<textarea value={generationDraft.instructions} maxLength={8000} required onChange={event => setGenerationDraft({ ...generationDraft, instructions: event.target.value })} /></label>
@@ -427,7 +430,8 @@ export function ArtifactStudio({ open, selectedSessionId, projectId, canSendProm
             {generation.canRetry ? <button className="secondary-button" type="button" onClick={onRetryGeneration}>Retry</button> : null}
             {generation.canCancel ? <button className="secondary-button" type="button" onClick={onCancelGeneration}>Cancel</button> : null}
           </div>
-        </form>
+          </form>
+        </details>
         <div className="button-row upload-row">
           <input ref={file} type="file" className="visually-hidden" aria-label="Upload artifact file" onChange={event => void upload(event.target.files)} />
           <input ref={camera} type="file" className="visually-hidden" accept="image/*" capture="environment" aria-label="Capture artifact image" onChange={event => void upload(event.target.files)} />

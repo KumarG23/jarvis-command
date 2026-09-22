@@ -317,7 +317,11 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 .artifact-controls, .artifact-create { display: grid; gap: 12px; }
 .artifact-controls label, .artifact-create label, .artifact-editor label, .artifact-feedback label, .artifact-export label { display: grid; gap: 7px; color: var(--muted); font-size: 11px; }
 .artifact-controls select, .artifact-create input, .artifact-create textarea, .artifact-create select, .artifact-editor input, .artifact-editor textarea, .artifact-feedback textarea, .artifact-export input { width: 100%; min-width: 0; color: var(--text); background: var(--bg); border: 1px solid #343c4c; border-radius: 7px; padding: 9px; font-size: 12px; }
-.artifact-create { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.artifact-create { margin-top: 0; padding: 14px; border-top: 1px solid var(--border); }
+.artifact-create-disclosure { margin-top: 12px; border: 1px solid var(--border); border-radius: 8px; background: #151a22; overflow: clip; }
+.artifact-create-disclosure > summary { display: flex; align-items: center; gap: 7px; padding: 12px; cursor: pointer; color: #c8d0dc; font-size: 12px; font-weight: 600; }
+.artifact-create-disclosure[open] > summary { border-bottom: 1px solid var(--border); }
+.artifact-create-disclosure .artifact-create { border-top: 0; }
 .artifact-create h3 { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 12px; font-weight: 600; color: #c8d0dc; }
 .artifact-create textarea { min-height: 120px; resize: vertical; line-height: 1.6; }
 .jarvis-create { background: #171c25; border-radius: 8px; padding: 14px 0 0; }
