@@ -104,7 +104,7 @@ describe('Selected room recovery', () => {
     fireEvent.change(screen.getByLabelText('Note references (one per line)'), { target: { value: room.notes[0] } });
     fireEvent.click(screen.getByRole('button', { name: 'Create project' }));
     await screen.findByText(room.goal);
-    fireEvent.click(screen.getByRole('button', { name: 'New chat' }));
+    fireEvent.click(screen.getByRole('button', { name: `New chat in ${room.name}` }));
     await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(session.title));
     expect(screen.getByText(/Context is not applied automatically/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Hermes available' }));

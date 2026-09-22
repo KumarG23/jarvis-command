@@ -55,6 +55,13 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 .sidebar-item:hover { color: var(--text); background: #171c26; }
 .sidebar-item[aria-current] { color: var(--text); background: #242139; }
 .project-nav[aria-current] { color: var(--cyan); background: #15212a; }
+.project-nav-row { display: grid; grid-template-columns: minmax(0, 1fr) 38px; align-items: center; gap: 2px; }
+.project-nav-row .project-nav { min-width: 0; }
+.project-new-chat { width: 36px; height: 36px; color: var(--muted); }
+.project-new-chat:hover:not(:disabled) { color: var(--cyan); background: #17212a; }
+.project-chat-recovery { margin: 10px 2px 2px; padding: 10px 12px; border: 1px solid #5a4720; border-radius: 7px; background: #241f15; color: var(--amber); font-size: 12px; line-height: 1.45; }
+.project-chat-recovery p { margin: 0 0 6px; }
+.project-chat-recovery .text-button { color: var(--amber); font-size: 12px; }
 .project-chat-list { margin: 4px 0 10px 19px; padding-left: 7px; border-left: 1px solid #303445; }
 .project-chat-list .sidebar-item { font-size: 12px; padding: 8px; gap: 9px; min-height: 38px; }
 .project-info-button { margin: 6px 8px; color: var(--muted); font-size: 11px; }
@@ -236,6 +243,8 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 @media (max-width: 760px) {
   .room-sidebar { display: none; position: fixed; inset: 0 auto 0 0; z-index: 30; width: min(310px, 88vw); padding-inline: 16px; }
   .room-sidebar.is-open { display: flex; }
+  .project-nav-row { grid-template-columns: minmax(0, 1fr) 44px; }
+  .project-new-chat { width: 44px; height: 44px; }
   .sidebar-brand { min-height: 75px; padding: 15px 5px; }
   .sidebar-brand strong { flex: 1; }
   .close-navigation, .menu-button { display: inline-flex; }

@@ -37,8 +37,7 @@ export function ProjectRooms({ ref, sessions, selectedSessionId, onScope, onSess
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attachId, setAttachId] = useState('');
-  const [creationPending, setCreationPending] = useState(false);
-  const [createdId, setCreatedId] = useState<string | null>(null);
+  const [pendingProjectChat, setPendingProjectChat] = useState<{ roomId: string; roomName: string; session: SessionSummary } | null>(null);
   const [draft, setDraft] = useState<{ id: string; name: string; goal: string; repository: string; notes: string } | null>(null);
   const [query, setQuery] = useState('');
   const [known, setKnown] = useState<Record<string, SessionSummary>>({});
@@ -61,9 +60,9 @@ export function ProjectRooms({ ref, sessions, selectedSessionId, onScope, onSess
     openDetails: element => showDetails(element),
     closeDetails: closeDrawer,
     focusSearch: () => search.current?.focus(),
-    selectChat: session => { if (!draft && !creationPending) void perform(() => chooseChat(session)); },
+    selectChat: session => { if (!draft) void perform(() => chooseChat(session)); },
     adoptSession: async session => {
-      if (draft || creationPending || working.current) throw Error('Finish the current project operation before switching chats.');
+      if (draft || working.current) throw Error('Finish the current project operation before switching chats.');
       working.current = true; setBusy(true); setError(null);
       try {
         if (selected) await attach(session.id);
@@ -143,18 +142,34 @@ export function ProjectRooms({ ref, sessions, selectedSessionId, onScope, onSess
     return () => { current = false; };
     // Resolve once per project/membership change; failures retry explicitly.
   }, [expanded, expandedRoom?.sessionIds.join(','), titleAttempt]);
-  async function linkToProject(roomId: string, id: string, selectChat = true) {
+  async function linkToProject(roomId: string, id: string, selectChat = true, activateRoom = false) {
     const payload = await request(`/api/rooms/${roomId}/sessions`, { sessionId: id });
     const room = ProjectRoomSchema.parse((payload as { room: unknown }).room);
     const { session } = SessionMutationResponseSchema.parse({ session: (payload as { session: unknown }).session });
     if (room.id !== roomId || room.lastSessionId !== id || session.id !== id) throw Error('Chat association could not be verified.');
     if (!mounted.current) return;
-    if (selected?.id === room.id) setSelected(room);
+    if (activateRoom) {
+      setSelected(room); setExpanded(room.id); remember(room.id); callbacks.current.onScope(room.name);
+    } else if (selected?.id === room.id) setSelected(room);
     setRooms(previous => previous.map(item => item.id === room.id ? room : item)); setKnown(previous => ({ ...previous, [id]: session }));
     if (selectChat) callbacks.current.onSession(session);
-    setCreationPending(false); setCreatedId(null); setAttachId('');
+    setPendingProjectChat(previous => previous?.session.id === id ? null : previous); setAttachId('');
   }
   async function attach(id: string) { if (selected) await linkToProject(selected.id, id); }
+  async function createProjectChat(room: ProjectRoom) {
+    const { session } = SessionMutationResponseSchema.parse(await request('/api/live/sessions', { title: room.name }));
+    if (session.ownership !== 'command' || !/^jc_[a-f0-9]{32}$/.test(session.id)) throw Error('New chat identity could not be verified.');
+    if (!mounted.current) return;
+    setPendingProjectChat({ roomId: room.id, roomName: room.name, session });
+    setKnown(previous => ({ ...previous, [session.id]: session }));
+    try {
+      await linkToProject(room.id, session.id, true, true);
+      callbacks.current.onNavigate?.();
+    } catch {
+      // The session identity is confirmed, but project linking is not. Keep the
+      // exact target available for an explicit retry without locking navigation.
+    }
+  }
   async function deleteChat(session: SessionSummary) {
     const response = await fetch(`/api/live/sessions/${encodeURIComponent(session.id)}`, { method: 'DELETE', credentials: 'same-origin', redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(10_000), headers: { accept: 'application/json', 'x-jarvis-command': '1' } });
     const payload = await response.json().catch(() => null) as { deleted?: unknown; sessionId?: unknown } | null;
@@ -220,28 +235,22 @@ export function ProjectRooms({ ref, sessions, selectedSessionId, onScope, onSess
     </div>
   </div> : null;
   return <>
-    {selected ? <button type="button" className="new-chat primary-button" disabled={busy || !!draft || creationPending} onClick={() => void perform(async () => {
-      setCreationPending(true);
-      const { session } = SessionMutationResponseSchema.parse(await request('/api/live/sessions', { title: selected.name }));
-      if (session.ownership !== 'command' || !/^jc_[a-f0-9]{32}$/.test(session.id)) throw Error('New chat identity could not be verified.');
-      if (mounted.current) { setCreatedId(session.id); setKnown(previous => ({ ...previous, [session.id]: session })); }
-      await attach(session.id); callbacks.current.onNavigate?.();
-    })}><Plus size={18} /> New chat</button> : <CreateSession disabled={busy || !!draft || creationPending} onCreated={session => { callbacks.current.onSession(session); callbacks.current.onNavigate?.(); }} />}
+    <CreateSession disabled={busy} onCreated={session => { void chooseChat(session); }} />
+    {pendingProjectChat ? <div className="project-chat-recovery" role="alert"><p>Chat created. Adding it to {pendingProjectChat.roomName} still needs confirmation.</p><button className="text-button" type="button" disabled={busy} onClick={() => void perform(() => linkToProject(pendingProjectChat.roomId, pendingProjectChat.session.id, true, true))}>Finish adding chat to {pendingProjectChat.roomName}</button></div> : null}
     <label className="sidebar-search"><Search size={17} /><input ref={search} type="search" aria-label="Search projects and chats" placeholder="Search" value={query} onChange={event => setQuery(event.target.value)} />{query ? <button className="icon-button" type="button" aria-label="Clear search" onClick={() => setQuery('')}><X size={15} /></button> : null}</label>
     <div className="sidebar-scroll">
-      <nav aria-label="Projects" className="sidebar-section"><div className="section-heading"><h2>Projects</h2><button className="icon-button" type="button" aria-label="New project" disabled={busy || !!draft || creationPending} onClick={event => showDetails(event.currentTarget, true)}><Plus size={17} /></button></div>
+      <nav aria-label="Projects" className="sidebar-section"><div className="section-heading"><h2>Projects</h2><button className="icon-button" type="button" aria-label="New project" disabled={busy || !!draft} onClick={event => showDetails(event.currentTarget, true)}><Plus size={17} /></button></div>
         {!loaded ? <p className="empty-copy">Loading projects…</p> : !rooms.length ? <p className="empty-copy">No projects yet.</p> : !filtered.length ? <p className="empty-copy">No matching projects.</p> : null}
-        {filtered.map(room => <div key={room.id} className="project-nav-group"><button type="button" className="sidebar-item project-nav" title={room.name} disabled={busy || !!draft || creationPending} aria-current={selected?.id === room.id ? 'page' : undefined} aria-expanded={expanded === room.id} onClick={() => {
+        {filtered.map(room => <div key={room.id} className="project-nav-group"><div className="project-nav-row"><button type="button" className="sidebar-item project-nav" title={room.name} disabled={busy || !!draft} aria-current={selected?.id === room.id ? 'page' : undefined} aria-expanded={expanded === room.id} onClick={() => {
           if (selected?.id === room.id) { setExpanded(previous => previous === room.id ? null : room.id); return; }
           void perform(() => choose(room));
-        }}><Folder size={18} /><span>{room.name}</span>{expanded === room.id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button>
-        {expanded === room.id ? <div className="project-chat-list">{room.sessionIds.length ? room.sessionIds.map(id => <button key={id} className="sidebar-item chat-item" type="button" title={sessionTitle(id) ?? 'Saved chat'} aria-current={id === selectedSessionId ? 'page' : undefined} disabled={busy || !!draft || creationPending} onClick={() => void perform(async () => { await attach(id); callbacks.current.onNavigate?.(); })}><MessageSquare size={16} /><span>{sessionTitle(id) ?? 'Saved chat'}</span></button>) : <p className="empty-copy">Start a chat in this project.</p>}
+        }}><Folder size={18} /><span>{room.name}</span>{expanded === room.id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button><button className="icon-button project-new-chat" type="button" aria-label={`New chat in ${room.name}`} title={`New chat in ${room.name}`} disabled={busy || !!draft} onClick={() => void perform(() => createProjectChat(room))}><Plus size={15} /></button></div>
+        {expanded === room.id ? <div className="project-chat-list">{room.sessionIds.length ? room.sessionIds.map(id => <button key={id} className="sidebar-item chat-item" type="button" title={sessionTitle(id) ?? 'Saved chat'} aria-current={id === selectedSessionId ? 'page' : undefined} disabled={busy || !!draft} onClick={() => void perform(async () => { await attach(id); callbacks.current.onNavigate?.(); })}><MessageSquare size={16} /><span>{sessionTitle(id) ?? 'Saved chat'}</span></button>) : <p className="empty-copy">Start a chat in this project.</p>}
           {titleError ? <button className="text-button small" type="button" onClick={() => setTitleAttempt(value => value + 1)}>Retry chat titles</button> : null}
           <button className="text-button project-info-button" type="button" aria-expanded={open && !creatingRoom} onClick={event => showDetails(event.currentTarget)}>Project details <ChevronRight size={13} /></button>
         </div> : null}</div>)}
       </nav>
-      <nav aria-label="Recent chats" className="sidebar-section"><div className="section-heading"><h2>Recent chats</h2></div>{recent.length ? recent.map(session => <div className="recent-chat-row" key={session.id}><button type="button" className="sidebar-item chat-item" aria-label={session.title} disabled={busy || !!draft || creationPending} aria-current={!selected && selectedSessionId === session.id ? 'page' : undefined} title={session.ownership === 'external' ? `${session.title} · Read-only` : session.title} onClick={() => void perform(() => chooseChat(session))}><MessageSquare size={17} /><span>{session.title}</span>{session.ownership === 'external' ? <span className="read-only-dot" aria-label="Read-only chat" /> : null}</button><button className="icon-button chat-row-action" type="button" aria-label={`Add ${session.title} to project`} disabled={busy || !rooms.length} onClick={() => { setProjectTarget(session); setTargetRoomId(rooms[0]?.id ?? ''); }}><FolderPlus size={15} /></button>{session.ownership === 'command' ? <button className="icon-button chat-row-action danger" type="button" aria-label={`Delete ${session.title}`} disabled={busy} onClick={() => setDeleteTarget(session)}><Trash2 size={15} /></button> : null}</div>) : <p className="empty-copy">{query ? 'No matching chats.' : 'Your chats will appear here.'}</p>}</nav>
-      {creationPending ? <div className="notice" role="status"><p>Chat creation or linking needs confirmation. Check existing chats before creating another.</p>{createdId ? <button className="text-button" type="button" disabled={busy} onClick={() => void perform(() => attach(createdId))}>Finish adding created chat</button> : null}</div> : null}
+      <nav aria-label="Recent chats" className="sidebar-section"><div className="section-heading"><h2>Recent chats</h2></div>{recent.length ? recent.map(session => <div className="recent-chat-row" key={session.id}><button type="button" className="sidebar-item chat-item" aria-label={session.title} disabled={busy || !!draft} aria-current={!selected && selectedSessionId === session.id ? 'page' : undefined} title={session.ownership === 'external' ? `${session.title} · Read-only` : session.title} onClick={() => void perform(() => chooseChat(session))}><MessageSquare size={17} /><span>{session.title}</span>{session.ownership === 'external' ? <span className="read-only-dot" aria-label="Read-only chat" /> : null}</button><button className="icon-button chat-row-action" type="button" aria-label={`Add ${session.title} to project`} disabled={busy || !rooms.length} onClick={() => { setProjectTarget(session); setTargetRoomId(rooms[0]?.id ?? ''); }}><FolderPlus size={15} /></button>{session.ownership === 'command' ? <button className="icon-button chat-row-action danger" type="button" aria-label={`Delete ${session.title}`} disabled={busy} onClick={() => setDeleteTarget(session)}><Trash2 size={15} /></button> : null}</div>) : <p className="empty-copy">{query ? 'No matching chats.' : 'Your chats will appear here.'}</p>}</nav>
       {error && !open ? <p role="alert" className="notice error">{error} <button className="text-button" type="button" disabled={busy} onClick={() => void perform(() => load(selected?.id))}>Reload projects</button></p> : null}
     </div>
     {projectTarget ? <div className="action-dialog-backdrop"><section className="action-dialog" role="dialog" aria-modal="true" aria-labelledby="add-chat-title"><h2 id="add-chat-title">Add chat to project</h2><p>{projectTarget.title}</p><label>Project<select value={targetRoomId} disabled={busy} onChange={event => setTargetRoomId(event.target.value)}>{rooms.map(room => <option key={room.id} value={room.id}>{room.name}</option>)}</select></label><div className="button-row"><button className="primary-button" type="button" disabled={busy || !targetRoomId} onClick={() => void perform(async () => { await linkToProject(targetRoomId, projectTarget.id, false); setProjectTarget(null); })}>Add to project</button><button className="secondary-button" type="button" disabled={busy} onClick={() => setProjectTarget(null)}>Cancel</button></div></section></div> : null}

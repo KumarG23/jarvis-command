@@ -213,29 +213,72 @@ it('renders project details in the context slot while keeping navigation in the 
   view.unmount(); target.remove();
 });
 
-it('preserves a created identity on link failure and requires attachment recovery, not recreation', async () => {
+it('keeps global chat creation available while a project is selected', async () => {
+  sessionStorage.setItem('jarvis-command:project-room:v1', room.id);
+  const onScope = vi.fn(), onSession = vi.fn();
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/rooms') return Response.json({ version: 1, rooms: [room] });
+    if (url === '/api/live/sessions') {
+      expect(JSON.parse(String(init?.body))).toEqual({});
+      return Response.json({ session });
+    }
+    throw Error(`unexpected ${url}`);
+  });
+  vi.stubGlobal('fetch', fetcher);
+  render(<ProjectRooms sessions={[]} onScope={onScope} onSession={onSession} />);
+  const create = await screen.findByRole('button', { name: 'New chat' });
+  await waitFor(() => expect(create).toBeEnabled()); fireEvent.click(create);
+  await waitFor(() => expect(onSession).toHaveBeenLastCalledWith(session));
+  expect(onScope).toHaveBeenLastCalledWith(null);
+});
+
+it('creates a chat inside a project from the project plus control', async () => {
+  const attached = { ...room, sessionIds: [session.id], lastSessionId: session.id };
+  const onScope = vi.fn(), onSession = vi.fn();
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/rooms') return Response.json({ version: 1, rooms: [room] });
+    if (url === '/api/live/sessions') {
+      expect(JSON.parse(String(init?.body))).toEqual({ title: room.name });
+      return Response.json({ session });
+    }
+    if (url === `/api/rooms/${room.id}/sessions`) return Response.json({ room: attached, session });
+    throw Error(`unexpected ${url}`);
+  });
+  vi.stubGlobal('fetch', fetcher);
+  render(<ProjectRooms sessions={[]} onScope={onScope} onSession={onSession} />);
+  fireEvent.click(await screen.findByRole('button', { name: `New chat in ${room.name}` }));
+  await waitFor(() => expect(onSession).toHaveBeenLastCalledWith(session));
+  expect(onScope).toHaveBeenLastCalledWith(room.name);
+  expect(screen.getByRole('button', { name: room.name })).toHaveAttribute('aria-current', 'page');
+  expect(within(screen.getByRole('navigation', { name: 'Projects' })).getByRole('button', { name: session.title })).toBeInTheDocument();
+});
+
+it('preserves a created identity on link failure without locking chat navigation', async () => {
   sessionStorage.setItem('jarvis-command:project-room:v1', room.id);
   let links = 0;
+  const other = { ...room, id: 'room_' + 'c'.repeat(32), name: 'Other project' };
+  const recent = { ...session, id: 'jc_' + 'd'.repeat(32), title: 'Existing recent chat' };
   const fetcher = vi.fn(async (url: string) => {
-    if (url === '/api/rooms') return Response.json({ version: 1, rooms: [room] });
+    if (url === '/api/rooms') return Response.json({ version: 1, rooms: [room, other] });
     if (url === '/api/live/sessions') return Response.json({ session });
     links++;
     if (links === 1) return Response.json({}, { status: 503 });
     return Response.json({ room: { ...room, sessionIds: [session.id], lastSessionId: session.id }, session });
   });
   vi.stubGlobal('fetch', fetcher);
-  render(<ProjectRooms sessions={[]} onScope={vi.fn()} onSession={vi.fn()} />);
+  render(<ProjectRooms sessions={[recent] as never} onScope={vi.fn()} onSession={vi.fn()} />);
   await screen.findByRole('button', { name: 'Project details' });
-  const create = screen.getByRole('button', { name: 'New chat' });
-  await waitFor(() => expect(create).toBeEnabled()); fireEvent.click(create);
+  fireEvent.click(screen.getByRole('button', { name: `New chat in ${room.name}` }));
   await screen.findByRole('alert');
-  expect(screen.getByRole('button', { name: 'Finish adding created chat' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: `Finish adding chat to ${room.name}` })).toBeInTheDocument();
   expect(screen.queryByText(session.id)).not.toBeInTheDocument();
-  expect(create).toBeDisabled();
-  fireEvent.click(screen.getByRole('button', { name: 'Finish adding created chat' }));
+  expect(screen.getByRole('button', { name: 'New chat' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: other.name })).toBeEnabled();
+  expect(screen.getByRole('button', { name: recent.title })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: `Finish adding chat to ${room.name}` }));
   await waitFor(() => expect(links).toBe(2));
   expect(fetcher.mock.calls.filter(([url]) => url === '/api/live/sessions')).toHaveLength(1);
-  await waitFor(() => expect(create).toBeEnabled());
+  await waitFor(() => expect(screen.queryByRole('button', { name: `Finish adding chat to ${room.name}` })).not.toBeInTheDocument());
 });
 
 it('coalesces rapid room form submissions and reloads an uncertain metadata write without automatic retry', async () => {
