@@ -1,5 +1,7 @@
 """Fixed-host release ordering; real file snapshots, isolated service fixtures."""
 import importlib.util
+import hashlib
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -47,7 +49,7 @@ class ReleaseTests(unittest.TestCase):
                     if state['fail']:
                         state['fail'] = False
                         raise RuntimeError('isolated candidate health failure')
-                    return {'status': 'ok'}
+                    return {'status': 'ok', 'readiness': {'artifacts': 'pass'}}
                 release.run = command
                 release.get_json = http
                 host = release.Host('app')
@@ -96,7 +98,7 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(env['HERMES_API_KEY'], 'h' * 64)
             self.assertEqual(env['COMMAND_PROXY_KEY'], 'c' * 64)
 
-    def test_fixed_app_plan_keeps_android_and_read_key_and_enables_audit(self):
+    def test_fixed_app_plan_keeps_android_and_read_key_and_enables_command_storage(self):
         spec = importlib.util.spec_from_file_location('release', SCRIPT)
         release = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(release)
@@ -114,9 +116,12 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual(env['HERMES_COMMAND_PROXY_KEY'], 'c' * 64)
             self.assertEqual(env['COMMAND_MODE'], 'enabled')
             self.assertEqual(env['COMMAND_AUDIT_LOG_PATH'], '/var/lib/jarvis-command/audit/events.jsonl')
+            self.assertEqual(env['ARTIFACTS_MODE'], 'enabled')
+            self.assertEqual(env['ARTIFACT_STORAGE_PATH'], '/var/lib/jarvis-command/artifacts')
             targets = [str(target) for _, target, _ in release.files('app')]
             self.assertFalse(any('assetlinks' in target or '.well-known' in target for target in targets))
             self.assertIn('/srv/jarvis-command/app-command-storage.compose.yaml', targets)
+            self.assertIn('/usr/local/libexec/jarvis-command-prepare-artifact-storage', targets)
             (release.STAGE / 'command.key').write_text('r' * 64)
             with self.assertRaisesRegex(RuntimeError, 'distinct'):
                 release.prepare('app')
@@ -180,6 +185,92 @@ class ReleaseTests(unittest.TestCase):
             self.assertEqual((target / 'compose').read_bytes(), (source / 'compose').read_bytes())
             self.assertEqual((root / 'backup/0').read_text(), 'v01 immutable image')
             self.assertEqual((root / 'backup').stat().st_mode & 0o777, 0o700)
+
+    def test_artifact_snapshot_records_checksums_and_refuses_tampering(self):
+        spec = importlib.util.spec_from_file_location('release', SCRIPT)
+        release = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(release)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifacts = root / 'artifacts'
+            (artifacts / 'artifacts' / ('art_' + 'a' * 32) / 'versions').mkdir(parents=True)
+            blob = artifacts / 'artifacts' / ('art_' + 'a' * 32) / 'versions' / '1.blob'
+            blob.write_bytes(b'exact artifact bytes')
+            blob.chmod(0o600)
+            snapshot = release.ArtifactTreeSnapshot(root / 'backup' / 'artifact-storage', artifacts)
+            snapshot.snapshot()
+            records = snapshot.verify_snapshot()
+            self.assertIn(hashlib.sha256(b'exact artifact bytes').hexdigest(), json.dumps(records))
+            copied = snapshot.tree / 'artifacts' / ('art_' + 'a' * 32) / 'versions' / '1.blob'
+            copied.write_bytes(b'tampered')
+            with self.assertRaisesRegex(RuntimeError, 'inventory mismatch'):
+                snapshot.verify_snapshot()
+
+    def test_artifact_snapshot_refuses_symlinks_before_copy(self):
+        spec = importlib.util.spec_from_file_location('release', SCRIPT)
+        release = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(release)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifacts = root / 'artifacts'
+            artifacts.mkdir()
+            outside = root / 'outside'
+            outside.write_text('must not be copied or modified')
+            (artifacts / 'escape').symlink_to(outside)
+            snapshot = release.ArtifactTreeSnapshot(root / 'backup' / 'artifact-storage', artifacts)
+            with self.assertRaisesRegex(RuntimeError, 'symlink refused'):
+                snapshot.snapshot()
+            self.assertEqual(outside.read_text(), 'must not be copied or modified')
+            self.assertFalse(snapshot.backup.exists())
+
+    def test_artifact_rollback_restores_exact_tree_after_candidate_cleanup(self):
+        spec = importlib.util.spec_from_file_location('release', SCRIPT)
+        release = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(release)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            artifacts = root / 'artifacts'
+            versions = artifacts / 'artifacts' / ('art_' + 'b' * 32) / 'versions'
+            versions.mkdir(parents=True)
+            blob = versions / '1.blob'
+            blob.write_bytes(b'original')
+            blob.chmod(0o600)
+            snapshot = release.ArtifactTreeSnapshot(root / 'backup' / 'artifact-storage', artifacts)
+            snapshot.snapshot()
+            blob.write_bytes(b'candidate-mutated')
+            blob.chmod(0o644)
+            (versions / '2.blob').write_bytes(b'candidate orphan')
+            snapshot.restore()
+            self.assertEqual(blob.read_bytes(), b'original')
+            self.assertEqual(blob.stat().st_mode & 0o777, 0o600)
+            self.assertFalse((versions / '2.blob').exists())
+
+    def test_app_rollback_restores_artifact_snapshot_before_restart(self):
+        spec = importlib.util.spec_from_file_location('release', SCRIPT)
+        release = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(release)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app = root / 'app.env'; app.write_text('old'); app.chmod(0o600)
+            new = root / 'new.env'; new.write_text('new')
+            artifacts = root / 'artifacts'; artifacts.mkdir()
+            (artifacts / 'payload').write_text('before')
+            change = release.FileCutover(root / 'file-backup', [(new, app, 0o600)])
+            recovery = release.ArtifactTreeSnapshot(root / 'backup' / 'artifact-storage', artifacts)
+            events = []
+            def stop():
+                events.append('stop')
+            def start():
+                events.append('start:' + (artifacts / 'payload').read_text())
+            def verify():
+                if app.read_text() == 'new':
+                    (artifacts / 'payload').write_text('after')
+                    raise RuntimeError('candidate failed')
+            with self.assertRaisesRegex(RuntimeError, 'candidate failed'):
+                release.cutover(change, lambda: None, stop, start, verify, recovery)
+            self.assertEqual(app.read_text(), 'old')
+            self.assertEqual((artifacts / 'payload').read_text(), 'before')
+            self.assertEqual(events, ['stop', 'start:before', 'stop', 'start:before'])
 
 
 if __name__ == '__main__':

@@ -21,13 +21,14 @@ type Props = Readonly<{
   sessions: SessionSummary[];
   selectedSessionId?: string | undefined;
   onScope: (name: string | null) => void;
+  onProjectScope?: (id: string | null) => void;
   onSession: (session: SessionSummary | null) => void;
   onDeleted?: (sessionId: string) => void;
   contextTarget?: HTMLElement | null;
   onOpenChange?: (open: boolean) => void;
   onNavigate?: () => void;
 }>;
-export function ProjectRooms({ ref, sessions, selectedSessionId, onScope, onSession, onDeleted, contextTarget, onOpenChange, onNavigate }: Props) {
+export function ProjectRooms({ ref, sessions, selectedSessionId, onScope, onProjectScope, onSession, onDeleted, contextTarget, onOpenChange, onNavigate }: Props) {
   const [rooms, setRooms] = useState<ProjectRoom[]>([]);
   const [selected, setSelected] = useState<ProjectRoom | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -46,7 +47,7 @@ export function ProjectRooms({ ref, sessions, selectedSessionId, onScope, onSess
   const [projectTarget, setProjectTarget] = useState<SessionSummary | null>(null);
   const [targetRoomId, setTargetRoomId] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<SessionSummary | null>(null);
-  const callbacks = useRef({ onScope, onSession, onDeleted, onOpenChange, onNavigate }); callbacks.current = { onScope, onSession, onDeleted, onOpenChange, onNavigate };
+  const callbacks = useRef({ onScope, onProjectScope, onSession, onDeleted, onOpenChange, onNavigate }); callbacks.current = { onScope, onProjectScope, onSession, onDeleted, onOpenChange, onNavigate };
   const mounted = useRef(true), working = useRef(false);
   const opener = useRef<HTMLElement | null>(null), closeButton = useRef<HTMLButtonElement | null>(null), search = useRef<HTMLInputElement | null>(null);
   const roomCreation = useRef<{ name: string; goal: string; repository: string; notes: string }>({ name: '', goal: '', repository: '', notes: '' });
@@ -90,7 +91,7 @@ export function ProjectRooms({ ref, sessions, selectedSessionId, onScope, onSess
     if (!mounted.current) return;
     if (!room) setOpen(false);
     setSelected(room); setExpanded(room?.id ?? null); remember(room?.id ?? null);
-    callbacks.current.onScope(room?.name ?? null); callbacks.current.onSession(null);
+    callbacks.current.onScope(room?.name ?? null); callbacks.current.onProjectScope?.(room?.id ?? null); callbacks.current.onSession(null);
     if (room?.lastSessionId) {
       const session = await resolveSession(room.lastSessionId);
       if (mounted.current) callbacks.current.onSession(session);
@@ -98,7 +99,7 @@ export function ProjectRooms({ ref, sessions, selectedSessionId, onScope, onSess
   }
   async function chooseChat(session: SessionSummary) {
     setSelected(null); setExpanded(null); setOpen(false); remember(null);
-    callbacks.current.onScope(null); callbacks.current.onSession(session); callbacks.current.onNavigate?.();
+    callbacks.current.onScope(null); callbacks.current.onProjectScope?.(null); callbacks.current.onSession(session); callbacks.current.onNavigate?.();
   }
   async function load(remembered?: string) {
     const data = ProjectRoomsSchema.parse(await request('/api/rooms'));
@@ -115,7 +116,7 @@ export function ProjectRooms({ ref, sessions, selectedSessionId, onScope, onSess
     let remembered: string | null = null;
     try { remembered = sessionStorage.getItem(KEY); } catch { /* Optional hint. */ }
     if (remembered && /^room_[a-f0-9]{32}$/.test(remembered)) {
-      callbacks.current.onScope('Loading project'); callbacks.current.onSession(null);
+      callbacks.current.onScope('Loading project'); callbacks.current.onProjectScope?.(null); callbacks.current.onSession(null);
       void perform(() => load(remembered!));
     } else void perform(() => load());
     return () => { mounted.current = false; };
@@ -149,7 +150,7 @@ export function ProjectRooms({ ref, sessions, selectedSessionId, onScope, onSess
     if (room.id !== roomId || room.lastSessionId !== id || session.id !== id) throw Error('Chat association could not be verified.');
     if (!mounted.current) return;
     if (activateRoom) {
-      setSelected(room); setExpanded(room.id); remember(room.id); callbacks.current.onScope(room.name);
+      setSelected(room); setExpanded(room.id); remember(room.id); callbacks.current.onScope(room.name); callbacks.current.onProjectScope?.(room.id);
     } else if (selected?.id === room.id) setSelected(room);
     setRooms(previous => previous.map(item => item.id === room.id ? room : item)); setKnown(previous => ({ ...previous, [id]: session }));
     if (selectChat) callbacks.current.onSession(session);
@@ -200,7 +201,7 @@ export function ProjectRooms({ ref, sessions, selectedSessionId, onScope, onSess
           if (room.id !== draft.id) throw Error('Updated project could not be verified. Your draft is retained.');
           if (!mounted.current) return;
           setRooms(previous => previous.map(item => item.id === room.id ? room : item));
-          setSelected(room); callbacks.current.onScope(room.name); setDraft(null);
+          setSelected(room); callbacks.current.onScope(room.name); callbacks.current.onProjectScope?.(room.id); setDraft(null);
         });
       }}>
         <h3>Edit project</h3>

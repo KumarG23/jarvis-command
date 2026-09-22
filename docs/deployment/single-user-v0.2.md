@@ -8,7 +8,7 @@ The implementation receipt is `/home/neal/backups/jarvis-command/single-user-rel
 
 VM108 is the current Hermes host (its live LAN IP was 192.168.6.46 during implementation; do not assume the old .67 address). VM113 is `neal@192.168.6.113`. SSH always uses `/home/neal/.ssh/jarvis_homelab_ed25519` with `IdentitiesOnly=yes`, `BatchMode=yes`, `StrictHostKeyChecking=yes`. The existing reverse bridge's destination remains VM113. Hermes API/read proxy and the read proxy key are unchanged. Command proxy binds explicitly to 127.0.0.1:8647, never its source default 8644. No gateway, Docker, stock nftables, or read-proxy restart is required.
 
-Only the existing owned `inet jarvis_command_egress` table is atomically reloaded. The app and command proxy are stopped before their credentials/policy change. Audit preparation is an explicit one-time operation; reboot/supervisor only verifies it. The existing `.well-known` mount and Android association files remain untouched.
+Only the existing owned `inet jarvis_command_egress` table is atomically reloaded. The app and command proxy are stopped before their credentials/policy change. Audit and artifact storage preparation is an explicit one-time operation; reboot/supervisor only verifies it. The existing `.well-known` mount and Android association files remain untouched.
 
 ## Parent preparation AFTER exact review
 
@@ -49,10 +49,12 @@ Prepare storage with the old app stopped, then restore read-only service while t
 systemctl stop jarvis-command-app.service
 python3 source/deploy/prepare-audit-storage.py prepare --trusted-root /var/lib/jarvis-command --path /var/lib/jarvis-command/audit/events.jsonl
 python3 source/deploy/prepare-audit-storage.py verify --trusted-root /var/lib/jarvis-command --path /var/lib/jarvis-command/audit/events.jsonl
+python3 source/deploy/prepare-artifact-storage.py prepare --trusted-root /var/lib/jarvis-command --path /var/lib/jarvis-command/artifacts
+python3 source/deploy/prepare-artifact-storage.py verify --trusted-root /var/lib/jarvis-command --path /var/lib/jarvis-command/artifacts
 systemctl start jarvis-command-app.service
 ```
 
-Run the final `start` even if preparation fails, then abort. Require root:root0755 trusted root, audit UID/GID10001 mode0700 and ledger10001:10001 mode0600. Never repair/delete an existing ledger. No audit chain is claimed from the metadata helper; the application validates it on startup.
+Run the final `start` even if preparation fails, then abort. Require root:root0755 trusted root, audit UID/GID10001 mode0700, ledger10001:10001 mode0600, and artifacts10001:10001 mode0700. Never repair/delete existing ledger or artifact storage. No audit chain is claimed from the metadata helper; the application validates it on startup.
 
 ## Fixed host cutover
 

@@ -11,3 +11,9 @@ services:
         read_only: false
         bind:
           create_host_path: false
+      - type: bind
+        source: /var/lib/jarvis-command/artifacts
+        target: /var/lib/jarvis-command/artifacts
+        read_only: false
+        bind:
+          create_host_path: false

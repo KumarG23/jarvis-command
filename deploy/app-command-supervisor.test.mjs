@@ -9,6 +9,7 @@ import process from 'node:process';
 const image = `sha256:${'a'.repeat(64)}`;
 const real = JSON.parse(await readFile('deploy/fixtures/app-supervisor-real.json', 'utf8'));
 const audit = '/var/lib/jarvis-command/audit';
+const artifacts = '/var/lib/jarvis-command/artifacts';
 const protectedMounts = [
   ['/var/lib/jarvis-command/cloudflare-jwks', '/run/jarvis-command/cloudflare-jwks'],
   ['/srv/jarvis-command/public/.well-known', '/app/apps/web/dist/.well-known'],
@@ -25,6 +26,7 @@ async function scenario(options = {}) {
     const paths = {
       '/usr/bin/docker': `${root}/docker`, '/usr/bin/systemd-notify': `${root}/notify`,
       '/usr/local/libexec/jarvis-command-prepare-audit-storage': `${root}/helper`,
+      '/usr/local/libexec/jarvis-command-prepare-artifact-storage': `${root}/artifact-helper`,
       '/srv/jarvis-command/compose.yaml': `${root}/base.yaml`,
       '/srv/jarvis-command/app-command-storage.compose.yaml': `${root}/storage.yaml`,
       '/etc/jarvis-command/release.env': `${root}/release.env`,
@@ -41,10 +43,10 @@ async function scenario(options = {}) {
     await writeFile(join(root, 'storage.yaml'), options.storage ?? await readFile('deploy/app-command-storage.compose.yaml', 'utf8'));
     await mkdir(join(root, 'jwks'));
     await writeFile(join(root, 'jwks', 'certs.json'), '{"keys":[]}\n');
-    const env = { COMMAND_MODE: 'enabled', COMMAND_AUDIT_LOG_PATH: `${audit}/events.jsonl`, CF_ACCESS_JWKS_FILE: '/run/jarvis-command/cloudflare-jwks/certs.json', SYNTHETIC_KEY: 'never-print-fixture-secret' };
+    const env = { COMMAND_MODE: 'enabled', COMMAND_AUDIT_LOG_PATH: `${audit}/events.jsonl`, ARTIFACTS_MODE: 'enabled', ARTIFACT_STORAGE_PATH: artifacts, CF_ACCESS_JWKS_FILE: '/run/jarvis-command/cloudflare-jwks/certs.json', SYNTHETIC_KEY: 'never-print-fixture-secret' };
     await writeFile(join(root, 'app.env'), options.env ?? Object.entries(env).map(([k,v]) => `${k}=${v}\n`).join(''), { mode: 0o600 });
     await writeFile(join(root, 'release.env'), `JARVIS_COMMAND_APP_IMAGE=${image}\n`, { mode: 0o600 });
-    const volumes = [...protectedMounts.map(([s,t]) => ({ type: 'bind', source: s === '/var/lib/jarvis-command/cloudflare-jwks' ? join(root, 'jwks') : s, target: t, read_only: true, bind: { create_host_path: true } })), { type: 'bind', source: audit, target: audit, read_only: false, bind: { create_host_path: false } }];
+    const volumes = [...protectedMounts.map(([s,t]) => ({ type: 'bind', source: s === '/var/lib/jarvis-command/cloudflare-jwks' ? join(root, 'jwks') : s, target: t, read_only: true, bind: { create_host_path: true } })), { type: 'bind', source: audit, target: audit, read_only: false, bind: { create_host_path: false } }, { type: 'bind', source: artifacts, target: artifacts, read_only: false, bind: { create_host_path: false } }];
     const config = { services: { app: { ...real.compose.services.app, image, container_name: 'jarvis-command-app', user: '10001:10001', read_only: true, environment: env, volumes } } };
     options.config?.(config.services.app);
     const state = { ...JSON.parse(JSON.stringify(real.created)), Id: 'c'.repeat(64), Image: image, State: { Status: 'created', Running: true, Health: { Status: 'healthy' } }, Config: { ...real.created.Config, User: '10001:10001', Labels: { 'com.docker.compose.project': 'jarvis-command-supervised', 'com.docker.compose.service': 'app' }, Env: [...real.image.Config.Env, ...Object.entries(env).map(([k,v]) => `${k}=${v}`)] }, HostConfig: { ...real.created.HostConfig, NetworkMode: 'host' }, NetworkSettings: { Ports: {}, Networks: { host: { Aliases: null, Links: null, DriverOpts: null, IPAMConfig: null } } }, Mounts: volumes.map(v => ({ Type: 'bind', Source: v.source, Destination: v.target, RW: !v.read_only, Propagation: 'rprivate' })) };
@@ -58,6 +60,7 @@ async function scenario(options = {}) {
     await writeFile(join(root, 'later.json'), JSON.stringify([later]));
     const executable = (name, body) => writeFile(join(root, name), `#!/usr/bin/python3\nimport os,sys,json,signal\nfrom pathlib import Path\nr=Path(${JSON.stringify(root)})\nwith (r/'calls').open('a') as f: f.write(${JSON.stringify(name)}+' '+ ' '.join(sys.argv[1:])+'\\n')\n${body}\n`, { mode: 0o700 });
     await executable('helper', `assert sys.argv[1:]==['verify','--trusted-root','/var/lib/jarvis-command','--path','${audit}/events.jsonl']\nsys.exit(${options.helperStatus ?? 0})`);
+    await executable('artifact-helper', `assert sys.argv[1:]==['verify','--trusted-root','/var/lib/jarvis-command','--path','${artifacts}']\nsys.exit(${options.artifactHelperStatus ?? 0})`);
     await executable('notify', `${options.competitor ? `import subprocess\nother=subprocess.run(['/usr/bin/python3',str(r/'runner.py'),'--monitor'],env={'INVOCATION_ID':'2'*32},capture_output=True,timeout=2)\nassert other.returncode==1\nassert b'invocation refused' in other.stderr` : 'pass'}\n${options.monitorSignal ? `os.kill(os.getppid(),signal.SIG${options.monitorSignal})` : 'pass'}\n${options.sourceDrift ? `(r/'base.yaml').write_text('changed')` : 'pass'}\nsys.exit(${options.notifyStatus ?? 0})`);
     await executable('docker', `a=sys.argv[1:]
 if a[0]=='image': print('${image}' if '--format' in a else (r/'image.json').read_text())
@@ -138,7 +141,8 @@ for (const bind of [{}, { create_host_path: false }]) {
     const config = s => { s.volumes[2].bind = bind; };
     const r = await scenario({ config, monitorSignal: 'TERM' });
     assert.equal(r.status, 143, r.stderr);
-    assert.match(r.calls, /helper verify/);
+    assert.match(r.calls, /^helper verify/m);
+    assert.match(r.calls, /^artifact-helper verify/m);
     assert.match(r.calls, /notify --ready/);
     assert.equal(r.record, null);
     const missing = await scenario({ config, helperStatus: 19 });
@@ -148,7 +152,7 @@ for (const bind of [{}, { create_host_path: false }]) {
     for (const raw of ['true', 'null', '0', '"false"', '{}']) {
       const denied = await scenario({ config, storage: storage.replace('create_host_path: false', `create_host_path: ${raw}`) });
       assert.match(denied.stderr, /exact narrow storage override required/);
-      assert.doesNotMatch(denied.calls, /docker compose|helper verify|docker start|notify --ready/);
+      assert.doesNotMatch(denied.calls, /docker compose|^helper verify|^artifact-helper verify|docker start|notify --ready/m);
     }
     const absent = await scenario({ config, storage: storage.replace('          create_host_path: false', '') });
     assert.match(absent.stderr, /exact narrow storage override required/);
@@ -188,9 +192,12 @@ test('supervised app opt-in verifies existing ledger before exact compose start 
   assert.equal(r.error, undefined);
   assert.equal(r.status, 1, r.stderr);
   assert.match(r.stderr, /unhealthy/);
-  assert.match(r.calls, /helper verify/);
+  assert.match(r.calls, /^helper verify/m);
+  assert.match(r.calls, /^artifact-helper verify/m);
   assert.ok(r.calls.indexOf('helper verify') < r.calls.indexOf(' create '));
-  assert.equal((r.calls.match(/helper verify/g) ?? []).length, 1);
+  assert.ok(r.calls.indexOf('artifact-helper verify') < r.calls.indexOf(' create '));
+  assert.equal((r.calls.match(/^helper verify/gm) ?? []).length, 1);
+  assert.equal((r.calls.match(/^artifact-helper verify/gm) ?? []).length, 1);
   assert.match(r.calls, /notify --ready/);
   assert.match(r.calls, /docker stop [c]{64}/);
   assert.doesNotMatch(r.stdout + r.stderr + r.calls, /never-print-fixture-secret|helper prepare/);
@@ -239,8 +246,8 @@ for (const [name, options, ready] of [
       assert.match(r.calls, /docker stop [c]{64}/);
       assert.match(r.stderr, /owned candidate removed and absence verified/);
     } else if (!r.calls.includes(' create ')) assert.doesNotMatch(r.calls, /docker stop/);
-    if (options.running) assert.doesNotMatch(r.calls, /helper verify| create /);
-    if (options.helperStatus) assert.doesNotMatch(r.calls, / create /);
+    if (options.running) assert.doesNotMatch(r.calls, /^helper verify|^artifact-helper verify| create /m);
+    if (options.helperStatus || options.artifactHelperStatus) assert.doesNotMatch(r.calls, / create /);
   });
 }
 
@@ -281,7 +288,8 @@ test('supervised source drift stops owned candidate', async () => {
 test('competing real launcher refuses before helper or Compose mutation', async () => {
   const r = await scenario({ competitor: true });
   assert.equal(r.status, 1);
-  assert.equal((r.calls.match(/helper verify/g) ?? []).length, 1);
+  assert.equal((r.calls.match(/^helper verify/gm) ?? []).length, 1);
+  assert.equal((r.calls.match(/^artifact-helper verify/gm) ?? []).length, 1);
   assert.equal((r.calls.match(/docker start /g) ?? []).length, 1);
   assert.equal((r.calls.match(/docker stop /g) ?? []).length, 1);
 });

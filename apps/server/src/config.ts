@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import { isAbsolute, resolve } from 'node:path';
 import { z } from 'zod';
 
@@ -23,6 +24,11 @@ const EnvironmentSchema = z.object({
   HERMES_COMMAND_PROXY_KEY: z.string().min(32).optional(),
   COMMAND_AUDIT_LOG_PATH: z.string().min(1).optional(),
   WEB_DIST_DIR: z.string().min(1).optional(),
+  ARTIFACTS_MODE: z.enum(['disabled', 'enabled']).optional(),
+  ARTIFACT_STORAGE_PATH: z.string().min(1).optional(),
+  ARTIFACT_MAX_FILE_BYTES: z.coerce.number().int().min(1).max(52_428_800).default(10_485_760),
+  ARTIFACT_MAX_TOTAL_BYTES: z.coerce.number().int().min(1).max(10_737_418_240).default(268_435_456),
+  ARTIFACT_MAX_COUNT: z.coerce.number().int().min(1).max(100_000).default(10_000),
 });
 
 export type AppConfig = Readonly<{
@@ -48,6 +54,13 @@ export type AppConfig = Readonly<{
     publicOrigin: string;
   }> | null;
   webDistDir: string | undefined;
+  artifacts: Readonly<{
+    enabled: boolean;
+    root: string | null;
+    maxFileBytes: number;
+    maxTotalBytes: number;
+    maxArtifacts: number;
+  }>;
 }>;
 
 export function loadConfig(environment: NodeJS.ProcessEnv): AppConfig {
@@ -124,6 +137,38 @@ export function loadConfig(environment: NodeJS.ProcessEnv): AppConfig {
         });
       })()
     : null;
+  const artifactsMode = parsed.ARTIFACTS_MODE ?? (parsed.NODE_ENV === 'production' ? 'disabled' : 'enabled');
+  const artifacts = artifactsMode === 'enabled'
+    ? (() => {
+        if (parsed.NODE_ENV === 'production') {
+          const root = requireValue('ARTIFACT_STORAGE_PATH', parsed.ARTIFACT_STORAGE_PATH);
+          if (!isAbsolute(root)) throw new Error('ARTIFACT_STORAGE_PATH must be absolute in production');
+          return Object.freeze({
+            enabled: true,
+            root,
+            maxFileBytes: parsed.ARTIFACT_MAX_FILE_BYTES,
+            maxTotalBytes: parsed.ARTIFACT_MAX_TOTAL_BYTES,
+            maxArtifacts: parsed.ARTIFACT_MAX_COUNT,
+          });
+        }
+        const root = parsed.ARTIFACT_STORAGE_PATH
+          ? resolve(parsed.ARTIFACT_STORAGE_PATH)
+          : resolve(tmpdir(), 'jarvis-command-artifacts-dev');
+        return Object.freeze({
+          enabled: true,
+          root,
+          maxFileBytes: parsed.ARTIFACT_MAX_FILE_BYTES,
+          maxTotalBytes: parsed.ARTIFACT_MAX_TOTAL_BYTES,
+          maxArtifacts: parsed.ARTIFACT_MAX_COUNT,
+        });
+      })()
+    : Object.freeze({
+        enabled: false,
+        root: null,
+        maxFileBytes: parsed.ARTIFACT_MAX_FILE_BYTES,
+        maxTotalBytes: parsed.ARTIFACT_MAX_TOTAL_BYTES,
+        maxArtifacts: parsed.ARTIFACT_MAX_COUNT,
+      });
 
   return Object.freeze({
     nodeEnv: parsed.NODE_ENV,
@@ -138,6 +183,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv): AppConfig {
     }),
     command,
     webDistDir: parsed.WEB_DIST_DIR ? resolve(parsed.WEB_DIST_DIR) : undefined,
+    artifacts,
   });
 }
 

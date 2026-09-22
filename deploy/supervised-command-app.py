@@ -18,12 +18,14 @@ TRUST_UID = 0
 MONITOR_SECONDS = 5
 DOCKER = "/usr/bin/docker"
 NOTIFY = "/usr/bin/systemd-notify"
-HELPER = "/usr/local/libexec/jarvis-command-prepare-audit-storage"
+AUDIT_HELPER = "/usr/local/libexec/jarvis-command-prepare-audit-storage"
+ARTIFACT_HELPER = "/usr/local/libexec/jarvis-command-prepare-artifact-storage"
 BASE = "/srv/jarvis-command/compose.yaml"
 STORAGE = "/srv/jarvis-command/app-command-storage.compose.yaml"
 RELEASE = "/etc/jarvis-command/release.env"
 APP_ENV = "/etc/jarvis-command/app.env"
 AUDIT = "/var/lib/jarvis-command/audit"
+ARTIFACTS = "/var/lib/jarvis-command/artifacts"
 NAME = "jarvis-command-app"
 PROJECT = "jarvis-command-supervised"
 STATE = "/var/lib/jarvis-command-supervisor"
@@ -34,6 +36,12 @@ STORAGE_DEFINITION = """services:
       - type: bind
         source: /var/lib/jarvis-command/audit
         target: /var/lib/jarvis-command/audit
+        read_only: false
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /var/lib/jarvis-command/artifacts
+        target: /var/lib/jarvis-command/artifacts
         read_only: false
         bind:
           create_host_path: false"""
@@ -158,7 +166,7 @@ def validate_access_jwks(app_env):
 
 
 def check_mounts(mounts, *, actual=False):
-    expected = {**{t: (s, False) for t, s in PROTECTED.items()}, AUDIT: (AUDIT, True)}
+    expected = {**{t: (s, False) for t, s in PROTECTED.items()}, AUDIT: (AUDIT, True), ARTIFACTS: (ARTIFACTS, True)}
     found = {}
     if not isinstance(mounts, list) or any(not isinstance(m, dict) for m in mounts):
         raise Refused('malformed mounts')
@@ -191,8 +199,8 @@ def check_mounts(mounts, *, actual=False):
         # explicit false. launch() first requires the exact raw false declaration
         # and verifies existing storage before CREATE. Neither version may create
         # the source. Keep absent bind, true, malformed and extra options refused.
-        if not actual and target == AUDIT and ("bind" not in mount or mount["bind"].get("create_host_path", False) is not False):
-            raise Refused("audit bind must not create host path")
+        if not actual and target in (AUDIT, ARTIFACTS) and ("bind" not in mount or mount["bind"].get("create_host_path", False) is not False):
+            raise Refused("storage bind must not create host path")
     if found != expected:
         raise Refused("mount identity mismatch")
 
@@ -495,8 +503,8 @@ def launch(directory, invocation):
             raise Refused("ambient Compose inputs forbidden", 65)
         for number in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
             signal.signal(number, on_signal)
-        sources = {p: trusted_bytes(p, secret=p in (RELEASE, APP_ENV), executable=p == HELPER)
-                   for p in (BASE, STORAGE, RELEASE, APP_ENV, HELPER)}
+        sources = {p: trusted_bytes(p, secret=p in (RELEASE, APP_ENV), executable=p in (AUDIT_HELPER, ARTIFACT_HELPER))
+                   for p in (BASE, STORAGE, RELEASE, APP_ENV, AUDIT_HELPER, ARTIFACT_HELPER)}
         storage_text = '\n'.join(line.rstrip() for line in sources[STORAGE].decode().splitlines()
                                  if line.strip() and not line.lstrip().startswith('#'))
         if storage_text != STORAGE_DEFINITION:
@@ -506,8 +514,10 @@ def launch(directory, invocation):
         app_env = environment(sources[APP_ENV])
         if (not re.fullmatch(r"sha256:[0-9a-f]{64}", image)
                 or app_env.get("COMMAND_MODE") != "enabled"
-                or app_env.get("COMMAND_AUDIT_LOG_PATH") != AUDIT + "/events.jsonl"):
-            raise Refused("explicit enabled mode, exact audit path and immutable image required", 65)
+                or app_env.get("COMMAND_AUDIT_LOG_PATH") != AUDIT + "/events.jsonl"
+                or app_env.get("ARTIFACTS_MODE") != "enabled"
+                or app_env.get("ARTIFACT_STORAGE_PATH") != ARTIFACTS):
+            raise Refused("explicit enabled modes, exact storage paths and immutable image required", 65)
         validate_access_jwks(app_env)
         ownership = {'invocation': invocation, 'token': secrets.token_hex(16), 'image': image, 'id': None}
         compose = [DOCKER, "compose", "--project-name", PROJECT + '-' + ownership['token'], "--env-file", RELEASE,
@@ -520,12 +530,14 @@ def launch(directory, invocation):
             raise Refused("local immutable image mismatch")
         image_config = metadata[0]['Config']
         require_quiescent()
-        run([HELPER, "verify", "--trusted-root", "/var/lib/jarvis-command",
+        run([AUDIT_HELPER, "verify", "--trusted-root", "/var/lib/jarvis-command",
              "--path", AUDIT + "/events.jsonl"])
+        run([ARTIFACT_HELPER, "verify", "--trusted-root", "/var/lib/jarvis-command",
+             "--path", ARTIFACTS])
         # The launcher lock serializes invocations; the transaction excludes edits.
         def unchanged():
             for path, data in sources.items():
-                if trusted_bytes(path, secret=path in (RELEASE, APP_ENV), executable=path == HELPER) != data:
+                if trusted_bytes(path, secret=path in (RELEASE, APP_ENV), executable=path in (AUDIT_HELPER, ARTIFACT_HELPER)) != data:
                     raise Refused("supervised source configuration drift")
         unchanged()
         require_quiescent()

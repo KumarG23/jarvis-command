@@ -139,6 +139,7 @@ describe('production trust boundary', () => {
       },
       command: null,
       webDistDir: undefined,
+  artifacts: { enabled: true, root: '/tmp/jarvis-command-artifacts-test', maxFileBytes: 10_485_760, maxTotalBytes: 268_435_456, maxArtifacts: 10_000 },
     };
     const app = buildApp({
       config,
@@ -173,7 +174,7 @@ describe('production trust boundary', () => {
         provider: null,
         gatewayState: 'idle',
         activeAgents: 1,
-        capabilities: ['run_events_sse', 'session_resources'],
+        capabilities: ['run_events_sse', 'session_resources', 'artifact_studio'],
         readinessChecks: { config: 'pass', disk: 'pass' },
       },
       sessions: [{

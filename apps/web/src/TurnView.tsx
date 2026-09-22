@@ -1,9 +1,9 @@
-import { ArrowUp, ChevronRight, Command, Copy } from 'lucide-react';
+import { ArrowUp, ChevronRight, Command, Copy, FilePlus2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { InferenceOptionsResponseSchema, type InferenceOptionsResponse, type InferenceOverride, type ReasoningEffort, type RunEvent } from '@jarvis-command/contracts';
 import { boundedJson, type DraftRecovery, type Turn } from './useLiveTurn';
 
-export function TurnView({ turn, allowed, approve, stop }: Readonly<{ turn: Turn; allowed: boolean; approve: (run: Turn, choice: 'once' | 'deny') => void; stop: (run: Turn) => void }>) {
+export function TurnView({ turn, allowed, approve, stop, onSaveResponse }: Readonly<{ turn: Turn; allowed: boolean; approve: (run: Turn, choice: 'once' | 'deny') => void; stop: (run: Turn) => void; onSaveResponse?: (text: string, runId: string | null) => void }>) {
   const [confirmation, setConfirmation] = useState<Turn | null>(null);
   const canControl = allowed && turn.identityVerified;
   return <section className="live-turn" aria-label="Current turn">
@@ -11,7 +11,7 @@ export function TurnView({ turn, allowed, approve, stop }: Readonly<{ turn: Turn
     {turn.usage?.execution ? <ExecutionReceipt usage={turn.usage} />
       : 'inference' in turn.intent && turn.intent.inference ? <p className="turn-route">Requested route · {turn.intent.inference.model} · {turn.intent.inference.reasoningEffort}</p> : null}
     {turn.intent.input === null ? <><p>Original message unavailable after reload; no message was retransmitted.</p><p>Recovery target · Session: {turn.intent.sessionId} · Request: {turn.intent.clientRequestId} · Run: {turn.publicRunId ?? 'Unknown — admission lookup unsupported'}</p></> : !turn.userHistoryMatched ? <article className="timeline-event live-message" aria-label="Your message"><div className="event-icon violet" aria-hidden="true">You</div><div className="event-body"><div className="event-label">You</div><p className="turn-input">{turn.intent.input}</p></div></article> : null}
-    {turn.output && !turn.historyMatched ? <article className="timeline-event live-message" aria-label="Jarvis response"><div className="event-icon cyan" aria-hidden="true"><Command size={21} /></div><div className="event-body"><div className="event-label">Jarvis</div><p className="turn-output">{turn.output}</p><CopyResponse key={JSON.stringify([turn.intent.sessionId, turn.intent.clientRequestId])} text={turn.output} limited={turn.outputLimited} /></div></article> : null}
+    {turn.output && !turn.historyMatched ? <article className="timeline-event live-message" aria-label="Jarvis response"><div className="event-icon cyan" aria-hidden="true"><Command size={21} /></div><div className="event-body"><div className="event-label">Jarvis</div><p className="turn-output">{turn.output}</p><CopyResponse key={JSON.stringify([turn.intent.sessionId, turn.intent.clientRequestId])} text={turn.output} limited={turn.outputLimited} onSave={() => onSaveResponse?.(turn.output!, turn.publicRunId ?? null)} /></div></article> : null}
     {turn.outputLimited ? <p role="status">Output preview limited. Full output may be available in session history.</p> : null}
     {turn.publicRunId || turn.events.length > 0 || turn.usage?.execution ? <RunInspector turn={turn} /> : null}
     {turn.controlMessage ? <p role="status">{turn.done && /steer/i.test(turn.controlMessage)
@@ -144,7 +144,7 @@ const formatInteger = (value: number) => value.toLocaleString('en-US');
 const formatDuration = (milliseconds: number) => milliseconds < 1000
   ? `${milliseconds}ms` : `${(milliseconds / 1000).toFixed(milliseconds < 10_000 ? 1 : 0)}s`;
 
-export function CopyResponse({ text, limited }: Readonly<{ text: string; limited: boolean }>) {
+export function CopyResponse({ text, limited, onSave }: Readonly<{ text: string; limited: boolean; onSave?: () => void }>) {
   const [notice, setNotice] = useState<{ text: string; message: string } | null>(null);
   const copy = async () => {
     setNotice(null);
@@ -157,6 +157,7 @@ export function CopyResponse({ text, limited }: Readonly<{ text: string; limited
   };
   return <div className="response-actions">
     <button className="icon-button" type="button" aria-label={limited ? 'Copy preview' : 'Copy response'} title={limited ? 'Copy preview' : 'Copy response'} onClick={() => { void copy(); }}><Copy size={16} /></button>
+    {onSave ? <button className="icon-button" type="button" aria-label={limited ? 'Save response preview as artifact' : 'Save response as artifact'} title="Save as artifact" onClick={onSave}><FilePlus2 size={16} /></button> : null}
     <span role="status">{notice?.text === text ? notice.message : ''}</span>
   </div>;
 }
@@ -291,4 +292,3 @@ export function TurnComposer({ allowed, sessionId, max, maxSteer, turn, send, re
     <details className="turn-limit"><summary>Connection & recovery details</summary><p>One writer in this tab; the server enforces cross-tab/session concurrency. Only opaque session, request and run identifiers are stored for reload recovery. Known runs resume by status reads, never message retransmission. Pending admission without a run ID remains locked for trusted operator reconciliation. Message bodies and drafts are never stored.</p></details>
   </>;
 }
-

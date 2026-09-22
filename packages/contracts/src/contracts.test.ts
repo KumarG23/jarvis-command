@@ -30,6 +30,7 @@ const validBootstrap = {
       maxInputCharacters: 16_000,
       maxSteerCharacters: 4_000,
     },
+
   },
   hermes: {
     state: 'online',
@@ -38,7 +39,7 @@ const validBootstrap = {
     provider: 'OpenAI Codex',
     gatewayState: 'idle',
     activeAgents: 0,
-    capabilities: ['run_events_sse', 'session_resources'],
+    capabilities: ['run_events_sse', 'session_resources', 'artifact_studio'],
     readinessChecks: {
       config: 'pass',
       disk: 'pass',

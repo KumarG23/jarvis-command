@@ -74,6 +74,8 @@ class HardeningTests(unittest.TestCase):
         for mount in state['Mounts']:
             if mount['Destination'] == app.AUDIT:
                 mount['Source'] = app.AUDIT
+            if mount['Destination'] == app.ARTIFACTS:
+                mount['Source'] = app.ARTIFACTS
         platform = {'OSType': 'linux', 'CgroupVersion': '2', 'OomKillDisable': False}
         with patch.object(app, 'ownership', record), patch.object(app, 'PROTECTED', protected), patch.dict(app.HOST_POLICY, {'NetworkMode': 'none'}), patch.object(app, 'run') as run:
             run.return_value = (json.dumps(platform), 0)
@@ -143,6 +145,8 @@ class HardeningTests(unittest.TestCase):
         for mount in state['Mounts']:
             if mount['Destination'] == app.AUDIT:
                 mount['Source'] = app.AUDIT
+            if mount['Destination'] == app.ARTIFACTS:
+                mount['Source'] = app.ARTIFACTS
         with patch.object(app, 'ownership', record), patch.object(app, 'PROTECTED', protected), patch.dict(app.HOST_POLICY, {'NetworkMode': 'none'}):
             def verify(s):
                 app.verify_state(s, state['Image'], env, state['Id'], metadata, running=False)

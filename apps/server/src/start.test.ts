@@ -16,6 +16,7 @@ const config: AppConfig = {
   },
   command: null,
   webDistDir: undefined,
+  artifacts: { enabled: true, root: '/tmp/jarvis-command-artifacts-test', maxFileBytes: 10_485_760, maxTotalBytes: 268_435_456, maxArtifacts: 10_000 },
 };
 
 describe('server startup', () => {

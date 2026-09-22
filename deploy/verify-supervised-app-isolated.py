@@ -162,12 +162,17 @@ const r=await fetch('http://127.0.0.1:3000/api/live/runs',{method:'POST',headers
         for directory in ('storage', 'state', 'jwks', 'public'):
             (fixture / directory).mkdir(mode=0o700 if directory in ('storage', 'state') else 0o755)
         ledger = fixture / 'storage/audit/events.jsonl'
+        artifacts = fixture / 'storage/artifacts'
         helper = fixture / 'helper'
+        artifact_helper = fixture / 'artifact-helper'
         shutil.copyfile(ROOT / 'deploy/prepare-audit-storage.py', helper); helper.chmod(0o700)
+        shutil.copyfile(ROOT / 'deploy/prepare-artifact-storage.py', artifact_helper); artifact_helper.chmod(0o700)
         initial = json.loads(run([str(helper), 'prepare', '--trusted-root', str(fixture / 'storage'), '--path', str(ledger)]).stdout)
+        artifact_initial = json.loads(run([str(artifact_helper), 'prepare', '--trusted-root', str(fixture / 'storage'), '--path', str(artifacts)]).stdout)
         source = (ROOT / 'deploy/supervised-command-app.py').read_text()
         substitutions = {
             '/usr/local/libexec/jarvis-command-prepare-audit-storage': str(helper),
+            '/usr/local/libexec/jarvis-command-prepare-artifact-storage': str(artifact_helper),
             '/srv/jarvis-command/app-command-storage.compose.yaml': str(fixture / 'storage.yaml'),
             '/srv/jarvis-command/compose.yaml': str(fixture / 'base.yaml'),
             '/etc/jarvis-command/release.env': str(fixture / 'release.env'),
@@ -189,7 +194,7 @@ const r=await fetch('http://127.0.0.1:3000/api/live/runs',{method:'POST',headers
         runner.write_text(mapped_source); runner.chmod(0o700)
         # No code instrumentation or guard replacement. Retain the mapped copy as evidence.
         (evidence / 'mapped-supervisor.py').write_text(mapped_source)
-        save('mapping.json', {'substitutions': substitutions, 'source_sha256': digest(ROOT / 'deploy/supervised-command-app.py'), 'mapped_sha256': digest(runner), 'helper_sha256': digest(helper)})
+        save('mapping.json', {'substitutions': substitutions, 'source_sha256': digest(ROOT / 'deploy/supervised-command-app.py'), 'mapped_sha256': digest(runner), 'helper_sha256': digest(helper), 'artifact_helper_sha256': digest(artifact_helper)})
         mapped = load(runner)
         # Reuse the exact ephemeral JWT and authoritative status protocol, not a mock BFF.
         tree = ast.parse((ROOT / 'deploy/verify-audit-storage-image.py').read_text())
@@ -197,7 +202,7 @@ const r=await fetch('http://127.0.0.1:3000/api/live/runs',{method:'POST',headers
         bridge = constants['upstream']
         run([NODE, '-e', constants['script'], str(fixture / 'jwks')])
         (fixture / 'jwks/jwks.json').replace(fixture / 'jwks/certs.json')
-        env = {'AUTH_MODE': 'cloudflare', 'COMMAND_MODE': 'enabled', 'CF_ACCESS_TEAM_DOMAIN': 'fixture.cloudflareaccess.com', 'CF_ACCESS_AUD': 'a'*64, 'CF_ACCESS_EMAIL_SHA256': hashlib.sha256(b'operator@example.test').hexdigest(), 'CF_ACCESS_JWKS_FILE': '/run/jarvis-command/cloudflare-jwks/certs.json', 'HERMES_READ_PROXY_KEY': 'synthetic-read-'*3, 'HERMES_API_BASE_URL': 'http://127.0.0.1:18642', 'PUBLIC_ORIGIN': 'https://command.example.test', 'HERMES_COMMAND_API_BASE_URL': 'http://127.0.0.1:18643', 'HERMES_COMMAND_PROXY_KEY': 'synthetic-command-'*3, 'COMMAND_AUDIT_LOG_PATH': str(ledger), 'PORT': '3000'}
+        env = {'AUTH_MODE': 'cloudflare', 'COMMAND_MODE': 'enabled', 'CF_ACCESS_TEAM_DOMAIN': 'fixture.cloudflareaccess.com', 'CF_ACCESS_AUD': 'a'*64, 'CF_ACCESS_EMAIL_SHA256': hashlib.sha256(b'operator@example.test').hexdigest(), 'CF_ACCESS_JWKS_FILE': '/run/jarvis-command/cloudflare-jwks/certs.json', 'HERMES_READ_PROXY_KEY': 'synthetic-read-'*3, 'HERMES_API_BASE_URL': 'http://127.0.0.1:18642', 'PUBLIC_ORIGIN': 'https://command.example.test', 'HERMES_COMMAND_API_BASE_URL': 'http://127.0.0.1:18643', 'HERMES_COMMAND_PROXY_KEY': 'synthetic-command-'*3, 'COMMAND_AUDIT_LOG_PATH': str(ledger), 'ARTIFACTS_MODE': 'enabled', 'ARTIFACT_STORAGE_PATH': str(artifacts), 'PORT': '3000'}
         (fixture / 'app.env').write_text(''.join(k+'='+v+'\n' for k,v in env.items())); (fixture / 'app.env').chmod(0o600)
         (fixture / 'release.env').write_text('JARVIS_COMMAND_APP_IMAGE='+image+'\n'); (fixture / 'release.env').chmod(0o600)
         base = (ROOT / 'deploy/app.compose.yaml').read_text()

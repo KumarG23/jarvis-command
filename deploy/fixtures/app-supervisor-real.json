@@ -13,7 +13,9 @@
         "entrypoint": null,
         "environment": {
           "COMMAND_AUDIT_LOG_PATH": "/var/lib/jarvis-command/audit/events.jsonl",
-          "COMMAND_MODE": "enabled"
+          "COMMAND_MODE": "enabled",
+          "ARTIFACTS_MODE": "enabled",
+          "ARTIFACT_STORAGE_PATH": "/var/lib/jarvis-command/artifacts"
         },
         "image": "sha256:e5175aec03d18297bad644ace3470eaf52882dcc9d164c3c04ec91faaf06a58f",
         "init": true,
@@ -55,6 +57,14 @@
             "type": "bind",
             "source": "/var/lib/jarvis-command/audit",
             "target": "/var/lib/jarvis-command/audit",
+            "bind": {
+              "create_host_path": false
+            }
+          },
+          {
+            "type": "bind",
+            "source": "/var/lib/jarvis-command/artifacts",
+            "target": "/var/lib/jarvis-command/artifacts",
             "bind": {
               "create_host_path": false
             }
@@ -237,6 +247,11 @@
           "Type": "bind",
           "Source": "/var/lib/jc-hardening-xmndd6zk/2",
           "Target": "/var/lib/jarvis-command/audit"
+        },
+        {
+          "Type": "bind",
+          "Source": "/var/lib/jc-hardening-xmndd6zk/3",
+          "Target": "/var/lib/jarvis-command/artifacts"
         }
       ],
       "MaskedPaths": [
@@ -293,6 +308,14 @@
         "Mode": "",
         "RW": true,
         "Propagation": "rprivate"
+      },
+      {
+        "Type": "bind",
+        "Source": "/var/lib/jc-hardening-xmndd6zk/3",
+        "Destination": "/var/lib/jarvis-command/artifacts",
+        "Mode": "",
+        "RW": true,
+        "Propagation": "rprivate"
       }
     ],
     "Config": {
@@ -308,6 +331,8 @@
       "Env": [
         "COMMAND_MODE=enabled",
         "COMMAND_AUDIT_LOG_PATH=/var/lib/jarvis-command/audit/events.jsonl",
+        "ARTIFACTS_MODE=enabled",
+        "ARTIFACT_STORAGE_PATH=/var/lib/jarvis-command/artifacts",
         "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
         "NODE_VERSION=22.22.3",
         "YARN_VERSION=1.22.22",

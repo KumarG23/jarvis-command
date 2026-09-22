@@ -1,4 +1,4 @@
-# Durable command audit storage (source-only Deploy6)
+# Durable command storage (source-only Deploy6)
 
 The read-only v0.1 baseline remains unchanged: `app.compose.yaml` has no audit mount,
 `app.env.example` explicitly sets `COMMAND_MODE=disabled`, and no command credential
@@ -9,21 +9,26 @@ command-proxy key, never the read key or unrestricted Hermes key.
 
 ## Provisioning contract
 
-The approved future location is `/var/lib/jarvis-command/audit/events.jsonl`.
+The approved future audit location is `/var/lib/jarvis-command/audit/events.jsonl`.
+The approved Artifact Studio location is `/var/lib/jarvis-command/artifacts`.
 Every ancestor through `/` must be root:root, with no group/world write or special
 mode bits. The already provisioned `/var/lib/jarvis-command` is the explicit trusted
 root. The helper never creates that root. The `audit` leaf is exactly
 10001:10001 mode 0700; `events.jsonl` is a single-link regular file, exactly
-10001:10001 mode 0600. Do not mount the entire privileged parent.
+10001:10001 mode 0600. The `artifacts` leaf is exactly 10001:10001 mode 0700.
+Do not mount the entire privileged parent.
 
 With the app stopped and after separate deployment authorization, the future
 operator invokes `python3 deploy/prepare-audit-storage.py prepare --trusted-root
 /var/lib/jarvis-command --path /var/lib/jarvis-command/audit/events.jsonl` as root,
-then repeats with `verify`. These commands are documentation, not executed host
+then repeats with `verify`. Artifact storage uses
+`python3 deploy/prepare-artifact-storage.py prepare --trusted-root /var/lib/jarvis-command
+--path /var/lib/jarvis-command/artifacts`, then `verify`. These commands are documentation, not executed host
 provisioning. The helper opens every component with descriptor-relative no-follow
 operations, bounds file reads to 16 MiB, syncs new objects and parent directories,
 and checks descriptor/path identity on readback. Existing bytes, inode, ownership
-and modes are never repaired, replaced, truncated, chmodded or chowned. Interrupted
+and modes are never repaired, replaced, truncated, chmodded or chowned. Existing
+artifact directories are verified, never chowned or repaired. Interrupted
 creation can leave an invalid new object: fail closed and investigate, never force
 it green. Stop all writers while preparing/verifying; do not run concurrent helper
 instances. This is not a transactional installer or a lock against privileged
@@ -31,10 +36,10 @@ host administrators. The helper validates storage metadata and returns a digest;
 the emitted application validates the ledger schema, hash chain and run mappings.
 
 `app-command-storage.compose.yaml` is a storage-only override: a narrow persistent
-read-write directory bind for the app alone, long syntax with
-`create_host_path: false`. Missing sources must be rejected, not created by Docker.
+read-write audit bind and artifact-directory bind for the app alone, long syntax
+with `create_host_path: false`. Missing sources must be rejected, not created by Docker.
 JWKS, public association files, application code and the root filesystem remain
-read-only. No command proxy or other service receives audit access. This mount is
+read-only. No command proxy or other service receives command storage access. These mounts are
 neither tmpfs nor the container writable layer.
 
 The old `validated-compose-up.sh` and its app/read-proxy/command-proxy CLI remain
@@ -56,8 +61,10 @@ environment files are single-link mode 0600, descriptor-opened without symlinks.
 Before any start it refuses ANY existing fixed-name container (running or stopped)
 without adopting, stopping or deleting it, and executes only
 `/usr/local/libexec/jarvis-command-prepare-audit-storage verify --trusted-root
-/var/lib/jarvis-command --path /var/lib/jarvis-command/audit/events.jsonl`.
-It never invokes prepare, repairs metadata, or replaces a missing ledger. The
+/var/lib/jarvis-command --path /var/lib/jarvis-command/audit/events.jsonl` and
+`/usr/local/libexec/jarvis-command-prepare-artifact-storage verify --trusted-root
+/var/lib/jarvis-command --path /var/lib/jarvis-command/artifacts`.
+It never invokes prepare, repairs metadata, or replaces missing storage. The
 future transaction must serialize launches/config writes, stop and quiesce ALL
 writers, install trusted helper/launcher/config bytes, explicitly prepare initial
 storage once, and install the opt-in `jarvis-command-app-command-storage.conf`

@@ -94,6 +94,7 @@ export const CommandBootstrapSchema = z
           maxInputCharacters: z.number().int().min(1).max(16_000),
           maxSteerCharacters: z.number().int().min(1).max(4_000),
         }).strict(),
+
       })
       .strict(),
     hermes: z

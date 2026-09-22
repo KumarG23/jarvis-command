@@ -1,4 +1,5 @@
 export * from './project-rooms';
+export * from './artifacts';
 export {
   ApprovalChoiceSchema,
   ApprovalRequestIdSchema,

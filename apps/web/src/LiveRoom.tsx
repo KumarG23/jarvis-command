@@ -5,7 +5,7 @@ import { CopyResponse } from './TurnView';
 import type { Turn } from './useLiveTurn';
 import { projectTurns } from './timeline';
 
-export function LiveRoom({ session, onHistory, turns = [], renderTurn }: Readonly<{ session: SessionSummary; onHistory: (sessionId: string, messages: SessionMessage[], complete: boolean) => void; turns?: Turn[]; renderTurn?: (turn: Turn) => ReactNode }>) {
+export function LiveRoom({ session, onHistory, turns = [], renderTurn, onSaveResponse }: Readonly<{ session: SessionSummary; onHistory: (sessionId: string, messages: SessionMessage[], complete: boolean) => void; turns?: Turn[]; renderTurn?: (turn: Turn) => ReactNode; onSaveResponse?: (message: SessionMessage) => void }>) {
   const report = useRef(onHistory);
   report.current = onHistory;
   const [messages, setMessages] = useState<SessionMessage[]>([]);
@@ -72,10 +72,9 @@ export function LiveRoom({ session, onHistory, turns = [], renderTurn }: Readonl
       <div className="event-body">
         <div className="event-label"><span>{message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Jarvis' : message.role}</span><time>{message.timestamp ? new Date(message.timestamp).toLocaleString() : 'Time not reported'}</time></div>
         {message.role === 'tool' ? <details className="saved-tool-disclosure"><summary>{message.toolName ?? 'Tool activity'}</summary><p>{message.content || 'No text was saved.'}</p></details> : <>{message.toolName ? <h2>{message.toolName}</h2> : null}<p>{message.content || (message.role === 'assistant' ? 'Assistant activity record — no text was saved.' : 'No text was saved.')}</p></>}
-        {message.role === 'assistant' && message.content ? <CopyResponse text={message.content} limited={false} /> : null}
+        {message.role === 'assistant' && message.content ? <CopyResponse text={message.content} limited={false} onSave={() => onSaveResponse?.(message)} /> : null}
       </div>
     </article>}{liveAfter(index)}</Fragment>)}
     {!error && (hasMore && pagesLoaded >= 10 ? <p role="status">History view limit reached. More messages may exist.</p> : hasMore ? <button type="button" className="primary-button" disabled={loading} onClick={() => { setLoading(true); setOffset(nextOffset); }}>Load more messages</button> : null)}
   </>;
 }
-

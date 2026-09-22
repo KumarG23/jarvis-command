@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { tmpdir } from 'node:os';
 
 import { loadConfig } from './config';
 
@@ -51,6 +52,13 @@ describe('loadConfig', () => {
         publicOrigin: 'https://command.sharma-house.com',
       },
       webDistDir: undefined,
+      artifacts: {
+        enabled: false,
+        root: null,
+        maxFileBytes: 10_485_760,
+        maxTotalBytes: 268_435_456,
+        maxArtifacts: 10_000,
+      },
     });
     expect(config).not.toHaveProperty('SOME_UNRELATED_SECRET');
   });
@@ -155,6 +163,30 @@ describe('loadConfig', () => {
     })).toThrow(/HOST.*loopback/i);
   });
 
+  it('requires an absolute prepared artifact path when production artifacts are enabled', () => {
+    expect(() => loadConfig({
+      ...productionEnvironment,
+      ARTIFACTS_MODE: 'enabled',
+    })).toThrow(/ARTIFACT_STORAGE_PATH/);
+    expect(() => loadConfig({
+      ...productionEnvironment,
+      ARTIFACTS_MODE: 'enabled',
+      ARTIFACT_STORAGE_PATH: './artifacts',
+    })).toThrow(/ARTIFACT_STORAGE_PATH.*absolute/i);
+    expect(loadConfig({
+      ...productionEnvironment,
+      ARTIFACTS_MODE: 'enabled',
+      ARTIFACT_STORAGE_PATH: '/var/lib/jarvis-command/artifacts',
+      ARTIFACT_MAX_FILE_BYTES: '1048576',
+    }).artifacts).toEqual({
+      enabled: true,
+      root: '/var/lib/jarvis-command/artifacts',
+      maxFileBytes: 1_048_576,
+      maxTotalBytes: 268_435_456,
+      maxArtifacts: 10_000,
+    });
+  });
+
   it('resolves a relative web distribution directory before Fastify sees it', () => {
     const config = loadConfig({
       NODE_ENV: 'development',
@@ -178,5 +210,12 @@ describe('loadConfig', () => {
     expect(config.cloudflare).toBeNull();
     expect(config.hermes.baseUrl).toBe('http://127.0.0.1:18642');
     expect(config.command).toBeNull();
+    expect(config.artifacts).toMatchObject({
+      enabled: true,
+      root: `${tmpdir()}/jarvis-command-artifacts-dev`,
+      maxFileBytes: 10_485_760,
+      maxTotalBytes: 268_435_456,
+      maxArtifacts: 10_000,
+    });
   });
 });

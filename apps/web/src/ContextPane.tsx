@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { GripVertical } from 'lucide-react';
 
-export function ContextPane({ open, children }: Readonly<{ open: boolean; children: ReactNode }>) {
+export function ContextPane({ open, fullScreen = false, children }: Readonly<{ open: boolean; fullScreen?: boolean; children: ReactNode }>) {
   const [width, setWidth] = useState(380);
   const drag = useRef<{ x: number; width: number } | null>(null);
   const panel = useRef<HTMLElement | null>(null);
@@ -19,12 +19,12 @@ export function ContextPane({ open, children }: Readonly<{ open: boolean; childr
     element.addEventListener('keydown', trap);
     return () => element.removeEventListener('keydown', trap);
   }, [open]);
-  return <aside ref={panel} className="context-pane" aria-label="Context workspace" hidden={!open} style={{ width }}>
-    <div role="separator" aria-label="Resize context pane" aria-orientation="vertical" aria-valuemin={320} aria-valuemax={560} aria-valuenow={width} tabIndex={0} className="pane-resize"
+  return <aside ref={panel} className={`context-pane${fullScreen ? ' is-fullscreen' : ''}`} aria-label="Context workspace" hidden={!open} style={fullScreen ? undefined : { width }}>
+    {!fullScreen ? <div role="separator" aria-label="Resize context pane" aria-orientation="vertical" aria-valuemin={320} aria-valuemax={560} aria-valuenow={width} tabIndex={0} className="pane-resize"
       onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); setWidth(value => Math.max(320, Math.min(560, value + (event.key === 'ArrowLeft' ? 20 : -20)))); } }}
       onPointerDown={event => { drag.current = { x: event.clientX, width }; event.currentTarget.setPointerCapture(event.pointerId); }}
       onPointerMove={event => { if (drag.current) setWidth(Math.max(320, Math.min(560, drag.current.width + drag.current.x - event.clientX))); }}
-      onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }}><GripVertical size={16} /></div>
+      onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }}><GripVertical size={16} /></div> : null}
     {children}
   </aside>;
 }

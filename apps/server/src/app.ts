@@ -3,8 +3,10 @@ import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
 
 import { registerLiveRoomRoutes, type LiveStreamLimits } from './live-room-routes';
+import { registerArtifactRoutes } from './artifact-routes';
 import type { createLiveRoomService } from './live-room-service';
 import { AuditIntegrityError } from './audit-ledger';
+import { ArtifactConflictError, ArtifactDeletedError, ArtifactStorageError, ArtifactStore } from './artifact-store';
 import { RoomStorageError } from './project-room-store';
 import { CommandProxyUnavailableError } from './command-client';
 import type { AppConfig } from './config';
@@ -22,6 +24,7 @@ type AppDependencies = Readonly<{
     readSnapshot: () => Promise<HermesSnapshot>;
   }>;
   liveRoom?: ReturnType<typeof createLiveRoomService> | undefined;
+  artifactStore?: ArtifactStore | undefined;
   checkLiveRoom?: () => Promise<void>;
   liveStreamLimits?: LiveStreamLimits;
   now?: () => Date;
@@ -38,6 +41,14 @@ export function buildApp(dependencies: AppDependencies) {
     maxRequestsPerSocket: 100,
   });
   const now = dependencies.now ?? (() => new Date());
+  const artifactStore = dependencies.artifactStore ?? (dependencies.config.artifacts.enabled && dependencies.config.artifacts.root
+    ? new ArtifactStore({
+        root: dependencies.config.artifacts.root,
+        maxFileBytes: dependencies.config.artifacts.maxFileBytes,
+        maxTotalBytes: dependencies.config.artifacts.maxTotalBytes,
+        maxArtifacts: dependencies.config.artifacts.maxArtifacts,
+      })
+    : undefined);
 
   app.setErrorHandler((error, request, reply) => {
     const errorName = error instanceof Error ? error.name : 'UnknownError';
@@ -49,6 +60,9 @@ export function buildApp(dependencies: AppDependencies) {
       : undefined;
     request.log.error({ errorType: errorName }, 'request failed');
     if (error instanceof RoomStorageError) return reply.code(503).send({ error: 'room_storage_unavailable' });
+    if (error instanceof ArtifactStorageError) return reply.code(503).send({ error: 'artifact_storage_unavailable' });
+    if (error instanceof ArtifactConflictError) return reply.code(409).send({ error: 'artifact_conflict' });
+    if (error instanceof ArtifactDeletedError) return reply.code(410).send({ error: 'artifact_deleted' });
     if (error instanceof AuditIntegrityError || (error instanceof CommandProxyUnavailableError && error.statusCode === 503)) {
       return reply.code(503).send({ error: 'live_room_unavailable' });
     }
@@ -69,7 +83,7 @@ export function buildApp(dependencies: AppDependencies) {
         ? 'public, max-age=31536000, immutable'
         : 'no-cache';
     reply.header('cache-control', cachePolicy);
-    reply.header('content-security-policy', [
+    if (!reply.hasHeader('content-security-policy')) reply.header('content-security-policy', [
       "default-src 'self'",
       "base-uri 'self'",
       "connect-src 'self'",
@@ -93,11 +107,16 @@ export function buildApp(dependencies: AppDependencies) {
     return payload;
   });
 
-  app.get('/api/health', async () => ({
-    status: 'ok',
-    service: 'jarvis-command',
-    version: dependencies.config.appVersion,
-  }));
+  app.get('/api/health', async (_request, reply) => {
+    const artifactReadiness = artifactStore ? await artifactStore.readiness() : { artifacts: 'pass' as const, initialized: true };
+    const ok = artifactReadiness.artifacts === 'pass';
+    return reply.code(ok ? 200 : 503).send({
+      status: ok ? 'ok' : 'unavailable',
+      service: 'jarvis-command',
+      version: dependencies.config.appVersion,
+      readiness: { artifacts: artifactReadiness.artifacts },
+    });
+  });
 
   // Network-only top-level reauth entry. Never accept a caller-selected target.
   app.get('/api/auth/recover', async (request, reply) => {
@@ -144,6 +163,7 @@ export function buildApp(dependencies: AppDependencies) {
           maxInputCharacters: 16_000,
           maxSteerCharacters: 4_000,
         },
+
       },
       hermes: {
         state: snapshot.state,
@@ -152,7 +172,9 @@ export function buildApp(dependencies: AppDependencies) {
         provider: snapshot.provider,
         gatewayState: snapshot.gatewayState,
         activeAgents: snapshot.activeAgents,
-        capabilities: snapshot.capabilities,
+        capabilities: dependencies.config.artifacts.enabled
+          ? [...new Set([...snapshot.capabilities, 'artifact_studio'])]
+          : snapshot.capabilities,
         readinessChecks: snapshot.readinessChecks,
       },
       sessions: snapshot.sessions,
@@ -162,6 +184,10 @@ export function buildApp(dependencies: AppDependencies) {
   });
 
   registerLiveRoomRoutes(app, dependencies);
+  registerArtifactRoutes(app, { ...dependencies, artifactStore });
+  app.addHook('onReady', async () => {
+    await artifactStore?.init();
+  });
 
   if (dependencies.config.webDistDir) {
     app.register(fastifyStatic, {

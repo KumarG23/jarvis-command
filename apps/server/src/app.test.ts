@@ -1,7 +1,7 @@
 import { Writable } from 'node:stream';
 import pino from 'pino';
 import { CommandBootstrapSchema } from '@jarvis-command/contracts';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
@@ -29,6 +29,7 @@ const config: AppConfig = {
   },
   command: null,
   webDistDir: undefined,
+  artifacts: { enabled: true, root: '/tmp/jarvis-command-artifacts-test', maxFileBytes: 10_485_760, maxTotalBytes: 268_435_456, maxArtifacts: 10_000 },
 };
 
 const identity: AccessIdentity = {
@@ -91,25 +92,51 @@ describe('Jarvis Command server', () => {
     expect(JSON.parse(output).req).toEqual({ method: 'POST' });
   });
 
-  it('exposes a minimal unauthenticated liveness probe', async () => {
+  it('exposes a minimal unauthenticated readiness probe including initialized artifact storage', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'jarvis-command-health-artifacts-'));
     const app = buildApp({
-      config,
+      config: { ...config, artifacts: { ...config.artifacts, root: directory } },
       verifyAccess: vi.fn(),
       hermes: { readSnapshot: vi.fn() },
     });
 
-    const response = await app.inject({ method: 'GET', url: '/api/health' });
+    try {
+      const response = await app.inject({ method: 'GET', url: '/api/health' });
 
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({
-      status: 'ok',
-      service: 'jarvis-command',
-      version: '0.1.0-test',
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({
+        status: 'ok',
+        service: 'jarvis-command',
+        version: '0.1.0-test',
+        readiness: { artifacts: 'pass' },
+      });
+      expect(response.headers['content-security-policy']).toContain("default-src 'self'");
+      expect(response.headers['permissions-policy']).toBe('camera=(), microphone=(), geolocation=()');
+      expect(response.headers['strict-transport-security']).toBe('max-age=31536000; includeSubDomains');
+    } finally {
+      await app.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('fails unauthenticated readiness when artifact storage cannot initialize', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'jarvis-command-health-artifacts-bad-'));
+    const target = join(directory, 'target');
+    const root = join(directory, 'root');
+    await mkdir(target);
+    await symlink(target, root);
+    const app = buildApp({
+      config: { ...config, artifacts: { ...config.artifacts, root } },
+      verifyAccess: vi.fn(),
+      hermes: { readSnapshot: vi.fn() },
     });
-    expect(response.headers['content-security-policy']).toContain("default-src 'self'");
-    expect(response.headers['permissions-policy']).toBe('camera=(), microphone=(), geolocation=()');
-    expect(response.headers['strict-transport-security']).toBe('max-age=31536000; includeSubDomains');
-    await app.close();
+
+    try {
+      await expect(app.ready()).rejects.toThrow();
+    } finally {
+      await app.close();
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it('rejects bootstrap requests without a valid Access assertion', async () => {
@@ -161,7 +188,7 @@ describe('Jarvis Command server', () => {
         provider: 'OpenAI Codex',
         gatewayState: 'idle',
         activeAgents: 0,
-        capabilities: ['run_events_sse', 'session_resources'],
+        capabilities: ['run_events_sse', 'session_resources', 'artifact_studio'],
         readinessChecks: { config: 'pass', disk: 'pass' },
       },
       sessions: [],

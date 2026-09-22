@@ -2,7 +2,7 @@
 
 A private, Hermes-native command environment for Neal and Jarvis, delivered as a secured web app and a sideloaded Android application.
 
-The product is deliberately **not** a generic Internet proxy for Hermes. The first release is a read-only command room: responsive shell, Cloudflare Access identity verification, sanitized Hermes health/capability/session summaries, and disabled future controls that do not pretend to work.
+The product is deliberately **not** a generic Internet proxy for Hermes. Jarvis Command is a responsive, Cloudflare Access protected command room with live Hermes sessions, project rooms, typed artifacts and explicit review boundaries for consequential work.
 
 Durable product decisions live in the canonical Obsidian note `05 Coding Projects/Jarvis Command/Jarvis Command.md`.
 
@@ -15,6 +15,8 @@ Durable product decisions live in the canonical Obsidian note `05 Coding Project
 - `packages/contracts` — shared strict Zod wire contracts
 - `deploy` — hardened Compose and systemd definitions
 - `docs/plans` — implementation plans
+
+Artifact Studio capabilities and exclusions are documented in `docs/artifact-studio.md`.
 
 ## Trust boundary
 

@@ -21,7 +21,7 @@ const bootstrap: CommandBootstrap = {
     provider: 'OpenAI Codex',
     gatewayState: 'idle',
     activeAgents: 1,
-    capabilities: ['run_events_sse', 'session_resources'],
+    capabilities: ['run_events_sse', 'session_resources', 'artifact_studio'],
     readinessChecks: {
       config: 'pass',
       disk: 'pass',
@@ -354,6 +354,38 @@ describe('Live Room history', () => {
 });
 
 describe('Jarvis Command shell', () => {
+  it('loads the initial associated artifact count without waiting for the panel to open', async () => {
+    sessionStorage.setItem('jarvis-command:selected-session:v1', 'session_123');
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.startsWith('/api/artifacts?')) return Response.json({ artifacts: [{
+        id: 'art_' + '1'.repeat(32),
+        title: 'One artifact',
+        type: 'markdown',
+        mime: 'text/markdown',
+        createdAt: '2026-09-22T14:00:00.000Z',
+        updatedAt: '2026-09-22T14:00:00.000Z',
+        creator: { subject: 'operator', source: 'human' },
+        sessionId: 'session_123',
+        projectId: null,
+        runId: null,
+        sourceRequestId: null,
+        size: 4,
+        sha256: 'a'.repeat(64),
+        currentVersion: 1,
+        canonical: false,
+        privateMode: 'private',
+        originalFilename: null,
+      }] });
+      return Response.json({ version: 1, rooms: [] });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<App loadBootstrap={async () => ({ ...liveBootstrap, sessions: [{ ...liveBootstrap.sessions[0]!, id: 'session_123', ownership: 'command' as const, source: 'web' }] })} />);
+    const artifacts = await screen.findByRole('button', { name: 'Open Artifact Studio' });
+    await waitFor(() => expect(within(artifacts).getByText('1')).toBeInTheDocument());
+    expect(fetchMock).toHaveBeenCalledWith('/api/artifacts?sessionId=session_123&limit=100', expect.objectContaining({ credentials: 'same-origin' }));
+    sessionStorage.removeItem('jarvis-command:selected-session:v1');
+  });
+
   it('keeps connection details optional while preserving honest read-only capability', async () => {
     render(<App loadBootstrap={async () => bootstrap} />);
     expect(screen.getByLabelText('Jarvis Command is loading')).toBeInTheDocument();
@@ -419,4 +451,3 @@ describe('Jarvis Command shell', () => {
     expect(screen.queryByText('sensitive upstream details')).not.toBeInTheDocument();
   });
 });
-

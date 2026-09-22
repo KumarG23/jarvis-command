@@ -1,15 +1,21 @@
-import type { CommandBootstrap } from '@jarvis-command/contracts';
+import type { ArtifactMetadata, CommandBootstrap } from '@jarvis-command/contracts';
 import { act, fireEvent, render, renderHook, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { App } from './App';
 import { useLiveTurn } from './useLiveTurn';
+import { appStorageKey } from './appEnvironment';
+import { recoveryKey } from './turnRecovery';
 
 const id = 'jcr_' + 'a'.repeat(32);
 const timestamp = '2026-09-04T12:00:00.000Z';
 const session = { id: 'jc_test', title: 'Turn room', source: 'web', ownership: 'command' as const, model: null, lastActive: timestamp, messageCount: 0, toolCallCount: 0, pinned: false };
 const bootstrap: CommandBootstrap = {
   identity: { provider: 'development' }, command: { version: 'test', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 100, maxSteerCharacters: 100 } },
-  hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse'], readinessChecks: {} }, sessions: [session, { ...session, id: 'jc_second', title: 'Second room' }],
+  hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse', 'artifact_studio'], readinessChecks: {} }, sessions: [session, { ...session, id: 'jc_second', title: 'Second room' }],
+};
+const generationBootstrap: CommandBootstrap = {
+  ...bootstrap,
+  command: { ...bootstrap.command, liveRoom: { ...bootstrap.command.liveRoom, maxInputCharacters: 2_000 } },
 };
 class Source {
   static instances: Source[] = [];
@@ -21,6 +27,41 @@ class Source {
   emit(type: string, data: object) { this.listeners.get(type)?.({ data: JSON.stringify({ type, publicRunId: id, timestamp, ...data }) } as MessageEvent); }
 }
 function status(state = 'completed', extra = {}) { return { publicRunId: id, sessionId: session.id, status: state, updatedAt: timestamp, approval: null, output: 'Streamed answer', error: null, pendingSteer: null, usage: null, ...extra }; }
+function artifactFromBody(body: Record<string, unknown>, index = 1): ArtifactMetadata {
+  return {
+    id: `art_${String(index).padStart(32, '0')}`,
+    title: String(body.title),
+    type: body.type as ArtifactMetadata['type'],
+    mime: body.type === 'markdown' ? 'text/markdown' : body.type === 'html' ? 'text/html' : body.type === 'svg' ? 'image/svg+xml' : 'text/plain',
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    creator: { subject: 'operator', source: body.source as ArtifactMetadata['creator']['source'] },
+    sessionId: body.sessionId as string | null,
+    projectId: body.projectId as string | null,
+    runId: body.runId as string | null,
+    sourceRequestId: body.sourceRequestId as string | null,
+    size: String(body.content).length,
+    sha256: 'c'.repeat(64),
+    currentVersion: 1,
+    canonical: false,
+    privateMode: 'private',
+    originalFilename: null,
+    versions: [{
+      version: 1,
+      parentVersion: null,
+      baseVersion: null,
+      createdAt: timestamp,
+      creator: { subject: 'operator', source: body.source as ArtifactMetadata['creator']['source'] },
+      mime: 'text/plain',
+      size: String(body.content).length,
+      sha256: 'c'.repeat(64),
+      revisionNote: null,
+      feedback: null,
+      originalFilename: null,
+    }],
+    comments: [],
+  };
+}
 function readyHook() {
   const hook = renderHook(useLiveTurn);
   act(() => hook.result.current.history(session.id, [], true));
@@ -29,8 +70,25 @@ function readyHook() {
 function setup(admit?: (body: Record<string, string>) => Promise<Response>, final = status()) {
   Source.instances = [];
   vi.stubGlobal('EventSource', Source);
+  let artifact: ArtifactMetadata | null = null;
+  let artifactContent = '';
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/api/rooms') return Response.json({ version: 1, rooms: [] });
+    if (url.startsWith('/api/artifacts?')) {
+      if (!artifact) return Response.json({ artifacts: [] });
+      const summary = { ...artifact } as Partial<ArtifactMetadata>;
+      delete summary.versions;
+      delete summary.comments;
+      return Response.json({ artifacts: [summary] });
+    }
+    if (url === '/api/artifacts/text') {
+      const body = JSON.parse(String(init?.body));
+      artifactContent = String(body.content);
+      artifact = artifactFromBody(body, 1);
+      return Response.json({ artifact });
+    }
+    if (artifact && url === `/api/artifacts/${artifact.id}`) return Response.json(artifact);
+    if (artifact && url === `/api/artifacts/${artifact.id}/versions/1/source`) return Response.json({ artifactId: artifact.id, version: 1, type: artifact.type, mime: artifact.mime, size: artifact.size, sha256: artifact.sha256, content: artifactContent });
     if (url.includes('/messages?')) return Response.json({ sessionId: url.includes('jc_second') ? 'jc_second' : session.id, messages: [], pagination: { limit: 50, offset: 0, returned: 0, hasMore: false } });
     if (url.endsWith('/context')) return Response.json({ sessionId: session.id, state: 'unavailable', updatedAt: null, receipt: null });
     if (url === '/api/live/model-options') return Response.json({
@@ -166,6 +224,86 @@ it('sends one exact intent, streams partial output and reconciles terminal statu
   expect(screen.getAllByText('Streamed answer')).toHaveLength(1);
   expect(Source.instances[0]!.close).toHaveBeenCalled();
   expect(fetchMock.mock.calls.filter(([url]) => url.includes('/messages?'))).toHaveLength(2);
+});
+
+it('creates an artifact with Jarvis only from the exact successful terminal run', async () => {
+  const generated = '```ts\nexport const answer = 42;\n```';
+  const fetchMock = setup(undefined, status('completed', { output: generated }));
+  await open(generationBootstrap);
+  fireEvent.click(screen.getByRole('button', { name: 'Open Artifact Studio' }));
+  const form = await screen.findByRole('form', { name: 'Create with Jarvis' });
+  fireEvent.change(within(form).getByLabelText('Title'), { target: { value: 'Generated module' } });
+  fireEvent.change(within(form).getByLabelText('Generated artifact type'), { target: { value: 'code' } });
+  fireEvent.change(within(form).getByLabelText('Instructions'), { target: { value: 'Write a tiny TypeScript module.' } });
+  fireEvent.click(within(form).getByRole('button', { name: 'Create with Jarvis' }));
+
+  let runRequest: [string, RequestInit | undefined] | undefined;
+  await waitFor(() => {
+    runRequest = fetchMock.mock.calls.find(([url]) => url === '/api/live/runs') as [string, RequestInit | undefined] | undefined;
+    expect(runRequest).toBeTruthy();
+  });
+  const runBody = JSON.parse(String(runRequest![1]!.body));
+  expect(runBody).toMatchObject({ sessionId: session.id, clientRequestId: expect.stringMatching(/^[a-f0-9-]{36}$/) });
+  expect(runBody.input).toContain('Return only the exact raw artifact content');
+  expect(runBody.input).toContain('Do not include');
+  expect(runBody.input).not.toContain('private upstream secret');
+
+  act(() => Source.instances[0]!.emit('message.delta', { delta: generated }));
+  act(() => Source.instances[0]!.emit('run.completed', { output: generated, pendingSteer: null, usage: null }));
+  await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url === '/api/artifacts/text')).toBe(true));
+  const saveBody = JSON.parse(String(fetchMock.mock.calls.find(([url]) => url === '/api/artifacts/text')![1]!.body));
+  expect(saveBody).toMatchObject({
+    title: 'Generated module',
+    type: 'code',
+    content: 'export const answer = 42;',
+    sessionId: session.id,
+    runId: id,
+    source: 'assistant-response',
+  });
+  expect(saveBody.sourceRequestId).toMatch(/^gen_[a-f0-9]{32}$/);
+  await screen.findByText('Response saved as artifact.');
+  expect(sessionStorage.getItem(appStorageKey('jarvis-command:artifact-generation:v1'))).toBeNull();
+});
+
+it('recovers a pending Jarvis artifact generation after reload and saves the matching completed run', async () => {
+  const clientRequestId = '12345678-1234-4234-8234-123456789abc';
+  const sourceRequestId = 'gen_' + '4'.repeat(32);
+  const prompt = 'Artifact Studio request.\nInstructions:\nReturn a log.';
+  sessionStorage.setItem(appStorageKey('jarvis-command:selected-session:v1'), session.id);
+  sessionStorage.setItem(recoveryKey, JSON.stringify({ sessionId: session.id, clientRequestId, publicRunId: id }));
+  sessionStorage.setItem(appStorageKey('jarvis-command:artifact-generation:v1'), JSON.stringify({
+    version: 1,
+    sourceRequestId,
+    sessionId: session.id,
+    projectId: null,
+    title: 'Recovered log',
+    artifactType: 'log',
+    prompt,
+    clientRequestId,
+    publicRunId: id,
+    createdAt: new Date().toISOString(),
+    state: 'running',
+    message: 'Create with Jarvis is running.',
+  }));
+  const fetchMock = setup(undefined, status('completed', { output: '```log\nRecovered output\n```' }));
+  render(<App loadBootstrap={async () => bootstrap} />);
+  await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url === '/api/artifacts/text')).toBe(true));
+  const saveBody = JSON.parse(String(fetchMock.mock.calls.find(([url]) => url === '/api/artifacts/text')![1]!.body));
+  expect(saveBody).toMatchObject({ title: 'Recovered log', type: 'log', content: 'Recovered output', runId: id, sourceRequestId });
+});
+
+it('does not auto-save output-limited Create with Jarvis runs', async () => {
+  const fetchMock = setup(undefined, status('completed', { output: 'x'.repeat(140_000) }));
+  await open(generationBootstrap);
+  fireEvent.click(screen.getByRole('button', { name: 'Open Artifact Studio' }));
+  const form = await screen.findByRole('form', { name: 'Create with Jarvis' });
+  fireEvent.change(within(form).getByLabelText('Title'), { target: { value: 'Too large' } });
+  fireEvent.change(within(form).getByLabelText('Instructions'), { target: { value: 'Generate a huge report.' } });
+  fireEvent.click(within(form).getByRole('button', { name: 'Create with Jarvis' }));
+  await waitFor(() => expect(Source.instances).toHaveLength(1));
+  act(() => Source.instances[0]!.emit('run.completed', { output: 'partial', pendingSteer: null, usage: null }));
+  await screen.findByText(/preview-limited/);
+  expect(fetchMock.mock.calls.some(([url]) => url === '/api/artifacts/text')).toBe(false);
 });
 
 it('sends a curated per-prompt model and reasoning override without changing permissions', async () => {
@@ -1034,4 +1172,3 @@ it.each(['once', 'deny'] as const)('submits exact %s approval once and reads bac
   expect(fetchMock.mock.calls.some(([url]) => url === `/api/live/runs/${id}`)).toBe(true);
   expect(screen.queryByRole('region', { name: 'Awaiting approval' })).not.toBeInTheDocument();
 });
-
