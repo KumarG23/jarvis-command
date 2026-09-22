@@ -45,9 +45,11 @@ const COMMAND_SOURCES = new Set(['jarvis-command', 'api_server']);
 const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh'] as const;
 const CURATED_INFERENCE_OPTIONS = [
   { provider: 'openai-codex', model: 'gpt-6-astra', label: 'Astra' },
-  { provider: 'openai-codex', model: 'gpt-5.6-sol', label: 'Sol' },
+  { provider: 'openai-codex', model: 'gpt-6-sol', label: 'Sol' },
+  { provider: 'openai-codex', model: 'gpt-6-luna', label: 'Luna' },
+  { provider: 'openai-codex', model: 'gpt-5.6-sol', label: 'Sol 5.6' },
   { provider: 'openai-codex', model: 'gpt-5.6-terra', label: 'Terra' },
-  { provider: 'openai-codex', model: 'gpt-5.6-luna', label: 'Luna' },
+  { provider: 'openai-codex', model: 'gpt-5.6-luna', label: 'Luna 5.6' },
   { provider: 'xai-oauth', model: 'grok-4.7', label: 'Grok 4.7' },
   { provider: 'xai-oauth', model: 'grok-4.6', label: 'Grok 4.6' },
 ] as const;

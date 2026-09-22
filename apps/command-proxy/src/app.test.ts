@@ -70,7 +70,7 @@ function upstreamModelOptions(authenticated = true) {
     provider: 'openai-codex',
     model: 'gpt-5.6-sol',
     providers: [
-      { slug: 'openai-codex', authenticated, api_url: 'private', models: ['gpt-6-astra', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'unapproved-model'] },
+      { slug: 'openai-codex', authenticated, api_url: 'private', models: ['gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'unapproved-model'] },
       { slug: 'xai-oauth', authenticated: true, warning: 'private', models: ['grok-4.6', 'grok-4.7'] },
     ],
     api_key: 'must-not-cross-the-wire',
@@ -464,9 +464,11 @@ describe('run creation and control', () => {
       default: { provider: 'openai-codex', model: 'gpt-5.6-sol' },
       options: [
         ['openai-codex', 'gpt-6-astra', 'Astra'],
-        ['openai-codex', 'gpt-5.6-sol', 'Sol'],
+        ['openai-codex', 'gpt-6-sol', 'Sol'],
+        ['openai-codex', 'gpt-6-luna', 'Luna'],
+        ['openai-codex', 'gpt-5.6-sol', 'Sol 5.6'],
         ['openai-codex', 'gpt-5.6-terra', 'Terra'],
-        ['openai-codex', 'gpt-5.6-luna', 'Luna'],
+        ['openai-codex', 'gpt-5.6-luna', 'Luna 5.6'],
         ['xai-oauth', 'grok-4.7', 'Grok 4.7'],
         ['xai-oauth', 'grok-4.6', 'Grok 4.6'],
       ].map(([provider, model, label]) => ({ provider, model, label, reasoningEfforts: ['minimal', 'low', 'medium', 'high', 'xhigh'] })),
@@ -485,14 +487,14 @@ describe('run creation and control', () => {
     const response = await app.inject({
       method: 'POST', url: '/v1/runs',
       headers: authHeaders({ 'content-type': 'application/json', 'idempotency-key': 'jc-turn-override' }),
-      payload: { sessionId: commandSessionId, input: 'Use Luna.', inference: { provider: 'openai-codex', model: 'gpt-5.6-luna', reasoningEffort: 'low' } },
+      payload: { sessionId: commandSessionId, input: 'Use Luna.', inference: { provider: 'openai-codex', model: 'gpt-6-luna', reasoningEffort: 'low' } },
     });
     expect(response.statusCode).toBe(202);
     expect(JSON.parse(String(fetcher.mock.calls[2]![1]!.body))).toEqual({
       session_id: commandSessionId,
       input: 'Use Luna.',
       provider: 'openai-codex',
-      model: 'gpt-5.6-luna',
+      model: 'gpt-6-luna',
       require_model_lock: true,
       model_options: { reasoning: { enabled: true, effort: 'low' } },
     });

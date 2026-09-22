@@ -133,9 +133,11 @@ function providerLabel(provider: string | null): string {
 function modelLabel(model: string | null): string {
   return ({
     'gpt-6-astra': 'Astra',
-    'gpt-5.6-sol': 'Sol',
+    'gpt-6-sol': 'Sol',
+    'gpt-6-luna': 'Luna',
+    'gpt-5.6-sol': 'Sol 5.6',
     'gpt-5.6-terra': 'Terra',
-    'gpt-5.6-luna': 'Luna',
+    'gpt-5.6-luna': 'Luna 5.6',
     'grok-4.7': 'Grok 4.7',
     'grok-4.6': 'Grok 4.6',
   } as Record<string, string>)[model ?? ''] ?? model ?? 'model unknown';

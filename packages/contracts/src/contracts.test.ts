@@ -149,6 +149,14 @@ describe('per-prompt inference contracts', () => {
   it('accepts only curated provider/model pairs and bounded reasoning levels', () => {
     expect(LiveRunSubmissionRequestSchema.parse({
       ...request,
+      inference: { provider: 'openai-codex', model: 'gpt-6-luna', reasoningEffort: 'low' },
+    }).inference?.model).toBe('gpt-6-luna');
+    expect(LiveRunSubmissionRequestSchema.parse({
+      ...request,
+      inference: { provider: 'openai-codex', model: 'gpt-6-sol', reasoningEffort: 'high' },
+    }).inference?.model).toBe('gpt-6-sol');
+    expect(LiveRunSubmissionRequestSchema.parse({
+      ...request,
       inference: { provider: 'openai-codex', model: 'gpt-5.6-luna', reasoningEffort: 'low' },
     }).inference?.model).toBe('gpt-5.6-luna');
     expect(LiveRunSubmissionRequestSchema.parse({
