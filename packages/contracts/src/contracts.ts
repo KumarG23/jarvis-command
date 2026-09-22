@@ -29,7 +29,7 @@ const OpenAiCodexInferenceSchema = z.object({
 }).strict();
 const GrokInferenceSchema = z.object({
   provider: z.literal('xai-oauth'),
-  model: z.literal('grok-4.6'),
+  model: z.enum(['grok-4.7', 'grok-4.6']),
   reasoningEffort: ReasoningEffortSchema,
 }).strict();
 export const InferenceOverrideSchema = z.discriminatedUnion('provider', [
@@ -49,7 +49,7 @@ export const InferenceOptionsResponseSchema = z.object({
     provider: NonBlankTextSchema(120),
     model: NonBlankTextSchema(160),
   }).strict(),
-  options: z.array(InferenceOptionSchema).min(1).max(5),
+  options: z.array(InferenceOptionSchema).min(1).max(6),
 }).strict();
 export const LiveRunStateSchema = z.enum([
   'queued',

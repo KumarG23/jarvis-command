@@ -68,8 +68,8 @@ it('restores the persisted execution receipt through status-only reload recovery
     providerLatencyMs: 2000, endToEndLatencyMs: 2200, outputTokensPerSecond: 20,
     context: { usedTokens: 90, limitTokens: 1000, source: 'hermes_effective' as const },
     execution: {
-      requested: { provider: 'xai-oauth', model: 'grok-4.6', reasoningEffort: 'low' as const },
-      executed: { provider: 'xai-oauth', model: 'grok-4.6', reasoningEffort: 'low' as const, reasoningEffortSource: 'wire' as const },
+      requested: { provider: 'xai-oauth', model: 'grok-4.7', reasoningEffort: 'low' as const },
+      executed: { provider: 'xai-oauth', model: 'grok-4.7', reasoningEffort: 'low' as const, reasoningEffortSource: 'wire' as const },
       routeSource: 'raw_request', exact: true, fallbackUsed: false,
     },
   };
@@ -79,7 +79,7 @@ it('restores the persisted execution receipt through status-only reload recovery
         : status('completed', { output: 'Recovered answer', usage }))));
   render(<App loadBootstrap={async () => ({ identity: { provider: 'development' }, command: { version: 'test', environment: 'test', generatedAt: '2026-09-04T12:00:00.000Z', liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 100, maxSteerCharacters: 100 } }, hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse'], readinessChecks: {} }, sessions: [{ id: sessionId, title: 'Recovered room', source: 'web', ownership: 'command', model: null, lastActive: '2026-09-04T12:00:00.000Z', messageCount: 0, toolCallCount: 0, pinned: false }] })} />);
   const receipt = await screen.findByRole('region', { name: 'Execution receipt' });
-  expect(receipt).toHaveTextContent('Executed · Grok 4.6 · low · xAI');
+  expect(receipt).toHaveTextContent('Executed · Grok 4.7 · low · xAI');
   expect(receipt).toHaveTextContent('160 tokens');
 });
 
