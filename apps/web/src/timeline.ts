@@ -18,7 +18,7 @@ export function matchTurn(turn: Turn, messages: SessionMessage[], complete: bool
     if (!turn.publicRunId || !turn.done || !user || !reply || user.role !== 'user' || reply.role !== 'assistant'
       || messages.indexOf(reply) <= messages.indexOf(user)
       || messages.slice(messages.indexOf(user) + 1, messages.indexOf(reply)).some(message => message.role === 'user')
-      || (turn.intent.input !== null && user.content !== turn.intent.input)
+      || (turn.intent.input !== null && !matchesPersistedUserContent(turn, user.content))
       || turn.outputLimited || !turn.output || reply.content !== turn.output) return empty;
     return { user, assistant: complete ? reply : null, echo: reply };
   }
@@ -27,7 +27,7 @@ export function matchTurn(turn: Turn, messages: SessionMessage[], complete: bool
     || messages.some((message) => message.sessionId !== turn.intent.sessionId)
     || baseline.some((id, index) => messages[index]?.id !== id)) return { user: null, assistant: null, echo: null };
   const user = messages[baseline.length];
-  if (!user || user.role !== 'user' || user.content !== turn.intent.input) return { user: null, assistant: null, echo: null };
+  if (!user || user.role !== 'user' || !matchesPersistedUserContent(turn, user.content)) return { user: null, assistant: null, echo: null };
   const following = messages.slice(baseline.length + 1);
   const nextUser = following.findIndex((message) => message.role === 'user');
   const segment = nextUser < 0 ? following : following.slice(0, nextUser);
@@ -35,6 +35,16 @@ export function matchTurn(turn: Turn, messages: SessionMessage[], complete: bool
   const echo = !turn.outputLimited && !!turn.output && replies.length === 1 ? replies[0]! : null;
   const assistant = turn.done && complete ? echo : null;
   return { user, assistant, echo };
+}
+
+function matchesPersistedUserContent(turn: Turn, content: string): boolean {
+  if (turn.intent.input === null) return true;
+  if (content === turn.intent.input) return true;
+  const images = 'images' in turn.intent ? turn.intent.images : undefined;
+  if (!images?.length || !content.startsWith(`${turn.intent.input}\n`)) return false;
+  const suffix = content.slice(turn.intent.input.length);
+  const markers = suffix.match(/\n\[[^\]\r\n]{1,160}\]/g);
+  return markers?.length === images.length && markers.join('') === suffix;
 }
 
 export function projectTurns(turns: Turn[], messages: SessionMessage[], complete: boolean) {

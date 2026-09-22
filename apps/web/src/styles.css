@@ -308,7 +308,7 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 .conversation-content { display: flow-root; }
 
 .visually-hidden { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-.artifact-studio { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.artifact-studio { container-type: inline-size; display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .artifact-header > div { min-width: 0; }
 .artifact-header p { margin: 4px 0 0; color: var(--subtle); font-size: 10px; line-height: 1.45; }
 .drop-target { margin: 10px 16px 0; min-height: 54px; display: grid; place-items: center; border: 1px dashed #3e7d91; border-radius: 8px; background: #0d1a22; color: var(--cyan); font-size: 12px; }
@@ -336,6 +336,13 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 .artifact-title-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: start; gap: 8px; margin-bottom: 12px; }
 .artifact-title-row h3 { margin: 0 0 6px; font-size: 17px; line-height: 1.3; overflow-wrap: anywhere; }
 .artifact-title-row p { margin: 0; color: var(--subtle); font: 400 10px/1.5 'JetBrains Mono', monospace; overflow-wrap: anywhere; }
+@container (max-width: 720px) {
+  .artifact-layout { grid-template-columns: 1fr; overflow-y: auto; }
+  .artifact-library { max-height: none; border-right: 0; border-bottom: 1px solid var(--border); }
+  .artifact-workspace { overflow: visible; }
+  .artifact-title-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .artifact-title-row > div { grid-column: 1 / -1; }
+}
 .artifact-tabs { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0 14px; border-bottom: 1px solid var(--border); }
 .tab-button { display: inline-flex; align-items: center; gap: 5px; min-height: 34px; padding: 7px 9px; border: 0; border-bottom: 2px solid transparent; color: var(--muted); background: transparent; text-transform: capitalize; font-size: 11px; }
 .tab-button[aria-selected="true"] { color: var(--cyan); border-bottom-color: var(--cyan); }

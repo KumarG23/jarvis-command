@@ -65,7 +65,7 @@ export function LiveRoom({ session, onHistory, turns = [], renderTurn, onSaveRes
     {error ? <div className="history-feedback"><p role="alert">{error}</p><button type="button" className="primary-button" onClick={() => { setError(null); setLoading(true); setAttempt((value) => value + 1); }}>Retry history</button></div> : null}
     {!loading && !error && messages.length === 0 ? <p role="status">No saved messages in session history yet.</p> : null}
     {liveAfter(-1)}
-    {messages.map((message, index) => <Fragment key={message.id}>{omittedEchoIds.has(message.id) ? null : <article className="timeline-event history-message" data-message-id={message.id} aria-label={message.role === 'user' ? 'Your message' : message.role === 'assistant' ? 'Jarvis response' : undefined}>
+    {messages.map((message, index) => <Fragment key={message.id}>{omittedEchoIds.has(message.id) || (message.role === 'assistant' && !message.content && !message.toolName) ? null : <article className="timeline-event history-message" data-message-id={message.id} aria-label={message.role === 'user' ? 'Your message' : message.role === 'assistant' ? 'Jarvis response' : undefined}>
       <div className={`event-icon ${message.role === 'user' ? 'violet' : 'cyan'}`}>
         {message.role === 'tool' ? <SquareTerminal size={17} /> : message.role === 'user' ? <MessageSquare size={17} /> : <Command size={25} />}
       </div>

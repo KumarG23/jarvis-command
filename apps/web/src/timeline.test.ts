@@ -28,6 +28,21 @@ it('does not match a response belonging to the next user', () => {
   expect(matchTurn(turn, messages, true).assistant).toBeNull();
 });
 
+it('reconciles the persisted marker Hermes adds to image-backed user messages', () => {
+  const imageTurn: Turn = { ...turn, intent: { sessionId: 'jc_test', clientRequestId: 'request', input: 'hello', images: [{ artifactId: `art_${'a'.repeat(32)}`, version: 1 }] } };
+  const messages = [...old, message('new:user', 'user', 'hello\n[screenshot]'), message('new:answer', 'assistant', 'answer')];
+  expect(matchTurn(imageTurn, messages, true).assistant?.id).toBe('new:answer');
+  expect(projectTurns([imageTurn], messages, true)[0]!.turn.historyMatched).toBe(true);
+});
+
+it('rejects malformed or extra persisted image markers', () => {
+  const imageTurn: Turn = { ...turn, intent: { sessionId: 'jc_test', clientRequestId: 'request', input: 'hello', images: [{ artifactId: `art_${'a'.repeat(32)}`, version: 1 }] } };
+  for (const content of ['hello\n[screenshot]\n[extra]', 'hello\n[]', 'hello\n[screenshot]\ntrailer']) {
+    const messages = [...old, message('new:user', 'user', content), message('new:answer', 'assistant', 'answer')];
+    expect(matchTurn(imageTurn, messages, true).assistant).toBeNull();
+  }
+});
+
 it('reconciles a recovered run only to its authoritative persisted pair, preserving older identical replies', () => {
   const recovered: Turn = { ...turn, intent: { ...turn.intent, input: null }, historyBinding: { userMessageId: 'new:user', assistantMessageId: 'new:answer' } };
   delete recovered.historyBaseline;

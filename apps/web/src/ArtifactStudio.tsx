@@ -277,7 +277,7 @@ export function ArtifactStudio({ open, selectedSessionId, projectId, canSendProm
         currentVersion: selected.currentVersion,
       });
       setSelected(artifact);
-      setStatus(artifact.canonical ? 'Canonical artifact promoted.' : 'Canonical flag removed.');
+      setStatus(artifact.canonical ? 'Marked as the primary artifact for this work.' : 'Primary designation removed.');
       await loadList();
       onLibraryChanged?.();
     });
@@ -438,7 +438,7 @@ export function ArtifactStudio({ open, selectedSessionId, projectId, canSendProm
           {!artifacts.length ? <p className="empty-copy">No artifacts match this view.</p> : artifacts.map(artifact => <button key={artifact.id} type="button" role="listitem" className="artifact-card" aria-current={artifact.id === selectedId ? 'page' : undefined} onClick={() => setSelectedId(artifact.id)}>
             <span>{artifact.title}</span>
             <small>{typeLabels[artifact.type]} · v{artifact.currentVersion} · {formatBytes(artifact.size)}</small>
-            {artifact.canonical ? <strong><Star size={13} /> Canonical</strong> : null}
+            {artifact.canonical ? <strong><Star size={13} /> Primary</strong> : null}
           </button>)}
         </div>
       </aside>
@@ -448,7 +448,7 @@ export function ArtifactStudio({ open, selectedSessionId, projectId, canSendProm
         {!selected ? <div className="artifact-empty"><FilePlus2 size={36} /><h3>Select or create an artifact</h3><p>Saved responses, uploads, text, diagrams and files appear here.</p></div> : <>
           <div className="artifact-title-row">
             <div><h3>{selected.title}</h3><p>{selected.id} · v{selected.currentVersion} · {selected.sha256.slice(0, 16)}…</p></div>
-            <button className={`secondary-button${selected.canonical ? ' active' : ''}`} type="button" disabled={busy} onClick={() => void toggleCanonical()}><Star size={15} /> {selected.canonical ? 'Canonical' : 'Make canonical'}</button>
+            <button className={`secondary-button${selected.canonical ? ' active' : ''}`} type="button" disabled={busy} title="Mark this as the preferred artifact to use for this work" onClick={() => void toggleCanonical()}><Star size={15} /> {selected.canonical ? 'Primary' : 'Set as primary'}</button>
             <a className="secondary-button" href={downloadUrl(selected)}><Download size={15} /> Download</a>
           </div>
           {source && source.version !== selected.currentVersion ? <p className="notice">Viewing historical source v{source.version}. Current metadata is v{selected.currentVersion}; historical source is read-only.</p> : null}

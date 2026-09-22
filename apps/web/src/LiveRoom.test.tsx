@@ -45,13 +45,13 @@ it.each([false, true])('renders an owned partial-page echo once while retaining 
   expect(screen.getAllByRole('article', { name: 'Jarvis response' })).toHaveLength(2);
   expect(screen.getAllByRole('button', { name: 'Copy response' })).toHaveLength(2);
 });
-it('labels saved conversation cards consistently and explains empty assistant records without inventing tool completion', async () => {
+it('labels saved conversation cards consistently and hides empty assistant tool-call records', async () => {
   const messages = ['user', 'assistant'].map((role, index) => ({ id: `record:${index}`, sessionId: session.id, role, content: role === 'user' ? 'question' : '', timestamp: null, toolName: null, displayKind: 'tool_call' }));
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ sessionId: session.id, messages, pagination: { limit: 50, offset: 0, returned: 2, hasMore: false } })));
   render(<LiveRoom session={session} onHistory={vi.fn()} />);
   expect(await screen.findByRole('article', { name: 'Your message' })).toHaveTextContent('You');
-  expect(screen.getByRole('article', { name: 'Jarvis response' })).toHaveTextContent('Jarvis');
-  expect(screen.getByText('Assistant activity record — no text was saved.')).toBeInTheDocument();
+  expect(screen.queryByRole('article', { name: 'Jarvis response' })).not.toBeInTheDocument();
+  expect(screen.queryByText('Assistant activity record — no text was saved.')).not.toBeInTheDocument();
 });
 it.each(['success', 'denied'])('offers honest %s copying after a reply moves to saved history', async mode => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ sessionId: session.id, messages: [{ id: 'saved:1', sessionId: session.id, role: 'assistant', content, timestamp: session.lastActive, toolName: null, displayKind: null }], pagination: { limit: 50, offset: 0, returned: 1, hasMore: false } })));

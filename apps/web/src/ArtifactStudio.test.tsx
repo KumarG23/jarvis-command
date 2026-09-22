@@ -148,8 +148,8 @@ describe('ArtifactStudio', () => {
     fireEvent.change(screen.getByLabelText('Comment'), { target: { value: 'Needs polish' } });
     fireEvent.click(screen.getByRole('button', { name: 'Add comment' }));
     expect(await screen.findByText('Needs polish')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Make canonical/ }));
-    await screen.findByText('Canonical artifact promoted.');
+    fireEvent.click(screen.getByRole('button', { name: /Set as primary/ }));
+    await screen.findByText('Marked as the primary artifact for this work.');
     fireEvent.click(screen.getByRole('tab', { name: /export/i }));
     fireEvent.click(screen.getByRole('button', { name: 'Prompt Obsidian export' }));
     expect(sent.mock.calls[0]![0]).toContain('reviewed Obsidian export action');
