@@ -269,3 +269,63 @@ it('never returns a deduped admission from a closed ledger', async () => {
   await ledger.close();
   await expect(ledger.appendOnce('session-one', event)).rejects.toBeInstanceOf(AuditIntegrityError);
 });
+
+
+describe('terminal audit reconciliation', () => {
+  const terminal = {
+    action: 'run.completed' as const, actor, sessionId, publicRunId, clientRequestId,
+    upstreamRunId, requestId: null, requestFingerprint, outcome: 'succeeded' as const,
+    status: 'completed' as const, choice: null,
+  };
+  const statusReceipt = { inputTokens: 10, outputTokens: 2, totalTokens: 12, reasoningTokens: 1 };
+  const streamReceipt = { inputTokens: 10, outputTokens: 2, totalTokens: 12 };
+  it.each([['status first', statusReceipt, streamReceipt], ['stream first', streamReceipt, statusReceipt]] as const)(
+    '%s keeps first immutable terminal receipt with one row across reopen', async (_label, firstReceipt, secondReceipt) => {
+      const path = await temporaryLedgerPath();
+      const ledger = await AuditLedger.open(path); ledgers.push(ledger);
+      const first = await ledger.appendOnce(`terminal:${publicRunId}`, { ...terminal, receipt: firstReceipt });
+      const second = await ledger.appendOnce(`terminal:${publicRunId}`, { ...terminal, receipt: secondReceipt });
+      expect(second).toEqual(first);
+      expect(second.receipt).toEqual(firstReceipt);
+      expect((await readFile(path, 'utf8')).trim().split('\n')).toHaveLength(1);
+      await ledger.close(); ledgers.pop();
+      const reopened = await AuditLedger.open(path); ledgers.push(reopened);
+      expect(await reopened.appendOnce(`terminal:${publicRunId}`, { ...terminal, receipt: secondReceipt })).toEqual(first);
+      expect((await readFile(path, 'utf8')).trim().split('\n')).toHaveLength(1);
+      await reopened.verifyStorage();
+    },
+  );
+  it('rejects conflicting terminal identity/state and leaves the original row intact', async () => {
+    const path = await temporaryLedgerPath();
+    const ledger = await AuditLedger.open(path); ledgers.push(ledger);
+    const first = await ledger.appendOnce(`terminal:${publicRunId}`, { ...terminal, receipt: statusReceipt });
+    const original = await readFile(path, 'utf8');
+    for (const conflict of [
+      { actor: 'c'.repeat(64) }, { sessionId: 'jc_ffffffffffffffffffffffffffffffff' },
+      { upstreamRunId: 'run_ffffffffffffffffffffffffffffffff' },
+      { action: 'run.failed' as const, outcome: 'failed' as const, status: 'failed' as const },
+      { clientRequestId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+    ]) {
+      await expect(ledger.appendOnce(`terminal:${publicRunId}`, { ...terminal, receipt: streamReceipt, ...conflict }))
+        .rejects.toBeInstanceOf(AuditIntegrityError);
+    }
+    expect(await readFile(path, 'utf8')).toBe(original);
+    expect(first.receipt).toEqual(statusReceipt);
+  });
+  it('does not relax nonterminal audit dedupe', async () => {
+    const ledger = await AuditLedger.open(await temporaryLedgerPath()); ledgers.push(ledger);
+    const event = { ...terminal, action: 'run.started' as const, status: 'running' as const };
+    await ledger.appendOnce(`started:${publicRunId}`, { ...event, receipt: statusReceipt });
+    await expect(ledger.appendOnce(`started:${publicRunId}`, { ...event, receipt: streamReceipt }))
+      .rejects.toBeInstanceOf(AuditIntegrityError);
+  });
+  it('fails closed for dedupe after corrupting storage', async () => {
+    const path = await temporaryLedgerPath();
+    const ledger = await AuditLedger.open(path); ledgers.push(ledger);
+    await ledger.appendOnce(`terminal:${publicRunId}`, { ...terminal, receipt: statusReceipt });
+    const original = await readFile(path, 'utf8');
+    await writeFile(path, original.replace('completed', 'completex'));
+    await expect(ledger.appendOnce(`terminal:${publicRunId}`, { ...terminal, receipt: streamReceipt }))
+      .rejects.toBeInstanceOf(AuditIntegrityError);
+  });
+});

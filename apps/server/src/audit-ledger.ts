@@ -169,13 +169,7 @@ export class AuditLedger {
     this.assertHealthy();
     if (!dedupeKey || dedupeKey.length > 256) throw new AuditIntegrityError('Invalid audit dedupe key');
     const parsedDraft = AuditDraftSchema.parse(draft);
-    const existing = this.#dedupe.get(dedupeKey);
-    if (existing) {
-      if (!sameDraft(existing, parsedDraft)) {
-        throw new AuditIntegrityError('Audit dedupe key reused with different event');
-      }
-      return existing;
-    }
+    // Check dedupe under the same serialized integrity guard as a new append.
     return this.#enqueueAppend(dedupeKey, parsedDraft);
   }
 
@@ -270,9 +264,10 @@ export class AuditLedger {
       if (dedupeKey) {
         const existing = this.#dedupe.get(dedupeKey);
         if (existing) {
-          if (!sameDraft(existing, parsedDraft)) {
+          if (!sameDedupeDraft(dedupeKey, existing, parsedDraft)) {
             throw new AuditIntegrityError('Audit dedupe key reused with different event');
           }
+          await this.#verifyPersistedBytes();
           return existing;
         }
       }
@@ -432,6 +427,21 @@ async function validateParentDirectory(path: string): Promise<void> {
     if (error instanceof AuditIntegrityError) throw error;
     throw new AuditIntegrityError('Audit parent directory is unavailable');
   }
+}
+
+// A terminal status read and its SSE completion can report different optional usage
+// fields. Keep the first immutable receipt; dedupe only when the terminal outcome
+// and every identity/control field agree. Other audit events remain exact-match.
+function sameDedupeDraft(key: string, entry: AuditEntry, draft: z.infer<typeof AuditDraftSchema>): boolean {
+  if (sameDraft(entry, draft)) return true;
+  if (!key.startsWith('terminal:') || key !== `terminal:${entry.publicRunId}`
+    || !['run.completed', 'run.failed', 'run.cancelled', 'run.interrupted'].includes(entry.action)
+    || entry.action !== draft.action) return false;
+  const oldCore = projectDraft(entry);
+  const newCore = { ...draft };
+  delete oldCore.receipt;
+  delete newCore.receipt;
+  return canonicalJson(oldCore) === canonicalJson(newCore);
 }
 
 function sameDraft(entry: AuditEntry, draft: z.infer<typeof AuditDraftSchema>): boolean {
