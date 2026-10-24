@@ -1076,3 +1076,44 @@ it('never forks a gateway-owned session, including forged jc_ IDs with external 
     expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0);
   }
 });
+
+
+describe('installed Hermes durable transcript and run contract', () => {
+  it('projects the first-turn metadata row without losing its upstream pagination identity', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({
+      session_id: commandSessionId,
+      data: [
+        { id: 442979, session_id: commandSessionId, role: 'user', content: 'Fixture request' },
+        { id: 442981, session_id: commandSessionId, role: 'assistant', content: 'Fixture reply' },
+        { id: 442982, session_id: commandSessionId, role: 'session_meta', content: null, tools: [{ secret: 'not exposed' }] },
+      ],
+      pagination: { limit: 50, offset: 0, returned: 3, order: 'oldest' },
+    }));
+    const response = await createApp(fetcher).inject({ url: `/api/sessions/${commandSessionId}/messages?limit=50&offset=0`, headers: authHeaders() });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.pagination).toEqual({ limit: 50, offset: 0, returned: 3, hasMore: false });
+    expect(body.messages.map((message: { id: string }) => message.id)).toEqual(['442979', '442981', '442982']);
+    expect(body.messages[2]).toMatchObject({ role: 'system', content: 'Session setup record (not a chat message).' });
+    expect(response.payload).not.toContain('not exposed');
+  });
+
+  it('uses durable creation time when Hermes omits updated_at, without inventing a current timestamp', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({
+      run_id: runId, session_id: commandSessionId, status: 'completed',
+      created_at: 1792830903, output: 'Fixture reply',
+      usage: { input_tokens: 1, output_tokens: 2, total_tokens: 3 },
+    }));
+    const response = await createApp(fetcher).inject({ url: `/v1/runs/${runId}`, headers: authHeaders() });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ runId, sessionId: commandSessionId, status: 'completed', updatedAt: new Date(1792830903 * 1000).toISOString() });
+  });
+
+  it('refuses unknown null-content chat and status without any source timestamp', async () => {
+    const page = { session_id: commandSessionId, data: [{ id: 1, session_id: commandSessionId, role: 'assistant', content: null }], pagination: { limit: 1, offset: 0, returned: 1, order: 'oldest' } };
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(page)).mockResolvedValueOnce(jsonResponse({ run_id: runId, session_id: commandSessionId, status: 'completed' }));
+    const app = createApp(fetcher);
+    expect((await app.inject({ url: `/api/sessions/${commandSessionId}/messages?limit=1&offset=0`, headers: authHeaders() })).statusCode).toBe(503);
+    expect((await app.inject({ url: `/v1/runs/${runId}`, headers: authHeaders() })).statusCode).toBe(503);
+  });
+});

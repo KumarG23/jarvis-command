@@ -78,8 +78,8 @@ const UpstreamSessionDeleteSchema = z.object({
 const UpstreamMessageSchema = z.object({
   id: z.union([OpaqueIdentifierSchema, z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)]),
   session_id: SessionIdSchema,
-  role: z.enum(['user', 'assistant', 'system', 'tool']),
-  content: z.string().max(131_072),
+  role: z.enum(['user', 'assistant', 'system', 'tool', 'session_meta']),
+  content: z.string().max(131_072).nullable(),
   timestamp: z.union([z.number(), z.string()]).nullable().optional(),
   tool_name: z.string().nullable().optional(),
   display_kind: z.string().nullable().optional(),
@@ -158,7 +158,9 @@ const UpstreamRunStatusSchema = z.object({
   run_id: z.string().regex(RUN_ID),
   session_id: SessionIdSchema,
   status: z.string(),
-  updated_at: z.union([z.number(), z.string()]),
+  // The installed Hermes durable status returns created_at, but not updated_at.
+  created_at: z.union([z.number(), z.string()]).optional(),
+  updated_at: z.union([z.number(), z.string()]).optional(),
   approval: z.record(z.string(), z.unknown()).nullable().optional(),
   output: z.string().max(262_144).nullable().optional(),
   error: z.string().max(4_096).nullable().optional(),
@@ -516,7 +518,7 @@ export function buildCommandProxy({
         config,
         fetcher,
       }));
-      if (upstream.run_id !== runId) throw new UpstreamProtocolError();
+      if (upstream.run_id !== runId || (upstream.updated_at === undefined && upstream.created_at === undefined)) throw new UpstreamProtocolError();
       return projectRunStatus(upstream);
     } catch (error) {
       return sendProxyError(error, reply);
@@ -793,11 +795,15 @@ function projectSession(
 }
 
 function projectMessage(message: z.infer<typeof UpstreamMessageSchema>): SessionMessage {
+  // Session setup is a persisted transcript row, not a conversational message.
+  // Retain its ID for exact upstream pagination without exposing metadata payloads.
+  if (message.role === 'session_meta' && message.content !== null) throw new UpstreamProtocolError();
+  if (message.role !== 'session_meta' && message.content === null) throw new UpstreamProtocolError();
   return {
     id: String(message.id),
     sessionId: message.session_id,
-    role: message.role,
-    content: message.content,
+    role: message.role === 'session_meta' ? 'system' : message.role,
+    content: message.role === 'session_meta' ? 'Session setup record (not a chat message).' : message.content!,
     timestamp: message.timestamp === null || message.timestamp === undefined
       ? null
       : toIsoTimestamp(message.timestamp),
@@ -811,7 +817,8 @@ function projectRunStatus(upstream: z.infer<typeof UpstreamRunStatusSchema>) {
     runId: upstream.run_id,
     sessionId: upstream.session_id,
     status: normalizeRunState(upstream.status),
-    updatedAt: toIsoTimestamp(upstream.updated_at),
+    // Created time is a truthful lower bound when Hermes omits the update time.
+    updatedAt: toIsoTimestamp(upstream.updated_at ?? upstream.created_at!),
     approval: upstream.approval ? projectApproval(upstream.approval) : null,
     output: upstream.output ?? null,
     error: upstream.error == null ? null : 'Hermes run unavailable',
