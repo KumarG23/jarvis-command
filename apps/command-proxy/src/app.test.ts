@@ -1109,11 +1109,28 @@ describe('installed Hermes durable transcript and run contract', () => {
     expect(response.json()).toMatchObject({ runId, sessionId: commandSessionId, status: 'completed', updatedAt: new Date(1792830903 * 1000).toISOString() });
   });
 
-  it('refuses unknown null-content chat and status without any source timestamp', async () => {
+  it('reads a durable terminal run without upstream timestamps using observation time, without leaking unknown fields', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({
+      object: 'hermes.run', run_id: runId, session_id: commandSessionId,
+      status: 'completed', admission_id: 'do-not-project', execution_generation: 1,
+      pending_controls: [], output: 'Fixture reply',
+      usage: { input_tokens: 1, output_tokens: 2, total_tokens: 3 },
+    }));
+    const response = await createApp(fetcher).inject({ url: `/v1/runs/${runId}`, headers: authHeaders() });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      runId, sessionId: commandSessionId, status: 'completed',
+      updatedAt: '2026-09-04T14:00:00.000Z', output: 'Fixture reply',
+      usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 },
+    });
+    expect(response.payload).not.toContain('do-not-project');
+  });
+
+  it('refuses unknown null-content chat without losing timestamp-free terminal status', async () => {
     const page = { session_id: commandSessionId, data: [{ id: 1, session_id: commandSessionId, role: 'assistant', content: null }], pagination: { limit: 1, offset: 0, returned: 1, order: 'oldest' } };
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(page)).mockResolvedValueOnce(jsonResponse({ run_id: runId, session_id: commandSessionId, status: 'completed' }));
     const app = createApp(fetcher);
     expect((await app.inject({ url: `/api/sessions/${commandSessionId}/messages?limit=1&offset=0`, headers: authHeaders() })).statusCode).toBe(503);
-    expect((await app.inject({ url: `/v1/runs/${runId}`, headers: authHeaders() })).statusCode).toBe(503);
+    expect((await app.inject({ url: `/v1/runs/${runId}`, headers: authHeaders() })).statusCode).toBe(200);
   });
 });
