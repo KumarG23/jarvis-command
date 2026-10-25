@@ -4,6 +4,7 @@ import { Command, MessageSquare, SquareTerminal } from 'lucide-react';
 import { CopyResponse } from './TurnView';
 import type { Turn } from './useLiveTurn';
 import { projectTurns } from './timeline';
+import { HistoryReceipt } from './HistoryReceipt';
 
 export function LiveRoom({ session, onHistory, turns = [], renderTurn, onSaveResponse }: Readonly<{ session: SessionSummary; onHistory: (sessionId: string, messages: SessionMessage[], complete: boolean) => void; turns?: Turn[]; renderTurn?: (turn: Turn) => ReactNode; onSaveResponse?: (message: SessionMessage) => void }>) {
   const report = useRef(onHistory);
@@ -75,6 +76,7 @@ export function LiveRoom({ session, onHistory, turns = [], renderTurn, onSaveRes
         {message.role === 'assistant' && message.content ? <CopyResponse text={message.content} limited={false} onSave={() => onSaveResponse?.(message)} /> : null}
       </div>
     </article>}{liveAfter(index)}</Fragment>)}
+    {!loading && !error && messages.length > 0 && session.ownership === 'command' && !(renderTurn && turns.some(turn => turn.intent.sessionId === session.id && (!turn.done || turn.usage?.execution))) ? <HistoryReceipt key={session.id} sessionId={session.id} refreshKey={JSON.stringify(messages.map(message => message.id))} /> : null}
     {!error && (hasMore && pagesLoaded >= 10 ? <p role="status">History view limit reached. More messages may exist.</p> : hasMore ? <button type="button" className="primary-button" disabled={loading} onClick={() => { setLoading(true); setOffset(nextOffset); }}>Load more messages</button> : null)}
   </>;
 }

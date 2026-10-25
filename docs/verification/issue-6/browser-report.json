@@ -1,0 +1,158 @@
+{
+  "mode": "Candidate static assets served by page-scoped interception; real authenticated same-origin GET APIs. Authenticated fixture session added to tab-local bootstrap recents because normal current recents no longer contain it; selection/reload then uses app UI and tab-only view hint. Not a normal unmodified live UI pass or deployment.",
+  "sessionId": "jc_300d0e2efc094ab38ebc2398d13e5114",
+  "publicRunId": "jcr_5c9c5f6e4d89969471684e5b28380bc0",
+  "evidence": [
+    {
+      "viewport": {
+        "width": 1280,
+        "height": 720
+      },
+      "afterReload": {
+        "receiptCount": 1,
+        "receipt": "Executed · gpt-6.1-sol · medium · OpenAI25,262 tokens · 25,249 in / 13 out · 5.6 tok/s1 API call · 2.3s provider · 2.4s end-to-end0 reasoning · 0 cache read · 0 cache writeContext · 5.0% · 25,249 / 500,000",
+        "meter": "Context5%25.2K / 500K",
+        "valuetext": "25,249 / 500,000 tokens · 5%",
+        "messageCount": 9,
+        "fixtureReplies": 1,
+        "receiptBox": {
+          "x": 311.1875,
+          "y": 388.25,
+          "width": 907.625,
+          "height": 108.25
+        },
+        "meterBox": {
+          "x": 773.59375,
+          "y": 19.75,
+          "width": 188.8125,
+          "height": 23.5
+        },
+        "headerBox": {
+          "x": 260,
+          "y": 0,
+          "width": 1020,
+          "height": 64
+        },
+        "composerBox": {
+          "x": 470,
+          "y": 598.21875,
+          "width": 600,
+          "height": 64.78125
+        },
+        "scrollWidth": 1280,
+        "receiptScreenshot": {
+          "file": "1280-receipt.png",
+          "sha256": "b0cd37cdda3faeaa6a9420b48bf117a504e3a889d13e179601b2b6c1070209a1"
+        },
+        "meterScreenshot": {
+          "file": "1280-meter.png",
+          "sha256": "b8ddc2cf13795267b3e2d672e3c7e81472519961622bdafa0d204c43cd0634e5"
+        }
+      }
+    },
+    {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "afterReload": {
+        "receiptCount": 1,
+        "receipt": "Executed · gpt-6.1-sol · medium · OpenAI25,262 tokens · 25,249 in / 13 out · 5.6 tok/s1 API call · 2.3s provider · 2.4s end-to-end0 reasoning · 0 cache read · 0 cache writeContext · 5.0% · 25,249 / 500,000",
+        "meter": "Context5%25.2K / 500K",
+        "valuetext": "25,249 / 500,000 tokens · 5%",
+        "messageCount": 9,
+        "fixtureReplies": 1,
+        "receiptBox": {
+          "x": 16,
+          "y": 546.703125,
+          "width": 348,
+          "height": 117.25
+        },
+        "meterBox": {
+          "x": 97.9375,
+          "y": 89.25,
+          "width": 104,
+          "height": 21.5
+        },
+        "headerBox": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 201
+        },
+        "composerBox": {
+          "x": 66,
+          "y": 735.515625,
+          "width": 258,
+          "height": 63.1875
+        },
+        "scrollWidth": 390,
+        "receiptScreenshot": {
+          "file": "390-receipt.png",
+          "sha256": "d6582650cf033c1a6b4eef5bf36f7ec345daf5da96679e78a9eb2a0f6217316a"
+        },
+        "meterScreenshot": {
+          "file": "390-meter.png",
+          "sha256": "c43765c2688c7782cc5294d78c685fbb9f83b44dfac120cbf6fb809765a5a58b"
+        }
+      }
+    },
+    {
+      "viewport": {
+        "width": 360,
+        "height": 740
+      },
+      "afterReload": {
+        "receiptCount": 1,
+        "receipt": "Executed · gpt-6.1-sol · medium · OpenAI25,262 tokens · 25,249 in / 13 out · 5.6 tok/s1 API call · 2.3s provider · 2.4s end-to-end0 reasoning · 0 cache read · 0 cache writeContext · 5.0% · 25,249 / 500,000",
+        "meter": "Context5%25.2K / 500K",
+        "valuetext": "25,249 / 500,000 tokens · 5%",
+        "messageCount": 9,
+        "fixtureReplies": 1,
+        "receiptBox": {
+          "x": 16,
+          "y": 1766.890625,
+          "width": 318,
+          "height": 117.25
+        },
+        "meterBox": {
+          "x": 67.9375,
+          "y": 305.25,
+          "width": 104,
+          "height": 21.5
+        },
+        "headerBox": {
+          "x": 0,
+          "y": 0,
+          "width": 360,
+          "height": 633
+        },
+        "composerBox": {
+          "x": 66,
+          "y": 716.59375,
+          "width": 228,
+          "height": 63.1875
+        },
+        "scrollWidth": 360,
+        "receiptScreenshot": {
+          "file": "360-receipt.png",
+          "sha256": "1633a8a39a4c174ecded4532ca31359ccfa7cf035f73596767c8103bbad61d01"
+        },
+        "meterScreenshot": {
+          "file": "360-meter.png",
+          "sha256": "c43765c2688c7782cc5294d78c685fbb9f83b44dfac120cbf6fb809765a5a58b"
+        }
+      }
+    }
+  ],
+  "blocked": [],
+  "apiPaths": [
+    "/api/rooms",
+    "/api/live/sessions/jc_300d0e2efc094ab38ebc2398d13e5114",
+    "/api/live/sessions/jc_300d0e2efc094ab38ebc2398d13e5114/context",
+    "/api/live/session-controls",
+    "/api/sessions/jc_300d0e2efc094ab38ebc2398d13e5114/messages",
+    "/api/live/model-options",
+    "/api/artifacts"
+  ]
+}

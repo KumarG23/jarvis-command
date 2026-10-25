@@ -95,32 +95,31 @@ function routeLabel(route: { provider: string | null; model: string | null; reas
   return `${modelLabel(route.model)} · ${route.reasoningEffort ?? 'effort unknown'} · ${providerLabel(route.provider)}`;
 }
 
-function ExecutionReceipt({ usage }: Readonly<{ usage: NonNullable<Turn['usage']> }>) {
-  const receipt = usage.execution!;
+export function ExecutionReceipt({ usage }: Readonly<{ usage: NonNullable<Turn['usage']> }>) {
+  const receipt = usage.execution;
   const context = usage.context;
   const contextPercent = context ? Math.min(100, (context.usedTokens / context.limitTokens) * 100) : null;
-  const changed = receipt.fallbackUsed
+  const changed = receipt && (receipt.fallbackUsed
     || (receipt.requested.provider !== null && receipt.requested.provider !== receipt.executed.provider)
     || (receipt.requested.model !== null && receipt.requested.model !== receipt.executed.model)
-    || (receipt.requested.reasoningEffort !== null && receipt.requested.reasoningEffort !== receipt.executed.reasoningEffort);
+    || (receipt.requested.reasoningEffort !== null && receipt.requested.reasoningEffort !== receipt.executed.reasoningEffort));
   return <section className={`execution-receipt${changed ? ' warning' : ''}`} aria-label="Execution receipt">
-    <p className="receipt-title">Executed · {modelLabel(receipt.executed.model)} · {receipt.executed.reasoningEffort ?? 'effort unknown'} · {providerLabel(receipt.executed.provider)}</p>
+    {receipt ? <p className="receipt-title">Executed · {modelLabel(receipt.executed.model)} · {receipt.executed.reasoningEffort ?? 'effort unknown'} · {providerLabel(receipt.executed.provider)}</p> : <p className="receipt-title">Executed route unavailable</p>}
     <p>{formatInteger(usage.totalTokens)} tokens · {formatInteger(usage.inputTokens)} in / {formatInteger(usage.outputTokens)} out
       {usage.outputTokensPerSecond == null ? ' · throughput unavailable' : ` · ${usage.outputTokensPerSecond.toFixed(1)} tok/s`}</p>
     <p>{usage.apiCalls === undefined ? 'API calls unavailable' : `${usage.apiCalls} API ${usage.apiCalls === 1 ? 'call' : 'calls'}`}
-      {usage.providerLatencyMs === undefined ? '' : ` · ${formatDuration(usage.providerLatencyMs)} provider`}
-      {usage.endToEndLatencyMs === undefined ? '' : ` · ${formatDuration(usage.endToEndLatencyMs)} end-to-end`}</p>
-    {usage.reasoningTokens || usage.cacheReadTokens || usage.cacheWriteTokens ? <p>
-      {usage.reasoningTokens ? `${formatInteger(usage.reasoningTokens)} reasoning` : 'Reasoning unavailable'}
-      {usage.cacheReadTokens ? ` · ${formatInteger(usage.cacheReadTokens)} cache read` : ''}
-      {usage.cacheWriteTokens ? ` · ${formatInteger(usage.cacheWriteTokens)} cache write` : ''}
-    </p> : null}
+      {usage.providerLatencyMs === undefined ? ' · Provider latency unavailable' : ` · ${formatDuration(usage.providerLatencyMs)} provider`}
+      {usage.endToEndLatencyMs === undefined ? ' · End-to-end latency unavailable' : ` · ${formatDuration(usage.endToEndLatencyMs)} end-to-end`}</p>
+    <p>{usage.reasoningTokens === undefined ? 'Reasoning unavailable' : `${formatInteger(usage.reasoningTokens)} reasoning`}
+      {usage.cacheReadTokens === undefined ? ' · Cache read unavailable' : ` · ${formatInteger(usage.cacheReadTokens)} cache read`}
+      {usage.cacheWriteTokens === undefined ? ' · Cache write unavailable' : ` · ${formatInteger(usage.cacheWriteTokens)} cache write`}
+    </p>
     {context && contextPercent !== null ? <div className="context-usage">
       <span>Context · {contextPercent.toFixed(contextPercent < 10 ? 1 : 0)}% · {formatInteger(context.usedTokens)} / {formatInteger(context.limitTokens)}</span>
       <progress aria-label="Context usage" max={100} value={contextPercent} />
     </div> : <p>Context usage unavailable</p>}
     {changed ? <p className="receipt-warning">Requested route changed during execution.</p> : null}
-    {!changed && receipt.exact ? <p>Exact route · {receipt.executed.reasoningEffortSource === 'wire' ? 'effort captured at provider wire' : 'effort not wire-confirmed'}</p> : null}
+    {!changed && receipt?.exact ? <p>Exact route · {receipt.executed.reasoningEffortSource === 'wire' ? 'effort captured at provider wire' : 'effort not wire-confirmed'}</p> : null}
   </section>;
 }
 
