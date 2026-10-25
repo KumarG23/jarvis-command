@@ -6,7 +6,7 @@ Jarvis will be the primary assistant, with direct access to our specialized agen
 
 The attached development blueprint is the product specification. Read it in full and use it to guide implementation.
 
-**Important: Only execute Milestone M0 for now. Do not begin the full implementation.**
+**Important: Execute M0 discovery and the narrowly scoped confirmed-baseline repair exception in `MASTER_PLAN.md` only. Do not begin M1+ implementation or the full redesign.**
 
 ## Initial assignment — M0
 
@@ -38,7 +38,7 @@ Prioritize working product behavior over infrastructure complexity. Use one impl
 
 Do not invent token metrics, model reasoning, agent activity, or unsupported functionality.
 
-Do not merge, deploy, alter production infrastructure, or start subsequent milestones during this assignment.
+Discovery itself does not merge, deploy or alter production infrastructure. A separately owned, confirmed existing UI defect may follow the normal branch/test/PR/lead-review path under the M0 baseline-repair exception; that is not permission to auto-merge, deploy, change production boundaries or start subsequent milestones.
 
 ## Completion
 
