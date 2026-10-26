@@ -30,6 +30,8 @@ describe('SessionContextMeter', () => {
 
     const progress = await screen.findByRole('progressbar', { name: 'Context usage' });
     expect(progress).toHaveAttribute('aria-valuenow', '75');
+    expect(progress).toHaveAttribute('aria-valuetext', '96,000 / 128,000 tokens · 75%');
+    expect(screen.getByText('96K / 128K')).toBeVisible();
     expect(progress.closest('.session-context')).toHaveClass('warning');
     expect(screen.getByText('75%')).toBeInTheDocument();
     expect(fetcher).toHaveBeenCalledWith('/api/live/sessions/jc_context/context', expect.objectContaining({ cache: 'no-store' }));
@@ -70,6 +72,7 @@ describe('SessionContextMeter', () => {
 
     await waitFor(() => expect(screen.getByLabelText('Context usage unavailable')).toBeInTheDocument());
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(screen.getByText('Used / limit unavailable')).toBeVisible();
   });
 
   it('uses the measured compact result instead of the stale pre-compact receipt', async () => {
@@ -83,4 +86,15 @@ describe('SessionContextMeter', () => {
     expect(await screen.findByText('13%')).toBeInTheDocument();
     expect(screen.getByRole('progressbar', { name: 'Context usage' })).toHaveAttribute('aria-valuenow', '13');
   });
+});
+
+it('does not carry context from one selected session into a pending read for another', async () => {
+  const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ sessionId: 'jc_context', state: 'available', updatedAt: null, receipt }))
+    .mockImplementation(() => new Promise(() => {}));
+  vi.stubGlobal('fetch', fetcher);
+  const view = render(<SessionContextMeter enabled sessionId="jc_context" liveUsage={null} />);
+  await screen.findByText('96K / 128K');
+  view.rerender(<SessionContextMeter enabled sessionId="jc_other" liveUsage={null} />);
+  expect(screen.queryByText('96K / 128K')).not.toBeInTheDocument();
+  expect(screen.getByText('Used / limit unavailable')).toBeVisible();
 });
