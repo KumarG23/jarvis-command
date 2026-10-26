@@ -88,10 +88,10 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 
 .command-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .command-header { display: flex; align-items: center; justify-content: space-between; flex: 0 0 auto; min-height: 64px; padding: 12px 25px; border-bottom: 1px solid #1c222c; gap: 16px; }
-.room-breadcrumb { display: flex; align-items: center; min-width: 0; gap: 10px; font-size: 13px; color: var(--muted); }
-.room-breadcrumb > span { max-width: 210px; overflow-wrap: anywhere; }
+.room-breadcrumb { display: flex; align-items: center; flex: 1; min-width: 0; gap: 10px; font-size: 13px; color: var(--muted); }
+.room-breadcrumb > span { max-width: 210px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .room-breadcrumb > svg { flex-shrink: 0; }
-.room-breadcrumb strong { font-weight: 500; color: var(--text); overflow-wrap: anywhere; line-height: 1.5; }
+.room-breadcrumb strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: var(--text); overflow-wrap: anywhere; line-height: 1.5; }
 .header-actions { display: flex; align-items: center; gap: 11px; flex: 0 0 auto; }
 .artifact-context-button { display: inline-flex; align-items: center; gap: 7px; min-height: 32px; max-width: 150px; padding: 5px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: #c0c8d7; font-size: 11px; }
 .artifact-context-button:hover, .artifact-context-button.active { color: var(--text); background: var(--surface); }
@@ -258,12 +258,13 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
   .sidebar-brand strong { flex: 1; }
   .close-navigation, .menu-button { display: inline-flex; }
   .navigation-scrim { display: block; position: fixed; inset: 0; z-index: 29; border: 0; background: #0009; }
-  .command-header { padding: 10px 12px; gap: 9px; min-height: 60px; }
-  .room-breadcrumb { display: block; flex: 1; font-size: 12px; }
-  .room-breadcrumb > span { display: block; color: var(--subtle); font-size: 10px; margin-bottom: 4px; }
+  .command-header { display: grid; grid-template-columns: 36px minmax(0, 1fr); padding: 10px 12px; gap: 9px; min-height: 60px; }
+  .room-breadcrumb { display: flex; flex-direction: column; flex: 1 1 0%; min-width: 0; font-size: 12px; align-items: flex-start; gap: 2px; }
+  .room-breadcrumb > span { color: var(--subtle); font-size: 10px; margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; max-width: 100%; }
   .room-breadcrumb > svg { display: none; }
-  .room-breadcrumb strong { display: block; font-size: 12px; }
-  .header-actions { gap: 3px; }
+  .room-breadcrumb strong { display: block; font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; max-width: 100%; }
+  .header-actions { position: relative; grid-column: 1 / -1; justify-content: flex-end; gap: 3px; }
+  .session-lifecycle-controls { position: static; }
   .artifact-context-button { max-width: 44px; width: 38px; justify-content: center; padding: 5px; }
   .artifact-context-button span, .artifact-context-button strong { display: none; }
   .session-context { grid-template-columns: 72px auto; gap: 5px; }
@@ -300,6 +301,7 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
   .preview-notice { padding-inline: 15px; }
   .composer-feedback, .active-run-notice { font-size: 11px; }
 }
+
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; } }
 
 .saved-tool-disclosure summary { cursor: pointer; color: var(--muted); font-size: 12px; padding: 4px 0; }
