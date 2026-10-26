@@ -50,7 +50,7 @@ export function SessionContextMeter({ enabled, sessionId, liveUsage, compaction,
   }, [enabled, sessionId, liveUsage, refreshVersion]);
 
   if (!enabled || !sessionId) return null;
-  const reportedContext = snapshot?.receipt?.context;
+  const reportedContext = snapshot?.sessionId === sessionId ? snapshot.receipt?.context : null;
   const context = reportedContext && compactedContext?.sessionId === sessionId
     ? { ...reportedContext, usedTokens: compactedContext.usedTokens }
     : reportedContext;
@@ -63,7 +63,7 @@ export function SessionContextMeter({ enabled, sessionId, liveUsage, compaction,
         : 'Context';
   if (!context) {
     return <div className={`session-context unavailable${compaction?.state === 'running' ? ' compacting' : ''}`} aria-label={compaction?.state === 'running' ? 'Context compaction running' : 'Context usage unavailable'} title="Hermes has not reported context usage for this chat yet">
-      <span>{lifecycleLabel}</span><small>—</small>
+      <span>{lifecycleLabel}</span><small>Used / limit unavailable</small>
     </div>;
   }
 
@@ -74,11 +74,12 @@ export function SessionContextMeter({ enabled, sessionId, liveUsage, compaction,
   const title = `Hermes effective context: ${formatter.format(context.usedTokens)} of ${formatter.format(context.limitTokens)} tokens`;
   return <div className={`session-context ${tone}${compaction?.state === 'running' ? ' compacting' : ''}`} title={`${title}${compaction ? ` · ${lifecycleLabel}` : ''}`}>
     <span>{lifecycleLabel}</span>
-    <div className="session-context-track" role="progressbar" aria-label="Context usage" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(bounded)}>
+    <div className="session-context-track" role="progressbar" aria-label="Context usage" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(bounded)} aria-valuetext={`${context.usedTokens.toLocaleString('en-US')} / ${context.limitTokens.toLocaleString('en-US')} tokens · ${percentage.toFixed(0)}%`}>
       <i className="session-context-fill" style={{ width: `${bounded}%` }} />
       <i className="session-context-marker warning-marker" aria-hidden="true" />
       <i className="session-context-marker critical-marker" aria-hidden="true" />
     </div>
     <strong>{percentage.toFixed(0)}%</strong>
+    <small className="context-denominator">{formatter.format(context.usedTokens)} / {formatter.format(context.limitTokens)}</small>
   </div>;
 }
