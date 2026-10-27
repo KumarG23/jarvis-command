@@ -15,6 +15,7 @@ import {
   LiveRunStopResponseSchema,
   LiveRunSubmissionRequestSchema,
   LiveRunSubmissionResponseSchema,
+  LiveRunRequestLookupSchema,
   RunEventSchema,
   type LiveRoomSessionContinueRequest,
   type LiveRoomSessionCreateRequest,
@@ -492,6 +493,18 @@ export function createLiveRoomService({
     async getContextCompaction(subject: string, publicOperationId: string): Promise<ContextCompactionStatus> {
       const record = findRun(subject, publicOperationId);
       return projectContextCompactionStatus(record, await client.getRun(record.upstreamRunId));
+    },
+
+    async lookupRunRequest(subject: string, sessionId: string, clientRequestId: string) {
+      // Only the existing authenticated actor's exact request/session can resolve.
+      // Do not contact Hermes or recover an uncertain upstream admission by writing.
+      await ledger.verifyStorage();
+      const record = ledger.findRunByClientRequest(actorFingerprint(subject), clientRequestId);
+      if (!record || record.sessionId !== sessionId) throw new LiveRoomNotFoundError();
+      return LiveRunRequestLookupSchema.parse({
+        sessionId, clientRequestId,
+        publicRunId: record.upstreamRunId ? record.publicRunId : null,
+      });
     },
 
     async getRun(subject: string, publicRunId: string): Promise<LiveRunStatus> {

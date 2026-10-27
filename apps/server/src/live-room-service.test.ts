@@ -568,3 +568,40 @@ it('fails closed for uncertain admissions past the durable idempotency retention
   await expect(service.submitRun('operator', request)).rejects.toBeInstanceOf(LiveRoomConflictError);
   expect(next.startRun).not.toHaveBeenCalled();
 });
+
+it('recovers a lost acknowledgment by actor and session after reopen without reading or starting Hermes', async () => {
+  const { ledger, path } = await createLedger();
+  const client = fakeClient();
+  await createLiveRoomService({ client, ledger, createPublicRunId: () => publicRunId }).submitRun('operator', request);
+  await ledger.close();
+  const reopened = await AuditLedger.open(path); ledgers.push(reopened);
+  const service = createLiveRoomService({ client, ledger: reopened });
+  const before = await readFile(path, 'utf8');
+  expect(await service.lookupRunRequest('operator', sessionId, request.clientRequestId)).toEqual({ sessionId, clientRequestId: request.clientRequestId, publicRunId });
+  for (const [actor, target, id] of [['other', sessionId, request.clientRequestId], ['operator', 'jc_other', request.clientRequestId], ['operator', sessionId, '00000000-0000-4000-8000-000000000000']]) {
+    await expect(service.lookupRunRequest(actor!, target!, id!)).rejects.toBeInstanceOf(LiveRoomNotFoundError);
+  }
+  expect(client.startRun).toHaveBeenCalledTimes(1);
+  expect(client.getRun).not.toHaveBeenCalled();
+  expect(await readFile(path, 'utf8')).toBe(before);
+});
+
+it('keeps an uncertain upstream admission unknown and never retries it on lookup', async () => {
+  const { ledger } = await createLedger();
+  const client = fakeClient({ startRun: vi.fn().mockRejectedValue(new Error('ack lost')) });
+  const service = createLiveRoomService({ client, ledger });
+  await expect(service.submitRun('operator', request)).rejects.toThrow('ack lost');
+  expect(await service.lookupRunRequest('operator', sessionId, request.clientRequestId)).toEqual({ sessionId, clientRequestId: request.clientRequestId, publicRunId: null });
+  expect(client.startRun).toHaveBeenCalledTimes(1);
+  expect(client.getRun).not.toHaveBeenCalled();
+});
+
+it('refuses admission lookup when durable audit storage has changed', async () => {
+  const { ledger, path } = await createLedger();
+  const client = fakeClient();
+  const service = createLiveRoomService({ client, ledger });
+  await service.submitRun('operator', request);
+  await writeFile(path, (await readFile(path, 'utf8')).replace('run.started', 'run.changed'));
+  await expect(service.lookupRunRequest('operator', sessionId, request.clientRequestId)).rejects.toThrow();
+  expect(client.startRun).toHaveBeenCalledTimes(1);
+});

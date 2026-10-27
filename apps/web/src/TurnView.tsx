@@ -10,8 +10,9 @@ export function TurnView({ turn, allowed, approve, stop, onSaveResponse }: Reado
     <p className="turn-phase" role="status">{turn.phase}</p>
     {turn.usage?.execution ? <ExecutionReceipt usage={turn.usage} />
       : 'inference' in turn.intent && turn.intent.inference ? <p className="turn-route">Requested route · {turn.intent.inference.model} · {turn.intent.inference.reasoningEffort}</p> : null}
-    {turn.intent.input === null ? <><p>Original message unavailable after reload; no message was retransmitted.</p><p>Recovery target · Session: {turn.intent.sessionId} · Request: {turn.intent.clientRequestId} · Run: {turn.publicRunId ?? 'Unknown — admission lookup unsupported'}</p></> : !turn.userHistoryMatched ? <article className="timeline-event live-message" aria-label="Your message"><div className="event-icon violet" aria-hidden="true">You</div><div className="event-body"><div className="event-label">You</div><p className="turn-input">{turn.intent.input}</p></div></article> : null}
-    {turn.output && !turn.historyMatched ? <article className="timeline-event live-message" aria-label="Jarvis response"><div className="event-icon cyan" aria-hidden="true"><Command size={21} /></div><div className="event-body"><div className="event-label">Jarvis</div><p className="turn-output">{turn.output}</p><CopyResponse key={JSON.stringify([turn.intent.sessionId, turn.intent.clientRequestId])} text={turn.output} limited={turn.outputLimited} onSave={() => onSaveResponse?.(turn.output!, turn.publicRunId ?? null)} /></div></article> : null}
+    {turn.intent.input === null ? <><p>Original message unavailable after reload; no message was retransmitted.</p><p>Recovery target · Session: {turn.intent.sessionId} · Request: {turn.intent.clientRequestId} · Run: {turn.publicRunId ?? 'Unknown — admission unconfirmed'}</p></> : !turn.userHistoryMatched ? <article className="timeline-event live-message" aria-label="Your message"><div className="event-icon violet" aria-hidden="true">You</div><div className="event-body"><div className="event-label">You</div><p className="turn-input">{turn.intent.input}</p></div></article> : null}
+    {turn.output && turn.intent.input === null && !turn.historyBinding ? <details className="recovered-run-output"><summary>Recovered run output — canonical message link unavailable</summary><p className="turn-output">{turn.output}</p></details> : null}
+    {turn.output && !turn.historyMatched && (turn.intent.input !== null || turn.historyBinding) ? <article className="timeline-event live-message" aria-label="Jarvis response"><div className="event-icon cyan" aria-hidden="true"><Command size={21} /></div><div className="event-body"><div className="event-label">Jarvis</div><p className="turn-output">{turn.output}</p><CopyResponse key={JSON.stringify([turn.intent.sessionId, turn.intent.clientRequestId])} text={turn.output} limited={turn.outputLimited} onSave={() => onSaveResponse?.(turn.output!, turn.publicRunId ?? null)} /></div></article> : null}
     {turn.outputLimited ? <p role="status">Output preview limited. Full output may be available in session history.</p> : null}
     {turn.publicRunId || turn.events.length > 0 || turn.usage?.execution ? <RunInspector turn={turn} /> : null}
     {turn.controlMessage ? <p role="status">{turn.done && /steer/i.test(turn.controlMessage)
@@ -35,7 +36,7 @@ function RunInspector({ turn }: Readonly<{ turn: Turn }>) {
   const tools = turn.events.filter(event => event.type === 'tool.started').length;
   const failedTool = turn.events.some(event => event.type === 'tool.completed' && event.error);
   const failed = !!turn.error || failedTool || turn.phase === 'Run failed' || turn.phase === 'Run interrupted';
-  const telemetry = turn.telemetry ?? { admissionAttempts: turn.publicRunId ? 1 : 0, streamConnections: 0, statusChecks: 0 };
+  const telemetry = turn.telemetry ?? { admissionAttempts: 0, streamConnections: 0, statusChecks: 0 };
   const execution = turn.usage?.execution;
   const receipt = JSON.stringify({
     version: 1,
@@ -49,11 +50,13 @@ function RunInspector({ turn }: Readonly<{ turn: Turn }>) {
     route: execution ?? (turn.intent.input !== null && 'inference' in turn.intent ? turn.intent.inference ?? null : null),
     usage: turn.usage ?? null,
     recovery: {
+      scope: 'current_tab',
       admissionAttempts: telemetry.admissionAttempts,
       streamConnections: telemetry.streamConnections,
       streamReconnects: Math.max(0, telemetry.streamConnections - 1),
       statusChecks: telemetry.statusChecks,
     },
+    activityComplete: !turn.activityUnavailable,
     activity: turn.events.map(receiptActivity),
   }, null, 2);
   const copy = async () => {
@@ -66,16 +69,16 @@ function RunInspector({ turn }: Readonly<{ turn: Turn }>) {
     }
   };
   return <details className={`run-inspector${failed ? ' failed' : ''}`} open={failed || undefined}>
-    <summary><ChevronRight size={14} /><span>Run details</span><small>{tools} {tools === 1 ? 'tool' : 'tools'} · {turn.phase.replace(/^Run /, '')}{failed ? ' · Attention needed' : ''}</small></summary>
+    <summary><ChevronRight size={14} /><span>Run details</span><small>{turn.activityUnavailable ? 'Activity incomplete · ' : ''}{tools} {turn.activityUnavailable ? 'observed ' : ''}{tools === 1 ? 'tool' : 'tools'} · {turn.phase.replace(/^Run /, '')}{failed ? ' · Attention needed' : ''}</small></summary>
     <div className="run-inspector-body" role="region" aria-label="Run inspector">
       <div className="inspector-heading"><h3>Run receipt</h3><button className="secondary-button copy-receipt" type="button" onClick={() => { void copy(); }}><Copy size={14} /> Copy receipt</button></div>
       <span className="copy-status" role="status">{copyMessage}</span>
       <dl className="inspector-facts">
         <div><dt>Status</dt><dd>{turn.phase.replace(/^Run /, '')}</dd></div>
         <div><dt>Run</dt><dd>{turn.publicRunId ?? 'Not admitted'}</dd></div>
-        <div><dt>Admission attempts</dt><dd>{telemetry.admissionAttempts}</dd></div>
-        <div><dt>Stream reconnects</dt><dd>{Math.max(0, telemetry.streamConnections - 1)}</dd></div>
-        <div><dt>Status checks</dt><dd>{telemetry.statusChecks}</dd></div>
+        <div><dt>Admission attempts (this tab)</dt><dd>{telemetry.admissionAttempts}</dd></div>
+        <div><dt>Stream reconnects (this tab)</dt><dd>{Math.max(0, telemetry.streamConnections - 1)}</dd></div>
+        <div><dt>Status checks (this tab)</dt><dd>{telemetry.statusChecks}</dd></div>
       </dl>
       {turn.error ? <p className="inspector-error" role="alert">{turn.error}</p> : null}
       {execution ? <section className="route-decision" aria-label="Route decision">
@@ -86,7 +89,8 @@ function RunInspector({ turn }: Readonly<{ turn: Turn }>) {
           <div><dt>Decision</dt><dd>{execution.fallbackUsed ? 'Fallback used' : execution.exact ? 'Exact route' : 'Route changed'}{execution.routeSource ? ` · ${execution.routeSource}` : ''}</dd></div>
         </dl>
       </section> : null}
-      {turn.events.length > 0 ? <section className="activity-timeline" aria-label="Activity timeline"><h4>Activity</h4><ol className="turn-activity" aria-label="Run activity">{turn.events.map((event, index) => <li className={event.type === 'tool.completed' && event.error ? 'failed' : ''} key={`${event.timestamp}:${event.type}:${index}`}><time dateTime={event.timestamp}>{event.timestamp.slice(11, 19)}</time><span>{activity(event, turn.done)}</span></li>)}</ol></section> : <p className="empty-activity">No tool or agent activity reported.</p>}
+      {turn.activityUnavailable ? <p role="status">Some live activity was unavailable. Saved session history may contain tool results.</p> : null}
+      {turn.events.length > 0 ? <section className="activity-timeline" aria-label="Activity timeline"><h4>Activity</h4><ol className="turn-activity" aria-label="Run activity">{turn.events.map((event, index) => <li className={event.type === 'tool.completed' && event.error ? 'failed' : ''} key={`${event.timestamp}:${event.type}:${index}`}><time dateTime={event.timestamp}>{event.timestamp.slice(11, 19)}</time><span>{activity(event, turn.done)}</span></li>)}</ol></section> : !turn.activityUnavailable ? <p className="empty-activity">No tool or agent activity reported.</p> : null}
     </div>
   </details>;
 }
@@ -311,6 +315,7 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
   return <>
     {busy && turn && !turn.done ? <p className="composer-feedback" role="status">{turn.phase}</p> : null}
     {turn?.phase === 'Admission uncertain — retry the same intent' ? <button className="primary-button" type="button" onClick={retry}>Retry same intent</button> : null}
+    {turn && !turn.done && !turn.publicRunId && turn.phase.startsWith('Admission unknown') ? <button className="primary-button" type="button" onClick={resume}>Check admission status</button> : null}
     {turn && !turn.done && turn.publicRunId && turn.phase.startsWith('Disconnected') ? <button className="primary-button" type="button" onClick={resume}>Resume status check</button> : null}
     {allowed && turn && turn.identityVerified && !turn.done && turn.publicRunId && turn.intent.sessionId === sessionId ? <form className="turn-composer" onSubmit={(event) => { event.preventDefault(); void queue(); }}>
       <textarea aria-label="Steer Jarvis" maxLength={maxSteer} value={steerDraft} onChange={(event) => setSteerDraft(sessionId!, event.target.value)} />
@@ -354,6 +359,6 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
       }} />
       <button className="primary-button" type="submit" disabled={busy || imageBusy || (!draft.trim() && !images.length) || draft.length > max} aria-label="Send message" title="Send message"><ArrowUp size={20} /></button>
     </form> : <p className="composer-feedback">{sessionId ? 'Messaging is unavailable for this chat.' : 'Choose New chat to begin.'}</p>}
-    <details className="turn-limit"><summary>Connection & recovery details</summary><p>One writer in this tab; the server enforces cross-tab/session concurrency. Only opaque session, request and run identifiers are stored for reload recovery. Known runs resume by status reads, never message retransmission. Pending admission without a run ID remains locked for trusted operator reconciliation. Message bodies and drafts are never stored.</p></details>
+    <details className="turn-limit"><summary>Connection & recovery details</summary><p>One writer in this tab; the server enforces cross-tab/session concurrency. Only opaque session, request and run identifiers are stored for reload recovery. Known runs resume by status reads, never message retransmission. Pending admission without a run ID uses a read-only request lookup and stays locked while the outcome is unknown. Message bodies and drafts are never stored.</p></details>
   </>;
 }

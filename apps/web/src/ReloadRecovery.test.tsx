@@ -110,12 +110,12 @@ it.each(['pending', 'foreign', 'valid'])('allows recovered controls only after %
 });
 it('keeps pending admission unknown with identifiers, no retries and no UUID', async () => {
   sessionStorage.setItem(key, JSON.stringify({ ...record, publicRunId: null }));
-  const fetchMock = vi.fn(); vi.stubGlobal('fetch', fetchMock);
+  const fetchMock = vi.fn(async () => Response.json({ ...record, publicRunId: null })); vi.stubGlobal('fetch', fetchMock);
   const uuid = vi.spyOn(crypto, 'randomUUID');
   const { result } = readyHook();
-  expect(result.current.turn?.phase).toMatch(/Admission unknown.*writer locked/);
+  await waitFor(() => expect(result.current.turn?.phase).toMatch(/Admission unknown.*writer locked/));
   act(() => { result.current.retry(); result.current.send(sessionId, 'never', 100); });
-  expect(fetchMock).not.toHaveBeenCalled(); expect(uuid).not.toHaveBeenCalled();
+  expect(fetchMock).toHaveBeenCalledTimes(1); expect(uuid).not.toHaveBeenCalled();
 });
 
 it.each(['corrupt', 'oversize', 'extra', 'session', 'request', 'run', 'read'])('fails closed on %s recovery without exposing raw content', async (fault) => {
@@ -297,4 +297,70 @@ it('writes and verifies only opaque pending identifiers before POST, then binds 
     expect(value).not.toContain('secret');
   }
   unmount();
+});
+
+it('resolves a lost ACK on reload by read-only request lookup then supervises the same run', async () => {
+  sessionStorage.setItem(key, JSON.stringify({ ...record, publicRunId: null }));
+  const fetchMock = vi.fn(async (url: string) => Response.json(url.includes('/run-requests/') ? record : status('running')));
+  vi.stubGlobal('fetch', fetchMock);
+  const uuid = vi.spyOn(crypto, 'randomUUID');
+  const { result, unmount } = readyHook();
+  await waitFor(() => expect(result.current.turn?.identityVerified).toBe(true));
+  expect(result.current.turn?.publicRunId).toBe(publicRunId);
+  expect(result.current.turn?.intent.input).toBeNull();
+  expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([`/api/live/sessions/${sessionId}/run-requests/${clientRequestId}`, `/api/live/runs/${publicRunId}`]);
+  expect(JSON.parse(sessionStorage.getItem(key)!)).toEqual(record);
+  expect(uuid).not.toHaveBeenCalled();
+  unmount();
+});
+
+it.each(['foreign-session', 'foreign-request', 'missing', 'unavailable', 'invalid'])('keeps lost-ACK recovery locked for %s lookup, without POST or status guesses', async (fault) => {
+  sessionStorage.setItem(key, JSON.stringify({ ...record, publicRunId: null }));
+  const fetchMock = vi.fn(async () => {
+    if (fault === 'unavailable') throw new Error('offline');
+    if (fault === 'missing') return new Response('', { status: 404 });
+    return Response.json({ ...record, ...(fault === 'foreign-session' ? { sessionId: 'jc_other' } : fault === 'foreign-request' ? { clientRequestId: '12345678-1234-4234-8234-123456789abd' } : { publicRunId: 'invalid' }) });
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const { result, unmount } = readyHook();
+  await waitFor(() => expect(result.current.turn?.phase).toMatch(/Admission unknown/));
+  act(() => { result.current.retry(); result.current.send(sessionId, 'never resend', 100); });
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(result.current.turn?.publicRunId).toBeNull();
+  expect(JSON.parse(sessionStorage.getItem(key)!).publicRunId).toBeNull();
+  unmount();
+});
+
+it('checks a still-unknown admission again only on explicit read-only resume', async () => {
+  sessionStorage.setItem(key, JSON.stringify({ ...record, publicRunId: null }));
+  let lookups = 0;
+  const fetchMock = vi.fn(async (url: string) => Response.json(url.includes('/run-requests/') ? (++lookups === 1 ? { ...record, publicRunId: null } : record) : status('failed')));
+  vi.stubGlobal('fetch', fetchMock);
+  const { result, unmount } = readyHook();
+  await waitFor(() => expect(result.current.turn?.phase).toMatch(/Admission unknown/));
+  act(() => result.current.resume());
+  await waitFor(() => expect(result.current.turn?.done).toBe(true));
+  expect(fetchMock).toHaveBeenCalledTimes(3);
+  expect(result.current.turn?.phase).toBe('Run failed');
+  expect(sessionStorage.getItem(key)).toBeNull();
+  unmount();
+});
+
+it.each(['unmount', 'replaced-storage'])('does not bind a late admission lookup after %s', async (fault) => {
+  sessionStorage.setItem(key, JSON.stringify({ ...record, publicRunId: null }));
+  let resolve!: (response: Response) => void;
+  const fetchMock = vi.fn(() => new Promise<Response>(done => { resolve = done; }));
+  vi.stubGlobal('fetch', fetchMock);
+  const { result, unmount } = readyHook();
+  if (fault === 'unmount') unmount();
+  else sessionStorage.setItem(key, JSON.stringify({ ...record, publicRunId: null, sessionId: 'jc_replacement' }));
+  const saved = sessionStorage.getItem(key);
+  await act(async () => resolve(Response.json(record)));
+  expect(sessionStorage.getItem(key)).toBe(saved);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  if (fault === 'replaced-storage') {
+    expect(result.current.turn?.phase).toMatch(/Admission unknown/);
+    expect(result.current.turn?.identityVerified).toBe(false);
+    unmount();
+  }
 });

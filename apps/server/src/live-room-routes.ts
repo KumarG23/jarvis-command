@@ -181,6 +181,10 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
       }).strict(), request.query);
       return dependencies.liveRoom!.getMessages(subjects.get(request)!, sessionId, limit, offset);
     });
+    routes.get('/api/live/sessions/:sessionId/run-requests/:clientRequestId', { exposeHeadRoute: false }, async (request) => {
+      const { sessionId, clientRequestId } = parse(LiveRunSubmissionRequestSchema.pick({ sessionId: true, clientRequestId: true }), request.params);
+      return dependencies.liveRoom!.lookupRunRequest(subjects.get(request)!, sessionId, clientRequestId);
+    });
     routes.post('/api/live/runs', async (request) => dependencies.liveRoom!.submitRun(
       subjects.get(request)!, parse(LiveRunSubmissionRequestSchema, request.body),
     ));

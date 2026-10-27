@@ -31,6 +31,8 @@ else
   echo "[header-layout] SKIPPED: $header_config not present on this base"
 fi
 
+run turn-recovery npx playwright test --config e2e/turn-recovery.config.ts
+
 if [ "${#failed[@]}" -gt 0 ]; then
   echo "FAILED: ${failed[*]}"
   exit 1

@@ -165,6 +165,12 @@ export const LiveRunSubmissionResponseSchema = z.object({
   clientRequestId: ClientRequestIdSchema,
 }).strict();
 
+// Read-only admission recovery. Null means no durable upstream binding is known;
+// it never means that sending the message again is safe.
+export const LiveRunRequestLookupSchema = LiveRunSubmissionResponseSchema.pick({
+  sessionId: true, clientRequestId: true, publicRunId: true,
+}).extend({ publicRunId: PublicRunIdSchema.nullable() }).strict();
+
 export const LiveExecutionEndpointSchema = z.object({
   provider: NonBlankTextSchema(120).nullable(),
   model: NonBlankTextSchema(160).nullable(),

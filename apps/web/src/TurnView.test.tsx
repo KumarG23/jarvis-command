@@ -92,8 +92,8 @@ it('shows route, recovery and failure details and copies a sanitized run receipt
   expect(screen.getByText('Run details').closest('details')).toHaveAttribute('open');
   const inspector = screen.getByRole('region', { name: 'Run inspector' });
   expect(inspector).toHaveTextContent('Provider unavailable.');
-  expect(inspector).toHaveTextContent('Admission attempts2');
-  expect(inspector).toHaveTextContent('Stream reconnects2');
+  expect(inspector).toHaveTextContent('Admission attempts (this tab)2');
+  expect(inspector).toHaveTextContent('Stream reconnects (this tab)2');
   expect(within(screen.getByRole('region', { name: 'Route decision' })).getByText('Fallback used · fallback')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Copy receipt' }));
   await screen.findByText('Run receipt copied');
@@ -154,4 +154,12 @@ it('pastes an image into chat, persists it as an artifact, and submits its exact
   fireEvent.change(composer, { target: { value: 'Make a new version.' } });
   fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
   await waitFor(() => expect(send).toHaveBeenCalledWith(sessionId, 'Make a new version.', 16000, undefined, [{ artifactId, version: 1 }]));
+});
+
+it('labels missing activity after reload and keeps unbound recovered output separate from canonical chat', () => {
+  render(<TurnView {...props} turn={{ ...turn, intent: { ...turn.intent, input: null }, activityUnavailable: true }} />);
+  expect(screen.getByText(/Some live activity was unavailable/)).toBeInTheDocument();
+  expect(screen.queryByText('No tool or agent activity reported.')).not.toBeInTheDocument();
+  expect(screen.queryByRole('article', { name: 'Jarvis response' })).not.toBeInTheDocument();
+  expect(screen.getByText('Recovered run output — canonical message link unavailable')).toBeInTheDocument();
 });

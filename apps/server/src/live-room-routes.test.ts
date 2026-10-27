@@ -379,3 +379,22 @@ it('streams typed SSE only after Access and aborts upstream on real socket disco
   await reader.cancel().catch(() => undefined);
   await vi.waitFor(() => expect(aborted).toBe(true));
 });
+
+it('authenticates and strictly validates read-only admission lookups without the mutation readiness gate', async () => {
+  const { app, liveRoom } = setup();
+  const sessionId = 'jc_owned';
+  const clientRequestId = '12345678-1234-4234-8234-123456789abc';
+  const identity = { sessionId, clientRequestId, publicRunId: null };
+  const lookupRunRequest = vi.fn().mockResolvedValue(identity);
+  Object.assign(liveRoom, { lookupRunRequest });
+  const url = `/api/live/sessions/${sessionId}/run-requests/${clientRequestId}`;
+  expect((await app.inject({ url })).statusCode).toBe(401);
+  expect(lookupRunRequest).not.toHaveBeenCalled();
+  for (const invalid of [url.replace(clientRequestId, 'bad'), url + '?extra=1', url.replace(sessionId, 'invalid!')]) {
+    expect((await app.inject({ url: invalid, headers })).statusCode).toBe(400);
+  }
+  const response = await app.inject({ url, headers: { 'cf-access-jwt-assertion': 'valid' } });
+  expect(response.statusCode).toBe(200);
+  expect(response.json()).toEqual(identity);
+  expect(lookupRunRequest).toHaveBeenCalledExactlyOnceWith('operator', sessionId, clientRequestId);
+});
