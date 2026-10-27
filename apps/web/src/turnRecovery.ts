@@ -1,10 +1,9 @@
-import { LiveRunSubmissionResponseSchema } from '@jarvis-command/contracts';
+import { LiveRunRequestLookupSchema } from '@jarvis-command/contracts';
 
 import { appStorageKey } from './appEnvironment';
 
 export const recoveryKey = appStorageKey('jarvis-command:live-turn');
-const RecoverySchema = LiveRunSubmissionResponseSchema.pick({ sessionId: true, clientRequestId: true, publicRunId: true })
-  .extend({ publicRunId: LiveRunSubmissionResponseSchema.shape.publicRunId.nullable() }).strict();
+const RecoverySchema = LiveRunRequestLookupSchema;
 export type RecoveryIdentity = ReturnType<typeof RecoverySchema.parse>;
 export function readRecovery(): RecoveryIdentity | null {
   const raw = sessionStorage.getItem(recoveryKey);

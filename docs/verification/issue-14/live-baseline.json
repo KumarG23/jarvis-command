@@ -1,0 +1,123 @@
+{
+  "evidenceKind": "Live deployed baseline, not candidate acceptance",
+  "origin": "https://command.sharma-house.com",
+  "viewport": {
+    "width": 1280,
+    "height": 800
+  },
+  "sessionId": "jc_f12d26d280cc4d39b3fd71b48afb82b5",
+  "clientRequestId": "55c5c427-cd43-4810-96dd-4c689ad5ad75",
+  "publicRunId": "jcr_490e7bd18ba35e754da9bfb3a8629ce2",
+  "admission": {
+    "http": 200,
+    "status": "queued",
+    "replayed": false,
+    "postCount": 1
+  },
+  "run": {
+    "http": 200,
+    "body": {
+      "publicRunId": "jcr_490e7bd18ba35e754da9bfb3a8629ce2",
+      "sessionId": "jc_f12d26d280cc4d39b3fd71b48afb82b5",
+      "status": "completed",
+      "updatedAt": "2026-10-27T13:11:38.861Z",
+      "approval": null,
+      "output": "COMMAND_14_PROOF 391",
+      "error": null,
+      "pendingSteer": null,
+      "usage": {
+        "inputTokens": 33821,
+        "outputTokens": 41,
+        "totalTokens": 33862,
+        "reasoningTokens": 0,
+        "cacheReadTokens": 16768,
+        "cacheWriteTokens": 0,
+        "apiCalls": 2,
+        "providerLatencyMs": 5547,
+        "endToEndLatencyMs": 5765,
+        "outputTokensPerSecond": 7.39,
+        "context": {
+          "usedTokens": 16940,
+          "limitTokens": 500000,
+          "source": "hermes_effective"
+        },
+        "execution": {
+          "requested": {
+            "provider": null,
+            "model": null,
+            "reasoningEffort": null
+          },
+          "executed": {
+            "provider": "openai-codex",
+            "model": "gpt-6.1-sol",
+            "reasoningEffort": "medium",
+            "reasoningEffortSource": "wire"
+          },
+          "routeSource": "unknown",
+          "exact": false,
+          "fallbackUsed": false
+        }
+      },
+      "compaction": null
+    }
+  },
+  "history": {
+    "http": 200,
+    "pagination": {
+      "limit": 50,
+      "offset": 0,
+      "returned": 5,
+      "hasMore": false
+    },
+    "rows": [
+      {
+        "id": "453921",
+        "role": "user",
+        "toolName": null,
+        "content": "[isolated owned test request]"
+      },
+      {
+        "id": "453922",
+        "role": "assistant",
+        "toolName": null,
+        "content": ""
+      },
+      {
+        "id": "453923",
+        "role": "tool",
+        "toolName": "terminal",
+        "content": "{\"output\": \"391\", \"exit_code\": 0, \"error\": null}"
+      },
+      {
+        "id": "453924",
+        "role": "assistant",
+        "toolName": null,
+        "content": "COMMAND_14_PROOF 391"
+      },
+      {
+        "id": "453925",
+        "role": "system",
+        "toolName": null,
+        "content": "[session setup]"
+      }
+    ]
+  },
+  "afterCompletedReload": {
+    "newPosts": 0,
+    "phase": null,
+    "replyArticles": 1,
+    "messageIds": [
+      "453921",
+      "453923",
+      "453924",
+      "453925"
+    ]
+  },
+  "limitations": [
+    "Source/artifact identity not independently read from deployment by worker",
+    "Live tool-event stream and live mid-run reload not proven",
+    "No historical message/run binding asserted",
+    "Physical Android not exercised"
+  ],
+  "evidenceCapturedAt": "2026-10-27T13:14:39.131327+00:00"
+}

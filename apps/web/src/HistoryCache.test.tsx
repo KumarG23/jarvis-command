@@ -26,7 +26,7 @@ it('bounds room snapshots to 32, refreshes recency, and safely reloads an evicte
 it.each(['admitting', 'reload'] as const)('keeps %s identity protected while other room snapshots are evicted', async (kind) => {
   const active = 'jc_cache_active';
   const key = 'jarvis-command:live-turn';
-  const fetchMock = vi.fn(() => new Promise<Response>(() => {})); vi.stubGlobal('fetch', fetchMock);
+  const fetchMock = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(() => new Promise<Response>(() => {})); vi.stubGlobal('fetch', fetchMock);
   if (kind === 'reload') sessionStorage.setItem(key, JSON.stringify({ sessionId: active, clientRequestId: '12345678-1234-4234-8234-123456789abc', publicRunId: null }));
   const { result, unmount } = renderHook(useLiveTurn);
   act(() => result.current.history(active, [], true));
@@ -39,6 +39,10 @@ it.each(['admitting', 'reload'] as const)('keeps %s identity protected while oth
   expect(result.current.turn!.intent).toBe(intent);
   expect(sessionStorage.getItem(key)).toBe(recovery);
   act(() => expect(result.current.send(ids.at(-1)!, 'must not replace active work', 100)).toBe(false));
-  expect(fetchMock).toHaveBeenCalledTimes(kind === 'admitting' ? 1 : 0);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  if (kind === 'reload') {
+    expect(fetchMock).toHaveBeenCalledWith(`/api/live/sessions/${active}/run-requests/12345678-1234-4234-8234-123456789abc`, expect.objectContaining({ credentials: 'same-origin' }));
+    expect(fetchMock.mock.calls.every(([, init]) => init.method === undefined || init.method === 'GET')).toBe(true);
+  } else expect(fetchMock.mock.calls[0]?.[1].method).toBe('POST');
   await act(async () => unmount());
 });

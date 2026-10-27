@@ -27,6 +27,7 @@ export {
   LiveRunStopResponseSchema,
   LiveRunSubmissionRequestSchema,
   LiveRunSubmissionResponseSchema,
+  LiveRunRequestLookupSchema,
   LiveRunUsageSchema,
   RunEventSchema,
   OpaqueIdentifierSchema,

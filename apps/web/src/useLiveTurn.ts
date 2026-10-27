@@ -1,4 +1,4 @@
-import { LiveRunSteerResponseSchema, LiveRunStopResponseSchema, LiveRunApprovalResponseSchema, LiveRunSubmissionResponseSchema, LiveRunStatusSchema, RunEventSchema, type InferenceOverride, type LiveRunSubmissionRequest, type LiveRunStatus, type RunEvent, type SessionMessage } from '@jarvis-command/contracts';
+import { LiveRunRequestLookupSchema, LiveRunSteerResponseSchema, LiveRunStopResponseSchema, LiveRunApprovalResponseSchema, LiveRunSubmissionResponseSchema, LiveRunStatusSchema, RunEventSchema, type InferenceOverride, type LiveRunSubmissionRequest, type LiveRunStatus, type RunEvent, type SessionMessage } from '@jarvis-command/contracts';
 import { useEffect, useRef, useState } from 'react';
 import { clearRecovery, readRecovery, writeRecovery, type RecoveryIdentity } from './turnRecovery';
 import { matchTurn, projectTurns } from './timeline';
@@ -67,6 +67,7 @@ export type Turn = {
   usage?: LiveRunStatus['usage'];
   compaction?: LiveRunStatus['compaction'];
   error?: string | null;
+  activityUnavailable?: boolean;
   telemetry?: { admissionAttempts: number; streamConnections: number; statusChecks: number };
 };
 export type DraftRecovery = { intent: TurnIntent; input: string; kind: 'terminal' | 'uncertain' };
@@ -114,14 +115,40 @@ export function useLiveTurn() {
       stored.current = identity;
       if (identity) {
         current.current = { intent: { sessionId: identity.sessionId, clientRequestId: identity.clientRequestId, input: null }, publicRunId: identity.publicRunId,
-          phase: identity.publicRunId ? 'Recovering status' : 'Admission unknown — public run ID unavailable; writer locked. Trusted operator reconciliation required.',
-          output: '', outputLimited: false, events: [], approval: null, done: false, historyMatched: false, identityVerified: false };
+          phase: identity.publicRunId ? 'Recovering status' : 'Recovering admission — writer locked',
+          output: '', outputLimited: false, events: [], approval: null, done: false, historyMatched: false, identityVerified: false, activityUnavailable: true };
         setTurn(current.current);
         if (identity.publicRunId) supervise(current.current, true);
+        else recoverAdmission(current.current);
       }
     } catch { recoveryBlocked.current = true; setRecoveryError('Local reload recovery unreadable or invalid — writer locked. No stored content displayed.'); }
     return () => { alive.current = false; cleanup.current(); mutation.current?.abort(); };
   }, []);
+
+  function recoverAdmission(run: Turn) {
+    const controller = new AbortController();
+    let cancelled = false;
+    cleanup.current = () => { cancelled = true; controller.abort(); };
+    const valid = () => !cancelled && alive.current && current.current?.intent === run.intent;
+    void (async () => {
+      try {
+        const identity = LiveRunRequestLookupSchema.parse(await boundedJson(
+          `/api/live/sessions/${encodeURIComponent(run.intent.sessionId)}/run-requests/${run.intent.clientRequestId}`,
+          { credentials: 'same-origin', headers: { accept: 'application/json' } }, controller,
+        ));
+        if (identity.sessionId !== run.intent.sessionId || identity.clientRequestId !== run.intent.clientRequestId) throw new Error('binding');
+        if (!valid()) return;
+        if (!identity.publicRunId) throw new Error('unconfirmed admission');
+        // Persist only opaque identifiers, with the same compare-and-set guard as ACK.
+        writeRecovery(identity, stored.current);
+        stored.current = identity;
+        update({ publicRunId: identity.publicRunId, phase: 'Recovering status' });
+        supervise(current.current!, true);
+      } catch {
+        if (valid()) update({ phase: 'Admission unknown — public run ID unavailable; writer locked. Check admission status without resending.' });
+      }
+    })();
+  }
 
   function supervise(run: Turn, statusOnly = false, preserveApproval = false, readFirst = false) {
     let controller: AbortController | undefined;
@@ -221,7 +248,7 @@ export function useLiveTurn() {
       source = connection;
       streamOpen = true;
       let ended = false;
-      const recover = () => { if (ended) return; ended = true; void reconcile(); };
+      const recover = () => { if (ended) return; ended = true; if (!terminalObserved) update({ activityUnavailable: true }); void reconcile(); };
       connection.onerror = recover;
       for (const name of eventNames) connection.addEventListener(name, (message) => {
       if (!valid() || ended || source !== connection) return;
@@ -355,7 +382,9 @@ export function useLiveTurn() {
   }
   function resume() {
     const run = current.current;
-    if (!run?.publicRunId || run.done || !run.phase.startsWith('Disconnected')) return;
+    if (!run || run.done) return;
+    if (!run.publicRunId && run.phase.startsWith('Admission unknown')) { cleanup.current(); recoverAdmission(run); return; }
+    if (!run.publicRunId || !run.phase.startsWith('Disconnected')) return;
     cleanup.current();
     supervise(run, true);
   }
