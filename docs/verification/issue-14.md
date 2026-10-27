@@ -15,7 +15,7 @@ Risk: disclosing another actor/session's admission, admitting twice during recov
 
 Failing regressions were observed before implementation: missing request lookup, lost-ACK reload remaining locked despite known admission, and missing activity presented as no activity.
 
-- Web recovery/live turn/history/timeline/receipt: 202 tests passed; subsequent lookup cancellation/storage-replacement additions: recovery file 50 passed (48 previously, two added). Reused the unchanged passing tests.
+- Web recovery/live turn/history/cache/timeline/receipt: 207 passed across focused runs, including 50 recovery and 3 cache tests. Cache eviction preserves the pending identity while allowing exactly one request-lookup GET and no admission. Reused unchanged passing tests.
 - Server service/routes/integration: 55 passed, including actor/session isolation, restart/reopen, pending upstream admission, corrupted storage, strict params/query and authenticated lookup.
 - Repository typecheck, lint and production build passed. Build is local source validation, not a published artifact.
 - `npx playwright test -c e2e/turn-recovery.config.ts`: one desktop test passed. Synthetic backend admits once, drops ACK, then serves GET-only recovery, a second mid-run reload, canonical tool/answer and completion. One POST total; one answer article; recovery identity clears only after verified completion. 1280×720 and 390×844 had no document overflow. The new test is included in the existing unprivileged PR CI script.
