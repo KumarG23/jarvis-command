@@ -1109,6 +1109,42 @@ describe('installed Hermes durable transcript and run contract', () => {
     expect(response.json()).toMatchObject({ runId, sessionId: commandSessionId, status: 'completed', updatedAt: new Date(1792830903 * 1000).toISOString() });
   });
 
+  it.each(['queued', 'started', 'running', 'waiting_for_approval', 'stopping'])(
+    'reads a timestamp-free active %s run using observation time and keeps unknown fields private',
+    async (status) => {
+      const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({
+        object: 'hermes.run', run_id: runId, session_id: commandSessionId, status,
+        admission_id: 'do-not-project', pending_controls: [], output: null,
+      }));
+      const response = await createApp(fetcher).inject({ url: `/v1/runs/${runId}`, headers: authHeaders() });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toMatchObject({
+        runId, sessionId: commandSessionId, status: status === 'started' ? 'queued' : status,
+        updatedAt: '2026-09-04T14:00:00.000Z', output: null,
+      });
+      expect(response.payload).not.toContain('do-not-project');
+    },
+  );
+
+  it('prefers authoritative upstream timestamps over observation time on active runs', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ run_id: runId, session_id: commandSessionId, status: 'running', created_at: 1788530000, updated_at: 1788530400 }))
+      .mockResolvedValueOnce(jsonResponse({ run_id: runId, session_id: commandSessionId, status: 'running', created_at: 1788530000 }));
+    const app = createApp(fetcher);
+    expect((await app.inject({ url: `/v1/runs/${runId}`, headers: authHeaders() })).json().updatedAt).toBe(new Date(1788530400 * 1000).toISOString());
+    expect((await app.inject({ url: `/v1/runs/${runId}`, headers: authHeaders() })).json().updatedAt).toBe(new Date(1788530000 * 1000).toISOString());
+  });
+
+  it('still rejects a timestamp-free active status for a different run or an unknown state', async () => {
+    const other = 'run_fedcba0987654321fedcba0987654321';
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ run_id: other, session_id: commandSessionId, status: 'running' }))
+      .mockResolvedValueOnce(jsonResponse({ run_id: runId, session_id: commandSessionId, status: 'mystery' }));
+    const app = createApp(fetcher);
+    expect((await app.inject({ url: `/v1/runs/${runId}`, headers: authHeaders() })).statusCode).toBe(503);
+    expect((await app.inject({ url: `/v1/runs/${runId}`, headers: authHeaders() })).statusCode).toBe(503);
+  });
+
   it('refuses unknown null-content chat and status without any source timestamp', async () => {
     const page = { session_id: commandSessionId, data: [{ id: 1, session_id: commandSessionId, role: 'assistant', content: null }], pagination: { limit: 1, offset: 0, returned: 1, order: 'oldest' } };
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(page)).mockResolvedValueOnce(jsonResponse({ run_id: runId, session_id: commandSessionId, status: 'completed' }));
