@@ -165,7 +165,9 @@ const UpstreamRunStatusSchema = z.object({
   output: z.string().max(262_144).nullable().optional(),
   error: z.string().max(4_096).nullable().optional(),
   pending_steer: z.string().max(4_000).nullable().optional(),
-  usage: UpstreamRunUsageSchema.nullable().optional(),
+  // Installed Hermes sends an empty object while a run is active (no counters yet). Any other
+  // object still has to satisfy the strict usage receipt.
+  usage: z.union([z.object({}).strict(), UpstreamRunUsageSchema]).nullable().optional(),
   compaction: UpstreamCompactionSchema.nullable().optional(),
   kind: z.literal('context_compaction').optional(),
   result: UpstreamContextCompactionResultSchema.nullable().optional(),
@@ -813,10 +815,14 @@ function projectMessage(message: z.infer<typeof UpstreamMessageSchema>): Session
 }
 
 function projectRunStatus(upstream: z.infer<typeof UpstreamRunStatusSchema>, observedAt: Date) {
+  const status = normalizeRunState(upstream.status);
+  const usageUnavailable = upstream.usage !== undefined && upstream.usage !== null && Object.keys(upstream.usage).length === 0;
+  // An empty usage object means "no counters yet" for an active run; a finished run must report them.
+  if (usageUnavailable && TERMINAL_RUN_STATES.has(status)) throw new UpstreamProtocolError();
   return {
     runId: upstream.run_id,
     sessionId: upstream.session_id,
-    status: normalizeRunState(upstream.status),
+    status,
     // Hermes may omit both timestamps. In that case this is the read observation time,
     // not a claim about when the run transitioned to its current state.
     updatedAt: toIsoTimestamp(upstream.updated_at ?? upstream.created_at, observedAt),
@@ -824,7 +830,7 @@ function projectRunStatus(upstream: z.infer<typeof UpstreamRunStatusSchema>, obs
     output: upstream.output ?? null,
     error: upstream.error == null ? null : 'Hermes run unavailable',
     pendingSteer: upstream.pending_steer ?? null,
-    usage: projectUsage(upstream.usage),
+    usage: usageUnavailable ? null : projectUsage(upstream.usage),
     compaction: upstream.compaction ? {
       state: upstream.compaction.state,
       startedAt: toIsoTimestamp(upstream.compaction.started_at),
@@ -1092,6 +1098,8 @@ function projectEvent(value: unknown, expectedRunId: string): Record<string, unk
       return null;
   }
 }
+
+const TERMINAL_RUN_STATES: ReadonlySet<LiveRunState> = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
 
 function normalizeRunState(value: string): LiveRunState {
   if (value === 'started') return 'queued';
