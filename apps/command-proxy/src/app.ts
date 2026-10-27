@@ -518,8 +518,8 @@ export function buildCommandProxy({
         config,
         fetcher,
       }));
-      if (upstream.run_id !== runId || (upstream.updated_at === undefined && upstream.created_at === undefined)) throw new UpstreamProtocolError();
-      return projectRunStatus(upstream);
+      if (upstream.run_id !== runId) throw new UpstreamProtocolError();
+      return projectRunStatus(upstream, now());
     } catch (error) {
       return sendProxyError(error, reply);
     }
@@ -812,13 +812,14 @@ function projectMessage(message: z.infer<typeof UpstreamMessageSchema>): Session
   };
 }
 
-function projectRunStatus(upstream: z.infer<typeof UpstreamRunStatusSchema>) {
+function projectRunStatus(upstream: z.infer<typeof UpstreamRunStatusSchema>, observedAt: Date) {
   return {
     runId: upstream.run_id,
     sessionId: upstream.session_id,
     status: normalizeRunState(upstream.status),
-    // Created time is a truthful lower bound when Hermes omits the update time.
-    updatedAt: toIsoTimestamp(upstream.updated_at ?? upstream.created_at!),
+    // Hermes may omit both timestamps. In that case this is the read observation time,
+    // not a claim about when the run transitioned to its current state.
+    updatedAt: toIsoTimestamp(upstream.updated_at ?? upstream.created_at, observedAt),
     approval: upstream.approval ? projectApproval(upstream.approval) : null,
     output: upstream.output ?? null,
     error: upstream.error == null ? null : 'Hermes run unavailable',
