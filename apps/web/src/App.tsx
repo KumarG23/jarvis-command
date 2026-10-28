@@ -1,6 +1,7 @@
-import { ArtifactListResponseSchema, ArtifactTypeSchema, CommandBootstrapSchema, type ArtifactType, type CommandBootstrap, type SessionSummary } from '@jarvis-command/contracts';
+import { composeProjectInput, projectContext, readProjectForSend } from './projectInput';
+import { ArtifactListResponseSchema, ArtifactTypeSchema, CommandBootstrapSchema, type ProjectRoom, type ArtifactType, type CommandBootstrap, type SessionSummary } from '@jarvis-command/contracts';
 import { Command, ShieldCheck, Menu, X, Settings2, PanelRight, ChevronRight, MessageSquare, Files, Users, MessagesSquare, Bell } from 'lucide-react';
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
 import './styles.css';
 import { LiveRoom } from './LiveRoom';
@@ -223,6 +224,9 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
   const conversationScroll = useRef<HTMLElement | null>(null), conversationContent = useRef<HTMLDivElement | null>(null), followLatest = useRef(true);
   const [projectName, setProjectName] = useState<string | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [project, setProject] = useState<ProjectRoom | null>(null);
+  const [projectSendError, setProjectSendError] = useState('');
+  useEffect(() => { setProjectSendError(''); }, [projectId]);
   const [selectedSession, setSelectedSession] = useState<SessionSummary | null>(() => {
     if (!bootstrap.command.liveRoom.enabled) return null;
     try { const id = sessionStorage.getItem(appStorageKey('jarvis-command:selected-session:v1')); return bootstrap.sessions.find(session => session.id === id) ?? null; } catch { return null; }
@@ -407,25 +411,54 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
   useEffect(() => {
     if (live.turn && !live.turn.done && live.turn.intent.sessionId === compactedContext?.sessionId) setCompactedContext(null);
   }, [live.turn?.done, live.turn?.intent.sessionId, compactedContext?.sessionId]);
-  function saveResponseArtifact(content: string, runId: string | null = null) {
+  function saveResponseArtifact(content: string, runId: string | null = null, savedProjectId: string | null = projectId) {
     if (!content.trim()) return;
     if (saveRecoveryRef.current.pending || saveRecoveryRef.current.error) { setPane('artifacts'); return; }
     const sourceRequestId = newGenerationId();
     stageArtifactSave({
       key: sourceRequestId, sourceRequestId,
-      sessionId: selectedSession?.id ?? null, projectId, runId,
+      sessionId: selectedSession?.id ?? null, projectId: savedProjectId, runId,
       title: `Jarvis response ${new Date().toLocaleString()}`,
       artifactType: null, content,
     });
     setPane('artifacts');
   }
-  function sendArtifactPrompt(prompt: string): boolean {
-    if (!writeAllowed || !selectedSession || prompt.length > bootstrap.command.liveRoom.maxInputCharacters) return false;
-    return live.send(selectedSession.id, prompt, bootstrap.command.liveRoom.maxInputCharacters);
+  const artifactSendContext = useRef<object | null>(null);
+  const artifactContextValue = useMemo(() => ({ projectId, project, session: selectedSession, writeAllowed }), [projectId, project, selectedSession, writeAllowed]);
+  artifactSendContext.current = artifactContextValue;
+  const artifactSending = useRef(false);
+  async function prepareArtifactInput(prompt: string): Promise<string | null> {
+    if (artifactSending.current || !writeAllowed || !selectedSession) return null;
+    artifactSending.current = true;
+    const context = artifactSendContext.current;
+    setProjectSendError('');
+    try {
+      let input = prompt;
+      if (projectId) {
+        const fresh = await readProjectForSend(projectId, selectedSession.id, new AbortController());
+        // Stable dependencies let unrelated shell renders keep the same send context.
+        if (artifactSendContext.current !== context) throw Error('Chat context changed. Review and retry the artifact request.');
+        if (!project || projectContext(project) !== projectContext(fresh)) {
+          setProject(fresh); projects.current?.readback(fresh);
+          throw Error('Saved project context changed. Review it in the chat composer, then retry the artifact request.');
+        }
+        input = composeProjectInput(prompt, fresh);
+      }
+      if (input.length > bootstrap.command.liveRoom.maxInputCharacters) throw Error('Complete artifact request including project context exceeds the message limit. Shorten the request or saved context.');
+      return input;
+    } catch (error) { setProjectSendError(error instanceof Error ? error.message : 'Project readback unavailable. Request not sent.'); return null; }
+    finally { artifactSending.current = false; }
   }
-  function createArtifactWithJarvis(request: ArtifactGenerationDraft): boolean {
+  async function sendArtifactPrompt(prompt: string): Promise<boolean> {
+    if (!writeAllowed || !selectedSession || prompt.length > bootstrap.command.liveRoom.maxInputCharacters) return false;
+    const input = await prepareArtifactInput(prompt);
+    return input !== null && live.send(selectedSession.id, input, bootstrap.command.liveRoom.maxInputCharacters, undefined, undefined, undefined, projectId);
+  }
+  async function createArtifactWithJarvis(request: ArtifactGenerationDraft): Promise<boolean> {
     if (!writeAllowed || !selectedSession || (live.turn && !live.turn.done)) return false;
-    const prompt = buildArtifactGenerationPrompt(request, bootstrap.command.liveRoom.maxInputCharacters);
+    const rawPrompt = buildArtifactGenerationPrompt(request, projectId ? 16000 : bootstrap.command.liveRoom.maxInputCharacters);
+    const prompt = rawPrompt ? await prepareArtifactInput(rawPrompt) : null;
+    if (rawPrompt && prompt === null) return false;
     if (!prompt) {
       setPendingGeneration({
         version: 1,
@@ -459,7 +492,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
       message: 'Create with Jarvis is starting.',
     };
     setPendingGeneration(pending);
-    const accepted = live.send(selectedSession.id, prompt, bootstrap.command.liveRoom.maxInputCharacters, undefined, undefined, clientRequestId);
+    const accepted = live.send(selectedSession.id, prompt, bootstrap.command.liveRoom.maxInputCharacters, undefined, undefined, clientRequestId, projectId);
     if (!accepted) {
       setPendingGeneration({ ...pending, state: 'failed', message: 'Jarvis could not start this artifact request. Retry after the active run clears.' });
       return false;
@@ -468,7 +501,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     return true;
   }
   function retryArtifactGeneration() {
-    if (!pendingGeneration || pendingGeneration.state !== 'failed' || !selectedSession || selectedSession.id !== pendingGeneration.sessionId || !writeAllowed || (live.turn && !live.turn.done)) return;
+    if (!pendingGeneration || pendingGeneration.state !== 'failed' || !selectedSession || selectedSession.id !== pendingGeneration.sessionId || projectId !== pendingGeneration.projectId || !writeAllowed || (live.turn && !live.turn.done)) return;
     const clientRequestId = crypto.randomUUID();
     const next: PendingArtifactGeneration = {
       ...pendingGeneration,
@@ -480,7 +513,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
       message: 'Create with Jarvis is retrying.',
     };
     setPendingGeneration(next);
-    const accepted = live.send(next.sessionId, next.prompt, bootstrap.command.liveRoom.maxInputCharacters, undefined, undefined, clientRequestId);
+    const accepted = live.send(next.sessionId, next.prompt, bootstrap.command.liveRoom.maxInputCharacters, undefined, undefined, clientRequestId, projectId);
     if (!accepted) setPendingGeneration({ ...next, state: 'failed', message: 'Retry could not start. Check that no run is active and try again.' });
   }
   function cancelArtifactGeneration() {
@@ -507,7 +540,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
       }
     }}>
       <div className="sidebar-brand"><Command size={29} /><strong>Jarvis Command</strong><button className="icon-button close-navigation" type="button" aria-label="Close chat navigation" onClick={() => closeNavigation()}><X size={20} /></button></div>
-      {liveEnabled ? <ProjectRooms ref={projects} sessions={sessions} selectedSessionId={selectedSession?.id} onScope={setProjectScope} onProjectScope={setProjectId} onSession={selectSession} onDeleted={sessionId => {
+      {liveEnabled ? <ProjectRooms ref={projects} sessions={sessions} selectedSessionId={selectedSession?.id} onScope={setProjectScope} onProjectScope={setProjectId} onProjectChange={setProject} artifactsEnabled={artifactStudioEnabled} onOpenArtifacts={() => { projects.current?.closeDetails(); setPane('artifacts'); }} onSession={selectSession} onDeleted={sessionId => {
         setSessions(previous => previous.filter(session => session.id !== sessionId));
         if (selectedSession?.id === sessionId) { setSelectedSession(null); setProjectScope(null); setProjectId(null); }
       }} contextTarget={contextTarget}
@@ -531,14 +564,15 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
       <section ref={conversationScroll} className="timeline" aria-label="Conversation" onScroll={event => { const element = event.currentTarget; followLatest.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}><div ref={conversationContent} className="conversation-content">
         {liveEnabled && selectedSession ? <LiveRoom key={`${selectedSession.id}:${live.refresh?.sessionId === selectedSession.id ? live.refresh.revision : ''}`} session={selectedSession} onHistory={(sessionId, messages, complete) => { live.history(sessionId, messages, complete); setDraftAuthorizedSession(complete ? sessionId : null); }}
           turns={[...live.completedTurns, ...(live.turn ? [live.turn] : [])]} onSaveResponse={artifactStudioEnabled ? message => saveResponseArtifact(message.content, null) : undefined}
-          renderTurn={turn => <TurnView turn={turn} allowed={writeAllowed && turn.intent === live.turn?.intent} approve={live.approve} stop={live.stop} onSaveResponse={artifactStudioEnabled ? saveResponseArtifact : undefined} />} /> : <div className="welcome"><Command size={39} strokeWidth={1.5} /><p className="eyebrow">YOUR SPACE TO THINK & BUILD</p><h1>{projectName ? `Let’s work on ${projectName}.` : 'What are we working on?'}</h1><p>Start a conversation with Jarvis. Keep related work together in projects.</p><button className="secondary-button welcome-action" type="button" onClick={() => { if (window.matchMedia('(max-width: 760px)').matches) openNavigation(); else projects.current?.focusSearch(); }}>Choose a chat or start a new one <ChevronRight size={17} /></button></div>}
+          renderTurn={turn => <TurnView turn={turn} allowed={writeAllowed && turn.intent === live.turn?.intent} approve={live.approve} stop={live.stop} onSaveResponse={artifactStudioEnabled ? (text, runId) => saveResponseArtifact(text, runId, turn.projectId ?? projectId) : undefined} />} /> : <div className="welcome"><Command size={39} strokeWidth={1.5} /><p className="eyebrow">YOUR SPACE TO THINK & BUILD</p><h1>{projectName ? `Let’s work on ${projectName}.` : 'What are we working on?'}</h1><p>Start a conversation with Jarvis. Keep related work together in projects.</p><button className="secondary-button welcome-action" type="button" onClick={() => { if (window.matchMedia('(max-width: 760px)').matches) openNavigation(); else projects.current?.focusSearch(); }}>Choose a chat or start a new one <ChevronRight size={17} /></button></div>}
         {live.recoveryError ? <p role="alert" className="notice error">{live.recoveryError}</p> : null}
         {live.turn && !selectedSession && live.turn.intent.input === null ? <TurnView turn={live.turn} allowed={false} approve={live.approve} stop={live.stop} onSaveResponse={artifactStudioEnabled ? saveResponseArtifact : undefined} /> : null}
       </div></section>
       <footer className="composer-wrap">
         {liveEnabled && selectedSession?.ownership === 'command' && !live.historyReady(selectedSession.id) ? <p className="composer-feedback" role="status">Load complete chat history before sending. Retry history or load remaining pages.</p> : null}
         {live.historyBacklogFull ? <p role="alert" className="notice">Unconfirmed reply limit reached. Your replies are retained; retry history before sending more.</p> : null}
-        {liveEnabled ? <TurnComposer inferenceTarget={inferenceTarget} draftsAuthorized={draftAuthorizedSession !== null && draftAuthorizedSession === selectedSession?.id} blocked={!!live.recoveryError || !live.historyReady(selectedSession?.id) || live.historyBacklogFull} allowed={!!writeAllowed} imageAttachmentsEnabled={artifactStudioEnabled} sessionId={selectedSession?.id} projectId={projectId} max={bootstrap.command.liveRoom.maxInputCharacters} maxSteer={bootstrap.command.liveRoom.maxSteerCharacters} turn={live.turn} send={live.send} retry={live.retry} resume={live.resume} steer={live.steer} recoveries={live.recoveries} consumeRecovery={live.consumeRecovery} /> : <p className="composer-feedback">Messaging is unavailable in this read-only connection.</p>}
+        {projectSendError ? <p role="alert">{projectSendError}</p> : null}
+        {liveEnabled ? <TurnComposer inferenceTarget={inferenceTarget} draftsAuthorized={draftAuthorizedSession !== null && draftAuthorizedSession === selectedSession?.id} blocked={!!live.recoveryError || !live.historyReady(selectedSession?.id) || live.historyBacklogFull} allowed={!!writeAllowed} imageAttachmentsEnabled={artifactStudioEnabled} sessionId={selectedSession?.id} projectId={projectId} project={project} onProjectReadback={room => { setProject(room); projects.current?.readback(room); }} max={bootstrap.command.liveRoom.maxInputCharacters} maxSteer={bootstrap.command.liveRoom.maxSteerCharacters} turn={live.turn} send={(session, input, max, inference, images) => live.send(session, input, max, inference, images, undefined, projectId)} retry={live.retry} resume={live.resume} steer={live.steer} recoveries={live.recoveries} consumeRecovery={live.consumeRecovery} /> : <p className="composer-feedback">Messaging is unavailable in this read-only connection.</p>}
       </footer>
     </main>
     <ContextPane open={pane !== null} fullScreen={pane === 'artifacts' && artifactPaneFullScreen}>
@@ -550,7 +584,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
           <p>{saveAuthorized ? 'Retry the original save to confirm whether it committed.' : 'Open the original chat and load its complete history to recover this save.'}</p>
           <button type="button" className="secondary-button" disabled={!saveAuthorized} onClick={() => setSaveActive(true)}>Recover response save</button>
       </div> : null}
-      <Suspense fallback={<p className="pane-loading" role="status">Loading Artifact Studio…</p>}><ArtifactStudio open selectedSessionId={selectedSession?.id ?? null} projectId={projectId} canSendPrompt={!!writeAllowed && !(live.turn && !live.turn.done)} pendingSave={saveActive && saveAuthorized && !saveRecovery.error ? pendingArtifactSave : null} onConsumedSave={key => {
+      <Suspense fallback={<p className="pane-loading" role="status">Loading Artifact Studio…</p>}><ArtifactStudio open selectedSessionId={selectedSession?.id ?? null} projectId={projectId} projectContextText={project ? projectContext(project) : undefined} canSendPrompt={!!writeAllowed && !(live.turn && !live.turn.done)} pendingSave={saveActive && saveAuthorized && !saveRecovery.error ? pendingArtifactSave : null} onConsumedSave={key => {
         if (saveRecoveryRef.current.pending?.key !== key) return;
         try {
           consumeArtifactSave(key);

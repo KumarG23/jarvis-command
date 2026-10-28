@@ -114,14 +114,14 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
       if (!rooms) throw new RoomStorageError();
       return { version: 1, rooms: await rooms.list() };
     });
-    routes.post('/api/rooms', { bodyLimit: 16_384 }, async (request) => {
+    routes.post('/api/rooms', { bodyLimit: 65_536 }, async (request) => {
       const metadata = parse(ProjectRoomCreateSchema, request.body);
       if (!rooms) throw new RoomStorageError();
       const room = { ...metadata, id: `room_${randomBytes(16).toString('hex')}`, sessionIds: [], lastSessionId: null };
-      await rooms.update(previous => [...previous, room]);
-      return { room };
+      const saved = await rooms.update(previous => [...previous, room]);
+      return { room: saved.find(item => item.id === room.id)! };
     });
-    routes.post('/api/rooms/:roomId', { bodyLimit: 16_384 }, async (request) => {
+    routes.post('/api/rooms/:roomId', { bodyLimit: 65_536 }, async (request) => {
       const { roomId } = parse(z.object({ roomId: ProjectRoomIdSchema }).strict(), request.params);
       // Full metadata replacement uses the same strict fields/limits as creation.
       const metadata = parse(ProjectRoomCreateSchema, request.body);

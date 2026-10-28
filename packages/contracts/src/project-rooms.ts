@@ -6,6 +6,8 @@ const reference = z.string().max(512).refine(value => [...value].every(character
 export const ProjectRoomCreateSchema = z.object({
   name: z.string().trim().min(1).max(80),
   goal: z.string().trim().min(1).max(2000),
+  instructions: z.string().max(4000).optional(),
+  archived: z.boolean().optional(),
   repository: reference,
   notes: z.array(reference.min(1)).max(12),
 }).strict();

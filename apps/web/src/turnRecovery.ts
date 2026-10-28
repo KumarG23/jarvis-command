@@ -1,9 +1,9 @@
-import { LiveRunRequestLookupSchema } from '@jarvis-command/contracts';
+import { LiveRunRequestLookupSchema, ProjectRoomIdSchema } from '@jarvis-command/contracts';
 
 import { appStorageKey } from './appEnvironment';
 
 export const recoveryKey = appStorageKey('jarvis-command:live-turn');
-const RecoverySchema = LiveRunRequestLookupSchema;
+const RecoverySchema = LiveRunRequestLookupSchema.extend({ projectId: ProjectRoomIdSchema.optional() }).strict();
 export type RecoveryIdentity = ReturnType<typeof RecoverySchema.parse>;
 export function readRecovery(): RecoveryIdentity | null {
   const raw = sessionStorage.getItem(recoveryKey);
@@ -14,7 +14,7 @@ export function readRecovery(): RecoveryIdentity | null {
 }
 export function sameRecovery(left: RecoveryIdentity | null, right: RecoveryIdentity | null) {
   return left === null || right === null ? left === right : left.sessionId === right.sessionId
-    && left.clientRequestId === right.clientRequestId && left.publicRunId === right.publicRunId;
+    && left.clientRequestId === right.clientRequestId && left.publicRunId === right.publicRunId && left.projectId === right.projectId;
 }
 export function writeRecovery(value: RecoveryIdentity, expected: RecoveryIdentity | null) {
   const record = RecoverySchema.parse(value);

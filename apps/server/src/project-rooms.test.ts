@@ -120,7 +120,7 @@ it('denies invalid metadata updates without registry or upstream mutation', asyn
   for (const payload of [{ ...metadata, name: '' }, { ...metadata, sessionIds: [] }, { ...metadata, id: room.id }, { ...metadata, lastSessionId: null }, { ...metadata, notes: ['bad\nreference'] }, { ...metadata, goal: 'x'.repeat(2001) }]) {
     expect((await app.inject({ method: 'POST', url, headers, payload })).statusCode).toBe(400);
   }
-  expect((await app.inject({ method: 'POST', url, headers, payload: { ...metadata, goal: 'x'.repeat(20000) } })).statusCode).toBe(413);
+  expect((await app.inject({ method: 'POST', url, headers, payload: { ...metadata, goal: 'x'.repeat(70000) } })).statusCode).toBe(413);
   expect((await app.inject({ method: 'POST', url: '/api/rooms/room_' + 'f'.repeat(32), headers, payload: metadata })).statusCode).toBe(404);
   expect((await app.inject({ method: 'POST', url: '/api/rooms/invalid', headers, payload: metadata })).statusCode).toBe(400);
   expect(await readFile(path)).toEqual(before); expect(upstream).not.toHaveBeenCalled(); await app.close();
@@ -152,7 +152,7 @@ it('rejects invalid and oversized requests and denied writes without altering pe
   for (const payload of [{ ...metadata, name: '' }, { ...metadata, callback: 'https://example.test' }, { ...metadata, goal: 'x'.repeat(2001) }]) {
     expect((await app.inject({ method: 'POST', url: '/api/rooms', headers, payload })).statusCode).toBe(400);
   }
-  expect((await app.inject({ method: 'POST', url: '/api/rooms', headers, payload: { ...metadata, goal: 'x'.repeat(20000) } })).statusCode).toBe(413);
+  expect((await app.inject({ method: 'POST', url: '/api/rooms', headers, payload: { ...metadata, goal: 'x'.repeat(70000) } })).statusCode).toBe(413);
   for (const [changed, status] of [[{ origin: 'https://evil.example' }, 403], [{ 'cf-access-jwt-assertion': '' }, 401], [{ 'x-jarvis-command': '' }, 403]] as const) {
     expect((await app.inject({ method: 'POST', url: '/api/rooms', headers: { ...headers, ...changed }, payload: metadata })).statusCode).toBe(status);
   }
@@ -169,4 +169,26 @@ it.each(['corrupt', 'oversize', 'mode', 'symlink', 'missing-root'])('fails close
   if (kind === 'symlink') expect(await readFile(join(root, 'target'), 'utf8')).toBe('keep');
   else if (kind !== 'missing-root') expect((await readFile(path)).length).toBe(kind === 'oversize' ? 1048577 : 7);
   await app.close();
+});
+it('reads legacy metadata then persists bounded instructions and reversible archive with membership across restart', async () => {
+  const id = 'jc_' + 'd'.repeat(32);
+  const session = { id, title: 'SYNTHETIC project chat', source: 'api_server', ownership: 'command', model: null, lastActive: '2026-10-28T12:00:00Z', messageCount: 0, toolCallCount: 0, pinned: false };
+  const { make } = await fixture(vi.fn(async () => ({ session })));
+  const app = make();
+  const legacy = (await app.inject({ method: 'POST', url: '/api/rooms', headers, payload: metadata })).json().room;
+  expect(legacy.instructions).toBeUndefined(); expect(legacy.archived).toBeUndefined();
+  await app.inject({ method: 'POST', url: `/api/rooms/${legacy.id}/sessions`, headers, payload: { sessionId: id } });
+  const next = { ...metadata, instructions: '界'.repeat(4000), archived: true };
+  expect((await app.inject({ method: 'POST', url: `/api/rooms/${legacy.id}`, headers, payload: next })).statusCode).toBe(200);
+  await app.close(); const restarted = make();
+  const saved = (await restarted.inject({ url: '/api/rooms', headers })).json().rooms[0];
+  expect(saved).toEqual({ ...legacy, ...next, sessionIds: [id], lastSessionId: id });
+  for (const invalid of [{ ...next, instructions: 'x'.repeat(4001) }, { ...next, archived: 'yes' }]) {
+    expect((await restarted.inject({ method: 'POST', url: `/api/rooms/${legacy.id}`, headers, payload: invalid })).statusCode).toBe(400);
+  }
+  const restored = (await restarted.inject({ method: 'POST', url: `/api/rooms/${legacy.id}`, headers, payload: { ...next, archived: false } })).json().room;
+  expect(restored).toEqual({ ...saved, archived: false });
+  await restarted.close(); const again = make();
+  expect((await again.inject({ url: '/api/rooms', headers })).json().rooms).toEqual([restored]);
+  await again.close();
 });

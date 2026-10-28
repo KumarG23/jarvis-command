@@ -298,7 +298,7 @@ describe('ArtifactStudio', () => {
     mockArtifactBackend([image]);
     renderStudio();
     fireEvent.click((await screen.findByText('Photo')).closest('button')!);
-    fireEvent.click(screen.getByRole('tab', { name: /source/i }));
+    fireEvent.click(await screen.findByRole('tab', { name: /source/i }));
     expect(await screen.findByText(/Binary artifacts can be downloaded but cannot be edited as text/)).toBeInTheDocument();
     expect(screen.queryByLabelText('Edit artifact source')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: /versions/i }));

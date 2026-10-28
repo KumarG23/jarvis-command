@@ -43,10 +43,11 @@ type ArtifactStudioProps = Readonly<{
   selectedSessionId: string | null;
   projectId: string | null;
   canSendPrompt: boolean;
+  projectContextText?: string | undefined;
   pendingSave: SaveResponseRequest | null;
   onConsumedSave: (key: string) => void;
-  onSendPrompt: (prompt: string) => boolean;
-  onCreateWithJarvis: (request: GenerateArtifactRequest) => boolean;
+  onSendPrompt: (prompt: string) => boolean | Promise<boolean>;
+  onCreateWithJarvis: (request: GenerateArtifactRequest) => boolean | Promise<boolean>;
   generation: GenerationStatus;
   onRetryGeneration: () => void;
   onCancelGeneration: () => void;
@@ -83,13 +84,13 @@ const typeLabels: Record<ArtifactType | 'all', string> = {
   file: 'File',
 };
 
-export function ArtifactStudio({ open, selectedSessionId, projectId, canSendPrompt, pendingSave, onConsumedSave, onSendPrompt, onCreateWithJarvis, generation, onRetryGeneration, onCancelGeneration, onClose, fullScreen, onToggleFullScreen, onLibraryChanged }: ArtifactStudioProps) {
+export function ArtifactStudio({ open, selectedSessionId, projectId, canSendPrompt, projectContextText, pendingSave, onConsumedSave, onSendPrompt, onCreateWithJarvis, generation, onRetryGeneration, onCancelGeneration, onClose, fullScreen, onToggleFullScreen, onLibraryChanged }: ArtifactStudioProps) {
   const [artifacts, setArtifacts] = useState<ArtifactSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<ArtifactMetadata | null>(null);
   const [sourceState, setSourceState] = useState<SourceState>({ status: 'idle' });
   const [mode, setMode] = useState<ViewMode>('preview');
-  const [scope, setScope] = useState<Scope>(() => selectedSessionId ? 'current-session' : projectId ? 'current-project' : 'all');
+  const [scope, setScope] = useState<Scope>(() => projectId ? 'current-project' : selectedSessionId ? 'current-session' : 'all');
   const [type, setType] = useState<ArtifactType | 'all'>('all');
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
@@ -117,8 +118,8 @@ export function ArtifactStudio({ open, selectedSessionId, projectId, canSendProm
   const viewedVersion = selectedSource?.version ?? selected?.currentVersion ?? 1;
 
   useEffect(() => {
-    if (selectedSessionId) setScope('current-session');
-    else if (projectId) setScope('current-project');
+    if (projectId) setScope('current-project');
+    else if (selectedSessionId) setScope('current-session');
   }, [selectedSessionId, projectId]);
 
   useEffect(() => {
@@ -357,22 +358,22 @@ export function ArtifactStudio({ open, selectedSessionId, projectId, canSendProm
     });
   }
 
-  function sendRevisionPrompt() {
+  async function sendRevisionPrompt() {
     if (!selected || !source) return;
     const prompt = artifactPrompt('revision', selected, source.content, feedback || comment || '');
-    if (onSendPrompt(prompt)) setStatus('Revision prompt sent. No artifact was changed until a resulting response is saved.');
+    if (await onSendPrompt(prompt)) setStatus('Revision prompt sent. No artifact was changed until a resulting response is saved.');
   }
 
-  function sendExportPrompt(kind: 'obsidian' | 'repository') {
+  async function sendExportPrompt(kind: 'obsidian' | 'repository') {
     if (!selected || !source) return;
     const destination = kind === 'obsidian' ? 'Obsidian vault path to be reviewed' : 'repository path/branch to be reviewed';
     const prompt = artifactPrompt(kind, selected, source.content, `${feedback || comment || ''}\nDestination: ${destination}`);
-    if (onSendPrompt(prompt)) setStatus('Export prompt sent for review. No external write has completed from Artifact Studio.');
+    if (await onSendPrompt(prompt)) setStatus('Export prompt sent for review. No external write has completed from Artifact Studio.');
   }
 
-  function createWithJarvis() {
+  async function createWithJarvis() {
     if (!generationDraft.title.trim() || !generationDraft.instructions.trim()) return;
-    const accepted = onCreateWithJarvis({
+    const accepted = await onCreateWithJarvis({
       title: generationDraft.title.trim(),
       type: generationDraft.type,
       instructions: generationDraft.instructions.trim(),
@@ -439,6 +440,7 @@ export function ArtifactStudio({ open, selectedSessionId, projectId, canSendProm
             {Object.entries(typeLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select></label>
         </div>
+        {projectId ? <details className="project-input-preview"><summary>Project context included in new requests</summary><pre>{projectContextText ?? 'Project context requires readback before sending.'}</pre><p>Saved file bytes are not automatically delivered to Hermes. Complete requests are checked against the message limit.</p></details> : null}
         <details className="artifact-create-disclosure">
           <summary><FilePlus2 size={16} /> New text artifact</summary>
           <form className="artifact-create" aria-label="Create text artifact" onSubmit={event => { event.preventDefault(); void createText(); }}>

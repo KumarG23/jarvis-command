@@ -1,3 +1,5 @@
+import { composeProjectInput, projectContext, readProjectForSend } from './projectInput';
+import type { ProjectRoom } from '@jarvis-command/contracts';
 import { createPortal } from 'react-dom';
 import { ArrowUp, ChevronRight, Command, Copy, FilePlus2, ImagePlus, X } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
@@ -12,7 +14,7 @@ export function TurnView({ turn, allowed, approve, stop, onSaveResponse }: Reado
   const canControl = allowed && turn.identityVerified;
   return <section className="live-turn" aria-label="Current turn">
     <RunInspector key={JSON.stringify([turn.intent.sessionId, turn.intent.clientRequestId])} turn={turn} />
-    {turn.intent.input === null ? <><p>Original message unavailable after reload; no message was retransmitted.</p><p>Recovery target · Session: {turn.intent.sessionId} · Request: {turn.intent.clientRequestId} · Run: {turn.publicRunId ?? 'Unknown — admission unconfirmed'}</p></> : !turn.userHistoryMatched ? <article className="timeline-event live-message" aria-label="Your message"><div className="event-icon violet" aria-hidden="true">You</div><div className="event-body"><div className="event-label">You</div><p className="turn-input">{turn.intent.input}</p></div></article> : null}
+    {turn.intent.input === null ? <><p>Original message unavailable after reload; no message was retransmitted.</p>{turn.projectId ? <p>Original project: {turn.projectId}. Saved context may have changed since admission; recovery does not resend it.</p> : null}<p>Recovery target · Session: {turn.intent.sessionId} · Request: {turn.intent.clientRequestId} · Run: {turn.publicRunId ?? 'Unknown — admission unconfirmed'}</p></> : !turn.userHistoryMatched ? <article className="timeline-event live-message" aria-label="Your message"><div className="event-icon violet" aria-hidden="true">You</div><div className="event-body"><div className="event-label">You</div><p className="turn-input">{turn.intent.input}</p></div></article> : null}
     {turn.output && turn.intent.input === null && !turn.historyBinding ? <details className="recovered-run-output"><summary>Recovered run output — canonical message link unavailable</summary><MessageContent className="turn-output" text={turn.output} /></details> : null}
     {turn.output && !turn.historyMatched && (turn.intent.input !== null || turn.historyBinding) ? <article className="timeline-event live-message" aria-label="Jarvis response"><div className="event-icon cyan" aria-hidden="true"><Command size={21} /></div><div className="event-body"><div className="event-label">Jarvis</div><MessageContent className="turn-output" text={turn.output} /><CopyResponse key={JSON.stringify([turn.intent.sessionId, turn.intent.clientRequestId])} text={turn.output} limited={turn.outputLimited} onSave={onSaveResponse ? () => onSaveResponse(turn.output!, turn.publicRunId ?? null) : undefined} /></div></article> : null}
     {turn.outputLimited ? <p role="status">Output preview limited. Full output may be available in session history.</p> : null}
@@ -256,7 +258,9 @@ function activity(event: RunEvent, done: boolean): string {
 }
 type PendingChatImage = NonNullable<LiveRunSubmissionRequest['images']>[number] & Readonly<{ name: string; size: number }>;
 
-export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, projectId, max, maxSteer, turn, send, retry, resume, steer, recoveries, consumeRecovery, blocked = false, draftsAuthorized = allowed, inferenceTarget }: Readonly<{
+export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, projectId, project, onProjectReadback, max, maxSteer, turn, send, retry, resume, steer, recoveries, consumeRecovery, blocked = false, draftsAuthorized = allowed, inferenceTarget }: Readonly<{
+  project?: ProjectRoom | null;
+  onProjectReadback?: (room: ProjectRoom) => void;
   inferenceTarget?: HTMLElement | null;
   draftsAuthorized?: boolean;
   blocked?: boolean;
@@ -291,7 +295,7 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
   const [preflightError, setPreflightError] = useState('');
   const preflight = useRef<AbortController | null>(null);
   // Invalidates an asynchronous send if the chat or send context changes.
-  const contextVersion = useMemo(() => ({}), [sessionId, allowed, draftsAuthorized, blocked, turn, selection]);
+  const contextVersion = useMemo(() => ({}), [sessionId, projectId, project, allowed, draftsAuthorized, blocked, turn, selection]);
   const sendContext = useRef(contextVersion);
   sendContext.current = contextVersion;
   useEffect(() => {
@@ -399,14 +403,27 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
     }
   };
   const submit = async () => {
-    const input = draft.trim() || (images.length ? 'Review the attached image.' : '');
-    if (!allowed || !sessionId || busy || imageBusy || preflight.current || !input || input.length > max) return;
+    const message = draft.trim() || (images.length ? 'Review the attached image.' : '');
+    let input = composeProjectInput(message, projectId ? project : null);
+    if (!allowed || !sessionId || busy || imageBusy || preflight.current || !message) return;
     if (problem) { setPreflightError(problem); return; }
     const context = sendContext.current;
     const controller = new AbortController();
     preflight.current = controller;
     setPreflighting(true); setPreflightError('');
     try {
+      if (projectId) {
+        let fresh: ProjectRoom;
+        try { fresh = await readProjectForSend(projectId, sessionId, controller); }
+        catch (error) { if (sendContext.current === context) setPreflightError(error instanceof Error ? error.message : 'Project readback unavailable. Your draft is kept.'); return; }
+        if (controller.signal.aborted || sendContext.current !== context) return;
+        if (!project || projectContext(fresh) !== projectContext(project)) {
+          onProjectReadback?.(fresh);
+          setPreflightError('Saved project context changed. Review the updated context and send again. Your draft is kept.'); return;
+        }
+        input = composeProjectInput(message, fresh);
+      }
+      if (input.length > max) { setPreflightError(`Complete message including project context is ${input.length} / ${max} characters. Shorten the message or saved context. Your draft is kept.`); return; }
       if (typeof selection !== 'string') {
         let fresh: InferenceOptionsResponse;
         try {
@@ -480,7 +497,8 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
       if (Array.from(event.dataTransfer.items).some(item => item.kind === 'file' && item.type.startsWith('image/'))) event.preventDefault();
     }} onDrop={(event) => { if (!imageAttachmentsEnabled) return; const files = Array.from(event.dataTransfer.files); if (files.some(file => file.type.startsWith('image/'))) { event.preventDefault(); void attachImages(files); } }}>
       {inferenceTarget ? createPortal(inferencePicker, inferenceTarget) : inferencePicker}
-      {preflighting ? <p role="status">Checking requested model and effort…</p> : null}
+      {projectId ? <details className="project-input-preview"><summary>{project ? 'Project context included' : 'Project context awaiting readback'} · {composeProjectInput(draft.trim() || (images.length ? 'Review the attached image.' : ''), project).length} / {max} characters</summary>{project ? <pre>{projectContext(project)}</pre> : <p>Project context must be read back before sending.</p>}<p>Included as ordinary message text on new sends. Saved non-image files are not delivered to Hermes. Use Attach image explicitly for images.</p></details> : null}
+      {preflighting ? <p role="status">Checking saved context and requested model…</p> : null}
       {preflightError || problem || inferenceError ? <p role="status">{preflightError || problem || 'Model choices unavailable; explicitly selected Inherit remains available.'}</p> : null}
       {storageUnavailable ? <p role="status">Draft storage unavailable or full. Text remains in this tab; reload may lose recent edits. Sending requires safely clearing the saved draft.</p> : null}
       {preference.storageUnavailable ? <p role="status">Local preference storage unavailable or invalid. A new selection stays in this tab if it cannot be saved; reload may require choosing again.</p> : null}
@@ -498,6 +516,6 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
       }} />
       <button className="primary-button" type="submit" disabled={busy || preflighting || imageBusy || (!draft.trim() && !images.length) || draft.length > max} aria-label="Send message" title="Send message"><ArrowUp size={20} /></button>
     </form> : <p className="composer-feedback">{sessionId ? 'Messaging is unavailable for this chat.' : 'Choose New chat to begin.'}</p>}
-    <details className="turn-limit"><summary>Connection & recovery details</summary><p>One writer in this tab; the server enforces cross-tab/session concurrency. Only opaque session, request and run identifiers are stored for reload recovery. Requested model/effort preferences are stored locally per chat and application environment. Known runs resume by status reads, never message retransmission. Pending admission without a run ID uses a read-only request lookup and stays locked while the outcome is unknown. Unsent text drafts are saved in this tab (up to 32 chats, 16,000 characters per draft and 128 KiB total). Image bytes are never saved in draft storage. Drafts appear only after selected-chat access is confirmed; sending clears the saved text before admission.</p></details>
+    <details className="turn-limit"><summary>Connection & recovery details</summary><p>One writer in this tab; the server enforces cross-tab/session concurrency. Only opaque session, project, request and run identifiers are stored for reload recovery. Requested model/effort preferences are stored locally per chat and application environment. Known runs resume by status reads, never message retransmission. Pending admission without a run ID uses a read-only request lookup and stays locked while the outcome is unknown. Unsent text drafts are saved in this tab (up to 32 chats, 16,000 characters per draft and 128 KiB total). Image bytes are never saved in draft storage. Drafts appear only after selected-chat access is confirmed; sending clears the saved text before admission.</p></details>
   </>;
 }
