@@ -104,3 +104,51 @@ test('inspects and copies a synthetic run receipt at this viewport', async ({ pa
     }
   }
 });
+
+test('quiet restored run labels observation age at desktop/mobile widths and removes it on completion', async ({ page }) => {
+  const sessionId = 'jc_' + 'c'.repeat(32);
+  const publicRunId = 'jcr_' + 'd'.repeat(32);
+  const timestamp = '2000-01-01T00:00:00.000Z';
+  const session = { id: sessionId, title: 'SYNTHETIC quiet observation clock', ownership: 'command', source: 'web', model: null, lastActive: timestamp, messageCount: 0, toolCallCount: 0, pinned: false };
+  let done = false;
+  const mutations: string[] = [];
+  await page.clock.install();
+  await page.addInitScript(({ sessionId, publicRunId }) => sessionStorage.setItem('jarvis-command:live-turn', JSON.stringify({ sessionId, publicRunId, clientRequestId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' })), { sessionId, publicRunId });
+  await page.route('**/api/**', route => {
+    const request = route.request(); const path = new URL(request.url()).pathname;
+    if (request.method() !== 'GET') { mutations.push(path); return route.abort(); }
+    if (path === `/api/live/runs/${publicRunId}`) return route.fulfill({ json: { publicRunId, sessionId, status: done ? 'completed' : 'running', updatedAt: timestamp, approval: null, output: null, error: null, pendingSteer: null, usage: null } });
+    if (path.endsWith('/messages')) return route.fulfill({ json: { sessionId, messages: [], pagination: { offset: 0, limit: 50, returned: 0, hasMore: false } } });
+    if (path.endsWith('/context')) return route.fulfill({ json: { sessionId, state: 'unavailable', updatedAt: null, receipt: null } });
+    const responses: Record<string, unknown> = {
+      '/api/bootstrap': { identity: { provider: 'development' }, command: { version: 'synthetic-clock', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 16000, maxSteerCharacters: 4000 } }, hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse'], readinessChecks: {} }, sessions: [session] },
+      '/api/rooms': { version: 1, rooms: [] },
+      '/api/live/model-options': { default: null, options: [] },
+      '/api/live/session-controls': { sessionForkPreservesSource: false, sessionCompactionRuns: false },
+    };
+    return path in responses ? route.fulfill({ json: responses[path] }) : route.abort();
+  });
+  await page.goto('/');
+  const age = page.getByRole('timer', { name: 'Current-tab observation age' });
+  await expect(page.getByRole('button', { name: 'Stop run', exact: true })).toBeVisible();
+  await expect(age).toContainText('0s');
+  await page.clock.fastForward(3000);
+  await expect(age).toContainText('3s');
+  await expect(age).toHaveAttribute('title', /Provider start time and duration are unknown/);
+  for (const width of [1280, 320, 360, 390, 430]) {
+    for (const height of [width === 1280 ? 720 : 740, 360]) {
+      await page.setViewportSize({ width, height });
+      await age.scrollIntoViewIfNeeded();
+      await expect(age).toBeInViewport();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    }
+  }
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Stop run', exact: true })).toBeVisible();
+  await expect(age).toContainText('0s');
+  done = true;
+  await page.clock.fastForward(2000);
+  await expect(page.getByRole('status', { name: 'Run status', exact: true })).toContainText('Run completed');
+  await expect(age).toHaveCount(0);
+  expect(mutations).toEqual([]);
+});

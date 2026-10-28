@@ -74,11 +74,11 @@ function RunInspector({ turn }: Readonly<{ turn: Turn }>) {
   return <details className={`run-inspector${failed ? ' failed' : ''}`} open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}>
     <summary aria-expanded={expanded} aria-controls={panelId}>
       <ChevronRight size={16} aria-hidden="true" />
-      <span role="status" aria-label="Run status"><span>{runStatus(turn)}</span>
+      <span className="run-status-line"><span role="status" aria-label="Run status"><span>{runStatus(turn)}</span>
         {failedTool ? ' · Tool failure reported' : ''}{handoff ? ' · Agent handoff reported' : ''}
         {turn.activityUnavailable ? ' · Activity incomplete' : ''}
         {decision && decision !== 'Exact route' ? ` · ${decision}` : turn.usage && !execution ? ' · Executed route unavailable' : ''}
-      </span>
+      </span>{!turn.done ? <ObservationAge /> : null}</span>
       <span className="status-disclosure">Activity / Usage</span>
     </summary>
     <div id={panelId} className="run-inspector-body" role="region" aria-label="Run inspector">
@@ -110,6 +110,20 @@ function RunInspector({ turn }: Readonly<{ turn: Turn }>) {
           : activity(event, turn.done)}</span></li>)}</ol></section> : !turn.activityUnavailable ? <p className="empty-activity">No tool or agent activity reported.</p> : null}
     </div>
   </details>;
+}
+
+// This DTO has no authoritative run-start timestamp. Keep observation time in
+// the mounted view only; reconnects keep it, reopening resets it, terminal hides it.
+function ObservationAge() {
+  const [started] = useState(() => performance.now());
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setSeconds(Math.max(0, Math.floor((performance.now() - started) / 1000))), 1000);
+    return () => clearInterval(timer);
+  }, [started]);
+  const label = seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  return <span className="observation-age" role="timer" aria-label="Current-tab observation age" aria-live="off"
+    title="Time observed in this view in the current tab; resets when reopened. Provider start time and duration are unknown.">Current-tab observation age · {label}</span>;
 }
 
 // Describe the last observed event rather than infer tool lifetimes or execution restarts.
