@@ -1,14 +1,15 @@
 import { ArrowUp, ChevronRight, Command, Copy, FilePlus2, ImagePlus, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArtifactMutationResponseSchema, InferenceOptionsResponseSchema, type InferenceOptionsResponse, type InferenceOverride, type LiveRunSubmissionRequest, type ReasoningEffort, type RunEvent } from '@jarvis-command/contracts';
 import { boundedJson, type DraftRecovery, type Turn } from './useLiveTurn';
+import { routeDecision, selectionProblem, useInferencePreference } from './inferencePreference';
 
 export function TurnView({ turn, allowed, approve, stop, onSaveResponse }: Readonly<{ turn: Turn; allowed: boolean; approve: (run: Turn, choice: 'once' | 'deny') => void; stop: (run: Turn) => void; onSaveResponse?: (text: string, runId: string | null) => void }>) {
   const [confirmation, setConfirmation] = useState<Turn | null>(null);
   const canControl = allowed && turn.identityVerified;
   return <section className="live-turn" aria-label="Current turn">
     <p className="turn-phase" role="status">{turn.phase}</p>
-    {turn.usage?.execution ? <ExecutionReceipt usage={turn.usage} />
+    {turn.usage ? <ExecutionReceipt usage={turn.usage} />
       : 'inference' in turn.intent && turn.intent.inference ? <p className="turn-route">Requested route · {turn.intent.inference.model} · {turn.intent.inference.reasoningEffort}</p> : null}
     {turn.intent.input === null ? <><p>Original message unavailable after reload; no message was retransmitted.</p><p>Recovery target · Session: {turn.intent.sessionId} · Request: {turn.intent.clientRequestId} · Run: {turn.publicRunId ?? 'Unknown — admission unconfirmed'}</p></> : !turn.userHistoryMatched ? <article className="timeline-event live-message" aria-label="Your message"><div className="event-icon violet" aria-hidden="true">You</div><div className="event-body"><div className="event-label">You</div><p className="turn-input">{turn.intent.input}</p></div></article> : null}
     {turn.output && turn.intent.input === null && !turn.historyBinding ? <details className="recovered-run-output"><summary>Recovered run output — canonical message link unavailable</summary><p className="turn-output">{turn.output}</p></details> : null}
@@ -86,7 +87,7 @@ function RunInspector({ turn }: Readonly<{ turn: Turn }>) {
         <dl className="inspector-facts">
           <div><dt>Requested</dt><dd>{routeLabel(execution.requested)}</dd></div>
           <div><dt>Executed</dt><dd>{routeLabel(execution.executed)}</dd></div>
-          <div><dt>Decision</dt><dd>{execution.fallbackUsed ? 'Fallback used' : execution.exact ? 'Exact route' : 'Route changed'}{execution.routeSource ? ` · ${execution.routeSource}` : ''}</dd></div>
+          <div><dt>Decision</dt><dd>{routeDecision(execution)}{execution.routeSource ? ` · ${execution.routeSource}` : ''}</dd></div>
         </dl>
       </section> : null}
       {turn.activityUnavailable ? <p role="status">Some live activity was unavailable. Saved session history may contain tool results.</p> : null}
@@ -103,10 +104,8 @@ export function ExecutionReceipt({ usage }: Readonly<{ usage: NonNullable<Turn['
   const receipt = usage.execution;
   const context = usage.context;
   const contextPercent = context ? Math.min(100, (context.usedTokens / context.limitTokens) * 100) : null;
-  const changed = receipt && (receipt.fallbackUsed
-    || (receipt.requested.provider !== null && receipt.requested.provider !== receipt.executed.provider)
-    || (receipt.requested.model !== null && receipt.requested.model !== receipt.executed.model)
-    || (receipt.requested.reasoningEffort !== null && receipt.requested.reasoningEffort !== receipt.executed.reasoningEffort));
+  const decision = receipt ? routeDecision(receipt) : null;
+  const changed = decision === 'Fallback used' || decision === 'Route changed';
   return <section className={`execution-receipt${changed ? ' warning' : ''}`} aria-label="Execution receipt">
     {receipt ? <p className="receipt-title">Executed · {modelLabel(receipt.executed.model)} · {receipt.executed.reasoningEffort ?? 'effort unknown'} · {providerLabel(receipt.executed.provider)}</p> : <p className="receipt-title">Executed route unavailable</p>}
     <p>{formatInteger(usage.totalTokens)} tokens · {formatInteger(usage.inputTokens)} in / {formatInteger(usage.outputTokens)} out
@@ -123,6 +122,8 @@ export function ExecutionReceipt({ usage }: Readonly<{ usage: NonNullable<Turn['
       <progress aria-label="Context usage" max={100} value={contextPercent} />
     </div> : <p>Context usage unavailable</p>}
     {changed ? <p className="receipt-warning">Requested route changed during execution.</p> : null}
+    {decision === 'Fallback used' ? <p>Fallback used</p> : null}
+    {decision === 'Route verification unavailable' ? <p>Route verification unavailable</p> : null}
     {!changed && receipt?.exact ? <p>Exact route · {receipt.executed.reasoningEffortSource === 'wire' ? 'effort captured at provider wire' : 'effort not wire-confirmed'}</p> : null}
   </section>;
 }
@@ -208,8 +209,23 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
   const latestTurn = useRef(turn); latestTurn.current = turn;
   const [inferenceOptions, setInferenceOptions] = useState<InferenceOptionsResponse | null>(null);
   const [inferenceError, setInferenceError] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('inherit');
-  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>('medium');
+  const preference = useInferencePreference(sessionId);
+  const selection = preference.selection;
+  const selectedModel = typeof selection === 'string' ? selection : `${selection.provider}:${selection.model}`;
+  const reasoningEffort = typeof selection === 'string' ? undefined : selection.reasoningEffort;
+  const [inventoryRetry, setInventoryRetry] = useState(0);
+  const [inventoryBusy, setInventoryBusy] = useState(false);
+  const [preflighting, setPreflighting] = useState(false);
+  const [preflightError, setPreflightError] = useState('');
+  const preflight = useRef<AbortController | null>(null);
+  // Invalidates an asynchronous send if the chat or send context changes.
+  const contextVersion = useMemo(() => ({}), [sessionId, allowed, blocked, turn, selection]);
+  const sendContext = useRef(contextVersion);
+  sendContext.current = contextVersion;
+  useEffect(() => {
+    setPreflightError('');
+    return () => { preflight.current?.abort(); };
+  }, [sessionId]);
   const [imagesBySession, setImagesBySession] = useState<Record<string, PendingChatImage[]>>({});
   const [imageBusy, setImageBusy] = useState(false);
   const [imageError, setImageError] = useState('');
@@ -246,14 +262,17 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
   useEffect(() => {
     if (!allowed) return;
     const controller = new AbortController();
+    let active = true;
+    setInventoryBusy(true);
     void boundedJson('/api/live/model-options', {
       credentials: 'same-origin', headers: { accept: 'application/json' },
     }, controller).then((body) => {
-      setInferenceOptions(InferenceOptionsResponseSchema.parse(body));
-      setInferenceError(false);
-    }).catch(() => { if (!controller.signal.aborted) setInferenceError(true); });
-    return () => controller.abort();
-  }, [allowed]);
+      const options = InferenceOptionsResponseSchema.parse(body);
+      if (active) { setInferenceOptions(options); setInferenceError(false); }
+    }).catch(() => { if (active) { setInferenceOptions(null); setInferenceError(true); } })
+      .finally(() => { if (active) setInventoryBusy(false); });
+    return () => { active = false; controller.abort(); };
+  }, [allowed, inventoryRetry]);
   const queue = async () => {
     if (!allowed || !sessionId || !turn || !turn.identityVerified || turn.done || turn.intent.sessionId !== sessionId || turn.controlBusy || !steerDraft.trim() || steerDraft.length > maxSteer) return;
     const room = sessionId; const run = turn; const version = steerVersions.current[room];
@@ -262,13 +281,18 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
   };
   const busy = blocked || (!!turn && !turn.done);
   const selectedOption = inferenceOptions?.options.find(option => `${option.provider}:${option.model}` === selectedModel);
-  const inference = selectedOption ? {
-    provider: selectedOption.provider,
-    model: selectedOption.model,
-    reasoningEffort,
-  } as InferenceOverride : undefined;
+  const problem = selectionProblem(selection, inferenceOptions);
+  const chooseModel = (value: string) => {
+    setPreflightError('');
+    if (value === 'inherit') { preference.select('inherit'); return; }
+    const option = inferenceOptions?.options.find(option => `${option.provider}:${option.model}` === value);
+    if (!option) return;
+    const effort = reasoningEffort && option.reasoningEfforts.includes(reasoningEffort) ? reasoningEffort
+      : option.reasoningEfforts.includes('medium') ? 'medium' : option.reasoningEfforts[0]!;
+    preference.select({ provider: option.provider, model: option.model, reasoningEffort: effort } as InferenceOverride);
+  };
   const attachImages = async (files: FileList | File[] | null) => {
-    if (!allowed || !imageAttachmentsEnabled || !sessionId || busy || imageBusy) return;
+    if (!allowed || !imageAttachmentsEnabled || !sessionId || busy || preflight.current || imageBusy) return;
     const candidates = Array.from(files ?? []).filter(file => file.type.startsWith('image/'));
     if (!candidates.length) return;
     if (images.length + candidates.length > 4) { setImageError('Attach at most four images.'); return; }
@@ -304,12 +328,40 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
       if (imageInput.current) imageInput.current.value = '';
     }
   };
-  const submit = () => {
+  const submit = async () => {
     const input = draft.trim() || (images.length ? 'Review the attached image.' : '');
-    if (allowed && sessionId && !busy && !imageBusy && input && input.length <= max
-      && send(sessionId, input, max, inference, images.map(({ artifactId, version }) => ({ artifactId, version })))) {
-      setDraft('');
-      setImagesBySession(previous => ({ ...previous, [sessionId]: [] }));
+    if (!allowed || !sessionId || busy || imageBusy || preflight.current || !input || input.length > max) return;
+    if (problem) { setPreflightError(problem); return; }
+    const context = sendContext.current;
+    const controller = new AbortController();
+    preflight.current = controller;
+    setPreflighting(true); setPreflightError('');
+    try {
+      if (typeof selection !== 'string') {
+        let fresh: InferenceOptionsResponse;
+        try {
+          fresh = InferenceOptionsResponseSchema.parse(await boundedJson('/api/live/model-options', {
+            credentials: 'same-origin', headers: { accept: 'application/json' }, cache: 'no-store',
+          }, controller));
+        } catch {
+          if (sendContext.current !== context) return;
+          setInferenceOptions(null); setInferenceError(true);
+          setPreflightError('Model choices unavailable. Retry choices before sending this request, or explicitly choose Inherit.');
+          return;
+        }
+        if (controller.signal.aborted || sendContext.current !== context) return;
+        setInferenceOptions(fresh); setInferenceError(false);
+        const rejected = selectionProblem(selection, fresh);
+        if (rejected) { setPreflightError(rejected); return; }
+      }
+      if (controller.signal.aborted || sendContext.current !== context || (draftsRef.current[sessionId] ?? '') !== draft) return;
+      if (send(sessionId, input, max, typeof selection === 'string' ? undefined : selection, images.map(({ artifactId, version }) => ({ artifactId, version })))) {
+        setRoomDraft(sessionId, '');
+        setImagesBySession(previous => ({ ...previous, [sessionId]: [] }));
+      }
+    } finally {
+      preflight.current = null;
+      setPreflighting(false);
     }
   };
   return <>
@@ -327,38 +379,49 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
       <button type="button" disabled={!!draft} onClick={() => handoff(item, false)}>Restore to empty draft</button>
       <button type="button" onClick={() => handoff(item, true)}>Append to draft</button>
     </section>) : null}
-    {allowed ? <form className="turn-composer" onSubmit={(event) => { event.preventDefault(); submit(); }} onDragOver={(event) => {
+    {allowed ? <form className="turn-composer" onSubmit={(event) => { event.preventDefault(); void submit(); }} onDragOver={(event) => {
       if (!imageAttachmentsEnabled) return;
       if (Array.from(event.dataTransfer.items).some(item => item.kind === 'file' && item.type.startsWith('image/'))) event.preventDefault();
     }} onDrop={(event) => { if (!imageAttachmentsEnabled) return; const files = Array.from(event.dataTransfer.files); if (files.some(file => file.type.startsWith('image/'))) { event.preventDefault(); void attachImages(files); } }}>
       <details className="inference-control">
-        <summary>{selectedOption ? `${selectedOption.label} · ${reasoningEffort}` : 'Model · Inherit'}</summary>
+        <summary>Requested · {selection === 'inherit' ? 'Inherit' : selection === 'invalid' ? 'Selection unavailable' : `${selectedOption?.label ?? selection.model} · ${reasoningEffort}`}</summary>
         <div className="inference-fields">
-          <label>Model<select aria-label="Model for this prompt" value={selectedModel} disabled={busy || !inferenceOptions} onChange={(event) => setSelectedModel(event.target.value)}>
+          <label>Model<select aria-label="Model for this prompt" value={selectedModel} disabled={busy || preflighting || inventoryBusy} onChange={(event) => chooseModel(event.target.value)}>
             <option value="inherit">Inherit ({inferenceOptions?.default.model ?? 'session default'})</option>
+            {selection === 'invalid' ? <option value="invalid" disabled>Stored selection unavailable</option> : null}
+            {typeof selection !== 'string' && !selectedOption ? <option value={selectedModel} disabled>{selection.model} (unavailable)</option> : null}
             {inferenceOptions?.options.map(option => <option key={`${option.provider}:${option.model}`} value={`${option.provider}:${option.model}`}>{option.label}</option>)}
           </select></label>
-          <label>Reasoning<select aria-label="Reasoning for this prompt" value={reasoningEffort} disabled={busy || !selectedOption} onChange={(event) => setReasoningEffort(event.target.value as ReasoningEffort)}>
-            {(selectedOption?.reasoningEfforts ?? ['medium']).map(effort => <option key={effort} value={effort}>{effort}</option>)}
+          <label>Reasoning<select aria-label="Reasoning for this prompt" value={reasoningEffort ?? ''} disabled={busy || preflighting || !selectedOption} onChange={(event) => {
+            if (typeof selection !== 'string' && selectedOption?.reasoningEfforts.includes(event.target.value as ReasoningEffort)) {
+              preference.select({ ...selection, reasoningEffort: event.target.value as ReasoningEffort }); setPreflightError('');
+            }
+          }}>
+            {!reasoningEffort ? <option value="">Session default (not guaranteed)</option> : null}
+            {reasoningEffort && !selectedOption?.reasoningEfforts.includes(reasoningEffort) ? <option value={reasoningEffort} disabled>{reasoningEffort} (unsupported)</option> : null}
+            {(selectedOption?.reasoningEfforts ?? []).map(effort => <option key={effort} value={effort}>{effort}</option>)}
           </select></label>
-          <p>Applies to this prompt. Permissions and tools do not change.</p>
+          <p>Preflight request for this chat, saved only in this browser. Offered efforts are requests; execution is confirmed only by the current run receipt. Inherit uses session routing without a guaranteed effort.</p>
+          <button className="secondary-button" type="button" disabled={inventoryBusy || preflighting || busy} onClick={() => { setPreflightError(''); setInventoryRetry(value => value + 1); }}>Retry model choices</button>
         </div>
       </details>
-      {inferenceError ? <p role="status">Model choices unavailable; inherited routing remains available.</p> : null}
-      {images.length ? <div className="chat-images" aria-label="Attached images">{images.map(image => <span key={`${image.artifactId}:${image.version}`}><ImagePlus size={14} />{image.name}<button type="button" aria-label={`Remove ${image.name}`} onClick={() => setImagesBySession(previous => ({ ...previous, [sessionId!]: (previous[sessionId!] ?? []).filter(item => item !== image) }))}><X size={13} /></button></span>)}</div> : null}
+      {preflighting ? <p role="status">Checking requested model and effort…</p> : null}
+      {preflightError || problem || inferenceError ? <p role="status">{preflightError || problem || 'Model choices unavailable; explicitly selected Inherit remains available.'}</p> : null}
+      {preference.storageUnavailable ? <p role="status">Local preference storage unavailable or invalid. A new selection stays in this tab if it cannot be saved; reload may require choosing again.</p> : null}
+      {images.length ? <div className="chat-images" aria-label="Attached images">{images.map(image => <span key={`${image.artifactId}:${image.version}`}><ImagePlus size={14} />{image.name}<button type="button" disabled={busy || preflighting || imageBusy} aria-label={`Remove ${image.name}`} onClick={() => setImagesBySession(previous => ({ ...previous, [sessionId!]: (previous[sessionId!] ?? []).filter(item => item !== image) }))}><X size={13} /></button></span>)}</div> : null}
       {imageBusy ? <p role="status">Uploading image…</p> : null}
       {imageError ? <p role="alert">{imageError}</p> : null}
       {imageAttachmentsEnabled ? <><input ref={imageInput} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-label="Attach images" onChange={event => { void attachImages(event.target.files); }} />
-      <button className="icon-button attach-image" type="button" disabled={busy || imageBusy || images.length >= 4} aria-label="Attach image" title="Attach image" onClick={() => imageInput.current?.click()}><ImagePlus size={19} /></button></> : null}
-      <textarea placeholder="Message Jarvis…" aria-label="Message Jarvis" maxLength={max} value={draft} disabled={busy} onPaste={(event) => {
+      <button className="icon-button attach-image" type="button" disabled={busy || preflighting || imageBusy || images.length >= 4} aria-label="Attach image" title="Attach image" onClick={() => imageInput.current?.click()}><ImagePlus size={19} /></button></> : null}
+      <textarea placeholder="Message Jarvis…" aria-label="Message Jarvis" maxLength={max} value={draft} disabled={busy || preflighting} onPaste={(event) => {
         if (!imageAttachmentsEnabled) return;
         const pasted = Array.from(event.clipboardData.files).filter(file => file.type.startsWith('image/'));
         if (pasted.length) { event.preventDefault(); void attachImages(pasted); }
       }} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => {
-        if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); submit(); }
+        if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); void submit(); }
       }} />
-      <button className="primary-button" type="submit" disabled={busy || imageBusy || (!draft.trim() && !images.length) || draft.length > max} aria-label="Send message" title="Send message"><ArrowUp size={20} /></button>
+      <button className="primary-button" type="submit" disabled={busy || preflighting || imageBusy || (!draft.trim() && !images.length) || draft.length > max} aria-label="Send message" title="Send message"><ArrowUp size={20} /></button>
     </form> : <p className="composer-feedback">{sessionId ? 'Messaging is unavailable for this chat.' : 'Choose New chat to begin.'}</p>}
-    <details className="turn-limit"><summary>Connection & recovery details</summary><p>One writer in this tab; the server enforces cross-tab/session concurrency. Only opaque session, request and run identifiers are stored for reload recovery. Known runs resume by status reads, never message retransmission. Pending admission without a run ID uses a read-only request lookup and stays locked while the outcome is unknown. Message bodies and drafts are never stored.</p></details>
+    <details className="turn-limit"><summary>Connection & recovery details</summary><p>One writer in this tab; the server enforces cross-tab/session concurrency. Only opaque session, request and run identifiers are stored for reload recovery. Requested model/effort preferences are stored locally per chat and application environment. Known runs resume by status reads, never message retransmission. Pending admission without a run ID uses a read-only request lookup and stays locked while the outcome is unknown. Message bodies and drafts are never stored.</p></details>
   </>;
 }

@@ -129,7 +129,7 @@ async function send() {
   fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
   await waitFor(() => expect(Source.instances).toHaveLength(1));
 }
-afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); vi.restoreAllMocks(); });
+afterEach(() => { localStorage.clear(); vi.unstubAllGlobals(); vi.useRealTimers(); vi.restoreAllMocks(); });
 
 it('tracks typed compaction lifecycle events without inventing progress', async () => {
   setup();
