@@ -1,12 +1,13 @@
 import { SessionMessagesPageSchema, type SessionMessage, type SessionSummary } from '@jarvis-command/contracts';
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Command, MessageSquare, SquareTerminal } from 'lucide-react';
+import { MessageContent } from './MessageContent';
 import { CopyResponse } from './TurnView';
 import type { Turn } from './useLiveTurn';
 import { projectTurns } from './timeline';
 import { HistoryReceipt } from './HistoryReceipt';
 
-export function LiveRoom({ session, onHistory, turns = [], renderTurn, onSaveResponse }: Readonly<{ session: SessionSummary; onHistory: (sessionId: string, messages: SessionMessage[], complete: boolean) => void; turns?: Turn[]; renderTurn?: (turn: Turn) => ReactNode; onSaveResponse?: (message: SessionMessage) => void }>) {
+export function LiveRoom({ session, onHistory, turns = [], renderTurn, onSaveResponse }: Readonly<{ session: SessionSummary; onHistory: (sessionId: string, messages: SessionMessage[], complete: boolean) => void; turns?: Turn[]; renderTurn?: (turn: Turn) => ReactNode; onSaveResponse?: ((message: SessionMessage) => void) | undefined }>) {
   const report = useRef(onHistory);
   report.current = onHistory;
   const [messages, setMessages] = useState<SessionMessage[]>([]);
@@ -72,8 +73,8 @@ export function LiveRoom({ session, onHistory, turns = [], renderTurn, onSaveRes
       </div>
       <div className="event-body">
         <div className="event-label"><span>{message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Jarvis' : message.role}</span><time>{message.timestamp ? new Date(message.timestamp).toLocaleString() : 'Time not reported'}</time></div>
-        {message.role === 'tool' ? <details className="saved-tool-disclosure"><summary>{message.toolName ?? 'Tool activity'}</summary><p>{message.content || 'No text was saved.'}</p></details> : <>{message.toolName ? <h2>{message.toolName}</h2> : null}<p>{message.content || (message.role === 'assistant' ? 'Assistant activity record — no text was saved.' : 'No text was saved.')}</p></>}
-        {message.role === 'assistant' && message.content ? <CopyResponse text={message.content} limited={false} onSave={() => onSaveResponse?.(message)} /> : null}
+        {message.role === 'tool' ? <details className="saved-tool-disclosure"><summary>{message.toolName ?? 'Tool activity'}</summary><p>{message.content || 'No text was saved.'}</p></details> : <>{message.toolName ? <h2>{message.toolName}</h2> : null}{message.role === 'assistant' ? <MessageContent text={message.content || 'Assistant activity record — no text was saved.'} /> : <p>{message.content || 'No text was saved.'}</p>}</>}
+        {message.role === 'assistant' && message.content ? <CopyResponse text={message.content} limited={false} onSave={onSaveResponse ? () => onSaveResponse(message) : undefined} /> : null}
       </div>
     </article>}{liveAfter(index)}</Fragment>)}
     {!loading && !error && messages.length > 0 && session.ownership === 'command' && !(renderTurn && turns.some(turn => turn.intent.sessionId === session.id && (!turn.done || turn.usage?.execution))) ? <HistoryReceipt key={session.id} sessionId={session.id} refreshKey={JSON.stringify(messages.map(message => message.id))} /> : null}

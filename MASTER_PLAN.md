@@ -382,8 +382,8 @@ Each milestone lists what to build, how Sol proves it, and what gets deferred in
 | Latest-session receipt + context denominator (#6) | Merged (partial) | PR #8; per-answer receipt deferred |
 | Historical message↔run binding (#9) | Deferred — Unsupported | Hermes `7b7a26c1` public contract lacks the pair; Final Neal packet |
 | M0 capability matrix (#2) | Superseded by this plan | Findings kept as history; capability checks now live in P5/P7 |
-| P1 Truthful status/usage/model-effort | Candidate built; release pending | #22 / PR #23 preferences released; #24 compact Activity/Usage built and candidate-verified against owned Sol/Luna runs. Sol release + production readback pending; phone check pending. |
-| P2 Chat completeness | Not started | — |
+| P1 Truthful status/usage/model-effort | Done, live | #24 / PR #25 `df2f68b`; app `sha256:1dd938e3…`; Sol production readback in #24. Phone check pending. |
+| P2 Chat completeness | Source implemented; release pending | #26: same-tab text drafts, shared safe Markdown/code/tables, 250-message and mobile/recovery fixture proof. Sol exact-head review, release and production readback pending; phone check pending. |
 | P3 Design and shell | Not started | — |
 | P4 Artifacts | Not started | — |
 | P5 Agents | Not started | — |

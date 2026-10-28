@@ -930,7 +930,7 @@ it('offers explicit recovery for an edited room draft and does not auto-restore 
   await act(async () => Source.instances[0]!.onerror?.());
   expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('Room B only');
   await chooseChat(session.title);
-  expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('Existing draft');
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('Existing draft'));
   expect(screen.getByRole('button', { name: 'Restore to empty draft' })).toBeDisabled();
   fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: '' } });
   expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('');
@@ -1234,4 +1234,12 @@ it.each(['approval', 'compaction', 'recovering', 'stopping'] as const)('does not
   expect(result.current.turn?.done).toBe(false);
   if (deliver) await act(async () => deliver!(Response.json(status('running'))));
   unmount();
+});
+
+it('keeps an authorized unsent draft when reselecting the same chat', async () => {
+  setup(); await open();
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toBeEnabled());
+  fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: 'Retain selected draft' } });
+  await chooseChat(session.title);
+  expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('Retain selected draft');
 });

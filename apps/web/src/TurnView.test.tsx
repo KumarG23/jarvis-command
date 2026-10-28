@@ -124,12 +124,12 @@ it('reports receipt clipboard failure without claiming success', async () => {
   expect(screen.queryByText('Run receipt copied')).not.toBeInTheDocument();
 });
 
-it('presents exact input and answer as distinct labeled conversation cards', () => {
+it('presents exact input and Markdown answer as distinct labeled conversation cards', () => {
   render(<TurnView {...props} turn={turn} />);
   const input = screen.getByRole('article', { name: 'Your message' });
   const answer = screen.getByRole('article', { name: 'Jarvis response' });
   expect(within(input).getByText('Exact input', { exact: false }).textContent).toBe(turn.intent.input);
-  expect(within(answer).getByText('Exact answer', { exact: false }).textContent).toBe(turn.output);
+  expect(within(answer).getByText('Exact answer', { exact: false })).toHaveTextContent('Exact answer keep spacing');
 });
 
 it('pastes an image into chat, persists it as an artifact, and submits its exact version', async () => {

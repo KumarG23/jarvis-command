@@ -2,16 +2,18 @@ import { ArrowUp, ChevronRight, Command, Copy, FilePlus2, ImagePlus, X } from 'l
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ArtifactMutationResponseSchema, InferenceOptionsResponseSchema, type InferenceOptionsResponse, type InferenceOverride, type LiveRunSubmissionRequest, type ReasoningEffort, type RunEvent } from '@jarvis-command/contracts';
 import { boundedJson, type DraftRecovery, type Turn } from './useLiveTurn';
+import { MessageContent } from './MessageContent';
+import { useTextDraft } from './textDraft';
 import { routeDecision, selectionProblem, useInferencePreference } from './inferencePreference';
 
-export function TurnView({ turn, allowed, approve, stop, onSaveResponse }: Readonly<{ turn: Turn; allowed: boolean; approve: (run: Turn, choice: 'once' | 'deny') => void; stop: (run: Turn) => void; onSaveResponse?: (text: string, runId: string | null) => void }>) {
+export function TurnView({ turn, allowed, approve, stop, onSaveResponse }: Readonly<{ turn: Turn; allowed: boolean; approve: (run: Turn, choice: 'once' | 'deny') => void; stop: (run: Turn) => void; onSaveResponse?: ((text: string, runId: string | null) => void) | undefined }>) {
   const [confirmation, setConfirmation] = useState<Turn | null>(null);
   const canControl = allowed && turn.identityVerified;
   return <section className="live-turn" aria-label="Current turn">
     <RunInspector key={JSON.stringify([turn.intent.sessionId, turn.intent.clientRequestId])} turn={turn} />
     {turn.intent.input === null ? <><p>Original message unavailable after reload; no message was retransmitted.</p><p>Recovery target · Session: {turn.intent.sessionId} · Request: {turn.intent.clientRequestId} · Run: {turn.publicRunId ?? 'Unknown — admission unconfirmed'}</p></> : !turn.userHistoryMatched ? <article className="timeline-event live-message" aria-label="Your message"><div className="event-icon violet" aria-hidden="true">You</div><div className="event-body"><div className="event-label">You</div><p className="turn-input">{turn.intent.input}</p></div></article> : null}
-    {turn.output && turn.intent.input === null && !turn.historyBinding ? <details className="recovered-run-output"><summary>Recovered run output — canonical message link unavailable</summary><p className="turn-output">{turn.output}</p></details> : null}
-    {turn.output && !turn.historyMatched && (turn.intent.input !== null || turn.historyBinding) ? <article className="timeline-event live-message" aria-label="Jarvis response"><div className="event-icon cyan" aria-hidden="true"><Command size={21} /></div><div className="event-body"><div className="event-label">Jarvis</div><p className="turn-output">{turn.output}</p><CopyResponse key={JSON.stringify([turn.intent.sessionId, turn.intent.clientRequestId])} text={turn.output} limited={turn.outputLimited} onSave={() => onSaveResponse?.(turn.output!, turn.publicRunId ?? null)} /></div></article> : null}
+    {turn.output && turn.intent.input === null && !turn.historyBinding ? <details className="recovered-run-output"><summary>Recovered run output — canonical message link unavailable</summary><MessageContent className="turn-output" text={turn.output} /></details> : null}
+    {turn.output && !turn.historyMatched && (turn.intent.input !== null || turn.historyBinding) ? <article className="timeline-event live-message" aria-label="Jarvis response"><div className="event-icon cyan" aria-hidden="true"><Command size={21} /></div><div className="event-body"><div className="event-label">Jarvis</div><MessageContent className="turn-output" text={turn.output} /><CopyResponse key={JSON.stringify([turn.intent.sessionId, turn.intent.clientRequestId])} text={turn.output} limited={turn.outputLimited} onSave={onSaveResponse ? () => onSaveResponse(turn.output!, turn.publicRunId ?? null) : undefined} /></div></article> : null}
     {turn.outputLimited ? <p role="status">Output preview limited. Full output may be available in session history.</p> : null}
     {turn.controlMessage ? <p role="status">{turn.done && /steer/i.test(turn.controlMessage)
       ? turn.terminalPendingSteer ? 'Run ended — unconsumed guidance was returned for draft recovery.' : 'Run ended — steer consumption was not reported.'
@@ -187,7 +189,7 @@ const formatInteger = (value: number) => value.toLocaleString('en-US');
 const formatDuration = (milliseconds: number) => milliseconds < 1000
   ? `${milliseconds}ms` : `${(milliseconds / 1000).toFixed(milliseconds < 10_000 ? 1 : 0)}s`;
 
-export function CopyResponse({ text, limited, onSave }: Readonly<{ text: string; limited: boolean; onSave?: () => void }>) {
+export function CopyResponse({ text, limited, onSave }: Readonly<{ text: string; limited: boolean; onSave?: (() => void) | undefined }>) {
   const [notice, setNotice] = useState<{ text: string; message: string } | null>(null);
   const copy = async () => {
     setNotice(null);
@@ -239,15 +241,15 @@ function activity(event: RunEvent, done: boolean): string {
 }
 type PendingChatImage = NonNullable<LiveRunSubmissionRequest['images']>[number] & Readonly<{ name: string; size: number }>;
 
-export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, projectId, max, maxSteer, turn, send, retry, resume, steer, recoveries, consumeRecovery, blocked = false }: Readonly<{
+export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, projectId, max, maxSteer, turn, send, retry, resume, steer, recoveries, consumeRecovery, blocked = false, draftsAuthorized = allowed }: Readonly<{
+  draftsAuthorized?: boolean;
   blocked?: boolean;
   allowed: boolean; imageAttachmentsEnabled: boolean; sessionId: string | undefined; projectId: string | null; max: number; turn: Turn | null;
   maxSteer: number; steer: (run: Turn, input: string, max: number) => Promise<boolean | undefined>;
   recoveries: DraftRecovery[]; consumeRecovery: (recovery: DraftRecovery) => void;
   send: (sessionId: string, input: string, max: number, inference?: InferenceOverride, images?: LiveRunSubmissionRequest['images']) => boolean; retry: () => void; resume: () => void;
 }>) {
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const draftsRef = useRef(drafts);
+  const { draft, draftsRef, setRoomDraft, clearForSend, storageUnavailable } = useTextDraft(sessionId, allowed && draftsAuthorized);
   const offered = useRef(new WeakSet<DraftRecovery>());
   const [steers, setSteers] = useState<Record<string, string>>({});
   const steerVersions = useRef<Record<string, number>>({});
@@ -264,7 +266,7 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
   const [preflightError, setPreflightError] = useState('');
   const preflight = useRef<AbortController | null>(null);
   // Invalidates an asynchronous send if the chat or send context changes.
-  const contextVersion = useMemo(() => ({}), [sessionId, allowed, blocked, turn, selection]);
+  const contextVersion = useMemo(() => ({}), [sessionId, allowed, draftsAuthorized, blocked, turn, selection]);
   const sendContext = useRef(contextVersion);
   sendContext.current = contextVersion;
   useEffect(() => {
@@ -275,9 +277,7 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
   const [imageBusy, setImageBusy] = useState(false);
   const [imageError, setImageError] = useState('');
   const imageInput = useRef<HTMLInputElement>(null);
-  const draft = sessionId ? drafts[sessionId] ?? '' : '';
   const images = sessionId ? imagesBySession[sessionId] ?? [] : [];
-  const setRoomDraft = (room: string, value: string) => { draftsRef.current = { ...draftsRef.current, [room]: value }; setDrafts(draftsRef.current); };
   const setDraft = (value: string) => { if (sessionId) setRoomDraft(sessionId, value); };
   const steerDraft = sessionId ? steers[sessionId] ?? '' : '';
   const setSteerDraft = (room: string, value: string) => {
@@ -286,14 +286,14 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
   };
   const handoff = (recovery: DraftRecovery, append: boolean) => {
     const room = recovery.intent.sessionId;
-    if (room !== sessionId || !allowed) return;
+    if (room !== sessionId || !allowed || !draftsAuthorized) return;
     const existing = draftsRef.current[room] ?? '';
     if (existing && !append) return;
     setRoomDraft(room, existing ? `${existing}\n${recovery.input}` : recovery.input);
     consumeRecovery(recovery);
   };
   useEffect(() => {
-    if (!allowed || !sessionId) return;
+    if (!allowed || !draftsAuthorized || !sessionId) return;
     for (const recovery of recoveries) {
       if (recovery.kind === 'terminal' && recovery.intent.sessionId === sessionId && !offered.current.has(recovery)) {
         offered.current.add(recovery);
@@ -303,7 +303,7 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
         }
       }
     }
-  }, [allowed, sessionId, recoveries, consumeRecovery]);
+  }, [allowed, draftsAuthorized, sessionId, recoveries, consumeRecovery]);
   useEffect(() => {
     if (!allowed) return;
     const controller = new AbortController();
@@ -324,7 +324,7 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
     const accepted = await steer(run, steerDraft, maxSteer);
     if (accepted && latestTurn.current?.intent === run.intent && steerVersions.current[room] === version) setSteerDraft(room, '');
   };
-  const busy = blocked || (!!turn && !turn.done);
+  const busy = blocked || !draftsAuthorized || (!!turn && !turn.done);
   const selectedOption = inferenceOptions?.options.find(option => `${option.provider}:${option.model}` === selectedModel);
   const problem = selectionProblem(selection, inferenceOptions);
   const chooseModel = (value: string) => {
@@ -400,10 +400,11 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
         if (rejected) { setPreflightError(rejected); return; }
       }
       if (controller.signal.aborted || sendContext.current !== context || (draftsRef.current[sessionId] ?? '') !== draft) return;
+      if (!clearForSend(sessionId)) { setPreflightError('Draft storage could not be cleared safely. Message not sent; keep this tab open and retry when storage is available.'); return; }
       if (send(sessionId, input, max, typeof selection === 'string' ? undefined : selection, images.map(({ artifactId, version }) => ({ artifactId, version })))) {
         setRoomDraft(sessionId, '');
         setImagesBySession(previous => ({ ...previous, [sessionId]: [] }));
-      }
+      } else setRoomDraft(sessionId, draft);
     } finally {
       preflight.current = null;
       setPreflighting(false);
@@ -419,7 +420,7 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
       <button className="primary-button" type="submit" disabled={turn.controlBusy || !steerDraft.trim() || steerDraft.length > maxSteer}>Queue steer</button>
       <p>Queue guidance for this run; acknowledgement does not mean execution.</p>
     </form> : null}
-    {allowed ? recoveries.filter((item) => item.intent.sessionId === sessionId).map((item, index) => <section key={index} aria-label="Recover steer draft">
+    {allowed && draftsAuthorized ? recoveries.filter((item) => item.intent.sessionId === sessionId).map((item, index) => <section key={index} aria-label="Recover steer draft">
       <p>{item.kind === 'terminal' ? 'Unconsumed terminal steer' : 'Unconfirmed steer — may already be queued; no automatic retry'}</p><pre>{item.input}</pre>
       <button type="button" disabled={!!draft} onClick={() => handoff(item, false)}>Restore to empty draft</button>
       <button type="button" onClick={() => handoff(item, true)}>Append to draft</button>
@@ -452,6 +453,7 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
       </details>
       {preflighting ? <p role="status">Checking requested model and effort…</p> : null}
       {preflightError || problem || inferenceError ? <p role="status">{preflightError || problem || 'Model choices unavailable; explicitly selected Inherit remains available.'}</p> : null}
+      {storageUnavailable ? <p role="status">Draft storage unavailable or full. Text remains in this tab; reload may lose recent edits. Sending requires safely clearing the saved draft.</p> : null}
       {preference.storageUnavailable ? <p role="status">Local preference storage unavailable or invalid. A new selection stays in this tab if it cannot be saved; reload may require choosing again.</p> : null}
       {images.length ? <div className="chat-images" aria-label="Attached images">{images.map(image => <span key={`${image.artifactId}:${image.version}`}><ImagePlus size={14} />{image.name}<button type="button" disabled={busy || preflighting || imageBusy} aria-label={`Remove ${image.name}`} onClick={() => setImagesBySession(previous => ({ ...previous, [sessionId!]: (previous[sessionId!] ?? []).filter(item => item !== image) }))}><X size={13} /></button></span>)}</div> : null}
       {imageBusy ? <p role="status">Uploading image…</p> : null}
@@ -467,6 +469,6 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
       }} />
       <button className="primary-button" type="submit" disabled={busy || preflighting || imageBusy || (!draft.trim() && !images.length) || draft.length > max} aria-label="Send message" title="Send message"><ArrowUp size={20} /></button>
     </form> : <p className="composer-feedback">{sessionId ? 'Messaging is unavailable for this chat.' : 'Choose New chat to begin.'}</p>}
-    <details className="turn-limit"><summary>Connection & recovery details</summary><p>One writer in this tab; the server enforces cross-tab/session concurrency. Only opaque session, request and run identifiers are stored for reload recovery. Requested model/effort preferences are stored locally per chat and application environment. Known runs resume by status reads, never message retransmission. Pending admission without a run ID uses a read-only request lookup and stays locked while the outcome is unknown. Message bodies and drafts are never stored.</p></details>
+    <details className="turn-limit"><summary>Connection & recovery details</summary><p>One writer in this tab; the server enforces cross-tab/session concurrency. Only opaque session, request and run identifiers are stored for reload recovery. Requested model/effort preferences are stored locally per chat and application environment. Known runs resume by status reads, never message retransmission. Pending admission without a run ID uses a read-only request lookup and stays locked while the outcome is unknown. Unsent text drafts are saved in this tab (up to 32 chats, 16,000 characters per draft and 128 KiB total). Image bytes are never saved in draft storage. Drafts appear only after selected-chat access is confirmed; sending clears the saved text before admission.</p></details>
   </>;
 }
