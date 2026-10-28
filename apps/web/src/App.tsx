@@ -4,6 +4,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 
 import './styles.css';
 import { LiveRoom } from './LiveRoom';
+import { readArtifactSave, persistArtifactSave, consumeArtifactSave, saveRecoveryError, type PendingArtifactSave } from './artifactSaveRecovery';
 import { ProjectRooms, type ProjectRoomsHandle } from './ProjectRooms';
 import { ContextPane } from './ContextPane';
 import { appStorageKey, previewPath, recoverSignIn } from './appEnvironment';
@@ -234,16 +235,23 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
   const [associatedArtifacts, setAssociatedArtifacts] = useState<number | null>(null);
   const [artifactRefresh, setArtifactRefresh] = useState(0);
   const [pendingGeneration, setPendingGeneration] = useState<PendingArtifactGeneration | null>(() => readPendingGeneration());
-  const [pendingArtifactSave, setPendingArtifactSave] = useState<{
-    key: string;
-    sessionId: string | null;
-    projectId: string | null;
-    runId?: string | null;
-    sourceRequestId?: string | null;
-    title: string;
-    artifactType?: ArtifactType | null;
-    content: string;
-  } | null>(null);
+  const [saveRecovery, setSaveRecovery] = useState(readArtifactSave);
+  const pendingArtifactSave = saveRecovery.pending;
+  const saveRecoveryRef = useRef(saveRecovery);
+  const [saveActive, setSaveActive] = useState(false);
+  const saveAuthorized = !!pendingArtifactSave?.sessionId && selectedSession?.id === pendingArtifactSave.sessionId && draftAuthorizedSession === pendingArtifactSave.sessionId;
+  function stageArtifactSave(pending: PendingArtifactSave) {
+    if (saveRecoveryRef.current.pending || saveRecoveryRef.current.error) return;
+    try {
+      persistArtifactSave(pending);
+      saveRecoveryRef.current = { pending, error: null };
+      setSaveRecovery(saveRecoveryRef.current);
+      setSaveActive(true);
+    } catch {
+      saveRecoveryRef.current = { pending, error: saveRecoveryError };
+      setSaveRecovery(saveRecoveryRef.current);
+    }
+  }
   const [inferenceTarget, setInferenceTarget] = useState<HTMLDivElement | null>(null);
   const navigationEntry = useRef(crypto.randomUUID()), navigationVisible = useRef(false);
   const [contextTarget, setContextTarget] = useState<HTMLDivElement | null>(null);
@@ -347,8 +355,8 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
       setPendingGeneration({ ...pendingGeneration, state: 'failed', message: turn.outputLimited ? 'Jarvis output was preview-limited, so Artifact Studio did not save it automatically.' : turn.error ? 'Jarvis finished with an error. Artifact Studio did not save an artifact.' : 'Jarvis did not complete with non-empty artifact content. Nothing was saved.' });
       return;
     }
-    if (pendingArtifactSave?.sourceRequestId === pendingGeneration.sourceRequestId) return;
-    setPendingArtifactSave({
+    if (saveRecoveryRef.current.pending || saveRecoveryRef.current.error) return;
+    stageArtifactSave({
       key: pendingGeneration.sourceRequestId,
       sourceRequestId: pendingGeneration.sourceRequestId,
       sessionId: pendingGeneration.sessionId,
@@ -361,7 +369,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     setPane('artifacts');
   }, [live.turn, live.completedTurns, pendingGeneration, pendingArtifactSave?.sourceRequestId]);
   function selectSession(session: SessionSummary | null) {
-    if (session?.id !== selectedSession?.id) setDraftAuthorizedSession(null);
+    if (session?.id !== selectedSession?.id) { setDraftAuthorizedSession(null); setSaveActive(false); }
     if (session) setSessions(previous => [session, ...previous.filter(item => item.id !== session.id)]);
     setSelectedSession(session);
   }
@@ -388,9 +396,10 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     setProjectName(name);
   }
   function openPanel(kind: 'runtime' | 'settings' | 'artifacts' | 'agents' | 'collaboration' | 'notifications', element: HTMLElement) {
+    if (kind !== 'artifacts') setSaveActive(false);
     projects.current?.closeDetails(); panelOpener.current = element; setPane(kind); if (navigationOpen) closeNavigation(false);
   }
-  function closePanel() { if (pane === 'project') projects.current?.closeDetails(); setPane(null); setArtifactPaneFullScreen(false); if (panelOpener.current?.closest('.room-sidebar') && window.matchMedia?.('(max-width: 760px)').matches) menu.current?.focus(); else panelOpener.current?.focus(); }
+  function closePanel() { setSaveActive(false); if (pane === 'project') projects.current?.closeDetails(); setPane(null); setArtifactPaneFullScreen(false); if (panelOpener.current?.closest('.room-sidebar') && window.matchMedia?.('(max-width: 760px)').matches) menu.current?.focus(); else panelOpener.current?.focus(); }
   const activeElsewhere = live.turn && !live.turn.done && live.turn.intent.sessionId !== selectedSession?.id;
   const latestUsage = [...live.completedTurns, ...(live.turn ? [live.turn] : [])]
     .reverse()
@@ -400,15 +409,13 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
   }, [live.turn?.done, live.turn?.intent.sessionId, compactedContext?.sessionId]);
   function saveResponseArtifact(content: string, runId: string | null = null) {
     if (!content.trim()) return;
+    if (saveRecoveryRef.current.pending || saveRecoveryRef.current.error) { setPane('artifacts'); return; }
     const sourceRequestId = newGenerationId();
-    setPendingArtifactSave({
-      key: sourceRequestId,
-      sourceRequestId,
-      sessionId: selectedSession?.id ?? null,
-      projectId,
-      runId,
+    stageArtifactSave({
+      key: sourceRequestId, sourceRequestId,
+      sessionId: selectedSession?.id ?? null, projectId, runId,
       title: `Jarvis response ${new Date().toLocaleString()}`,
-      content,
+      artifactType: null, content,
     });
     setPane('artifacts');
   }
@@ -478,11 +485,11 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
   }
   function cancelArtifactGeneration() {
     setPendingGeneration(null);
-    setPendingArtifactSave(previous => previous?.sourceRequestId ? null : previous);
+    // A generation cancellation cannot discard an unconfirmed artifact save.
   }
   const generationStatus = {
-    state: pendingArtifactSave?.sourceRequestId ? 'saving' as const : pendingGeneration?.state ?? 'idle' as const,
-    message: pendingArtifactSave?.sourceRequestId ? 'Jarvis completed. Saving artifact version 1...' : pendingGeneration?.message ?? null,
+    state: pendingArtifactSave?.sourceRequestId === pendingGeneration?.sourceRequestId && pendingArtifactSave ? 'saving' as const : pendingGeneration?.state ?? 'idle' as const,
+    message: pendingArtifactSave?.sourceRequestId === pendingGeneration?.sourceRequestId && pendingArtifactSave ? 'Jarvis completed. Saving artifact version 1...' : pendingGeneration?.message ?? null,
     title: pendingGeneration?.title ?? null,
     type: pendingGeneration?.artifactType ?? null,
     canRetry: !!pendingGeneration && pendingGeneration.state === 'failed' && selectedSession?.id === pendingGeneration.sessionId && !!writeAllowed && !(live.turn && !live.turn.done),
@@ -536,10 +543,27 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     </main>
     <ContextPane open={pane !== null} fullScreen={pane === 'artifacts' && artifactPaneFullScreen}>
       <div ref={setContextTarget} hidden={pane !== 'project'} />
-      {pane === 'artifacts' ? <Suspense fallback={<p className="pane-loading" role="status">Loading Artifact Studio…</p>}><ArtifactStudio open selectedSessionId={selectedSession?.id ?? null} projectId={projectId} canSendPrompt={!!writeAllowed && !(live.turn && !live.turn.done)} pendingSave={pendingArtifactSave} onConsumedSave={key => {
-        setPendingArtifactSave(previous => previous?.key === key ? null : previous);
+      {pane === 'artifacts' ? <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        {saveRecovery.error ? <p className="notice error" role="alert" style={{ flexShrink: 0 }}>{saveRecovery.error}</p> : null}
+        {pendingArtifactSave && !saveRecovery.error && !saveActive ? <div className="notice" role="status" style={{ flexShrink: 0 }}>
+          <p>An unconfirmed response save is retained. Recovery uses its original chat, project, run and request identity.</p>
+          <p>{saveAuthorized ? 'Retry the original save to confirm whether it committed.' : 'Open the original chat and load its complete history to recover this save.'}</p>
+          <button type="button" className="secondary-button" disabled={!saveAuthorized} onClick={() => setSaveActive(true)}>Recover response save</button>
+      </div> : null}
+      <Suspense fallback={<p className="pane-loading" role="status">Loading Artifact Studio…</p>}><ArtifactStudio open selectedSessionId={selectedSession?.id ?? null} projectId={projectId} canSendPrompt={!!writeAllowed && !(live.turn && !live.turn.done)} pendingSave={saveActive && saveAuthorized && !saveRecovery.error ? pendingArtifactSave : null} onConsumedSave={key => {
+        if (saveRecoveryRef.current.pending?.key !== key) return;
+        try {
+          consumeArtifactSave(key);
+          saveRecoveryRef.current = { pending: null, error: null };
+          setSaveRecovery(saveRecoveryRef.current);
+          setSaveActive(false);
+        } catch {
+          saveRecoveryRef.current = { ...saveRecoveryRef.current, error: 'The save was confirmed, but its recovery record could not be cleared. Further response saves are blocked until storage cleanup succeeds.' };
+          setSaveRecovery(saveRecoveryRef.current);
+        }
         setPendingGeneration(previous => previous?.sourceRequestId === key ? null : previous);
-      }} onSendPrompt={sendArtifactPrompt} onCreateWithJarvis={createArtifactWithJarvis} generation={generationStatus} onRetryGeneration={retryArtifactGeneration} onCancelGeneration={cancelArtifactGeneration} onClose={closePanel} fullScreen={artifactPaneFullScreen} onToggleFullScreen={() => setArtifactPaneFullScreen(value => !value)} onLibraryChanged={() => setArtifactRefresh(value => value + 1)} /></Suspense> : null}
+      }} onSendPrompt={sendArtifactPrompt} onCreateWithJarvis={createArtifactWithJarvis} generation={generationStatus} onRetryGeneration={retryArtifactGeneration} onCancelGeneration={cancelArtifactGeneration} onClose={closePanel} fullScreen={artifactPaneFullScreen} onToggleFullScreen={() => setArtifactPaneFullScreen(value => !value)} onLibraryChanged={() => setArtifactRefresh(value => value + 1)} /></Suspense>
+      </div> : null}
       {pane === 'agents' || pane === 'collaboration' || pane === 'notifications' ? <div className="runtime-details" onKeyDown={event => { if (event.key === 'Escape') closePanel(); }}>
         <header className="pane-header"><h2>{pane === 'agents' ? 'Agents' : pane === 'collaboration' ? 'Collaboration rooms' : 'Notifications'}</h2><button ref={panelClose} className="icon-button" type="button" aria-label="Close context" onClick={closePanel}><X size={20} /></button></header>
         <div className="pane-body unavailable-capability"><p className="eyebrow">Unavailable</p><h3>{pane === 'notifications' ? 'Planned for a later increment' : 'Not available on this installation'}</h3>
