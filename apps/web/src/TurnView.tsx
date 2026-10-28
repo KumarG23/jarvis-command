@@ -1,5 +1,5 @@
 import { ArrowUp, ChevronRight, Command, Copy, FilePlus2, ImagePlus, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ArtifactMutationResponseSchema, InferenceOptionsResponseSchema, type InferenceOptionsResponse, type InferenceOverride, type LiveRunSubmissionRequest, type ReasoningEffort, type RunEvent } from '@jarvis-command/contracts';
 import { boundedJson, type DraftRecovery, type Turn } from './useLiveTurn';
 import { routeDecision, selectionProblem, useInferencePreference } from './inferencePreference';
@@ -8,14 +8,11 @@ export function TurnView({ turn, allowed, approve, stop, onSaveResponse }: Reado
   const [confirmation, setConfirmation] = useState<Turn | null>(null);
   const canControl = allowed && turn.identityVerified;
   return <section className="live-turn" aria-label="Current turn">
-    <p className="turn-phase" role="status">{turn.phase}</p>
-    {turn.usage ? <ExecutionReceipt usage={turn.usage} />
-      : 'inference' in turn.intent && turn.intent.inference ? <p className="turn-route">Requested route · {turn.intent.inference.model} · {turn.intent.inference.reasoningEffort}</p> : null}
+    <RunInspector key={JSON.stringify([turn.intent.sessionId, turn.intent.clientRequestId])} turn={turn} />
     {turn.intent.input === null ? <><p>Original message unavailable after reload; no message was retransmitted.</p><p>Recovery target · Session: {turn.intent.sessionId} · Request: {turn.intent.clientRequestId} · Run: {turn.publicRunId ?? 'Unknown — admission unconfirmed'}</p></> : !turn.userHistoryMatched ? <article className="timeline-event live-message" aria-label="Your message"><div className="event-icon violet" aria-hidden="true">You</div><div className="event-body"><div className="event-label">You</div><p className="turn-input">{turn.intent.input}</p></div></article> : null}
     {turn.output && turn.intent.input === null && !turn.historyBinding ? <details className="recovered-run-output"><summary>Recovered run output — canonical message link unavailable</summary><p className="turn-output">{turn.output}</p></details> : null}
     {turn.output && !turn.historyMatched && (turn.intent.input !== null || turn.historyBinding) ? <article className="timeline-event live-message" aria-label="Jarvis response"><div className="event-icon cyan" aria-hidden="true"><Command size={21} /></div><div className="event-body"><div className="event-label">Jarvis</div><p className="turn-output">{turn.output}</p><CopyResponse key={JSON.stringify([turn.intent.sessionId, turn.intent.clientRequestId])} text={turn.output} limited={turn.outputLimited} onSave={() => onSaveResponse?.(turn.output!, turn.publicRunId ?? null)} /></div></article> : null}
     {turn.outputLimited ? <p role="status">Output preview limited. Full output may be available in session history.</p> : null}
-    {turn.publicRunId || turn.events.length > 0 || turn.usage?.execution ? <RunInspector turn={turn} /> : null}
     {turn.controlMessage ? <p role="status">{turn.done && /steer/i.test(turn.controlMessage)
       ? turn.terminalPendingSteer ? 'Run ended — unconsumed guidance was returned for draft recovery.' : 'Run ended — steer consumption was not reported.'
       : turn.controlMessage}</p> : null}
@@ -34,10 +31,11 @@ export function TurnView({ turn, allowed, approve, stop, onSaveResponse }: Reado
 
 function RunInspector({ turn }: Readonly<{ turn: Turn }>) {
   const [copyMessage, setCopyMessage] = useState('');
-  const tools = turn.events.filter(event => event.type === 'tool.started').length;
+  const [expanded, setExpanded] = useState(false);
+  const panelId = useId();
   const failedTool = turn.events.some(event => event.type === 'tool.completed' && event.error);
   const failed = !!turn.error || failedTool || turn.phase === 'Run failed' || turn.phase === 'Run interrupted';
-  const telemetry = turn.telemetry ?? { admissionAttempts: 0, streamConnections: 0, statusChecks: 0 };
+  const telemetry = turn.telemetry;
   const execution = turn.usage?.execution;
   const receipt = JSON.stringify({
     version: 1,
@@ -52,10 +50,10 @@ function RunInspector({ turn }: Readonly<{ turn: Turn }>) {
     usage: turn.usage ?? null,
     recovery: {
       scope: 'current_tab',
-      admissionAttempts: telemetry.admissionAttempts,
-      streamConnections: telemetry.streamConnections,
-      streamReconnects: Math.max(0, telemetry.streamConnections - 1),
-      statusChecks: telemetry.statusChecks,
+      admissionAttempts: telemetry?.admissionAttempts ?? null,
+      streamConnections: telemetry?.streamConnections ?? null,
+      streamReconnects: telemetry ? Math.max(0, telemetry.streamConnections - 1) : null,
+      statusChecks: telemetry?.statusChecks ?? null,
     },
     activityComplete: !turn.activityUnavailable,
     activity: turn.events.map(receiptActivity),
@@ -69,17 +67,31 @@ function RunInspector({ turn }: Readonly<{ turn: Turn }>) {
       setCopyMessage('Could not copy receipt.');
     }
   };
-  return <details className={`run-inspector${failed ? ' failed' : ''}`} open={failed || undefined}>
-    <summary><ChevronRight size={14} /><span>Run details</span><small>{turn.activityUnavailable ? 'Activity incomplete · ' : ''}{tools} {turn.activityUnavailable ? 'observed ' : ''}{tools === 1 ? 'tool' : 'tools'} · {turn.phase.replace(/^Run /, '')}{failed ? ' · Attention needed' : ''}</small></summary>
-    <div className="run-inspector-body" role="region" aria-label="Run inspector">
+  const handoff = turn.events.some(event => event.type === 'subagent.start' || event.type === 'subagent.complete');
+  const decision = execution ? routeDecision(execution) : null;
+  return <details className={`run-inspector${failed ? ' failed' : ''}`} open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}>
+    <summary aria-expanded={expanded} aria-controls={panelId}>
+      <ChevronRight size={16} aria-hidden="true" />
+      <span role="status" aria-label="Run status"><span>{runStatus(turn)}</span>
+        {failedTool ? ' · Tool failure reported' : ''}{handoff ? ' · Agent handoff reported' : ''}
+        {turn.activityUnavailable ? ' · Activity incomplete' : ''}
+        {decision && decision !== 'Exact route' ? ` · ${decision}` : turn.usage && !execution ? ' · Executed route unavailable' : ''}
+      </span>
+      <span className="status-disclosure">Activity / Usage</span>
+    </summary>
+    <div id={panelId} className="run-inspector-body" role="region" aria-label="Run inspector">
+      <h3>Usage</h3>
+      {turn.usage ? <ExecutionReceipt usage={turn.usage} /> : <p>{turn.done ? 'Run usage unavailable' : 'Usage available when run finishes'}</p>}
+      {!execution && 'inference' in turn.intent && turn.intent.inference ? <p className="turn-route">Requested route · {turn.intent.inference.model} · {turn.intent.inference.reasoningEffort}</p> : null}
       <div className="inspector-heading"><h3>Run receipt</h3><button className="secondary-button copy-receipt" type="button" onClick={() => { void copy(); }}><Copy size={14} /> Copy receipt</button></div>
       <span className="copy-status" role="status">{copyMessage}</span>
       <dl className="inspector-facts">
         <div><dt>Status</dt><dd>{turn.phase.replace(/^Run /, '')}</dd></div>
-        <div><dt>Run</dt><dd>{turn.publicRunId ?? 'Not admitted'}</dd></div>
-        <div><dt>Admission attempts (this tab)</dt><dd>{telemetry.admissionAttempts}</dd></div>
-        <div><dt>Stream reconnects (this tab)</dt><dd>{Math.max(0, telemetry.streamConnections - 1)}</dd></div>
-        <div><dt>Status checks (this tab)</dt><dd>{telemetry.statusChecks}</dd></div>
+        <div><dt>Run</dt><dd>{turn.publicRunId ?? 'Unknown — admission unconfirmed'}</dd></div>
+        <div><dt>Session</dt><dd>{turn.intent.sessionId}</dd></div>
+        <div><dt>Admission attempts (this tab)</dt><dd>{telemetry?.admissionAttempts ?? <Unknown label="Admission attempts" source="this tab" />}</dd></div>
+        <div><dt>Stream reconnects (this tab)</dt><dd>{telemetry ? Math.max(0, telemetry.streamConnections - 1) : <Unknown label="Stream reconnects" source="this tab" />}</dd></div>
+        <div><dt>Status checks (this tab)</dt><dd>{telemetry?.statusChecks ?? <Unknown label="Status checks" source="this tab" />}</dd></div>
       </dl>
       {turn.error ? <p className="inspector-error" role="alert">{turn.error}</p> : null}
       {execution ? <section className="route-decision" aria-label="Route decision">
@@ -91,13 +103,37 @@ function RunInspector({ turn }: Readonly<{ turn: Turn }>) {
         </dl>
       </section> : null}
       {turn.activityUnavailable ? <p role="status">Some live activity was unavailable. Saved session history may contain tool results.</p> : null}
-      {turn.events.length > 0 ? <section className="activity-timeline" aria-label="Activity timeline"><h4>Activity</h4><ol className="turn-activity" aria-label="Run activity">{turn.events.map((event, index) => <li className={event.type === 'tool.completed' && event.error ? 'failed' : ''} key={`${event.timestamp}:${event.type}:${index}`}><time dateTime={event.timestamp}>{event.timestamp.slice(11, 19)}</time><span>{activity(event, turn.done)}</span></li>)}</ol></section> : !turn.activityUnavailable ? <p className="empty-activity">No tool or agent activity reported.</p> : null}
+      {turn.events.length > 0 ? <section className="activity-timeline" aria-label="Activity timeline"><h4>Activity</h4><ol className="turn-activity" aria-label="Run activity">{turn.events.map((event, index) => <li className={event.type === 'tool.completed' && event.error ? 'failed' : ''} key={`${event.timestamp}:${event.type}:${index}`}><time dateTime={event.timestamp}>{event.timestamp.slice(11, 19)}</time><span>{event.type === 'tool.started' || (event.type === 'tool.completed' && !event.error)
+          ? <details className="tool-activity"><summary>{event.type === 'tool.started' ? `Tool started: ${event.tool}` : `Tool completed: ${event.tool}`}</summary>{activity(event, turn.done)}</details>
+          : activity(event, turn.done)}</span></li>)}</ol></section> : !turn.activityUnavailable ? <p className="empty-activity">No tool or agent activity reported.</p> : null}
     </div>
   </details>;
 }
 
-function routeLabel(route: { provider: string | null; model: string | null; reasoningEffort: string | null }): string {
-  return `${modelLabel(route.model)} · ${route.reasoningEffort ?? 'effort unknown'} · ${providerLabel(route.provider)}`;
+// Describe the last observed event rather than infer tool lifetimes or execution restarts.
+function runStatus(turn: Turn): string {
+  if (turn.done) return turn.phase;
+  const last = turn.events.at(-1);
+  const observed = turn.approval ? 'Waiting for your approval'
+    : turn.compaction?.state === 'running' ? 'Compacting context'
+    : last?.type === 'tool.started' ? `Tool started: ${last.tool}`
+    : last?.type === 'subagent.start' ? `Subagent started: ${last.subagentId}`
+    : last?.type === 'subagent.complete' ? `Subagent completed: ${last.subagentId}`
+    : last?.type === 'tool.completed' ? `Tool ${last.error ? 'failed' : 'completed'}: ${last.tool}`
+    : turn.output ? 'Reply output received' : 'Working…';
+  if (/^Reconnecting/.test(turn.phase)) return `Reconnecting · Last reported: ${observed}`;
+  if (turn.approval) return observed;
+  if (!['Run running', 'Run queued'].includes(turn.phase)) return turn.phase;
+  return turn.phase === 'Run queued' && !last && !turn.output ? 'Run queued' : observed;
+}
+
+function Unknown({ label, source = 'Hermes' }: Readonly<{ label: string; source?: string }>) {
+  const explanation = `${label} unavailable: not reported by ${source}`;
+  return <span role="img" title={explanation} aria-label={explanation}>—</span>;
+}
+
+function routeLabel(route: { provider: string | null; model: string | null; reasoningEffort: string | null }) {
+  return <>{route.model ? modelLabel(route.model) : <Unknown label="Model" />} · {route.reasoningEffort ?? <Unknown label="Effort" />} · {route.provider ? providerLabel(route.provider) : <Unknown label="Provider" />}</>;
 }
 
 export function ExecutionReceipt({ usage }: Readonly<{ usage: NonNullable<Turn['usage']> }>) {
@@ -107,20 +143,20 @@ export function ExecutionReceipt({ usage }: Readonly<{ usage: NonNullable<Turn['
   const decision = receipt ? routeDecision(receipt) : null;
   const changed = decision === 'Fallback used' || decision === 'Route changed';
   return <section className={`execution-receipt${changed ? ' warning' : ''}`} aria-label="Execution receipt">
-    {receipt ? <p className="receipt-title">Executed · {modelLabel(receipt.executed.model)} · {receipt.executed.reasoningEffort ?? 'effort unknown'} · {providerLabel(receipt.executed.provider)}</p> : <p className="receipt-title">Executed route unavailable</p>}
-    <p>{formatInteger(usage.totalTokens)} tokens · {formatInteger(usage.inputTokens)} in / {formatInteger(usage.outputTokens)} out
-      {usage.outputTokensPerSecond == null ? ' · throughput unavailable' : ` · ${usage.outputTokensPerSecond.toFixed(1)} tok/s`}</p>
-    <p>{usage.apiCalls === undefined ? 'API calls unavailable' : `${usage.apiCalls} API ${usage.apiCalls === 1 ? 'call' : 'calls'}`}
-      {usage.providerLatencyMs === undefined ? ' · Provider latency unavailable' : ` · ${formatDuration(usage.providerLatencyMs)} provider`}
-      {usage.endToEndLatencyMs === undefined ? ' · End-to-end latency unavailable' : ` · ${formatDuration(usage.endToEndLatencyMs)} end-to-end`}</p>
-    <p>{usage.reasoningTokens === undefined ? 'Reasoning unavailable' : `${formatInteger(usage.reasoningTokens)} reasoning`}
-      {usage.cacheReadTokens === undefined ? ' · Cache read unavailable' : ` · ${formatInteger(usage.cacheReadTokens)} cache read`}
-      {usage.cacheWriteTokens === undefined ? ' · Cache write unavailable' : ` · ${formatInteger(usage.cacheWriteTokens)} cache write`}
+    {receipt ? <p className="receipt-title">Executed · {routeLabel(receipt.executed)}</p> : <p className="receipt-title">Executed route unavailable</p>}
+    <p>Run spend · {formatInteger(usage.totalTokens)} tokens · {formatInteger(usage.inputTokens)} in / {formatInteger(usage.outputTokens)} out
+      {usage.outputTokensPerSecond == null ? <> · Throughput <Unknown label="Throughput" /></> : ` · ${usage.outputTokensPerSecond.toFixed(1)} tok/s`}</p>
+    <p>{usage.apiCalls === undefined ? <>API calls <Unknown label="API calls" /></> : `${usage.apiCalls} API ${usage.apiCalls === 1 ? 'call' : 'calls'}`}
+      {usage.providerLatencyMs === undefined ? <> · Provider latency <Unknown label="Provider latency" /></> : ` · ${formatDuration(usage.providerLatencyMs)} provider`}
+      {usage.endToEndLatencyMs === undefined ? <> · End-to-end latency <Unknown label="End-to-end latency" /></> : ` · ${formatDuration(usage.endToEndLatencyMs)} end-to-end`}</p>
+    <p>{usage.reasoningTokens === undefined ? <>Reasoning <Unknown label="Reasoning" /></> : `${formatInteger(usage.reasoningTokens)} reasoning`}
+      {usage.cacheReadTokens === undefined ? <> · Cache read <Unknown label="Cache read" /></> : ` · ${formatInteger(usage.cacheReadTokens)} cache read`}
+      {usage.cacheWriteTokens === undefined ? <> · Cache write <Unknown label="Cache write" /></> : ` · ${formatInteger(usage.cacheWriteTokens)} cache write`}
     </p>
     {context && contextPercent !== null ? <div className="context-usage">
-      <span>Context · {contextPercent.toFixed(contextPercent < 10 ? 1 : 0)}% · {formatInteger(context.usedTokens)} / {formatInteger(context.limitTokens)}</span>
-      <progress aria-label="Context usage" max={100} value={contextPercent} />
-    </div> : <p>Context usage unavailable</p>}
+      <span>Session context · {contextPercent.toFixed(contextPercent < 10 ? 1 : 0)}% · {formatInteger(context.usedTokens)} / {formatInteger(context.limitTokens)}</span>
+      <progress aria-label="Context usage" aria-valuetext={`${formatInteger(context.usedTokens)} / ${formatInteger(context.limitTokens)} tokens · ${contextPercent.toFixed(1)}%`} max={100} value={contextPercent} />
+    </div> : <p>Context usage unavailable · Session context <Unknown label="Session context" /></p>}
     {changed ? <p className="receipt-warning">Requested route changed during execution.</p> : null}
     {decision === 'Fallback used' ? <p>Fallback used</p> : null}
     {decision === 'Route verification unavailable' ? <p>Route verification unavailable</p> : null}
@@ -184,12 +220,21 @@ function receiptActivity(event: RunEvent) {
 function activity(event: RunEvent, done: boolean): string {
   switch (event.type) {
     case 'tool.started': return `Tool started: ${event.tool} — ${event.preview}`;
-    case 'tool.completed': return `Tool ${event.error ? 'failed' : 'completed'}: ${event.tool}`;
+    case 'tool.completed': return `Tool ${event.error ? 'failed' : 'completed'}: ${event.tool} · ${event.durationSeconds}s`;
     case 'subagent.start': return `Subagent started: ${event.subagentId} — ${event.goal}`;
     case 'subagent.complete': return `Subagent completed: ${event.subagentId} — ${event.summary}`;
     case 'approval.responded': return `Approval responded: ${event.choice}`;
     case 'run.steered': return done ? 'Steer was acknowledged; run ended. Consumption not reported by this event.' : 'Steer queued';
-    default: return event.type;
+    case 'message.delta': return 'Reply output received';
+    case 'approval.request': return 'Approval requested';
+    case 'context.compaction.started': return 'Context compaction started';
+    case 'context.compaction.progress': return 'Context compaction in progress';
+    case 'context.compaction.completed': return 'Context compaction completed';
+    case 'context.compaction.aborted': return 'Context compaction stopped';
+    case 'run.completed': return 'Run completed';
+    case 'run.failed': return `Run failed: ${event.error}`;
+    case 'run.interrupted': return `Run interrupted: ${event.error}`;
+    case 'run.cancelled': return 'Run cancelled';
   }
 }
 type PendingChatImage = NonNullable<LiveRunSubmissionRequest['images']>[number] & Readonly<{ name: string; size: number }>;

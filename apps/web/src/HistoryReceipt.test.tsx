@@ -49,7 +49,7 @@ it('keeps unknown counters unavailable while retaining supplied zero counters', 
   render(<LiveRoom session={session} onHistory={vi.fn()} />);
   const receipt = await screen.findByRole('region', { name: 'Execution receipt' });
   expect(receipt).toHaveTextContent('0 tokens · 0 in / 0 out');
-  expect(receipt).toHaveTextContent('Reasoning unavailable · 0 cache read · Cache write unavailable');
+  expect(receipt).toHaveTextContent('Reasoning — · 0 cache read · Cache write —');
   expect(receipt).toHaveTextContent('Executed route unavailable');
   expect(receipt).toHaveTextContent('Context usage unavailable');
 });

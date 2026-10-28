@@ -56,10 +56,14 @@ it('groups typed activity into an ordered, labeled list without losing event tex
     { type: 'tool.started', tool: 'synthetic', preview: 'Exact preview', publicRunId: turn.publicRunId!, timestamp: '2026-09-05T12:00:00.000Z' },
     { type: 'tool.completed', tool: 'synthetic', error: false, durationSeconds: 0, publicRunId: turn.publicRunId!, timestamp: '2026-09-05T12:00:00.000Z' },
   ] }} />);
+  fireEvent.click(screen.getByText('Activity / Usage'));
   const activity = screen.getByRole('list', { name: 'Run activity' });
   expect(activity.tagName).toBe('OL');
   const items = within(activity).getAllByRole('listitem');
-  expect(items.map((item) => item.querySelector('span')?.textContent)).toEqual(['Tool started: synthetic — Exact preview', 'Tool completed: synthetic']);
+  expect(items.map((item) => item.querySelector('summary')?.textContent)).toEqual(['Tool started: synthetic', 'Tool completed: synthetic']);
+  expect(items[0]!.querySelector('details')).not.toHaveAttribute('open');
+  expect(items[0]).toHaveTextContent('Exact preview');
+  expect(items[1]).toHaveTextContent('0s');
   expect(items.map((item) => item.querySelector('time')?.textContent)).toEqual(['12:00:00', '12:00:00']);
 });
 
@@ -89,7 +93,8 @@ it('shows route, recovery and failure details and copies a sanitized run receipt
     },
   };
   render(<TurnView {...props} turn={inspected} />);
-  expect(screen.getByText('Run details').closest('details')).toHaveAttribute('open');
+  expect(screen.getByText('Activity / Usage').closest('details')).not.toHaveAttribute('open');
+  fireEvent.click(screen.getByText('Activity / Usage'));
   const inspector = screen.getByRole('region', { name: 'Run inspector' });
   expect(inspector).toHaveTextContent('Provider unavailable.');
   expect(inspector).toHaveTextContent('Admission attempts (this tab)2');

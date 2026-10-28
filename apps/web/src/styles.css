@@ -392,3 +392,25 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
   .session-context.unavailable small { font-size: 9px; line-height: 1.4; }
   .session-context.unavailable.compacting > small { display: inline; }
 }
+
+/* P1: chat stays primary; activity and usage are revealed on demand. */
+.run-inspector { margin: 8px 0 16px; font-size: 12px; }
+.run-inspector > summary { min-height: 48px; flex-wrap: wrap; overflow-wrap: anywhere; }
+.run-inspector > summary > svg { flex-shrink: 0; }
+.run-inspector > summary > [role="status"] { flex: 1; min-width: 100px; font-weight: 400; line-height: 1.6; }
+.run-inspector > summary > .status-disclosure { color: var(--cyan); font-size: 12px; }
+.run-inspector summary:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; border-radius: 6px; }
+.run-inspector-body { overflow-wrap: anywhere; }
+.run-inspector-body h3 { font-size: 14px; }
+.run-inspector .execution-receipt { font-size: 12px; }
+.run-inspector .execution-receipt .receipt-title { font-size: 12px; }
+.run-inspector .inspector-facts dt { font-size: 10px; }
+.run-inspector .inspector-facts dd, .run-inspector .turn-activity { font-size: 12px; }
+.run-inspector .copy-receipt, .tool-activity > summary { min-height: 44px; }
+.tool-activity > summary { cursor: pointer; display: list-item; padding: 10px 0; }
+@media (max-width: 430px) {
+  .run-inspector { margin-left: 0; }
+  .run-inspector-body { padding: 10px; }
+  .run-inspector .inspector-facts { grid-template-columns: minmax(0, 1fr); }
+  .run-inspector .turn-activity li { grid-template-columns: 52px minmax(0, 1fr); gap: 6px; }
+}

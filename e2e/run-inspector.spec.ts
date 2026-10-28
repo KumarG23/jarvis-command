@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test.use({ serviceWorkers: 'block' });
+test.use({ serviceWorkers: 'block', hasTouch: true });
 
 test('inspects and copies a synthetic run receipt at this viewport', async ({ page, context }, testInfo) => {
   const errors: string[] = [];
@@ -59,7 +59,7 @@ test('inspects and copies a synthetic run receipt at this viewport', async ({ pa
   await page.getByRole('textbox', { name: 'Message Jarvis' }).fill('Inspect this run');
   await page.getByRole('button', { name: 'Send message' }).click();
   await expect(page.getByText('Run completed', { exact: true })).toBeVisible();
-  await page.getByText('Run details', { exact: true }).click();
+  await page.getByText('Activity / Usage', { exact: true }).click();
 
   const inspector = page.getByRole('region', { name: 'Run inspector' });
   await expect(inspector).toContainText('Admission attempts');
@@ -75,5 +75,32 @@ test('inspects and copies a synthetic run receipt at this viewport', async ({ pa
   expect(copied).not.toHaveProperty('output');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   expect(errors).toEqual([]);
-  await page.screenshot({ path: testInfo.outputPath('run-inspector.png'), fullPage: true });
+  const disclosure = page.locator('.run-inspector > summary');
+  for (const width of [1280, 320, 360, 390, 430]) {
+    for (const height of [width === 1280 ? 720 : 740, 360]) {
+      await page.setViewportSize({ width, height });
+      await disclosure.scrollIntoViewIfNeeded();
+      await disclosure.focus();
+      await disclosure.press('Enter');
+      await expect(disclosure).toHaveAttribute('aria-expanded', 'false');
+      await expect(inspector).not.toBeVisible();
+      await disclosure.press('Space');
+      await expect(disclosure).toHaveAttribute('aria-expanded', 'true');
+      await expect(inspector).toBeVisible();
+      await expect(inspector.getByRole('region', { name: 'Execution receipt' })).toContainText('Run spend');
+      const tool = inspector.locator('.tool-activity').first();
+      await expect(tool).not.toHaveAttribute('open');
+      await tool.locator('summary').tap();
+      await expect(tool).toHaveAttribute('open');
+      await tool.locator('summary').tap();
+      const draft = page.getByRole('textbox', { name: 'Message Jarvis', exact: true });
+      await draft.focus();
+      await expect(draft).toBeInViewport();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      await disclosure.scrollIntoViewIfNeeded();
+      await expect(disclosure).toBeInViewport();
+      expect(await disclosure.evaluate(el => el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
+      await page.screenshot({ path: testInfo.outputPath(`status-${width}-${height}.png`) });
+    }
+  }
 });

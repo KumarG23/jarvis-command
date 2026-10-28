@@ -341,7 +341,7 @@ it('replaces requested settings with an authoritative receipt and measured conte
   expect(receipt).toHaveTextContent('Executed · Grok 4.6 · low · xAI');
   expect(receipt).toHaveTextContent('160 tokens · 120 in / 40 out · 20.0 tok/s');
   expect(receipt).toHaveTextContent('2 API calls · 2.0s provider · 2.4s end-to-end');
-  expect(receipt).toHaveTextContent('Context · 9.0% · 90 / 1,000');
+  expect(receipt).toHaveTextContent('Session context · 9.0% · 90 / 1,000');
   expect(receipt).toHaveTextContent('Exact route · effort captured at provider wire');
   expect(within(receipt).getByRole('progressbar', { name: 'Context usage' })).toHaveAttribute('value', '9');
 });
@@ -1209,9 +1209,9 @@ it('shows running consistently in phase and copied receipt after the recorded to
   await open(); await send();
   act(() => Source.instances[0]!.emit('tool.started', { tool: 'terminal', preview: 'sleep' }));
   const turn = screen.getByRole('region', { name: 'Current turn' });
-  expect(turn).toHaveTextContent('Run running');
+  expect(within(turn).getByRole('status', { name: 'Run status' })).toHaveTextContent('Tool started: terminal');
   expect(turn).not.toHaveTextContent('queued');
-  fireEvent.click(within(turn).getByText('Run details'));
+  fireEvent.click(within(turn).getByText('Activity / Usage'));
   fireEvent.click(within(turn).getByRole('button', { name: 'Copy receipt' }));
   await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
   expect(JSON.parse(writeText.mock.calls[0]![0]).run.phase).toBe('Run running');
