@@ -386,7 +386,7 @@ Each milestone lists what to build, how Sol proves it, and what gets deferred in
 | P2 Chat completeness | In progress | #26: persisted drafts and formatted/long chat; one Sol-dev owner |
 | P3 Design and shell | Not started | — |
 | P4 Artifacts | Not started | — |
-| P5 Agents | Not started | — |
+| P5 Agents | Capability check in progress | #28, Deepseek; bounded existing-access discovery only; native support unproven |
 | P6 Notifications | Not started | — |
 | P7 Rooms | Not started | — |
 | P8 Polish, release, Final Neal packet | Not started | — |

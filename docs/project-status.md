@@ -21,8 +21,8 @@ copy and canonical message identity must be preserved.
 
 Known limits: historical answer/run receipt binding is Unsupported—deferred;
 latest-session receipts remain separate from historical answers. Artifact Studio
-awaits the P4 functional audit. Profile/Bot and native room driver support await
-bounded P5/P7 capability checks. Notifications are P6; production push enablement
+awaits the P4 functional audit. Profile/Bot support is under bounded P5 check #28;
+native room driver proof remains P7. Notifications are P6; production push enablement
 will be a separate step. Browser/IDE workbench remains outside the plan.
 
 [Neal review queue #20](https://github.com/KumarG23/jarvis-command/issues/20) holds
