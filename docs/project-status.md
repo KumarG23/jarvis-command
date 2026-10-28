@@ -7,25 +7,30 @@ Activity/Usage. Production browser/backend readback matched owned Sol and Luna r
 unknown telemetry stays unavailable and supplied zero stays zero. Desktop and
 320/360/390/430 px emulation passed. Physical Android is **phone check pending**.
 
-Current app: `sha256:1dd938e301a928486aa879e0b088bb6b0ccfb7e37f77590a74d705bc47ae1f0b`,
-merged source `df2f68bbeb89390616e7e163061b46bf099c4f42` (PR #25).
-Rollback: `release-app-1793200843757751935`, retaining previous app `sha256:fba3fefb…`.
+Current app: `sha256:ae8c6ad075c96594fd3b375a5dd717208d1a3e49f8258f5346df47e1c711f4d3`,
+reviewed/merged source `181ec679546ec4938a733d54e7b450d953cf46bd` (PR #29).
+Rollback: `release-app-1793203037845731887`, retaining previous app `sha256:1dd938e3…`.
 Both proxies stayed at their prior healthy pins. Use the documented
 `/home/studio/COMMAND_PROJECT_OPERATIONS.md` recoverable release path.
-[Live acceptance and exact rollback evidence](https://github.com/KumarG23/jarvis-command/issues/24#issuecomment-6473022817).
+[Live acceptance and exact rollback evidence](https://github.com/KumarG23/jarvis-command/issues/26#issuecomment-6474024278).
 
-Source candidate: [P2 #26](https://github.com/KumarG23/jarvis-command/issues/26), persistent drafts,
-formatted transcript, 200+ message checks and truthful quiet-run observation age.
-PR #29 is built/tested; exact-head review, release and production readback remain
-pending. Existing admission/recovery, stop, copy and canonical IDs are preserved.
+P2 is live: same-tab text drafts, safe formatted transcript and labelled current-tab
+observation age. Ten real sends yielded ten canonical reply pairs; repeated text
+retained distinct IDs. Draft reload, exact copy, lost-ACK recovery and post-restart
+history passed. The restart marker timed out in the harness; final readback used
+GET only and never resent. No active-restart claim. Mobile and short-viewport
+emulation passed; phone check pending. Steer was queued and stop acknowledged;
+the final run completed, so consumption/cancellation is not claimed.
+P3 #31 is assigned to sol-dev for the responsive shell and honest unavailable navigation.
 
 Known limits: historical answer/run receipt binding is Unsupported—deferred;
 latest-session receipts remain separate from historical answers. Artifact Studio
 awaits the P4 functional audit. The corrected P5 diagnostic #28 is accepted: profile/Bot operations are
 Unsupported—deferred for this installation’s verified contract. Run-only diagnose
 is available; native/private support elsewhere stays unknown. Unavailable UI,
-release and live verification are still pending, so P5 is not Done. Native room
-driver proof remains P7. Notifications are P6; production push enablement
+release and live verification are still pending, so P5 is not Done. P7's bounded
+check #30 likewise found no verified native writable room contract; unavailable
+Agents/Rooms UI is assigned to #31, with exact contracts on #20. Notifications are P6; production push enablement
 will be a separate step. Browser/IDE workbench remains outside the plan.
 
 [Neal review queue #20](https://github.com/KumarG23/jarvis-command/issues/20) holds
