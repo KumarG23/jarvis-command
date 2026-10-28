@@ -129,7 +129,7 @@ function runStatus(turn: Turn): string {
 
 function Unknown({ label, source = 'Hermes' }: Readonly<{ label: string; source?: string }>) {
   const explanation = `${label} unavailable: not reported by ${source}`;
-  return <span title={explanation} aria-label={explanation}>—</span>;
+  return <span role="img" title={explanation} aria-label={explanation}>—</span>;
 }
 
 function routeLabel(route: { provider: string | null; model: string | null; reasoningEffort: string | null }) {

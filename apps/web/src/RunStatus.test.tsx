@@ -20,7 +20,7 @@ it('keeps one compact status disclosure closed, with usage available without exe
   expect(usage).toHaveTextContent('Run spend');
   expect(usage).toHaveTextContent('2 tokens · 0 in / 2 out');
   expect(usage).toHaveTextContent('0 API calls');
-  expect(within(usage).getByLabelText('Cache write unavailable: not reported by Hermes')).toHaveTextContent('—');
+  expect(within(usage).getByRole('img', { name: 'Cache write unavailable: not reported by Hermes' })).toHaveTextContent('—');
   expect(screen.getByText('Executed route unavailable')).toBeInTheDocument();
   fireEvent.click(summary);
   expect(summary.closest('details')).not.toHaveAttribute('open');
