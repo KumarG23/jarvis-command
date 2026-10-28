@@ -14,6 +14,8 @@ Reuse successful unchanged worker tests. No parent re-running gates or auditing 
 
 Jarvis Command is a Hermes-native browser/PWA command environment, not a cosmetic Discord clone. Jarvis Prime and the existing Hermes gateway remain the canonical brain, session store, tools, skills, and memory authority. Do not create a second drifting Jarvis instance.
 
+The plan of record is `MASTER_PLAN.md` on this branch (`release/gpt6-sol-luna`). It supersedes PR #3/#5 and older issue directives; read its §0 before scoping work.
+
 The canonical product note is:
 
 `/home/neal/obsidian-vault/05 Coding Projects/Jarvis Command/Jarvis Command.md`
