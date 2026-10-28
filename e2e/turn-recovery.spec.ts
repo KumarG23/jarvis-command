@@ -72,7 +72,7 @@ test('lost ACK and mid-run reload recover by GET, with one canonical answer and 
   await expect(page.getByRole('article', { name: 'Jarvis response', exact: true })).toHaveCount(1);
   await expect(page.locator('[data-message-id="tool-1"]')).toContainText('synthetic_calculator');
   await expect(page.getByText('Recovered run output — canonical message link unavailable', { exact: true })).toBeVisible();
-  await page.getByText('Run details', { exact: true }).click();
+  await page.getByText('Activity / Usage', { exact: true }).click();
   await expect(page.getByText(/Some live activity was unavailable/)).toBeVisible();
   expect(posts).toBe(1);
   expect(unexpected).toEqual([]);

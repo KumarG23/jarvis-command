@@ -112,10 +112,10 @@ it.each([
   const route = { provider: 'openai-codex', model: 'gpt-6-sol', reasoningEffort: 'medium' };
   const turn = { intent: { sessionId: 'jc_one', input: null, clientRequestId: 'test' }, publicRunId: 'test', phase: 'Run completed', done: true, events: [], usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0, reasoningTokens: 0, cacheReadTokens: 0, apiCalls: 0, execution: { requested: route, executed: { ...route, model, reasoningEffortSource: 'wire' }, exact, fallbackUsed, routeSource: 'unknown' } } } as unknown as Turn;
   render(<TurnView turn={turn} allowed={false} approve={vi.fn()} stop={vi.fn()} />);
-  fireEvent.click(screen.getByText('Run details'));
+  fireEvent.click(screen.getByText('Activity / Usage'));
   expect(screen.getByRole('region', { name: 'Run inspector' })).toHaveTextContent(decision);
   expect(screen.getByRole('region', { name: 'Execution receipt' })).toHaveTextContent(decision === 'Route changed' ? 'Requested route changed' : decision);
-  expect(screen.getByRole('region', { name: 'Execution receipt' })).toHaveTextContent('0 reasoning · 0 cache read · Cache write unavailable');
+  expect(screen.getByRole('region', { name: 'Execution receipt' })).toHaveTextContent('0 reasoning · 0 cache read · Cache write —');
 });
 
 it('times out unavailable inventory and enables explicit retry rather than staying busy', async () => {

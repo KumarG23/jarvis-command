@@ -1,0 +1,138 @@
+{
+  "kind": "read-only exact recovered-run candidate preview; backend GET only; not deployment",
+  "runs": [
+    {
+      "name": "sol",
+      "identity": {
+        "sessionId": "jc_dcd3e103ba9e4860879e668996f1462c",
+        "clientRequestId": "3b7be28c-e3aa-48e6-aeee-cc877e77b441",
+        "publicRunId": "jcr_808144f798b521bd4ecfb28c968ec124"
+      },
+      "usage": {
+        "inputTokens": 16868,
+        "outputTokens": 13,
+        "totalTokens": 16881,
+        "reasoningTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "apiCalls": 1,
+        "providerLatencyMs": 1948,
+        "endToEndLatencyMs": 1994,
+        "outputTokensPerSecond": 6.67,
+        "context": {
+          "usedTokens": 16868,
+          "limitTokens": 272000,
+          "source": "hermes_effective"
+        },
+        "execution": {
+          "requested": {
+            "provider": "openai-codex",
+            "model": "gpt-6-sol",
+            "reasoningEffort": "medium"
+          },
+          "executed": {
+            "provider": "openai-codex",
+            "model": "gpt-6-sol",
+            "reasoningEffort": "medium",
+            "reasoningEffortSource": "wire"
+          },
+          "routeSource": "unknown",
+          "exact": true,
+          "fallbackUsed": false
+        }
+      },
+      "layouts": [
+        {
+          "width": 1280,
+          "noHorizontalOverflow": true
+        },
+        {
+          "width": 320,
+          "noHorizontalOverflow": true
+        },
+        {
+          "width": 360,
+          "noHorizontalOverflow": true
+        },
+        {
+          "width": 390,
+          "noHorizontalOverflow": true
+        },
+        {
+          "width": 430,
+          "noHorizontalOverflow": true
+        }
+      ],
+      "receiptDOM": "Executed \u00b7 Sol \u00b7 medium \u00b7 OpenAI\n\nRun spend \u00b7 16,881 tokens \u00b7 16,868 in / 13 out \u00b7 6.7 tok/s\n\n1 API call \u00b7 1.9s provider \u00b7 2.0s end-to-end\n\n0 reasoning \u00b7 0 cache read \u00b7 0 cache write\n\nSession context \u00b7 6.2% \u00b7 16,868 / 272,000\n\nExact route \u00b7 effort captured at provider wire",
+      "inspectorDOM": "Usage\n\nExecuted \u00b7 Sol \u00b7 medium \u00b7 OpenAI\n\nRun spend \u00b7 16,881 tokens \u00b7 16,868 in / 13 out \u00b7 6.7 tok/s\n\n1 API call \u00b7 1.9s provider \u00b7 2.0s end-to-end\n\n0 reasoning \u00b7 0 cache read \u00b7 0 cache write\n\nSession context \u00b7 6.2% \u00b7 16,868 / 272,000\n\nExact route \u00b7 effort captured at provider wire\n\nRun receipt\nCopy receipt\nSTATUS\ncompleted\nRUN\njcr_808144f798b521bd4ecfb28c968ec124\nSESSION\njc_dcd3e103ba9e4860879e668996f1462c\nADMISSION ATTEMPTS (THIS TAB)\n0\nSTREAM RECONNECTS (THIS TAB)\n0\nSTATUS CHECKS (THIS TAB)\n1\nRoute decision\nREQUESTED\nSol \u00b7 medium \u00b7 OpenAI\nEXECUTED\nSol \u00b7 medium \u00b7 OpenAI\nDECISION\nExact route \u00b7 unknown\n\nSome live activity was unavailable. Saved session history may contain tool results."
+    },
+    {
+      "name": "luna",
+      "identity": {
+        "sessionId": "jc_9590b256579e4da48360dcee30e653b2",
+        "clientRequestId": "db43cafe-5c8e-4a08-bcde-abc48c0ea0cb",
+        "publicRunId": "jcr_4653cef2f96f1b79b3f19b7e3e79413c"
+      },
+      "usage": {
+        "inputTokens": 16866,
+        "outputTokens": 11,
+        "totalTokens": 16877,
+        "reasoningTokens": 0,
+        "cacheReadTokens": 0,
+        "cacheWriteTokens": 0,
+        "apiCalls": 1,
+        "providerLatencyMs": 1590,
+        "endToEndLatencyMs": 1624,
+        "outputTokensPerSecond": 6.92,
+        "context": {
+          "usedTokens": 16866,
+          "limitTokens": 272000,
+          "source": "hermes_effective"
+        },
+        "execution": {
+          "requested": {
+            "provider": "openai-codex",
+            "model": "gpt-6-luna",
+            "reasoningEffort": "medium"
+          },
+          "executed": {
+            "provider": "openai-codex",
+            "model": "gpt-6-luna",
+            "reasoningEffort": "medium",
+            "reasoningEffortSource": "wire"
+          },
+          "routeSource": "unknown",
+          "exact": true,
+          "fallbackUsed": false
+        }
+      },
+      "layouts": [
+        {
+          "width": 1280,
+          "noHorizontalOverflow": true
+        },
+        {
+          "width": 320,
+          "noHorizontalOverflow": true
+        },
+        {
+          "width": 360,
+          "noHorizontalOverflow": true
+        },
+        {
+          "width": 390,
+          "noHorizontalOverflow": true
+        },
+        {
+          "width": 430,
+          "noHorizontalOverflow": true
+        }
+      ],
+      "receiptDOM": "Executed \u00b7 Luna \u00b7 medium \u00b7 OpenAI\n\nRun spend \u00b7 16,877 tokens \u00b7 16,866 in / 11 out \u00b7 6.9 tok/s\n\n1 API call \u00b7 1.6s provider \u00b7 1.6s end-to-end\n\n0 reasoning \u00b7 0 cache read \u00b7 0 cache write\n\nSession context \u00b7 6.2% \u00b7 16,866 / 272,000\n\nExact route \u00b7 effort captured at provider wire",
+      "inspectorDOM": "Usage\n\nExecuted \u00b7 Luna \u00b7 medium \u00b7 OpenAI\n\nRun spend \u00b7 16,877 tokens \u00b7 16,866 in / 11 out \u00b7 6.9 tok/s\n\n1 API call \u00b7 1.6s provider \u00b7 1.6s end-to-end\n\n0 reasoning \u00b7 0 cache read \u00b7 0 cache write\n\nSession context \u00b7 6.2% \u00b7 16,866 / 272,000\n\nExact route \u00b7 effort captured at provider wire\n\nRun receipt\nCopy receipt\nSTATUS\ncompleted\nRUN\njcr_4653cef2f96f1b79b3f19b7e3e79413c\nSESSION\njc_9590b256579e4da48360dcee30e653b2\nADMISSION ATTEMPTS (THIS TAB)\n0\nSTREAM RECONNECTS (THIS TAB)\n0\nSTATUS CHECKS (THIS TAB)\n1\nRoute decision\nREQUESTED\nLuna \u00b7 medium \u00b7 OpenAI\nEXECUTED\nLuna \u00b7 medium \u00b7 OpenAI\nDECISION\nExact route \u00b7 unknown\n\nSome live activity was unavailable. Saved session history may contain tool results."
+    }
+  ],
+  "newAdmissions": 1,
+  "firstModelEvidence": "Reuse #22 production proof; candidate exact-run GET readback is separate from deployment acceptance.",
+  "phone": "phone check pending"
+}

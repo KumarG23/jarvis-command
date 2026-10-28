@@ -62,6 +62,7 @@ test('requested choices survive two chats and reload; stale inventory preserves 
   }
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.getByRole('button', { name: 'Send message', exact: true }).click();
+  await page.getByText('Activity / Usage', { exact: true }).click();
   const receipt = page.getByRole('region', { name: 'Execution receipt' });
   await expect(receipt).toContainText('Executed route unavailable'); await expect(receipt).toContainText('2 tokens · 0 in / 2 out');
   expect(posts).toBe(1); expect(inventories).toBeGreaterThanOrEqual(5); expect(unexpected).toEqual([]);
