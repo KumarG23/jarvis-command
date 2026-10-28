@@ -85,3 +85,74 @@ test('lost ACK and mid-run reload recover by GET, with one canonical answer and 
   await expect(page.getByRole('textbox', { name: 'Message Jarvis', exact: true })).toBeVisible();
   await page.screenshot({ path: 'test-results/turn-recovery/narrow-synthetic.png' });
 });
+
+// P4 Save reload proof: entirely local, visibly synthetic, no run admissions.
+test('SYNTHETIC uncertain artifact save survives reload with one exact artifact', async ({ page }) => {
+  const timestamp = '2026-10-28T16:00:00.000Z';
+  const original = { ...session, title: 'SYNTHETIC P4 save recovery', messageCount: 1 };
+  const content = 'SYNTHETIC exact λ artifact\n\nlast line';
+  const artifacts = new Map<string, Record<string, unknown>>();
+  const bodies: Record<string, unknown>[] = [];
+  const unexpected: string[] = [];
+  await page.route('**/api/**', async route => {
+    const req = route.request(), url = new URL(req.url()), path = url.pathname;
+    if (path === '/api/artifacts/text' && req.method() === 'POST') {
+      const body = req.postDataJSON(); bodies.push(body);
+      if (!artifacts.has(body.sourceRequestId)) {
+        const version = { version: 1, parentVersion: null, baseVersion: null, createdAt: timestamp, creator: { subject: 'synthetic', source: 'assistant-response' }, mime: 'text/markdown', size: Buffer.byteLength(body.content), sha256: 'c'.repeat(64), revisionNote: null, feedback: null, originalFilename: null };
+        artifacts.set(body.sourceRequestId, { id: 'art_' + '8'.repeat(32), title: body.title, type: body.type, mime: 'text/markdown', createdAt: timestamp, updatedAt: timestamp, creator: version.creator, sessionId: body.sessionId, projectId: body.projectId, runId: body.runId, sourceRequestId: body.sourceRequestId, size: version.size, sha256: version.sha256, currentVersion: 1, canonical: false, privateMode: 'private', originalFilename: null, versions: [version], comments: [] });
+      }
+      // Simulate a committed write whose ACK never reaches the browser.
+      if (bodies.length === 1) return route.abort('failed');
+      return route.fulfill({ json: { artifact: artifacts.get(body.sourceRequestId) } });
+    }
+    if (req.method() !== 'GET') { unexpected.push(req.method() + ' ' + path); return route.abort(); }
+    if (path.endsWith('/messages')) return route.fulfill({ json: { sessionId, messages: [{ id: 'synthetic-answer', sessionId, role: 'assistant', content, timestamp, toolName: null, displayKind: null }], pagination: { offset: 0, limit: 50, returned: 1, hasMore: false } } });
+    if (path === '/api/artifacts') return route.fulfill({ json: { artifacts: [] } });
+    const artifact = [...artifacts.values()][0];
+    if (artifact && path === `/api/artifacts/${artifact.id}`) return route.fulfill({ json: artifact });
+    if (artifact && path.endsWith('/versions/1/source')) return route.fulfill({ json: { artifactId: artifact.id, version: 1, type: artifact.type, mime: artifact.mime, size: artifact.size, sha256: artifact.sha256, content } });
+    if (path.endsWith('/context')) return route.fulfill({ json: { sessionId, state: 'unavailable', receipt: null, updatedAt: null } });
+    const responses: Record<string, unknown> = {
+      '/api/bootstrap': { ...bootstrap, command: { ...bootstrap.command, version: 'SYNTHETIC P4 recovery' }, hermes: { ...bootstrap.hermes, capabilities: ['run_events_sse', 'artifact_studio'] }, sessions: [original] },
+      '/api/rooms': { version: 1, rooms: [] },
+      '/api/live/model-options': { default: { provider: 'openai-codex', model: 'synthetic' }, options: [] },
+      '/api/live/session-controls': { sessionForkPreservesSource: false, sessionCompactionRuns: false },
+    };
+    if (!(path in responses)) { unexpected.push(path); return route.abort(); }
+    return route.fulfill({ json: responses[path] });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: original.title, exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Save response as artifact', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Save response as artifact', exact: true }).click();
+  await expect(page.getByText(/Artifact operation could not be confirmed/)).toBeVisible();
+  expect(bodies).toHaveLength(1);
+  const stored = await page.evaluate(() => sessionStorage.getItem('jarvis-command:artifact-save:v1'));
+  expect(JSON.parse(stored!).pending.content).toBe(content);
+  await page.getByRole('button', { name: 'Close artifacts', exact: true }).click();
+  await page.getByRole('button', { name: 'Save response as artifact', exact: true }).click();
+  expect(bodies).toHaveLength(1);
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Save response as artifact', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Open Artifact Studio', exact: true }).click();
+  const recover = page.getByRole('button', { name: 'Recover response save', exact: true });
+  await expect(recover).toBeEnabled();
+  expect(bodies).toHaveLength(1);
+  for (const width of [1280, 320, 360, 390, 430]) {
+    await page.setViewportSize({ width, height: width === 1280 ? 720 : 740 });
+    await expect(recover).toBeInViewport();
+    await expect(page.getByRole('button', { name: 'Close artifacts', exact: true })).toBeInViewport();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    if (width === 1280 || width === 390) await page.screenshot({ path: `test-results/turn-recovery/synthetic-artifact-recovery-${width}.png` });
+  }
+  await page.setViewportSize({ width: 390, height: 740 });
+  await recover.click();
+  await expect(page.getByText('Response saved as artifact.', { exact: true })).toBeVisible();
+  expect(bodies).toEqual([bodies[0], bodies[0]]);
+  expect(bodies[1]).toMatchObject({ content, sessionId, projectId: null, runId: null });
+  expect(artifacts.size).toBe(1);
+  expect(await page.evaluate(() => sessionStorage.getItem('jarvis-command:artifact-save:v1'))).toBeNull();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(unexpected).toEqual([]);
+});

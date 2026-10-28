@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App';
+import { artifactSaveKey } from './artifactSaveRecovery';
 
 const bootstrap: CommandBootstrap = {
   identity: {
@@ -449,5 +450,99 @@ describe('Jarvis Command shell', () => {
       'Command unavailable',
     );
     expect(screen.queryByText('sensitive upstream details')).not.toBeInTheDocument();
+  });
+});
+
+
+describe('Response artifact recovery', () => {
+  const original = { ...bootstrap.sessions[0]!, id: 'jc_original', title: 'SYNTHETIC original', ownership: 'command' as const };
+  const other = { ...original, id: 'jc_other', title: 'SYNTHETIC other' };
+  const load = async () => ({ ...liveBootstrap, sessions: [original, other] });
+  const content = 'SYNTHETIC exact λ response\n\nlast line';
+  async function select(name: string) { await clickEnabled(new RegExp('^' + name)); await screen.findByRole('button', { name: 'Save response as artifact' }); }
+  function fixture(mode: 'lost-ack' | 'pre-commit' | 'success' = 'lost-ack') {
+    const bodies: Record<string, unknown>[] = [];
+    const artifacts = new Map<string, Record<string, unknown>>();
+    let historyDenied = false;
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/api/rooms') return Response.json({ version: 1, rooms: [] });
+      if (url.includes('/messages?')) {
+        if (historyDenied) return Response.json({ error: 'denied' }, { status: 403 });
+        const id = url.split('/')[3]!;
+        return Response.json({ sessionId: id, messages: [{ id: 'answer:' + id, sessionId: id, role: 'assistant', content, timestamp: '2026-09-03T14:29:00.000Z', toolName: null, displayKind: null }], pagination: { offset: 0, limit: 50, returned: 1, hasMore: false } });
+      }
+      if (url.startsWith('/api/artifacts?')) return Response.json({ artifacts: [] });
+      if (url === '/api/artifacts/text') {
+        const body = JSON.parse(String(init?.body)); bodies.push(body);
+        const artifact = { id: 'art_' + '1'.repeat(32), title: body.title, type: body.type, mime: 'text/markdown',
+          createdAt: '2026-09-03T14:29:00.000Z', updatedAt: '2026-09-03T14:29:00.000Z', creator: { subject: 'synthetic', source: 'assistant-response' },
+          sessionId: body.sessionId, projectId: body.projectId, runId: body.runId, sourceRequestId: body.sourceRequestId,
+          size: new TextEncoder().encode(body.content).length, sha256: 'c'.repeat(64), currentVersion: 1, canonical: false, privateMode: 'private', originalFilename: null, versions: [{ version: 1, parentVersion: null, baseVersion: null, createdAt: '2026-09-03T14:29:00.000Z', creator: { subject: 'synthetic', source: 'assistant-response' }, mime: 'text/markdown', size: new TextEncoder().encode(body.content).length, sha256: 'c'.repeat(64), revisionNote: null, feedback: null, originalFilename: null }], comments: [] };
+        if (mode !== 'pre-commit' || bodies.length > 1) artifacts.set(body.sourceRequestId, artifact);
+        if (mode !== 'success' && bodies.length === 1) throw Error('synthetic network failure');
+        return Response.json({ artifact: artifacts.get(body.sourceRequestId) });
+      }
+      return Response.json({});
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return { bodies, artifacts, deny: (value: boolean) => { historyDenied = value; } };
+  }
+  it.each(['lost-ack', 'pre-commit'] as const)('recovers %s with the same key after reload, preserving exact bytes and cleaning up confirmation', async mode => {
+    const f = fixture(mode);
+    const view = render(<App loadBootstrap={load} />);
+    await select(original.title);
+    await clickEnabled('Save response as artifact');
+    await screen.findByText(/Artifact operation could not be confirmed/);
+    expect(f.bodies).toHaveLength(1);
+    const stored = sessionStorage.getItem(artifactSaveKey());
+    expect(JSON.parse(stored!).pending).toMatchObject({ content, sessionId: original.id, runId: null });
+    fireEvent.click(screen.getByRole('button', { name: 'Save response as artifact' }));
+    expect(f.bodies).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Close artifacts' }));
+    await clickEnabled('Open Artifact Studio');
+    expect(f.bodies).toHaveLength(1);
+    view.unmount();
+    f.deny(true);
+    render(<App loadBootstrap={load} />);
+    await clickEnabled('Open Artifact Studio');
+    expect(await screen.findByRole('button', { name: 'Recover response save' })).toBeDisabled();
+    expect(f.bodies).toHaveLength(1);
+    f.deny(false); await clickEnabled('Retry history');
+    const recover = await screen.findByRole('button', { name: 'Recover response save' });
+    await waitFor(() => expect(recover).toBeEnabled()); fireEvent.click(recover);
+    await screen.findByText('Response saved as artifact.');
+    expect(f.bodies).toEqual([f.bodies[0], f.bodies[0]]);
+    expect(f.bodies[1]!.content).toBe(content);
+    expect(f.artifacts.size).toBe(1);
+    expect(sessionStorage.getItem(artifactSaveKey())).toBeNull();
+  });
+  it('gates recovery on the original history after a chat switch and retains original project/run/type', async () => {
+    const f = fixture('success');
+    const key = 'gen_' + 'f'.repeat(32);
+    sessionStorage.setItem(artifactSaveKey(), JSON.stringify({ version: 1, pending: { key, sourceRequestId: key, sessionId: original.id, projectId: 'room_' + 'b'.repeat(32), runId: 'jcr_original', title: 'SYNTHETIC retained code', artifactType: 'code', content } }));
+    sessionStorage.setItem('jarvis-command:selected-session:v1', other.id);
+    render(<App loadBootstrap={load} />);
+    await screen.findByRole('button', { name: 'Save response as artifact' }); await clickEnabled('Open Artifact Studio');
+    expect(await screen.findByRole('button', { name: 'Recover response save' })).toBeDisabled();
+    expect(f.bodies).toHaveLength(0);
+    await select(original.title);
+    await clickEnabled('Recover response save');
+    await screen.findByText('Response saved as artifact.');
+    expect(f.bodies[0]).toMatchObject({ sessionId: original.id, projectId: 'room_' + 'b'.repeat(32), runId: 'jcr_original', type: 'code', content, sourceRequestId: key });
+  });
+  it.each(['corrupt', 'quota', 'read-denied', 'cleanup'] as const)('fails honestly for %s storage and blocks a fresh-key save', async mode => {
+    const f = fixture('success');
+    if (mode === 'corrupt') sessionStorage.setItem(artifactSaveKey(), '{');
+    const read = mode === 'read-denied' ? vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw Error('denied'); }) : null;
+    const write = mode === 'quota' ? vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw Error('quota'); }) : null;
+    const remove = mode === 'cleanup' ? vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => { throw Error('cleanup'); }) : null;
+    try {
+      render(<App loadBootstrap={load} />); await select(original.title); await clickEnabled('Save response as artifact');
+      await screen.findByText(mode === 'cleanup' ? /recovery record could not be cleared/ : /Artifact save recovery storage is unavailable or invalid/);
+      fireEvent.click(screen.getByRole('button', { name: 'Save response as artifact' }));
+      expect(f.bodies).toHaveLength(mode === 'cleanup' ? 1 : 0);
+      if (mode !== 'cleanup') expect(screen.queryByText('Response saved as artifact.')).not.toBeInTheDocument();
+      if (mode === 'corrupt') expect(sessionStorage.getItem(artifactSaveKey())).toBe('{');
+    } finally { read?.mockRestore(); write?.mockRestore(); remove?.mockRestore(); }
   });
 });
