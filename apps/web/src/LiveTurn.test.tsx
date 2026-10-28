@@ -1172,3 +1172,66 @@ it.each(['once', 'deny'] as const)('submits exact %s approval once and reads bac
   expect(fetchMock.mock.calls.some(([url]) => url === `/api/live/runs/${id}`)).toBe(true);
   expect(screen.queryByRole('region', { name: 'Awaiting approval' })).not.toBeInTheDocument();
 });
+
+// The installed first tool.started frame is projected by the proxy/BFF to
+// publicRunId/type/timestamp/tool/preview (seq and tool_call_id are not public).
+const executionEvents = [
+  ['tool.started', { tool: 'terminal', preview: 'sleep' }],
+  ['tool.completed', { tool: 'terminal', durationSeconds: 1, error: false }],
+  ['message.delta', { delta: 'Working answer' }],
+  ['subagent.start', { subagentId: 'synthetic-agent', goal: 'Synthetic test', status: null }],
+  ['subagent.complete', { subagentId: 'synthetic-agent', summary: 'Synthetic result', status: null }],
+] as const;
+function queuedAdmission(body: Record<string, string>) {
+  return Promise.resolve(Response.json({ sessionId: body.sessionId, clientRequestId: body.clientRequestId, publicRunId: id, status: 'queued', replayed: false }));
+}
+
+it.each(executionEvents)('advances queued to running on validated %s without another admission or invented completion', async (type, data) => {
+  const fetchMock = setup(queuedAdmission);
+  const { result, unmount } = readyHook();
+  await act(async () => result.current.send(session.id, 'Synthetic phase proof', 100));
+  expect(result.current.turn?.phase).toBe('Run queued');
+  const intent = result.current.turn!.intent;
+  act(() => Source.instances[0]!.emit(type, data));
+  expect(result.current.turn?.phase).toBe('Run running');
+  expect(result.current.turn?.done).toBe(false);
+  expect(result.current.turn?.usage).toBeUndefined();
+  expect(result.current.turn?.intent).toBe(intent);
+  expect(result.current.turn?.publicRunId).toBe(id);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  unmount();
+});
+
+it('shows running consistently in phase and copied receipt after the recorded tool-start projection', async () => {
+  setup(queuedAdmission);
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal('navigator', { clipboard: { writeText } });
+  await open(); await send();
+  act(() => Source.instances[0]!.emit('tool.started', { tool: 'terminal', preview: 'sleep' }));
+  const turn = screen.getByRole('region', { name: 'Current turn' });
+  expect(turn).toHaveTextContent('Run running');
+  expect(turn).not.toHaveTextContent('queued');
+  fireEvent.click(within(turn).getByText('Run details'));
+  fireEvent.click(within(turn).getByRole('button', { name: 'Copy receipt' }));
+  await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+  expect(JSON.parse(writeText.mock.calls[0]![0]).run.phase).toBe('Run running');
+});
+
+it.each(['approval', 'compaction', 'recovering', 'stopping'] as const)('does not replace %s with a generic running phase on execution activity', async (state) => {
+  const fetchMock = setup(state === 'stopping' ? body => Promise.resolve(Response.json({ sessionId: body.sessionId, clientRequestId: body.clientRequestId, publicRunId: id, status: 'stopping', replayed: false })) : queuedAdmission);
+  const { result, unmount } = readyHook();
+  await act(async () => result.current.send(session.id, 'Synthetic protected phase', 100));
+  let deliver: ((response: Response) => void) | undefined;
+  if (state === 'approval') act(() => Source.instances[0]!.emit('approval.request', { approval: { requestId: 'phase-approval', command: 'printf test', description: 'Synthetic test', tool: 'terminal' } }));
+  if (state === 'compaction') act(() => Source.instances[0]!.emit('context.compaction.started', { state: 'running' }));
+  if (state === 'recovering') {
+    fetchMock.mockImplementationOnce(() => new Promise<Response>(resolve => { deliver = resolve; }));
+    act(() => result.current.refreshStatus(result.current.turn!));
+  }
+  const phase = result.current.turn?.phase;
+  for (const [type, data] of executionEvents) act(() => Source.instances[0]!.emit(type, data));
+  expect(result.current.turn?.phase).toBe(phase);
+  expect(result.current.turn?.done).toBe(false);
+  if (deliver) await act(async () => deliver!(Response.json(status('running'))));
+  unmount();
+});

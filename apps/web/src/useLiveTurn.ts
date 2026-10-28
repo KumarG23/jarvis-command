@@ -259,10 +259,16 @@ export function useLiveTurn() {
         if (eventCount > 1000 || eventBytes > 524288) { limited = true; throw new Error('limit'); }
         const event = RunEventSchema.parse(JSON.parse(raw));
         if (event.type !== name || event.publicRunId !== run.publicRunId) throw new Error('event');
+        // Execution activity supersedes a queued admission snapshot. Other phases
+        // (approval, compaction, recovery, stopping, terminal) retain their authority.
+        const activePhase = current.current!.phase === 'Run queued' && !current.current!.done
+          && !current.current!.approval && current.current!.compaction?.state !== 'running'
+          && ['message.delta', 'tool.started', 'tool.completed', 'subagent.start', 'subagent.complete'].includes(event.type)
+          ? { phase: 'Run running' } : {};
         if (event.type === 'message.delta') {
           previewBytes += new TextEncoder().encode(event.delta).length;
           if (previewBytes > 131072) { limited = true; update({ outputLimited: true }); throw new Error('preview'); }
-          update({ output: current.current!.output + event.delta });
+          update({ ...activePhase, output: current.current!.output + event.delta });
         }
         else if (event.type.startsWith('run.') && event.type !== 'run.steered') {
           terminalObserved = true; recover();
@@ -290,7 +296,7 @@ export function useLiveTurn() {
             ...(current.current!.approval?.requestId === event.requestId ? { approval: null, phase: 'Approval acknowledged — awaiting run status' } : {}),
             events: [...current.current!.events, event],
           });
-        } else update({ events: [...current.current!.events, event] });
+        } else update({ ...activePhase, events: [...current.current!.events, event] });
       } catch { recover(); }
     });
       timer = setTimeout(recover, 60_000);
