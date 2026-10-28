@@ -59,6 +59,13 @@ type ArtifactStudioProps = Readonly<{
 type ViewMode = 'preview' | 'source' | 'versions' | 'feedback' | 'export';
 type Scope = 'current-session' | 'current-project' | 'all';
 
+type SourceState =
+  | { status: 'idle' }
+  | { status: 'loading'; artifactId: string; version: number }
+  | { status: 'ready'; artifactId: string; version: number; content: string; type: ArtifactType; mime: string; sha256: string; size: number }
+  | { status: 'unavailable'; artifactId: string; version: number; reason: string }
+  | { status: 'binary'; artifactId: string; version: number };
+
 const textTypes: ArtifactType[] = ['markdown', 'text', 'report', 'log', 'code', 'diff', 'html', 'svg', 'mermaid'];
 const typeLabels: Record<ArtifactType | 'all', string> = {
   all: 'All types',
@@ -80,7 +87,7 @@ export function ArtifactStudio({ open, selectedSessionId, projectId, canSendProm
   const [artifacts, setArtifacts] = useState<ArtifactSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<ArtifactMetadata | null>(null);
-  const [source, setSource] = useState<{ version: number; content: string; type: ArtifactType; mime: string; sha256: string; size: number } | null>(null);
+  const [sourceState, setSourceState] = useState<SourceState>({ status: 'idle' });
   const [mode, setMode] = useState<ViewMode>('preview');
   const [scope, setScope] = useState<Scope>(() => selectedSessionId ? 'current-session' : projectId ? 'current-project' : 'all');
   const [type, setType] = useState<ArtifactType | 'all'>('all');
@@ -101,6 +108,13 @@ export function ArtifactStudio({ open, selectedSessionId, projectId, canSendProm
   const closeButton = useRef<HTMLButtonElement | null>(null);
   const file = useRef<HTMLInputElement | null>(null);
   const camera = useRef<HTMLInputElement | null>(null);
+  const sourceRequest = useRef(0);
+
+  const selectedSource = selected && sourceState.status !== 'idle' && sourceState.artifactId === selected.id ? sourceState : null;
+  const source = selectedSource?.status === 'ready' ? selectedSource : null;
+  const sourceFailure = selectedSource?.status === 'unavailable' ? selectedSource : null;
+  const sourceBinary = selectedSource?.status === 'binary' ? selectedSource : null;
+  const viewedVersion = selectedSource?.version ?? selected?.currentVersion ?? 1;
 
   useEffect(() => {
     if (selectedSessionId) setScope('current-session');
@@ -119,8 +133,16 @@ export function ArtifactStudio({ open, selectedSessionId, projectId, canSendProm
 
   useEffect(() => {
     if (!selected || !open) return;
-    void loadSource(selected.currentVersion).catch(() => setSource(null));
-  }, [selected?.id, selected?.currentVersion, open]);
+    const artifact = selected;
+    if (!textTypes.includes(artifact.type)) {
+      setSourceState({ status: 'binary', artifactId: artifact.id, version: artifact.currentVersion });
+      setEdit('');
+      return;
+    }
+    const controller = new AbortController();
+    void loadSource(artifact.id, artifact.currentVersion, controller.signal);
+    return () => controller.abort();
+  }, [selected?.id, selected?.currentVersion, selected?.type, open]);
 
   useEffect(() => {
     if (!pendingSave || !open) return;
@@ -205,11 +227,19 @@ export function ArtifactStudio({ open, selectedSessionId, projectId, canSendProm
     }
   }
 
-  async function loadSource(version: number) {
-    if (!selected) return;
-    const payload = ArtifactSourceResponseSchema.parse(await getJson(`/api/artifacts/${selected.id}/versions/${version}/source`));
-      setSource({ version, content: payload.content, type: payload.type, mime: payload.mime, sha256: payload.sha256, size: payload.size });
+  async function loadSource(artifactId: string, version: number, signal?: AbortSignal) {
+    const request = ++sourceRequest.current;
+    setSourceState({ status: 'loading', artifactId, version });
+    setEdit('');
+    try {
+      const payload = ArtifactSourceResponseSchema.parse(await getJson(`/api/artifacts/${artifactId}/versions/${version}/source`, signal));
+      if (request !== sourceRequest.current) return;
+      setSourceState({ status: 'ready', artifactId, version, content: payload.content, type: payload.type, mime: payload.mime, sha256: payload.sha256, size: payload.size });
       setEdit(payload.content);
+    } catch (error) {
+      if (signal?.aborted || request !== sourceRequest.current) return;
+      setSourceState({ status: 'unavailable', artifactId, version, reason: sourceUnavailableReason(error) });
+    }
   }
 
   async function createText() {
@@ -453,28 +483,51 @@ export function ArtifactStudio({ open, selectedSessionId, projectId, canSendProm
           <div className="artifact-title-row">
             <div><h3>{selected.title}</h3><p>{selected.id} · v{selected.currentVersion} · {selected.sha256.slice(0, 16)}…</p></div>
             <button className={`secondary-button${selected.canonical ? ' active' : ''}`} type="button" disabled={busy} title="Mark this as the preferred artifact to use for this work" onClick={() => void toggleCanonical()}><Star size={15} /> {selected.canonical ? 'Primary' : 'Set as primary'}</button>
-            <a className="secondary-button" href={downloadUrl(selected)}><Download size={15} /> Download</a>
+            <a className="secondary-button" href={downloadVersionUrl(selected.id, viewedVersion)} aria-label={`Download artifact v${viewedVersion}`}><Download size={15} /> Download</a>
           </div>
           {source && source.version !== selected.currentVersion ? <p className="notice">Viewing historical source v{source.version}. Current metadata is v{selected.currentVersion}; historical source is read-only.</p> : null}
           <div className="artifact-tabs" role="tablist" aria-label="Artifact views">
             {(['preview', 'source', 'versions', 'feedback', 'export'] as ViewMode[]).map(item => <button key={item} role="tab" aria-selected={mode === item} className="tab-button" type="button" onClick={() => setMode(item)}>{tabIcon(item)} {item}</button>)}
           </div>
-          {mode === 'preview' ? <ArtifactPreview artifact={source ? { ...selected, type: source.type, mime: source.mime, size: source.size, sha256: source.sha256, currentVersion: source.version } : selected} source={source?.content ?? ''} /> : null}
+          {mode === 'preview' ? (
+            textTypes.includes(selected.type)
+              ? source
+                ? <ArtifactPreview artifact={{ ...selected, type: source.type, mime: source.mime, size: source.size, sha256: source.sha256, currentVersion: source.version }} source={source.content} />
+                : sourceFailure
+                  ? <UnavailableNotice artifactId={selected.id} title={selected.title} version={sourceFailure.version} reason={sourceFailure.reason} />
+                  : <p className="notice" role="status">Loading preview…</p>
+              : <ArtifactPreview artifact={selected} source="" />
+          ) : null}
           {mode === 'source' ? <section className="artifact-editor" aria-label="Artifact source editor">
-            <textarea aria-label="Edit artifact source" value={edit} readOnly={source?.version !== selected.currentVersion} disabled={!textTypes.includes(selected.type)} onChange={event => setEdit(event.target.value)} />
-            {!textTypes.includes(selected.type) ? <p className="muted">Binary artifacts are immutable from this editor. Upload a new file artifact instead.</p> : null}
-            {source?.version !== selected.currentVersion ? <button className="secondary-button" type="button" onClick={() => void loadSource(selected.currentVersion)}>View current version for editing</button> : null}
-            <label>Revision note<input value={revisionNote} maxLength={2000} onChange={event => setRevisionNote(event.target.value)} /></label>
-            <label>Feedback/context<textarea value={feedback} maxLength={8000} onChange={event => setFeedback(event.target.value)} /></label>
-            <div className="button-row">
-              <button className="primary-button" type="button" disabled={busy || source?.version !== selected.currentVersion || !textTypes.includes(selected.type) || source?.content === edit || !edit.trim()} onClick={() => void saveVersion()}><Pencil size={15} /> Save new version</button>
-              <button className="secondary-button" type="button" disabled={!canSendPrompt || !source} onClick={sendRevisionPrompt}><MessageSquareQuote size={15} /> Revision prompt</button>
-            </div>
+            {!textTypes.includes(selected.type) ? <>
+              <UnavailableNotice artifactId={selected.id} title={selected.title} version={viewedVersion} reason="Binary artifacts can be downloaded but cannot be edited as text." />
+              <p className="muted">Editing is disabled for binary artifacts.</p>
+            </> : source ? <>
+              <textarea aria-label="Edit artifact source" value={edit} readOnly={source.version !== selected.currentVersion} onChange={event => setEdit(event.target.value)} />
+              {source.version !== selected.currentVersion ? <button className="secondary-button" type="button" onClick={() => void loadSource(selected.id, selected.currentVersion)}>View current version for editing</button> : null}
+              <label>Revision note<input value={revisionNote} maxLength={2000} onChange={event => setRevisionNote(event.target.value)} /></label>
+              <label>Feedback/context<textarea value={feedback} maxLength={8000} onChange={event => setFeedback(event.target.value)} /></label>
+              <div className="button-row">
+                <button className="primary-button" type="button" disabled={busy || source.version !== selected.currentVersion || source.content === edit || !edit.trim()} onClick={() => void saveVersion()}><Pencil size={15} /> Save new version</button>
+                <button className="secondary-button" type="button" disabled={!canSendPrompt} onClick={sendRevisionPrompt}><MessageSquareQuote size={15} /> Revision prompt</button>
+              </div>
+            </> : sourceFailure ? <>
+              <UnavailableNotice artifactId={selected.id} title={selected.title} version={sourceFailure.version} reason={sourceFailure.reason} />
+              <p className="muted">Editing is disabled until the correct source loads.</p>
+              <div className="button-row">
+                <button className="secondary-button" type="button" onClick={() => void loadSource(selected.id, sourceFailure.version)}>Retry source load</button>
+                {sourceFailure.version !== selected.currentVersion ? <button className="secondary-button" type="button" onClick={() => void loadSource(selected.id, selected.currentVersion)}>View current version for editing</button> : null}
+              </div>
+            </> : sourceBinary ? <>
+              <UnavailableNotice artifactId={selected.id} title={selected.title} version={sourceBinary.version} reason="Binary artifacts can be downloaded but cannot be edited as text." />
+              <p className="muted">Editing is disabled for binary artifacts.</p>
+            </> : <p className="notice" role="status">Loading source…</p>}
           </section> : null}
           {mode === 'versions' ? <section className="artifact-versions" aria-label="Artifact version history">
             {selected.versions.map(version => <div className="version-row" key={version.version}>
-              <button className="text-button" type="button" onClick={() => void loadSource(version.version)}>v{version.version}</button>
+              <button className="text-button" type="button" onClick={() => void loadSource(selected.id, version.version)}>v{version.version}</button>
               <span>{new Date(version.createdAt).toLocaleString()}</span><span>{formatBytes(version.size)}</span><code>{version.sha256.slice(0, 12)}</code>
+              <a className="secondary-button" href={downloadVersionUrl(selected.id, version.version)} aria-label={`Download version ${version.version}`}><Download size={14} /> v{version.version}</a>
               {version.parentVersion ? <button className="secondary-button" type="button" onClick={() => void compareVersions(version.parentVersion!, version.version)}>Compare to parent</button> : null}
             </div>)}
             {compare ? <pre className="artifact-diff" aria-label={`Diff v${compare.from} to v${compare.to}`}>{compare.diff}</pre> : null}
@@ -515,11 +568,23 @@ function ArtifactPreview({ artifact, source }: Readonly<{ artifact: ArtifactMeta
   return <div className="generic-artifact"><h4>{artifact.originalFilename ?? artifact.title}</h4><p>{artifact.mime} · {formatBytes(artifact.size)} · {artifact.sha256}</p><a className="primary-button" href={downloadUrl(artifact)}><Download size={15} /> Download file</a></div>;
 }
 
+function UnavailableNotice({ artifactId, title, version, reason }: Readonly<{ artifactId: string; title: string; version: number; reason: string }>) {
+  return <section className="artifact-unavailable" role="status" aria-label="Artifact preview unavailable">
+    <h4>Preview unavailable</h4>
+    <p>{reason}</p>
+    <p className="muted">{title} · v{version}</p>
+    <a className="primary-button" href={downloadVersionUrl(artifactId, version)} aria-label={`Download version ${version}`}><Download size={15} /> Download v{version}</a>
+  </section>;
+}
+
 function BlobPreview({ artifact }: Readonly<{ artifact: ArtifactMetadata }>) {
   const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
     let current: string | null = null;
     const controller = new AbortController();
+    setUrl(null);
+    setFailed(false);
     void fetch(`/api/artifacts/${artifact.id}/versions/${artifact.currentVersion}/blob`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
       .then(response => {
         if (!response.ok) throw new Error('blob');
@@ -529,12 +594,13 @@ function BlobPreview({ artifact }: Readonly<{ artifact: ArtifactMetadata }>) {
         current = URL.createObjectURL(blob);
         setUrl(current);
       })
-      .catch(() => setUrl(null));
+      .catch(() => { if (!controller.signal.aborted) setFailed(true); });
     return () => {
       controller.abort();
       if (current) URL.revokeObjectURL(current);
     };
   }, [artifact.id, artifact.currentVersion]);
+  if (failed) return <UnavailableNotice artifactId={artifact.id} title={artifact.title} version={artifact.currentVersion} reason="Preview unavailable: this file could not be loaded. Download the exact version instead." />;
   if (!url) return <p role="status">Loading preview…</p>;
   return artifact.type === 'pdf'
     ? <iframe className="blob-frame" title={artifact.title} src={url} sandbox="" />
@@ -564,10 +630,27 @@ function MermaidFrame({ title, graph }: Readonly<{ title: string; graph: string 
   return <SandboxFrame title={title} content={svg} kind="html" />;
 }
 
-async function getJson(path: string): Promise<unknown> {
-  const response = await fetch(path, { credentials: 'same-origin', redirect: 'error', cache: 'no-store', headers: { accept: 'application/json' } });
-  if (!response.ok) throw new Error('request failed');
+async function getJson(path: string, signal?: AbortSignal): Promise<unknown> {
+  const response = await fetch(path, { credentials: 'same-origin', redirect: 'error', cache: 'no-store', headers: { accept: 'application/json' }, ...(signal ? { signal } : {}) });
+  if (!response.ok) throw new HttpError(response.status);
   return response.json() as Promise<unknown>;
+}
+
+class HttpError extends Error {
+  public constructor(public readonly status: number) {
+    super(`request failed with ${status}`);
+    this.name = 'HttpError';
+  }
+}
+
+function sourceUnavailableReason(error: unknown): string {
+  if (error instanceof HttpError) {
+    if (error.status === 415) return 'Source unavailable: this version cannot be opened as text in the preview, for example because it is larger than the 1 MiB preview limit. Download the exact version to inspect it.';
+    if (error.status === 404) return 'Source unavailable: this version could not be found. Download or reload the artifact.';
+    if (error.status === 401 || error.status === 403) return 'Source unavailable: this session is not authorized to read this version. Sign in again, then retry or download.';
+    return `Source unavailable (HTTP ${error.status}). Download the exact version instead.`;
+  }
+  return 'Source unavailable: the artifact service could not be reached. Retry or download the exact version.';
 }
 
 async function mutate(path: string, body: unknown): Promise<ArtifactMetadata> {
@@ -620,8 +703,12 @@ function wholeFenceMatch(content: string): RegExpMatchArray | null {
   return content.match(/^\s*```([A-Za-z0-9_-]+)?[^\n]*\n([\s\S]*?)\n```\s*$/);
 }
 
-function downloadUrl(artifact: ArtifactMetadata | ArtifactSummary): string {
-  return `/api/artifacts/${artifact.id}/versions/${artifact.currentVersion}/download`;
+function downloadUrl(artifact: ArtifactMetadata | ArtifactSummary, version = artifact.currentVersion): string {
+  return downloadVersionUrl(artifact.id, version);
+}
+
+function downloadVersionUrl(artifactId: string, version: number): string {
+  return `/api/artifacts/${artifactId}/versions/${version}/download`;
 }
 
 function artifactPrompt(kind: 'revision' | 'obsidian' | 'repository', artifact: ArtifactMetadata, content: string, feedbackText: string): string {

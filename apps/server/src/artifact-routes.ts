@@ -19,7 +19,7 @@ import {
 } from '@jarvis-command/contracts';
 import { z } from 'zod';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { dirname } from 'node:path';
+import { basename, dirname } from 'node:path';
 import type { AppConfig } from './config';
 import { ArtifactStore, inferArtifactType, safeFilename, versionType } from './artifact-store';
 import { ProjectRoomStore, RoomStorageError } from './project-room-store';
@@ -271,8 +271,21 @@ function fieldValue(value: unknown): string | null {
 
 function contentDisposition(disposition: 'inline' | 'attachment', artifact: { id: string; title: string; originalFilename: string | null }, version: number): string {
   const raw = artifact.originalFilename ?? `${artifact.title}-v${version}`;
-  const safe = safeFilename(raw).replace(/"/g, '_');
+  const safe = downloadFilename(raw, `artifact-${artifact.id.slice(0, 16)}-v${version}`);
   return `${disposition}; filename="${safe}"; filename*=UTF-8''${encodeURIComponent(safe)}`;
+}
+
+// Download names must never fail for an artifact that already exists. Uploads stay
+// gated by safeFilename; here a dot-leading title (for example ".hidden notes")
+// is reduced to a safe fallback instead of rejecting the download.
+export function downloadFilename(value: string, fallback: string): string {
+  const candidate = basename(value.trim())
+    .replace(/[^\w .()+,@-]/g, '_')
+    .replace(/^[.\s]+/, '')
+    .replace(/[.\s]+$/, '')
+    .slice(0, 160)
+    .trim();
+  return candidate || fallback;
 }
 
 async function validateKnownAssociation(
