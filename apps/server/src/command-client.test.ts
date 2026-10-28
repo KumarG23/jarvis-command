@@ -87,6 +87,20 @@ describe('Command proxy client', () => {
     }
   });
 
+  it('accepts an active status with unavailable usage, then relays the tool frame, from the same run', async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    const client = createCommandProxyClient({ baseUrl, commandProxyKey, fetcher });
+    fetcher.mockResolvedValueOnce(jsonResponse({ runId, sessionId, status: 'running', updatedAt: '2026-09-04T14:00:00Z', approval: null, output: '', error: null, pendingSteer: null, usage: null }));
+    expect(await client.getRun(runId)).toMatchObject({ runId, sessionId, status: 'running', usage: null });
+    const tool = { runId, type: 'tool.started', timestamp: '2026-09-04T14:00:01Z', tool: 'terminal', preview: 'sleep' };
+    fetcher.mockResolvedValueOnce(new Response(`data: ${JSON.stringify(tool)}\n\n`, { headers: { 'content-type': 'text/event-stream' } }));
+    const events = [];
+    for await (const event of client.streamRunEvents(runId, new AbortController().signal)) events.push(event);
+    expect(events).toEqual([tool]);
+    // One status read and one event read: no admission (POST) is issued.
+    expect(fetcher.mock.calls.map(([, init]) => init?.method)).toEqual(['GET', 'GET']);
+  });
+
   it('projects interrupted and failed terminal events with generic errors and bound identity', async () => {
     const fetcher = vi.fn<typeof fetch>();
     const client = createCommandProxyClient({ baseUrl, commandProxyKey, fetcher });

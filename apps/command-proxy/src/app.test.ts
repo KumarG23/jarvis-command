@@ -997,6 +997,64 @@ describe('run status and event projection', () => {
     expect(response.payload).not.toContain('ignored_future_field');
   });
 
+  describe('installed Hermes active run with empty usage', () => {
+    // Shape reported by the runtime owner for an active run: created_at only, usage: {}.
+    const activeBody = (status: string, usage: unknown) => ({
+      object: 'hermes.run', run_id: runId, session_id: commandSessionId, status,
+      created_at: 1788530400, usage, output: '', pending_controls: [],
+      admission_id: 'do-not-project', execution_generation: 1, model: 'internal-model',
+    });
+    const readStatus = async (body: unknown) => createApp(vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(body)))
+      .inject({ url: `/v1/runs/${runId}`, headers: authHeaders() });
+
+    it.each(['queued', 'started', 'running', 'waiting_for_approval', 'stopping'])(
+      'projects %s with usage unavailable instead of inventing counters', async (status) => {
+        const response = await readStatus(activeBody(status, {}));
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toMatchObject({
+          runId, sessionId: commandSessionId, status: status === 'started' ? 'queued' : status,
+          updatedAt: new Date(1788530400 * 1000).toISOString(), output: '', usage: null,
+        });
+        expect(response.payload).not.toContain('do-not-project');
+        expect(response.payload).not.toContain('internal-model');
+      },
+    );
+
+    it.each([
+      ['partial', { input_tokens: 1 }],
+      ['negative', { input_tokens: -1, output_tokens: 0, total_tokens: 0 }],
+      ['wrong-typed', { input_tokens: '1', output_tokens: 0, total_tokens: 0 }],
+      ['array', []],
+      ['unrelated field only', { surprise: 1 }],
+    ])('still rejects %s active usage', async (_name, usage) => {
+      expect((await readStatus(activeBody('running', usage))).statusCode).toBe(503);
+    });
+
+    it.each(['completed', 'failed', 'cancelled', 'interrupted'])('still rejects empty usage on a %s run', async (status) => {
+      expect((await readStatus(activeBody(status, {}))).statusCode).toBe(503);
+    });
+
+    it('keeps omitted, null, populated and authoritative-zero usage unchanged', async () => {
+      expect((await readStatus({ ...activeBody('running', null) })).json().usage).toBeNull();
+      const withoutUsage: Record<string, unknown> = activeBody('running', null);
+      delete withoutUsage.usage;
+      expect((await readStatus(withoutUsage)).json().usage).toBeNull();
+      const zero = { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
+      expect((await readStatus(activeBody('completed', zero))).json().usage).toMatchObject({ inputTokens: 0, outputTokens: 0, totalTokens: 0 });
+    });
+
+    it('relays the installed first tool.started frame shape without seq or call id', async () => {
+      const frame = { event: 'tool.started', preview: 'sleep', run_id: runId, seq: 1, timestamp: 1788530401.25, tool: 'terminal', tool_call_id: 'call_internal' };
+      const response = await createApp(vi.fn<typeof fetch>().mockResolvedValueOnce(new Response(`data: ${JSON.stringify(frame)}\n\n`, {
+        status: 200, headers: { 'content-type': 'text/event-stream' },
+      }))).inject({ url: `/v1/runs/${runId}/events`, headers: authHeaders() });
+      expect(response.statusCode).toBe(200);
+      const data = JSON.parse(response.payload.split('data: ')[1]!.trim());
+      expect(data).toEqual({ runId, type: 'tool.started', timestamp: '2026-09-04T14:00:01.250Z', tool: 'terminal', preview: 'sleep' });
+      expect(response.payload).not.toContain('call_internal');
+    });
+  });
+
   it('re-emits only bounded typed SSE events and drops reasoning/unknown fields', async () => {
     const sse = [
       ': keepalive',
