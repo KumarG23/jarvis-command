@@ -38,7 +38,7 @@ A blocker on one item never stops the plan. Sol records it, routes it as below, 
 | Unsure whether something counts as one of the human boundaries | If it does not change auth/credentials/access/network/provider, spend money, destroy data, or patch the live Hermes runtime — it is Sol's call. Proceed. |
 
 ### 0.4 What Sol is authorized to do for this plan (no further approval needed)
-- Create, label, order and close Command issues for any milestone in §10; mark them `team:ready` with label `scope:command:plan` and a `studio-plan` block citing the milestone.
+- Create, label, order and close Command issues for any milestone in §10; mark them `team:ready` with label `scope:command:plan-increment` and a `studio-plan` block citing the milestone.
 - Assign workers, review exact heads, merge, and **release to production** through the project's documented recoverable deploy path (`command-project-ops`, immutable image pin, retained rollback, live browser/backend readback). No separate cutover approval is needed for any milestone.
 - Use owned test conversations, reversible fixture writes and the new inference/messages needed to prove features, in isolated owned sessions, without duplicates on retry/reconnect, within existing quotas and no paid routes.
 - Edit this file's status table (§11) and Sol-decision log as work lands.
@@ -301,7 +301,7 @@ Do **not** claim every arbitrary Hermes tool output is automatically captured. T
 - No Kanban scheduler, cron, second orchestrator or self-generated backlog. Jarvis does not run a parallel team for Command.
 
 ### Issue format (keep it short)
-Every Command issue has: **Outcome** (user-visible), **Plan ref** (milestone + section), **Scope** (files/areas), **Acceptance** (concrete tests + browser check), **Out of scope**. Plus label `scope:command:plan`, `team:ready`, and one `studio-plan` block:
+Every Command issue has: **Outcome** (user-visible), **Plan ref** (milestone + section), **Scope** (files/areas), **Acceptance** (concrete tests + browser check), **Out of scope**. Plus label `scope:command:plan-increment`, `team:ready`, and one `studio-plan` block:
 
 ```studio-plan
 {"milestone":"P1 Truthful status, usage and model/effort","acceptance":"Executed route shown from authoritative receipt","non_goals":"MASTER_PLAN §1 non-goals","rationale":"Next dependency-ready item in §10","verdict":"aligned"}
