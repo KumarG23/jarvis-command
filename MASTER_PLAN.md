@@ -382,7 +382,7 @@ Each milestone lists what to build, how Sol proves it, and what gets deferred in
 | Latest-session receipt + context denominator (#6) | Partial, live; remainder deferred | PR #8; #6 closed partial/deferred; per-answer receipt remains unsupported |
 | Historical message↔run binding (#9) | Deferred — Unsupported | Hermes `7b7a26c1` public contract lacks the pair; Final Neal packet |
 | M0 capability matrix (#2) | Superseded by this plan | Findings kept as history; capability checks now live in P5/P7 |
-| P1 Truthful status/usage/model-effort | Done, live; phone check pending | #22/#24, PRs #23/#25; merged `df2f68bb`, app `sha256:1dd938e3…`; [production Sol/Luna readback and rollback](https://github.com/KumarG23/jarvis-command/issues/24#issuecomment-6473022817); 320–430 px emulation passed |
+| P1 Truthful status/usage/model-effort | Done, live; phone check pending | #22/#24, PRs #23/#25; merged `df2f68bb`, app `sha256:1dd938e3…`; [production Sol/Luna readback and rollback](https://github.com/KumarG23/jarvis-command/issues/24#issuecomment-6473022817); 320–430 px emulation passed; §5 observation-age follow-through in #26 |
 | P2 Chat completeness | In progress | #26: persisted drafts and formatted/long chat; one Sol-dev owner |
 | P3 Design and shell | Not started | — |
 | P4 Artifacts | Not started | — |

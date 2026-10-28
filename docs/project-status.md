@@ -15,7 +15,8 @@ Both proxies stayed at their prior healthy pins. Use the documented
 [Live acceptance and exact rollback evidence](https://github.com/KumarG23/jarvis-command/issues/24#issuecomment-6473022817).
 
 Next: [P2 #26](https://github.com/KumarG23/jarvis-command/issues/26), persistent drafts,
-formatted transcript and 200+ message checks. Existing admission/recovery, stop,
+formatted transcript, 200+ message checks and truthful quiet-run observation age.
+Existing admission/recovery, stop,
 copy and canonical message identity must be preserved.
 
 Known limits: historical answer/run receipt binding is Unsupported—deferred;
