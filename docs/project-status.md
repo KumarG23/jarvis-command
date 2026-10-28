@@ -5,15 +5,23 @@ Plan of record: [MASTER_PLAN.md](../MASTER_PLAN.md) on `release/gpt6-sol-luna`.
 P1–P4 and P4.5 are live. Requested/executed route distinctions, honest usage,
 chat recovery/drafts, responsive shell, reliable artifacts and project context
 are delivered. P5 Agents and P7 Rooms remain Unsupported—deferred with honest
-unavailable UI. P6 inbox is in review on #46 / PR #50 with dependent repair #51; disabled Web Push and
-P8 final acceptance/Neal packet remain pending.
+unavailable UI. P6 inbox source is reviewed/merged (#46/#51, PRs #50/#53/#55),
+but its live attempt was rolled back. Startup-wiring repair #57 and disabled
+Web Push #56 remain with active Sol-dev; P8 final acceptance/Neal packet is pending.
 
-Current reviewed/merged release: `014071e424cf00b4f08e33eb9add918e2565bc2c`
-(PR #48, includes reviewed #45/#43/#40/#39). Deployed app:
-`sha256:4e3af796d1c9ae1aa33f2b9cfbcaadb7ea2e70f012a9876bb7de0c02b1b9acf2`.
-Rollback: `release-app-1793209222163523623`, previous `sha256:d2cf8292…` retained.
+Current live source: `42ef5c8d9184c801fb04919101a551a3e27e57ae` (PR #54).
+Healthy app: `sha256:1f1e2c9cd504b0059712f9a647f5166ae42acb69d072e2adc34c945b56e50750`;
+its retained rollback receipt is `release-app-1793213040097289455`.
 Both proxies are unchanged. Use `/home/studio/COMMAND_PROJECT_OPERATIONS.md`.
-[Production browser/backend and restart acceptance](https://github.com/KumarG23/jarvis-command/issues/44#issuecomment-6476317648).
+[Short-navigation live acceptance](https://github.com/KumarG23/jarvis-command/issues/52#issuecomment-6477626307).
+
+P6 attempted source `98a1b3db20a8515bfc034cc9b86bd8586d483aa2` built and deployed
+as app `74fff65e…`, then rolled back via `release-app-1793213852377815867`.
+One owned run completed with one admission/notification; reconcile returned 500
+because registration captured the service before startup initialized it.
+[Failure and rollback](https://github.com/KumarG23/jarvis-command/pull/50#issuecomment-6478000754);
+#57 resumes the existing owned proof without another inference. No full P6 live
+acceptance, inbox restart/read-state/preferences proof or physical-phone claim.
 
 P4: images render through the existing authenticated resource route; PDFs show
 an explicit download-only state; HTML/SVG remain sandboxed and oversized preview
@@ -34,12 +42,11 @@ capture and cross-surface notifications remain unproven/deferred. Latest-session
 receipts stay separate from historical answers. Artifact association-policy
 tightening and PDF preview enablement remain deferred; full wrong-session
 rejection is not claimed. No auth/Access, credential, network, provider or paid-route
-control changed. Production push remains unavailable pending its disabled-code
-increment and separate enablement. P6 first slice (#46): an in-app inbox for app-originated run finished/failed and
-approval-needed events is built for review, unreleased. #51 prevents pruned approval
-replay with bounded exact receipts (1,024 per actor); reaching that bound or upgrading
-already-pruned legacy identities makes new approval notifications explicitly unavailable.
-The inbox reports incomplete delivery for first-use, retention and bounded recovery gaps.
+control changed. Production push remains unavailable pending #56 and separate
+enablement. Merged inbox source prevents pruned approval replay with bounded exact
+receipts (1,024 per actor); capacity/legacy gaps make new approval notifications
+explicitly unavailable. It reports incomplete delivery for first-use, retention
+and bounded recovery gaps; this source is currently rolled back.
 
 [Neal review queue #20](https://github.com/KumarG23/jarvis-command/issues/20) holds
 phone steps and deferred contracts; the Final Neal packet is due at P8. Older M0
