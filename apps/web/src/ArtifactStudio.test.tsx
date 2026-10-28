@@ -284,6 +284,65 @@ describe('ArtifactStudio', () => {
     expect(screen.getByRole('link', { name: 'Download version 2' })).toHaveAttribute('href', `/api/artifacts/${versioned.id}/versions/2/download`);
   });
 
+  it('previews images from the fixed same-origin blob route without creating a blob URL', async () => {
+    const image: ArtifactMetadata = {
+      ...baseArtifact,
+      id: 'art_' + 'f'.repeat(32),
+      title: 'Photo',
+      type: 'image',
+      mime: 'image/png',
+      size: 2048,
+      sha256: '9'.repeat(64),
+      versions: [{ ...baseArtifact.versions[0]!, type: 'image', mime: 'image/png', size: 2048, sha256: '9'.repeat(64) }],
+    };
+    const fetchMock = mockArtifactBackend([image]);
+    renderStudio();
+    fireEvent.click((await screen.findByText('Photo')).closest('button')!);
+
+    const preview = await screen.findByRole('img', { name: 'Photo' });
+    expect(preview).toHaveAttribute('src', `/api/artifacts/${image.id}/versions/1/blob`);
+    expect(preview.getAttribute('src')).not.toMatch(/^blob:/);
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/blob'))).toBe(false);
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+  });
+
+  it('shows honest unavailable states with exact-version downloads for failed images and PDFs', async () => {
+    const image: ArtifactMetadata = {
+      ...baseArtifact,
+      id: 'art_' + 'f'.repeat(32),
+      title: 'Broken photo',
+      type: 'image',
+      mime: 'image/png',
+      size: 2048,
+      sha256: '9'.repeat(64),
+      versions: [{ ...baseArtifact.versions[0]!, type: 'image', mime: 'image/png', size: 2048, sha256: '9'.repeat(64) }],
+    };
+    const pdf: ArtifactMetadata = {
+      ...baseArtifact,
+      id: 'art_' + 'e'.repeat(32),
+      title: 'Paper',
+      type: 'pdf',
+      mime: 'application/pdf',
+      size: 4096,
+      sha256: '8'.repeat(64),
+      versions: [{ ...baseArtifact.versions[0]!, type: 'pdf', mime: 'application/pdf', size: 4096, sha256: '8'.repeat(64) }],
+    };
+    const fetchMock = mockArtifactBackend([image, pdf]);
+    renderStudio();
+
+    fireEvent.click((await screen.findByText('Broken photo')).closest('button')!);
+    fireEvent.error(await screen.findByRole('img', { name: 'Broken photo' }));
+    expect(await screen.findByText(/this image could not be loaded/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Download version 1' })).toHaveAttribute('href', `/api/artifacts/${image.id}/versions/1/download`);
+
+    fireEvent.click(screen.getByText('Paper').closest('button')!);
+    expect(await screen.findByText(/PDF files are download-only/)).toBeInTheDocument();
+    expect(screen.queryByTitle('Paper')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Download version 1' })).toHaveAttribute('href', `/api/artifacts/${pdf.id}/versions/1/download`);
+    expect(fetchMock.mock.calls.some(([input]) => String(input).endsWith('/blob'))).toBe(false);
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+  });
+
   it('keeps binary artifacts downloadable and out of the text editor', async () => {
     const image: ArtifactMetadata = {
       ...baseArtifact,
