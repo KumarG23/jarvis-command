@@ -225,7 +225,7 @@ async function assertLayout(page: Page, testInfo: TestInfo, phase: string, lifec
   await page.locator('.health-button').click({ trial: true });
 }
 
-for (const viewport of [{ width: 360, height: 740 }, { width: 390, height: 844 }, { width: 1280, height: 720 }]) {
+for (const viewport of [{ width: 320, height: 640 }, { width: 360, height: 360 }, { width: 360, height: 740 }, { width: 390, height: 844 }, { width: 430, height: 740 }, { width: 1280, height: 720 }]) {
   for (const lifecycle of [undefined, 'running', 'failed'] as const) {
     test(`selected project/history and reload ${viewport.width}x${viewport.height} ${lifecycle ?? 'idle'}`, async ({ page }, testInfo) => {
       await page.setViewportSize(viewport);
