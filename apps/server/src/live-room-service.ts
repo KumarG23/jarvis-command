@@ -108,33 +108,30 @@ export function createLiveRoomService({
 
   // Notifications come only from observations of the actor's own admitted run: the record
   // is already actor/run/session bound. Context-compaction operations are not runs.
-  const notifyStatus = async (record: AuditRunRecord, upstream: CommandRunStatus): Promise<boolean> => {
-    if (!notify || upstream.kind === 'context_compaction') return true;
-    // A run whose terminal audit already landed was announced before that audit (audit waits for
-    // a durable notification), so re-observing it must not notify again.
-    if (TERMINAL_STATES.has(upstream.status) && TERMINAL_STATES.has(record.status)) return true;
-    const base = { actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, runRequestedAt: record.requestedAt };
-    if (upstream.status === 'completed') return notify({ ...base, category: 'run-completed' });
-    if (upstream.status === 'failed') return notify({ ...base, category: 'run-failed' });
-    if (upstream.status === 'waiting_for_approval' && upstream.approval) {
-      return notify({ ...base, category: 'approval', key: upstream.approval.requestId });
+  const notifyStatus = async (record: AuditRunRecord, upstream: CommandRunStatus, terminalAt: string | null): Promise<void> => {
+    if (!notify || upstream.kind === 'context_compaction') return;
+    const base = { actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId };
+    if (upstream.status === 'completed' && terminalAt) await notify({ ...base, eventAt: terminalAt, category: 'run-completed' });
+    else if (upstream.status === 'failed' && terminalAt) await notify({ ...base, eventAt: terminalAt, category: 'run-failed' });
+    else if (upstream.status === 'waiting_for_approval' && upstream.approval) {
+      await notify({ ...base, eventAt: now().toISOString(), category: 'approval', key: upstream.approval.requestId });
     }
-    return true;
   };
 
   const auditTerminal = async (
     record: AuditRunRecord,
     status: LiveRunState,
     receipt: LiveRunUsage | null = null,
-  ): Promise<void> => {
-    if (!TERMINAL_STATES.has(status)) return;
+  ): Promise<string | null> => {
+    if (!TERMINAL_STATES.has(status)) return null;
     const action = `run.${status}` as AuditDraft['action'];
-    await ledger.appendOnce(`terminal:${record.publicRunId}`, auditDraft(record, {
+    const entry = await ledger.appendOnce(`terminal:${record.publicRunId}`, auditDraft(record, {
       action,
       outcome: status === 'completed' ? 'succeeded' : 'failed',
       status,
       receipt,
     }));
+    return entry.timestamp;
   };
 
   const projectStatus = async (
@@ -144,9 +141,10 @@ export function createLiveRoomService({
     if (upstream.runId !== record.upstreamRunId || upstream.sessionId !== record.sessionId) {
       throw new LiveRoomNotFoundError();
     }
-    // Terminal audit settles the run in the ledger, so it waits until the notification is durable.
-    // If notification storage failed the run stays unsettled and a later read or reconcile retries.
-    if (await notifyStatus(record, upstream)) await auditTerminal(record, upstream.status, upstream.usage);
+    // Terminal audit never depends on notification health; the notification follows the audit and
+    // is re-delivered from the ledger by the inbox reconcile if its write fails.
+    const terminalAt = await auditTerminal(record, upstream.status, upstream.usage);
+    await notifyStatus(record, upstream, terminalAt);
     return LiveRunStatusSchema.parse({
       publicRunId: record.publicRunId,
       sessionId: record.sessionId,
@@ -534,6 +532,13 @@ export function createLiveRoomService({
       return { sessionId: record.sessionId, clientRequestId: record.clientRequestId };
     },
 
+    /** The actor's terminal completed/failed runs audited after `since`, newest first. */
+    listTerminalRuns(subject: string, since: string, limit: number): Array<Readonly<{ publicRunId: string; status: 'completed' | 'failed' }>> {
+      return ledger.terminalRunsForActor(actorFingerprint(subject), since)
+        .sort((left, right) => right.at.localeCompare(left.at))
+        .slice(0, limit).map(({ publicRunId, status }) => ({ publicRunId, status }));
+    },
+
     /** The actor's newest admitted, not-yet-terminal runs, for reopening-time reconciliation. */
     listUnsettledRuns(subject: string, limit: number): string[] {
       return ledger.activeRunsForActor(actorFingerprint(subject))
@@ -566,24 +571,23 @@ export function createLiveRoomService({
       for await (const upstream of client.streamRunEvents(record.upstreamRunId!, signal)) {
         if (upstream.runId !== record.upstreamRunId) throw new LiveRoomNotFoundError();
         const event = projectEvent(record.publicRunId, upstream);
-        let announced = true;
         if (event.type === 'approval.request') {
-          announced = await (notify?.({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, runRequestedAt: record.requestedAt, category: 'approval', key: event.approval.requestId }) ?? true);
+          await notify?.({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, eventAt: now().toISOString(), category: 'approval', key: event.approval.requestId });
         }
         if (isTerminalEvent(event)) {
-          if (notify && !TERMINAL_STATES.has(record.status) && (event.type === 'run.completed' || event.type === 'run.failed')) {
-            // Confirm this is a run, not a compaction operation, before announcing it.
-            const confirmed = await client.getRun(record.upstreamRunId!).catch(() => null);
-            if (!confirmed || confirmed.runId !== record.upstreamRunId || confirmed.sessionId !== record.sessionId) announced = false;
-            else if (confirmed.kind !== 'context_compaction') {
-              announced = await notify({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, runRequestedAt: record.requestedAt, category: event.type === 'run.completed' ? 'run-completed' : 'run-failed' });
-            }
-          }
-          if (announced) await auditTerminal(
+          const terminalAt = await auditTerminal(
             record,
             terminalEventStatus(event),
             event.type === 'run.completed' ? event.usage : null,
           );
+          if (notify && terminalAt && (event.type === 'run.completed' || event.type === 'run.failed')) {
+            // Confirm this is a run, not a compaction operation, before announcing it. If this
+            // cannot be confirmed now, the inbox reconcile re-checks it from the ledger.
+            const confirmed = await client.getRun(record.upstreamRunId!).catch(() => null);
+            if (confirmed && confirmed.runId === record.upstreamRunId && confirmed.sessionId === record.sessionId && confirmed.kind !== 'context_compaction') {
+              await notify({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, eventAt: terminalAt, category: event.type === 'run.completed' ? 'run-completed' : 'run-failed' });
+            }
+          }
         }
         yield event;
       }

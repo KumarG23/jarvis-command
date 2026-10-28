@@ -198,6 +198,19 @@ export class AuditLedger {
     return [...this.#runsByPublic.values()].filter((record) => record.actor === actor && !terminal.has(record.status));
   }
 
+  /** Terminal run audit entries for one actor after `since`, oldest first. Read-only. */
+  public terminalRunsForActor(actor: string, since: string): Array<Readonly<{ publicRunId: string; status: 'completed' | 'failed'; at: string }>> {
+    this.assertHealthy();
+    const found: Array<{ publicRunId: string; status: 'completed' | 'failed'; at: string }> = [];
+    for (const entry of this.#entries) {
+      if (entry.actor !== actor || !entry.publicRunId || !entry.dedupeKey?.startsWith('terminal:')) continue;
+      if ((entry.action === 'run.completed' || entry.action === 'run.failed') && entry.timestamp > since) {
+        found.push({ publicRunId: entry.publicRunId, status: entry.action === 'run.completed' ? 'completed' : 'failed', at: entry.timestamp });
+      }
+    }
+    return found;
+  }
+
   public latestReceiptForSession(actor: string, sessionId: string): AuditSessionReceipt | null {
     this.assertHealthy();
     for (let index = this.#entries.length - 1; index >= 0; index -= 1) {

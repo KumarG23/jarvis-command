@@ -19,9 +19,9 @@ const runIds = Array.from({ length: 8 }, (_, i) => `jcr_${String(i).repeat(32)}`
 const upstream = (i: number) => `run_${String(i).repeat(32)}`;
 const sessionOf = (i: number) => `jc_${String(i).repeat(32)}`;
 const LATER = '2026-10-28T14:30:00.000Z';
-const RUN_AT = '2026-10-28T13:00:00.000Z';
+const EVENT_AT = '2026-10-28T13:00:00.000Z';
 const event = (category: 'run-completed' | 'run-failed' | 'approval' = 'run-completed', i = 1, key?: string) => ({
-  actor: actorA, sessionId: sessionOf(i), publicRunId: runIds[i]!, runRequestedAt: RUN_AT, category, ...(key ? { key } : {}),
+  actor: actorA, sessionId: sessionOf(i), publicRunId: runIds[i]!, eventAt: EVENT_AT, category, ...(key ? { key } : {}),
 });
 
 async function privateDirectory() {
@@ -31,7 +31,7 @@ async function privateDirectory() {
   return directory;
 }
 const record = (store: NotificationStore, actor: string, e: ReturnType<typeof event>) => store.record(actor, {
-  id: notificationId({ ...e, actor }), category: e.category, sessionId: e.sessionId, publicRunId: e.publicRunId, runRequestedAt: e.runRequestedAt,
+  id: notificationId({ ...e, actor }), category: e.category, sessionId: e.sessionId, publicRunId: e.publicRunId, eventAt: e.eventAt,
 });
 
 describe('NotificationStore', () => {
@@ -94,7 +94,7 @@ describe('NotificationStore', () => {
     const store = new NotificationStore(directory, () => new Date(Date.UTC(2026, 9, 28, 14, 0, 0) + ++tick * 1000));
     const id = (i: number) => `ntf_${i.toString(16).padStart(32, '0')}`;
     const runAt = (i: number) => new Date(Date.UTC(2026, 9, 28, 14, 0, 0) + i * 1000 - 500).toISOString();
-    const make = (i: number) => ({ id: id(i), category: 'run-completed' as const, sessionId: sessionOf(1), publicRunId: runIds[1]!, runRequestedAt: runAt(i) });
+    const make = (i: number) => ({ id: id(i), category: 'run-completed' as const, sessionId: sessionOf(1), publicRunId: runIds[1]!, eventAt: runAt(i) });
     for (let i = 0; i < 502; i++) await store.record(actorA, make(i + 1));
     const restarted = new NotificationStore(directory);
     expect((await restarted.read(actorA)).items).toHaveLength(100);
@@ -109,9 +109,9 @@ describe('NotificationStore', () => {
   it('does not replay a pruned event after a disabled category is re-enabled beyond the bound', async () => {
     const store = new NotificationStore(await privateDirectory());
     await store.setPreferences(actorA, { categories: { 'run-completed': false, 'run-failed': true, approval: true } });
-    const old = { id: `ntf_${'0'.padStart(32, '0')}`, category: 'run-completed' as const, sessionId: sessionOf(1), publicRunId: runIds[1]!, runRequestedAt: RUN_AT };
+    const old = { id: `ntf_${'0'.padStart(32, '0')}`, category: 'run-completed' as const, sessionId: sessionOf(1), publicRunId: runIds[1]!, eventAt: EVENT_AT };
     expect(await store.record(actorA, old)).toBe('suppressed');
-    for (let i = 1; i <= 501; i++) await store.record(actorA, { ...old, id: `ntf_${i.toString(16).padStart(32, '0')}`, category: 'run-failed', runRequestedAt: LATER });
+    for (let i = 1; i <= 501; i++) await store.record(actorA, { ...old, id: `ntf_${i.toString(16).padStart(32, '0')}`, category: 'run-failed', eventAt: LATER });
     await store.setPreferences(actorA, { categories: { 'run-completed': true, 'run-failed': true, approval: true } });
     expect(await new NotificationStore(store.directory).record(actorA, old)).toBe('duplicate');
   }, 120_000);
@@ -142,7 +142,8 @@ const approval = (requestId: string) => ({ requestId, command: 'secret command t
 
 async function harness(overrides: Partial<CommandProxyClient> = {}, existing?: { directory: string }) {
   const directory = existing?.directory ?? await privateDirectory();
-  const ledger = await AuditLedger.open(join(directory, 'events.jsonl'), { now: () => new Date('2026-10-28T14:00:00.000Z') });
+  const clock = { now: new Date('2026-10-28T14:00:10.000Z') };
+  const ledger = await AuditLedger.open(join(directory, 'events.jsonl'), { now: () => clock.now });
   cleanup.push(() => ledger.close());
   const store = new NotificationStore(directory, () => new Date('2026-10-28T14:00:05.000Z'));
   const getRun = vi.fn(async (runId: string) => status(Number(runId[4])));
@@ -159,7 +160,7 @@ async function harness(overrides: Partial<CommandProxyClient> = {}, existing?: {
   let next = 0;
   const service = createLiveRoomService({ client, ledger, notify: createRunNotifier(store), createPublicRunId: () => runIds[++next]! });
   const submit = (subject: string, i: number) => service.submitRun(subject, { sessionId: sessionOf(i), input: 'private prompt', clientRequestId: `00000000-0000-4000-8000-00000000000${i}` });
-  return { directory, ledger, store, client, getRun, service, submit };
+  return { directory, ledger, clock, store, client, getRun, service, submit };
 }
 const actorHash = async (subject: string) => (await import('node:crypto')).createHash('sha256').update(subject).digest('hex');
 
@@ -206,45 +207,66 @@ describe('server-observed run notifications', () => {
     expect((await h.store.read(alice)).items).toHaveLength(3);
   });
 
-  it('recovers a completion lost to one transient write failure on the next status read or reconcile, across restart', async () => {
-    const h = await harness();
+  it('keeps terminal audit and chat deletion independent of a notification write failure, then re-delivers from the ledger', async () => {
+    const h = await routeHarness();
     const alice = await actorHash('alice');
+    await h.store.read(alice); // the app loads the inbox on startup, anchoring the actor
     const run = await h.submit('alice', 1);
     h.getRun.mockResolvedValue(status(1, { status: 'completed' }) as never);
+    (h.client.deleteSession as ReturnType<typeof vi.fn>).mockResolvedValue({ deleted: true, sessionId: sessionOf(1) });
     const original = h.store.record.bind(h.store);
     let failures = 1;
     h.store.record = async (...args) => { if (failures-- > 0) throw new NotificationStorageError(); return original(...args); };
-    // Status still succeeds; the terminal audit is deferred so the run stays unsettled.
     await expect(h.service.getRun('alice', run.publicRunId)).resolves.toMatchObject({ status: 'completed' });
-    expect((await h.store.read(alice)).items).toEqual([]);
-    expect(h.service.listUnsettledRuns('alice', 10)).toEqual([run.publicRunId]);
-    expect(await readFile(join(h.directory, 'events.jsonl'), 'utf8')).not.toContain('"action":"run.completed"');
-    // Writes recover: reconcile re-observes the same run, records it once, then audits.
-    for (const id of h.service.listUnsettledRuns('alice', 10)) await h.service.getRun('alice', id);
-    await h.service.getRun('alice', run.publicRunId);
-    expect((await new NotificationStore(h.directory).read(alice)).items).toHaveLength(1);
-    expect(h.service.listUnsettledRuns('alice', 10)).toEqual([]);
+    // The authoritative audit landed and the session is not held active by notification health.
     expect(await readFile(join(h.directory, 'events.jsonl'), 'utf8')).toContain('"action":"run.completed"');
+    expect(h.service.listUnsettledRuns('alice', 10)).toEqual([]);
+    expect((await h.store.read(alice)).items).toEqual([]);
+    // Reconcile re-delivers the missing event once, then is idempotent (also across restart).
+    const first = (await h.post('/api/notifications/reconcile', 'alice')).json();
+    expect(first).toMatchObject({ checked: 1, unavailable: 0 });
+    expect(first.inbox.items).toHaveLength(1);
+    await h.post('/api/notifications/reconcile', 'alice');
+    expect((await new NotificationStore(h.directory).read(alice)).items).toHaveLength(1);
+    await expect(h.service.deleteSession('alice', sessionOf(1))).resolves.toEqual({ deleted: true, sessionId: sessionOf(1) });
   });
 
-  it('does not re-announce an already settled terminal run when it is read again', async () => {
+  it('delivers a never-seen event of an old long-running run after the replay horizon has advanced', async () => {
+    const h = await routeHarness();
+    const alice = await actorHash('alice');
+    const run = await h.submit('alice', 1); // admitted long before the horizon below
+    await h.store.read(alice);
+    // Advance the horizon far past the run's admission with unrelated, pruned events.
+    let tick = 0;
+    const store = new NotificationStore(h.directory, () => new Date(Date.UTC(2026, 9, 28, 15, 0, 0) + ++tick * 1000));
+    for (let i = 0; i < 502; i++) await store.record(alice, { id: `ntf_${(i + 1).toString(16).padStart(32, '0')}`, category: 'run-failed', sessionId: sessionOf(2), publicRunId: runIds[2]!, eventAt: new Date(Date.UTC(2026, 9, 28, 15, 0, 0) + (i + 1) * 1000 - 500).toISOString() });
+    h.getRun.mockResolvedValue(status(1, { status: 'completed' }) as never);
+    h.clock.now = new Date('2026-10-28T16:00:00.000Z'); // the old run finishes only now
+    await h.service.getRun('alice', run.publicRunId);
+    const created = (await new NotificationStore(h.directory).read(alice)).items.filter(item => item.publicRunId === run.publicRunId);
+    expect(created).toHaveLength(1);
+  }, 120_000);
+
+  it('does not duplicate or un-read a settled terminal run when it is read again', async () => {
     const h = await harness();
     const alice = await actorHash('alice');
     const run = await h.submit('alice', 1);
     h.getRun.mockResolvedValue(status(1, { status: 'completed' }) as never);
     await h.service.getRun('alice', run.publicRunId);
     await h.store.markRead(alice, { all: true });
-    const record = vi.spyOn(h.store, 'record');
     await h.service.getRun('alice', run.publicRunId);
-    expect(record).not.toHaveBeenCalled();
+    const { items } = await h.store.read(alice);
+    expect(items).toHaveLength(1);
+    expect(items[0]!.readAt).not.toBeNull();
   });
 
-  it('keeps run status working when notification storage is broken, deferring only the terminal audit', async () => {
+  it('keeps run status and terminal audit working when notification storage is broken', async () => {
     const h = await harness();
     const run = await h.submit('alice', 1);
     await writeFile(join(h.directory, 'notifications.json'), '{broken', { mode: 0o600 });
     h.getRun.mockResolvedValue(status(1, { status: 'completed' }) as never);
     await expect(h.service.getRun('alice', run.publicRunId)).resolves.toMatchObject({ status: 'completed' });
+    expect(await readFile(join(h.directory, 'events.jsonl'), 'utf8')).toContain('"action":"run.completed"');
     await expect(h.store.read(await actorHash('alice'))).rejects.toBeInstanceOf(NotificationStorageError);
   });
 });

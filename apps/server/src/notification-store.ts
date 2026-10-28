@@ -37,6 +37,8 @@ const ActorStateSchema = z.object({
   // Event IDs already created, pruned or suppressed. A bounded set keeps an event from
   // reappearing after pruning or after a disabled category is re-enabled.
   settled: z.array(z.object({ id: NotificationIdSchema, at: z.iso.datetime({ offset: true }) }).strict()).max(MAX_SETTLED),
+  // First time this server held state for the actor; reconcile never delivers events before it.
+  since: z.iso.datetime({ offset: true }),
   // Newest settle time dropped from `settled`. Events from runs admitted before it are never
   // recreated, so replay suppression stays bounded without trusting an unbounded ID list.
   horizon: z.iso.datetime({ offset: true }).nullable(),
@@ -53,9 +55,10 @@ export type NotificationEvent = Readonly<{
   category: NotificationCategory;
   sessionId: string;
   publicRunId: string;
-  runRequestedAt: string;
+  /** Event time: terminal audit time or first observation. Never the run's admission time. */
+  eventAt: string;
 }>;
-export type ActorView = Readonly<{ items: NotificationItem[]; preferences: NotificationPreferences }>;
+export type ActorView = Readonly<{ items: NotificationItem[]; preferences: NotificationPreferences; since: string; knownIds: ReadonlySet<string> }>;
 
 const TEXT: Record<NotificationCategory, { title: string; body: string }> = {
   'run-completed': { title: 'Run finished', body: 'A run you started has finished. Open the chat to read it.' },
@@ -63,8 +66,10 @@ const TEXT: Record<NotificationCategory, { title: string; body: string }> = {
   approval: { title: 'Approval needed', body: 'A run is waiting for your approval. Open the chat to review it.' },
 };
 
-const emptyActor = (): ActorState => ({ preferences: structuredClone(DEFAULT_PREFERENCES), items: [], settled: [], horizon: null });
-const view = (actor: ActorState): ActorView => ({ items: [...actor.items].reverse(), preferences: actor.preferences });
+const view = (actor: ActorState): ActorView => ({
+  items: [...actor.items].reverse(), preferences: actor.preferences, since: actor.since,
+  knownIds: new Set([...actor.settled.map(entry => entry.id), ...actor.items.map(item => item.id)]),
+});
 
 // Single app writer on the same private mount as the audit ledger; never opens the ledger.
 // Every operation is scoped to one actor fingerprint and cannot read or write another's record.
@@ -74,17 +79,28 @@ export class NotificationStore {
   #poisoned = false;
   constructor(readonly directory: string, private readonly now: () => Date = () => new Date()) {}
 
+  #emptyActor(): ActorState {
+    return { preferences: structuredClone(DEFAULT_PREFERENCES), items: [], settled: [], horizon: null, since: this.now().toISOString() };
+  }
+
+  /** Reads the actor's state, creating it once (recording `since`) on first use. */
   read(actor: string): Promise<ActorView> {
-    return this.#transaction(state => ({ result: view(state.actors[actor] ?? emptyActor()) }));
+    return this.#transaction(state => {
+      const existing = state.actors[actor];
+      if (existing) return { result: view(existing) };
+      state.actors[actor] = this.#emptyActor();
+      return { result: view(state.actors[actor]), write: true };
+    });
   }
 
   /** Records an event once. Returns whether a new item was created. */
   record(actor: string, event: NotificationEvent): Promise<'created' | 'duplicate' | 'suppressed'> {
     return this.#transaction(state => {
-      const current = state.actors[actor] ?? emptyActor();
+      const current = state.actors[actor] ?? this.#emptyActor();
       if (current.settled.some(entry => entry.id === event.id) || current.items.some(item => item.id === event.id)) return { result: 'duplicate' as const };
-      // Older than anything still remembered: treat as already settled rather than replaying it.
-      if (current.horizon !== null && event.runRequestedAt < current.horizon) return { result: 'duplicate' as const };
+      // An event no newer than the newest forgotten settle time can only be a replay of a
+      // forgotten one; a never-seen event from an old run carries a recent event time.
+      if (current.horizon !== null && event.eventAt <= current.horizon) return { result: 'duplicate' as const };
       const at = this.now().toISOString();
       let settled = [...current.settled, { id: event.id, at }];
       let horizon = current.horizon;
@@ -108,7 +124,7 @@ export class NotificationStore {
 
   markRead(actor: string, selection: Readonly<{ ids: readonly string[] } | { all: true }>): Promise<ActorView> {
     return this.#transaction(state => {
-      const current = state.actors[actor] ?? emptyActor();
+      const current = state.actors[actor] ?? this.#emptyActor();
       const ids = 'ids' in selection ? new Set(selection.ids) : null;
       if (ids) for (const id of ids) if (!current.items.some(item => item.id === id)) throw new NotificationNotFoundError();
       const readAt = this.now().toISOString();
@@ -121,7 +137,7 @@ export class NotificationStore {
 
   setPreferences(actor: string, preferences: NotificationPreferences): Promise<ActorView> {
     return this.#transaction(state => {
-      const current = state.actors[actor] ?? emptyActor();
+      const current = state.actors[actor] ?? this.#emptyActor();
       state.actors[actor] = { ...current, preferences: NotificationPreferencesSchema.parse(preferences) };
       return { result: view(state.actors[actor]), write: true };
     });

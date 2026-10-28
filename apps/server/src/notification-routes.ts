@@ -11,9 +11,12 @@ import {
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { createLiveRoomService } from './live-room-service';
+import { notificationId } from './run-notifier';
 import { NotificationNotFoundError, NotificationStorageError, type ActorView, type NotificationStore } from './notification-store';
 
 const RECONCILE_LIMIT = 10;
+const TERMINAL_SCAN_LIMIT = 50;
+const RECOVERY_WINDOW_MS = 24 * 60 * 60 * 1000; // inside Hermes' minimum status retention
 const idParams = z.object({ notificationId: NotificationIdSchema }).strict();
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
@@ -55,7 +58,16 @@ export function registerNotificationRoutes(
   routes.post('/api/notifications/reconcile', { bodyLimit: 64 }, async request => {
     parse(z.object({}).strict(), request.body);
     const subject = dependencies.subjects.get(request)!;
-    const runs = dependencies.liveRoom.listUnsettledRuns(subject, RECONCILE_LIMIT);
+    const actor = actorOf(request);
+    const before = await store().read(actor);
+    // Unfinished runs, plus recently finished runs whose notification was never durably recorded
+    // (e.g. a storage fault). Both go through the same supported status read; dedupe is by event ID.
+    const since = new Date(Math.max(Date.parse(before.since), Date.now() - RECOVERY_WINDOW_MS)).toISOString();
+    const undelivered = dependencies.liveRoom.listTerminalRuns(subject, since, TERMINAL_SCAN_LIMIT)
+      .filter(run => !before.knownIds.has(notificationId({
+        actor, publicRunId: run.publicRunId, category: run.status === 'completed' ? 'run-completed' : 'run-failed',
+      }))).slice(0, RECONCILE_LIMIT).map(run => run.publicRunId);
+    const runs = [...new Set([...dependencies.liveRoom.listUnsettledRuns(subject, RECONCILE_LIMIT), ...undelivered])];
     const results = await Promise.allSettled(runs.map(publicRunId => dependencies.liveRoom.getRun(subject, publicRunId)));
     return NotificationReconcileResponseSchema.parse({
       inbox: toInbox(await store().read(actorOf(request))),
