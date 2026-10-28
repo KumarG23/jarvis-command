@@ -30,6 +30,7 @@ describe('loadConfig', () => {
     });
 
     expect(config).toEqual({
+      push: { capability: { state: 'unavailable', reason: 'disabled' } },
       nodeEnv: 'production',
       host: '127.0.0.1',
       port: 3000,
