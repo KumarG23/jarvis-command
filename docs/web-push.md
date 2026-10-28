@@ -1,10 +1,18 @@
-# Web Push — source implementation, production disabled
+# Web Push — released disabled
 
-Issue #56 completes the P6 push path in source/local fixtures. It does not provision
-production keys, enable push, alter egress/Access, send real pushes or deploy anything.
-The #46/#51 inbox is merged via #50 (`98a1b3d`); its attempted release was rolled
-back after the startup notification-service snapshot bug. #57 repairs that wiring
-in this increment. Sol owns exact-head review, recoverable release and live readback.
+#56/#57 are delivered in PR #59, reviewed at `0242e67c`, merged/released as
+`11501f729387adedb5098e7c0ab26f691fde8187`. P6 is Done/live: Sol's
+[live/restart acceptance](https://github.com/KumarG23/jarvis-command/pull/59#issuecomment-6478505568)
+verified the repaired inbox using the existing owned run/notification without
+another admission. Healthy app: `sha256:671988d3…`; retained rollback:
+`release-app-1793215438076593182`. The earlier
+[failed inbox release/rollback](https://github.com/KumarG23/jarvis-command/pull/50#issuecomment-6478000754)
+is resolved. The full push path is released **disabled**, with ephemeral local-key
+and captured-transport proof; production push delivery is not claimed. No production
+VAPID provisioning, push enablement or egress/Access change was performed.
+
+The [Final Neal packet](https://github.com/KumarG23/jarvis-command/issues/20#issuecomment-6478521212)
+is posted; its production enablement steps and phone checklist remain deferred.
 **Phone check pending.**
 
 ## Behavior and limits
