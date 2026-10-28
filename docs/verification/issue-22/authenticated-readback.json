@@ -1,0 +1,100 @@
+{
+  "mode": "Isolated candidate static assets; existing browser authentication copied only in memory; real authenticated GET APIs. Genuine owned sessions seeded into bootstrap recents; exact retained recovery identity seeded in isolated tab only. No live deployment or new inference.",
+  "sessionId": "jc_f12d26d280cc4d39b3fd71b48afb82b5",
+  "publicRunId": "jcr_490e7bd18ba35e754da9bfb3a8629ce2",
+  "clientRequestId": "55c5c427-cd43-4810-96dd-4c689ad5ad75",
+  "backend": {
+    "status": "completed",
+    "usage": {
+      "inputTokens": 33821,
+      "outputTokens": 41,
+      "totalTokens": 33862,
+      "reasoningTokens": 0,
+      "cacheReadTokens": 16768,
+      "cacheWriteTokens": 0,
+      "apiCalls": 2,
+      "providerLatencyMs": 5547,
+      "endToEndLatencyMs": 5765,
+      "outputTokensPerSecond": 7.39,
+      "context": {
+        "usedTokens": 16940,
+        "limitTokens": 500000,
+        "source": "hermes_effective"
+      },
+      "execution": {
+        "requested": {
+          "provider": null,
+          "model": null,
+          "reasoningEffort": null
+        },
+        "executed": {
+          "provider": "openai-codex",
+          "model": "gpt-6.1-sol",
+          "reasoningEffort": "medium",
+          "reasoningEffortSource": "wire"
+        },
+        "routeSource": "unknown",
+        "exact": false,
+        "fallbackUsed": false
+      }
+    },
+    "historyRows": [
+      {
+        "id": "453921",
+        "role": "user",
+        "toolName": null
+      },
+      {
+        "id": "453922",
+        "role": "assistant",
+        "toolName": null
+      },
+      {
+        "id": "453923",
+        "role": "tool",
+        "toolName": "terminal"
+      },
+      {
+        "id": "453924",
+        "role": "assistant",
+        "toolName": null
+      },
+      {
+        "id": "453925",
+        "role": "system",
+        "toolName": null
+      }
+    ]
+  },
+  "currentRunDOM": "Executed \u00b7 gpt-6.1-sol \u00b7 medium \u00b7 OpenAI\n\n33,862 tokens \u00b7 33,821 in / 41 out \u00b7 7.4 tok/s\n\n2 API calls \u00b7 5.5s provider \u00b7 5.8s end-to-end\n\n0 reasoning \u00b7 16,768 cache read \u00b7 0 cache write\n\nContext \u00b7 3.4% \u00b7 16,940 / 500,000\n\nRoute verification unavailable",
+  "requestedPreference": {
+    "provider": "openai-codex",
+    "model": "gpt-6-sol",
+    "reasoningEffort": "xhigh"
+  },
+  "verified": {
+    "twoSessionIsolation": true,
+    "bothReloads": true,
+    "unknownNotMismatch": true,
+    "postCount": 0,
+    "layouts": [
+      {
+        "width": 1280,
+        "scrollWidth": 1280
+      },
+      {
+        "width": 390,
+        "scrollWidth": 390
+      }
+    ]
+  },
+  "limits": "No candidate explicit admission/execution proof. Inventory offers are requests, not independently verified execution support. Exact historical message/run association unavailable; session receipt stays separate. Physical Android unverified.",
+  "candidateBuild": {
+    "entry": "/assets/index-KE6vghd4.js",
+    "sha256": "098e9116cff3f5661b5c6737f6ee18e39b1b053dc55f633f15d40f11e334d2b7",
+    "sourceSha256": {
+      "apps/web/src/TurnView.tsx": "8ebc67c9a06c83220cada022e2e610f549da9a2943b5897d1fe8a23f9ad23b92",
+      "apps/web/src/inferencePreference.ts": "5d7665d8faec5e886218b3cc09d61fce8e671b774dec40890c6793041b6cd815"
+    }
+  }
+}
