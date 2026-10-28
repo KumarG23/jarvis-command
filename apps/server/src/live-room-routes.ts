@@ -284,7 +284,7 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
       })(), { objectMode: false, highWaterMark: 16_384 });
       return reply.type('text/event-stream; charset=utf-8').header('x-accel-buffering', 'no').send(stream);
     });
-    registerNotificationRoutes(routes, { store: dependencies.notifications, liveRoom: dependencies.liveRoom!, subjects });
+    registerNotificationRoutes(routes, { store: dependencies.notifications, push: dependencies.config.push, get liveRoom() { return dependencies.liveRoom!; }, subjects });
     routes.post('/api/live/sessions', async (request) => {
       const parsed = LiveRoomSessionCreateRequestSchema.safeParse(request.body);
       if (!parsed.success) throw Object.assign(new Error('Invalid request'), { statusCode: 400 });

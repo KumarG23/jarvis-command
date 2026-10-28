@@ -42,11 +42,15 @@ capture and cross-surface notifications remain unproven/deferred. Latest-session
 receipts stay separate from historical answers. Artifact association-policy
 tightening and PDF preview enablement remain deferred; full wrong-session
 rejection is not claimed. No auth/Access, credential, network, provider or paid-route
-control changed. Production push remains unavailable pending #56 and separate
-enablement. Merged inbox source prevents pruned approval replay with bounded exact
-receipts (1,024 per actor); capacity/legacy gaps make new approval notifications
-explicitly unavailable. It reports incomplete delivery for first-use, retention
-and bounded recovery gaps; this source is currently rolled back.
+control changed. Production push remains disabled. #56 builds/tests the full push
+path with ephemeral local keys and captured transport, and includes the #57 lazy
+startup repair/regression. Production VAPID/approved egress/enablement are deferred
+to the Final Neal packet ([details](web-push.md)); Sol owns exact-head review and
+repaired release/live proof. Merged inbox source prevents pruned approval replay
+with bounded exact receipts (1,024 per actor); capacity/legacy gaps make new
+approval notifications explicitly unavailable. It reports incomplete delivery
+for first-use, retention and bounded recovery gaps; this source is currently
+rolled back.
 
 [Neal review queue #20](https://github.com/KumarG23/jarvis-command/issues/20) holds
 phone steps and deferred contracts; the Final Neal packet is due at P8. Older M0

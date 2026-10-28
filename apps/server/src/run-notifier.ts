@@ -1,3 +1,4 @@
+import type { PushService } from './push-service';
 import { createHash } from 'node:crypto';
 import type { NotificationCategory } from '@jarvis-command/contracts';
 import type { NotificationStore } from './notification-store';
@@ -28,13 +29,14 @@ export function notificationId(event: Pick<RunNotification, 'actor' | 'category'
  * resolves false. The ledger already holds the terminal fact, so the inbox reconcile re-delivers
  * the same deterministic event once storage recovers.
  */
-export function createRunNotifier(store: NotificationStore): RunNotifier {
+export function createRunNotifier(store: NotificationStore, push?: PushService): RunNotifier {
   return async event => {
     try {
       await store.record(event.actor, {
         id: notificationId(event), category: event.category, sessionId: event.sessionId, publicRunId: event.publicRunId,
         eventAt: event.eventAt,
       });
+      await push?.deliver(event.actor, notificationId(event));
       return true;
     } catch { return false; /* surfaced by the inbox read path */ }
   };

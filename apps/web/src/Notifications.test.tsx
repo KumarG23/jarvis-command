@@ -46,7 +46,7 @@ it('shows unread count, generic rows, filters, and persists read state via the s
   vi.stubGlobal('Notification', { requestPermission });
   render(<Harness onOpen={() => null} />);
   expect(await screen.findByRole('heading', { name: '2 unread' })).toBeInTheDocument();
-  expect(screen.getByText(/Events from the CLI, Discord or other surfaces and closed-app push alerts are not available yet/)).toBeInTheDocument();
+  expect(screen.getByText(/Events from the CLI, Discord or other surfaces are unavailable/)).toBeInTheDocument();
   const list = screen.getByRole('list', { name: 'Notifications' });
   expect(within(list).getAllByRole('listitem')).toHaveLength(3);
   fireEvent.click(screen.getByRole('button', { name: 'Unread' }));

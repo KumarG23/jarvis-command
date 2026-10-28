@@ -505,3 +505,5 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
   .room-sidebar { overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: 12px; }
   .sidebar-scroll { flex: 0 0 auto; min-height: 0; overflow-y: visible; }
 }
+
+.push-link { position: fixed; z-index: 90; inset: auto 12px 12px; max-width: 480px; max-height: 45dvh; overflow: auto; background: var(--panel, #171a20); padding: 12px; }
