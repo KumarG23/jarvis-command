@@ -269,6 +269,7 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
   recoveries: DraftRecovery[]; consumeRecovery: (recovery: DraftRecovery) => void;
   send: (sessionId: string, input: string, max: number, inference?: InferenceOverride, images?: LiveRunSubmissionRequest['images']) => boolean; retry: () => void; resume: () => void;
 }>) {
+  const displayedProject = project?.id === projectId ? project : null;
   const { draft, draftsRef, setRoomDraft, clearForSend, storageUnavailable } = useTextDraft(sessionId, allowed && draftsAuthorized);
   const picker = useRef<HTMLDetailsElement>(null);
   useEffect(() => { if (picker.current) picker.current.open = false; }, [sessionId]);
@@ -404,7 +405,7 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
   };
   const submit = async () => {
     const message = draft.trim() || (images.length ? 'Review the attached image.' : '');
-    let input = composeProjectInput(message, projectId ? project : null);
+    let input = composeProjectInput(message, displayedProject);
     if (!allowed || !sessionId || busy || imageBusy || preflight.current || !message) return;
     if (problem) { setPreflightError(problem); return; }
     const context = sendContext.current;
@@ -417,7 +418,7 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
         try { fresh = await readProjectForSend(projectId, sessionId, controller); }
         catch (error) { if (sendContext.current === context) setPreflightError(error instanceof Error ? error.message : 'Project readback unavailable. Your draft is kept.'); return; }
         if (controller.signal.aborted || sendContext.current !== context) return;
-        if (!project || projectContext(fresh) !== projectContext(project)) {
+        if (!displayedProject || projectContext(fresh) !== projectContext(displayedProject)) {
           onProjectReadback?.(fresh);
           setPreflightError('Saved project context changed. Review the updated context and send again. Your draft is kept.'); return;
         }
@@ -497,7 +498,7 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
       if (Array.from(event.dataTransfer.items).some(item => item.kind === 'file' && item.type.startsWith('image/'))) event.preventDefault();
     }} onDrop={(event) => { if (!imageAttachmentsEnabled) return; const files = Array.from(event.dataTransfer.files); if (files.some(file => file.type.startsWith('image/'))) { event.preventDefault(); void attachImages(files); } }}>
       {inferenceTarget ? createPortal(inferencePicker, inferenceTarget) : inferencePicker}
-      {projectId ? <details className="project-input-preview"><summary>{project ? 'Project context included' : 'Project context awaiting readback'} · {composeProjectInput(draft.trim() || (images.length ? 'Review the attached image.' : ''), project).length} / {max} characters</summary>{project ? <pre>{projectContext(project)}</pre> : <p>Project context must be read back before sending.</p>}<p>Included as ordinary message text on new sends. Saved non-image files are not delivered to Hermes. Use Attach image explicitly for images.</p></details> : null}
+      {projectId ? <details className="project-input-preview"><summary>{displayedProject ? 'Project context included' : 'Project context awaiting readback'} · {composeProjectInput(draft.trim() || (images.length ? 'Review the attached image.' : ''), displayedProject).length} / {max} characters</summary>{displayedProject ? <pre>{projectContext(displayedProject)}</pre> : <p>Project context must be read back before sending.</p>}<p>Included as ordinary message text on new sends. Saved non-image files are not delivered to Hermes. Use Attach image explicitly for images.</p></details> : null}
       {preflighting ? <p role="status">Checking saved context and requested model…</p> : null}
       {preflightError || problem || inferenceError ? <p role="status">{preflightError || problem || 'Model choices unavailable; explicitly selected Inherit remains available.'}</p> : null}
       {storageUnavailable ? <p role="status">Draft storage unavailable or full. Text remains in this tab; reload may lose recent edits. Sending requires safely clearing the saved draft.</p> : null}

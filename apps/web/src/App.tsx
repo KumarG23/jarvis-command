@@ -438,7 +438,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
         const fresh = await readProjectForSend(projectId, selectedSession.id, new AbortController());
         // Stable dependencies let unrelated shell renders keep the same send context.
         if (artifactSendContext.current !== context) throw Error('Chat context changed. Review and retry the artifact request.');
-        if (!project || projectContext(project) !== projectContext(fresh)) {
+        if (project?.id !== projectId || projectContext(project) !== projectContext(fresh)) {
           setProject(fresh); projects.current?.readback(fresh);
           throw Error('Saved project context changed. Review it in the chat composer, then retry the artifact request.');
         }
@@ -584,7 +584,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
           <p>{saveAuthorized ? 'Retry the original save to confirm whether it committed.' : 'Open the original chat and load its complete history to recover this save.'}</p>
           <button type="button" className="secondary-button" disabled={!saveAuthorized} onClick={() => setSaveActive(true)}>Recover response save</button>
       </div> : null}
-      <Suspense fallback={<p className="pane-loading" role="status">Loading Artifact Studio…</p>}><ArtifactStudio open selectedSessionId={selectedSession?.id ?? null} projectId={projectId} projectContextText={project ? projectContext(project) : undefined} canSendPrompt={!!writeAllowed && !(live.turn && !live.turn.done)} pendingSave={saveActive && saveAuthorized && !saveRecovery.error ? pendingArtifactSave : null} onConsumedSave={key => {
+      <Suspense fallback={<p className="pane-loading" role="status">Loading Artifact Studio…</p>}><ArtifactStudio open selectedSessionId={selectedSession?.id ?? null} projectId={projectId} projectContextText={project?.id === projectId ? projectContext(project) : undefined} canSendPrompt={!!writeAllowed && !(live.turn && !live.turn.done)} pendingSave={saveActive && saveAuthorized && !saveRecovery.error ? pendingArtifactSave : null} onConsumedSave={key => {
         if (saveRecoveryRef.current.pending?.key !== key) return;
         try {
           consumeArtifactSave(key);

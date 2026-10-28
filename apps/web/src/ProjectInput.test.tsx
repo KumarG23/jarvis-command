@@ -101,3 +101,11 @@ it('retains the original opaque project identity during read-only lost-ACK reloa
   expect(JSON.parse(sessionStorage.getItem('jarvis-command:live-turn')!)).toEqual({ sessionId, clientRequestId: requestId, publicRunId: runId, projectId: room.id });
   expect(fetcher.mock.calls.every(([, ...init]) => init.length === 0 || !JSON.stringify(init).includes('POST'))).toBe(true);
 });
+it('never displays the prior project context while a new project selection is being published', async () => {
+  setup();
+  const view = render(<TurnComposer {...base} send={vi.fn()} />);
+  expect(view.container.querySelector('.project-input-preview pre')).toHaveTextContent(room.instructions);
+  view.rerender(<TurnComposer {...base} projectId={'room_' + 'e'.repeat(32)} send={vi.fn()} />);
+  expect(view.container.querySelector('.project-input-preview pre')).toBeNull();
+  expect(screen.getByText(/Project context awaiting readback/)).toBeInTheDocument();
+});
