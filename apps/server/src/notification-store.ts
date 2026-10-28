@@ -36,7 +36,10 @@ const ActorStateSchema = z.object({
   items: z.array(NotificationItemSchema).max(MAX_ITEMS),
   // Event IDs already created, pruned or suppressed. A bounded set keeps an event from
   // reappearing after pruning or after a disabled category is re-enabled.
-  settled: z.array(NotificationIdSchema).max(MAX_SETTLED),
+  settled: z.array(z.object({ id: NotificationIdSchema, at: z.iso.datetime({ offset: true }) }).strict()).max(MAX_SETTLED),
+  // Newest settle time dropped from `settled`. Events from runs admitted before it are never
+  // recreated, so replay suppression stays bounded without trusting an unbounded ID list.
+  horizon: z.iso.datetime({ offset: true }).nullable(),
 }).strict();
 const StateSchema = z.object({
   version: z.literal(1),
@@ -50,6 +53,7 @@ export type NotificationEvent = Readonly<{
   category: NotificationCategory;
   sessionId: string;
   publicRunId: string;
+  runRequestedAt: string;
 }>;
 export type ActorView = Readonly<{ items: NotificationItem[]; preferences: NotificationPreferences }>;
 
@@ -59,7 +63,7 @@ const TEXT: Record<NotificationCategory, { title: string; body: string }> = {
   approval: { title: 'Approval needed', body: 'A run is waiting for your approval. Open the chat to review it.' },
 };
 
-const emptyActor = (): ActorState => ({ preferences: structuredClone(DEFAULT_PREFERENCES), items: [], settled: [] });
+const emptyActor = (): ActorState => ({ preferences: structuredClone(DEFAULT_PREFERENCES), items: [], settled: [], horizon: null });
 const view = (actor: ActorState): ActorView => ({ items: [...actor.items].reverse(), preferences: actor.preferences });
 
 // Single app writer on the same private mount as the audit ledger; never opens the ledger.
@@ -78,17 +82,26 @@ export class NotificationStore {
   record(actor: string, event: NotificationEvent): Promise<'created' | 'duplicate' | 'suppressed'> {
     return this.#transaction(state => {
       const current = state.actors[actor] ?? emptyActor();
-      if (current.settled.includes(event.id) || current.items.some(item => item.id === event.id)) return { result: 'duplicate' as const };
-      const settled = [...current.settled, event.id].slice(-MAX_SETTLED);
+      if (current.settled.some(entry => entry.id === event.id) || current.items.some(item => item.id === event.id)) return { result: 'duplicate' as const };
+      // Older than anything still remembered: treat as already settled rather than replaying it.
+      if (current.horizon !== null && event.runRequestedAt < current.horizon) return { result: 'duplicate' as const };
+      const at = this.now().toISOString();
+      let settled = [...current.settled, { id: event.id, at }];
+      let horizon = current.horizon;
+      while (settled.length > MAX_SETTLED) {
+        const dropped = settled[0]!;
+        horizon = horizon === null || dropped.at > horizon ? dropped.at : horizon;
+        settled = settled.slice(1);
+      }
       if (!current.preferences.categories[event.category]) {
-        state.actors[actor] = { ...current, settled };
+        state.actors[actor] = { ...current, settled, horizon };
         return { result: 'suppressed' as const, write: true };
       }
       const item: NotificationItem = {
-        id: event.id, category: event.category, observedAt: this.now().toISOString(),
+        id: event.id, category: event.category, observedAt: at,
         sessionId: event.sessionId, publicRunId: event.publicRunId, ...TEXT[event.category], readAt: null,
       };
-      state.actors[actor] = { ...current, settled, items: [...current.items, item].slice(-MAX_ITEMS) };
+      state.actors[actor] = { ...current, settled, horizon, items: [...current.items, item].slice(-MAX_ITEMS) };
       return { result: 'created' as const, write: true };
     });
   }

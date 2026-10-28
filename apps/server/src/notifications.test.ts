@@ -18,8 +18,10 @@ const actorB = 'b'.repeat(64);
 const runIds = Array.from({ length: 8 }, (_, i) => `jcr_${String(i).repeat(32)}`);
 const upstream = (i: number) => `run_${String(i).repeat(32)}`;
 const sessionOf = (i: number) => `jc_${String(i).repeat(32)}`;
+const LATER = '2026-10-28T14:30:00.000Z';
+const RUN_AT = '2026-10-28T13:00:00.000Z';
 const event = (category: 'run-completed' | 'run-failed' | 'approval' = 'run-completed', i = 1, key?: string) => ({
-  actor: actorA, sessionId: sessionOf(i), publicRunId: runIds[i]!, category, ...(key ? { key } : {}),
+  actor: actorA, sessionId: sessionOf(i), publicRunId: runIds[i]!, runRequestedAt: RUN_AT, category, ...(key ? { key } : {}),
 });
 
 async function privateDirectory() {
@@ -29,7 +31,7 @@ async function privateDirectory() {
   return directory;
 }
 const record = (store: NotificationStore, actor: string, e: ReturnType<typeof event>) => store.record(actor, {
-  id: notificationId({ ...e, actor }), category: e.category, sessionId: e.sessionId, publicRunId: e.publicRunId,
+  id: notificationId({ ...e, actor }), category: e.category, sessionId: e.sessionId, publicRunId: e.publicRunId, runRequestedAt: e.runRequestedAt,
 });
 
 describe('NotificationStore', () => {
@@ -86,16 +88,33 @@ describe('NotificationStore', () => {
     expect(view.items).toHaveLength(1);
   });
 
-  it('bounds retained items without resurrecting pruned events', async () => {
+  it('bounds retained items and never replays an event older than the pruned horizon, across restart', async () => {
+    const directory = await privateDirectory();
+    let tick = 0;
+    const store = new NotificationStore(directory, () => new Date(Date.UTC(2026, 9, 28, 14, 0, 0) + ++tick * 1000));
+    const id = (i: number) => `ntf_${i.toString(16).padStart(32, '0')}`;
+    const runAt = (i: number) => new Date(Date.UTC(2026, 9, 28, 14, 0, 0) + i * 1000 - 500).toISOString();
+    const make = (i: number) => ({ id: id(i), category: 'run-completed' as const, sessionId: sessionOf(1), publicRunId: runIds[1]!, runRequestedAt: runAt(i) });
+    for (let i = 0; i < 502; i++) await store.record(actorA, make(i + 1));
+    const restarted = new NotificationStore(directory);
+    expect((await restarted.read(actorA)).items).toHaveLength(100);
+    // Oldest event (long pruned from items and the settled list) must not return unread.
+    expect(await restarted.record(actorA, make(1))).toBe('duplicate');
+    expect(await restarted.record(actorA, make(2))).toBe('duplicate');
+    expect((await restarted.read(actorA)).items.some(item => item.id === id(1))).toBe(false);
+    // A genuinely newer event is still recorded.
+    expect(await restarted.record(actorA, make(600))).toBe('created');
+  }, 120_000);
+
+  it('does not replay a pruned event after a disabled category is re-enabled beyond the bound', async () => {
     const store = new NotificationStore(await privateDirectory());
-    for (let i = 0; i < 104; i++) {
-      await store.record(actorA, { id: `ntf_${i.toString(16).padStart(32, '0')}`, category: 'run-completed', sessionId: sessionOf(1), publicRunId: runIds[1]! });
-    }
-    const { items } = await store.read(actorA);
-    expect(items).toHaveLength(100);
-    expect(items[0]!.id).toBe(`ntf_${(103).toString(16).padStart(32, '0')}`);
-    expect(await store.record(actorA, { id: `ntf_${'0'.padStart(32, '0')}`, category: 'run-completed', sessionId: sessionOf(1), publicRunId: runIds[1]! })).toBe('duplicate');
-  });
+    await store.setPreferences(actorA, { categories: { 'run-completed': false, 'run-failed': true, approval: true } });
+    const old = { id: `ntf_${'0'.padStart(32, '0')}`, category: 'run-completed' as const, sessionId: sessionOf(1), publicRunId: runIds[1]!, runRequestedAt: RUN_AT };
+    expect(await store.record(actorA, old)).toBe('suppressed');
+    for (let i = 1; i <= 501; i++) await store.record(actorA, { ...old, id: `ntf_${i.toString(16).padStart(32, '0')}`, category: 'run-failed', runRequestedAt: LATER });
+    await store.setPreferences(actorA, { categories: { 'run-completed': true, 'run-failed': true, approval: true } });
+    expect(await new NotificationStore(store.directory).record(actorA, old)).toBe('duplicate');
+  }, 120_000);
 
   it('reports corrupt or unsafe storage honestly and never replaces it with an empty inbox', async () => {
     const directory = await privateDirectory();
@@ -187,13 +206,45 @@ describe('server-observed run notifications', () => {
     expect((await h.store.read(alice)).items).toHaveLength(3);
   });
 
-  it('keeps run status and terminal audit working when notification storage is broken', async () => {
+  it('recovers a completion lost to one transient write failure on the next status read or reconcile, across restart', async () => {
+    const h = await harness();
+    const alice = await actorHash('alice');
+    const run = await h.submit('alice', 1);
+    h.getRun.mockResolvedValue(status(1, { status: 'completed' }) as never);
+    const original = h.store.record.bind(h.store);
+    let failures = 1;
+    h.store.record = async (...args) => { if (failures-- > 0) throw new NotificationStorageError(); return original(...args); };
+    // Status still succeeds; the terminal audit is deferred so the run stays unsettled.
+    await expect(h.service.getRun('alice', run.publicRunId)).resolves.toMatchObject({ status: 'completed' });
+    expect((await h.store.read(alice)).items).toEqual([]);
+    expect(h.service.listUnsettledRuns('alice', 10)).toEqual([run.publicRunId]);
+    expect(await readFile(join(h.directory, 'events.jsonl'), 'utf8')).not.toContain('"action":"run.completed"');
+    // Writes recover: reconcile re-observes the same run, records it once, then audits.
+    for (const id of h.service.listUnsettledRuns('alice', 10)) await h.service.getRun('alice', id);
+    await h.service.getRun('alice', run.publicRunId);
+    expect((await new NotificationStore(h.directory).read(alice)).items).toHaveLength(1);
+    expect(h.service.listUnsettledRuns('alice', 10)).toEqual([]);
+    expect(await readFile(join(h.directory, 'events.jsonl'), 'utf8')).toContain('"action":"run.completed"');
+  });
+
+  it('does not re-announce an already settled terminal run when it is read again', async () => {
+    const h = await harness();
+    const alice = await actorHash('alice');
+    const run = await h.submit('alice', 1);
+    h.getRun.mockResolvedValue(status(1, { status: 'completed' }) as never);
+    await h.service.getRun('alice', run.publicRunId);
+    await h.store.markRead(alice, { all: true });
+    const record = vi.spyOn(h.store, 'record');
+    await h.service.getRun('alice', run.publicRunId);
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  it('keeps run status working when notification storage is broken, deferring only the terminal audit', async () => {
     const h = await harness();
     const run = await h.submit('alice', 1);
     await writeFile(join(h.directory, 'notifications.json'), '{broken', { mode: 0o600 });
     h.getRun.mockResolvedValue(status(1, { status: 'completed' }) as never);
     await expect(h.service.getRun('alice', run.publicRunId)).resolves.toMatchObject({ status: 'completed' });
-    expect(await readFile(join(h.directory, 'events.jsonl'), 'utf8')).toContain('"action":"run.completed"');
     await expect(h.store.read(await actorHash('alice'))).rejects.toBeInstanceOf(NotificationStorageError);
   });
 });

@@ -6,11 +6,14 @@ export type RunNotification = Readonly<{
   actor: string;
   sessionId: string;
   publicRunId: string;
+  /** When the run was admitted; an event cannot predate it. Bounds replay suppression. */
+  runRequestedAt: string;
   category: NotificationCategory;
   /** Distinguishes repeated events of one category within a run, e.g. an approval request ID. */
   key?: string;
 }>;
-export type RunNotifier = (event: RunNotification) => Promise<void>;
+/** Resolves true only when the event is durably accounted for (created, duplicate or suppressed). */
+export type RunNotifier = (event: RunNotification) => Promise<boolean>;
 
 // One deterministic ID per actual event: retries, restarts and concurrent status/SSE
 // observations all derive the same ID and are deduped inside the store transaction.
@@ -21,15 +24,18 @@ export function notificationId(event: RunNotification): string {
 }
 
 /**
- * Recording is best-effort by design: a notification-storage fault must never break run
- * status, the SSE stream, or terminal auditing. The inbox read path reports storage faults.
+ * A notification-storage fault never breaks run status or the SSE stream: it resolves false.
+ * Callers then defer terminal auditing, so the run stays unsettled in the ledger and the next
+ * status read or inbox reconcile retries the same deterministic event.
  */
 export function createRunNotifier(store: NotificationStore): RunNotifier {
   return async event => {
     try {
       await store.record(event.actor, {
         id: notificationId(event), category: event.category, sessionId: event.sessionId, publicRunId: event.publicRunId,
+        runRequestedAt: event.runRequestedAt,
       });
-    } catch { /* surfaced by the inbox read path */ }
+      return true;
+    } catch { return false; /* surfaced by the inbox read path */ }
   };
 }
