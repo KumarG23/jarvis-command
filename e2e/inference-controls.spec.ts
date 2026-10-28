@@ -41,18 +41,18 @@ test('requested choices survive two chats and reload; stale inventory preserves 
   const expand = async () => { await page.locator('.inference-control').evaluate(el => { (el as HTMLDetailsElement).open = true; }); };
   await page.goto('/'); await page.getByRole('button', { name: sessions[0]!.title, exact: true }).click(); await expand();
   await model.selectOption(`${sol.provider}:${sol.model}`); await effort.selectOption('xhigh');
-  await page.getByRole('button', { name: sessions[1]!.title, exact: true }).click(); await expect(model).toHaveValue('inherit');
+  await page.getByRole('button', { name: sessions[1]!.title, exact: true }).click(); await expand(); await expect(model).toHaveValue('inherit');
   await model.selectOption(`${luna.provider}:${luna.model}`); await effort.selectOption('low');
-  await page.getByRole('button', { name: sessions[0]!.title, exact: true }).click(); await expect(effort).toHaveValue('xhigh');
+  await page.getByRole('button', { name: sessions[0]!.title, exact: true }).click(); await expand(); await expect(effort).toHaveValue('xhigh');
   await page.reload(); await expand(); await expect(effort).toHaveValue('xhigh');
-  await page.getByRole('button', { name: sessions[1]!.title, exact: true }).click(); await expect(effort).toHaveValue('low');
+  await page.getByRole('button', { name: sessions[1]!.title, exact: true }).click(); await expand(); await expect(effort).toHaveValue('low');
   await page.reload(); await expand(); await expect(model).toHaveValue(`${luna.provider}:${luna.model}`); await expect(effort).toHaveValue('low');
-  await page.getByRole('button', { name: sessions[0]!.title, exact: true }).click();
+  await page.getByRole('button', { name: sessions[0]!.title, exact: true }).click(); await expand();
   await model.selectOption(`${luna.provider}:${luna.model}`); await expect(effort).toHaveValue('medium');
   options = [sol]; await draft.fill('SYNTHETIC draft retained'); await page.getByRole('button', { name: 'Send message', exact: true }).click();
   await expect(page.getByText('Requested model unavailable. Choose another model or explicitly choose Inherit.', { exact: true })).toBeVisible();
   expect(posts).toBe(0); await expect(draft).toHaveValue('SYNTHETIC draft retained');
-  options = [sol, luna]; await page.getByRole('button', { name: 'Retry model choices' }).click();
+  options = [sol, luna]; await expand(); await page.getByRole('button', { name: 'Retry model choices' }).click();
   await expect(model.locator('option')).toHaveCount(3);
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: width === 1280 ? 720 : 844 });
