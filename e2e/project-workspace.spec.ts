@@ -125,3 +125,58 @@ for (const width of [1280, 320, 360, 390, 430]) test(`SYNTHETIC project workspac
   expect(admissions).toHaveLength(2);
   expect(creates).toBe(1); expect(errors).toEqual([]); expect(unexpected).toEqual([]);
 });
+
+for (const change of ['archived', 'removed', 'stale', 'unavailable', 'unchanged']) test(`SYNTHETIC failed-generation Retry checks ${change} project context before a new admission`, async ({ page }) => {
+  const originalRoom = { id: pid, name: 'SYNTHETIC retry project', goal: 'Retry isolation', instructions: 'Original SYNTHETIC instructions', repository: '', notes: [], sessionIds: [sid], lastSessionId: sid };
+  const originalPrompt = '[Project context — saved in Command]\nProject: SYNTHETIC retry project\nGoal: Retry isolation\nStanding instructions:\nOriginal SYNTHETIC instructions\nReference files remain in Command; file bytes are not included in this message.\n[/Project context]\n\n[Message]\nSYNTHETIC artifact generation request';
+  const pending = { version: 1, sourceRequestId: 'gen_' + 'a'.repeat(32), sessionId: sid, projectId: pid, title: 'SYNTHETIC failed artifact', artifactType: 'markdown', prompt: originalPrompt, clientRequestId: '11111111-1111-4111-8111-111111111111', publicRunId: null, createdAt: new Date().toISOString(), state: 'failed', message: 'SYNTHETIC failed generation' };
+  await page.addInitScript(({ pending, pid }) => {
+    sessionStorage.setItem('jarvis-command:artifact-generation:v1', JSON.stringify(pending));
+    sessionStorage.setItem('jarvis-command:project-room:v1', pid);
+  }, { pending, pid });
+  let reads = 0;
+  const admissions: Record<string, unknown>[] = [];
+  await page.route('**/api/**', async route => {
+    const path = new URL(route.request().url()).pathname;
+    const json = (body: unknown) => route.fulfill({ json: body });
+    if (path === '/api/bootstrap') return json({ identity: { provider: 'development' }, command: { version: 'SYNTHETIC generation Retry', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 16000, maxSteerCharacters: 4000 } }, hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse', 'artifact_studio'], readinessChecks: {} }, sessions: [session] });
+    if (path === '/api/rooms') {
+      reads++;
+      if (reads > 1 && change === 'unavailable') return route.fulfill({ status: 503, json: {} });
+      const room = reads === 1 ? originalRoom : change === 'archived' ? { ...originalRoom, archived: true } : change === 'removed' ? { ...originalRoom, sessionIds: [], lastSessionId: null } : change === 'stale' ? { ...originalRoom, instructions: 'Changed SYNTHETIC instructions' } : originalRoom;
+      return json({ version: 1, rooms: [room] });
+    }
+    if (path === `/api/live/sessions/${sid}`) return json({ session });
+    if (path.endsWith('/messages')) return json({ sessionId: sid, messages: [], pagination: { limit: 50, offset: 0, returned: 0, hasMore: false } });
+    if (path.endsWith('/context')) return json({ sessionId: sid, state: 'unavailable', receipt: null, updatedAt: null });
+    if (path === '/api/live/model-options') return json({ default: { provider: 'openai-codex', model: 'gpt-6-sol' }, options: [{ provider: 'openai-codex', model: 'gpt-6-sol', label: 'SYNTHETIC Sol', reasoningEfforts: ['medium'] }] });
+    if (path === '/api/live/session-controls') return json({ sessionForkPreservesSource: false, sessionCompactionRuns: false });
+    if (path === '/api/artifacts') return json({ artifacts: [] });
+    if (path === '/api/live/runs') { admissions.push(route.request().postDataJSON()); return route.abort(); }
+    throw Error(`Unexpected synthetic request: ${path}`);
+  });
+  await page.goto('/');
+  await expect(page.getByRole('textbox', { name: 'Message Jarvis' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Open Artifact Studio' }).click();
+  await page.getByText('Create with Jarvis', { exact: true }).first().click();
+  const form = page.getByRole('form', { name: 'Create with Jarvis' });
+  await form.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect.poll(() => reads).toBe(2);
+  if (change === 'unchanged') {
+    await expect.poll(() => admissions.length).toBe(1);
+    expect(admissions[0]!.input).toBe(originalPrompt);
+    expect(admissions[0]!.clientRequestId).not.toBe(pending.clientRequestId);
+    expect(String(admissions[0]!.input).match(/\[Project context/g)).toHaveLength(1);
+  } else {
+    await expect(page.getByRole('alert', { name: 'Artifact request refused' })).toBeVisible();
+    expect(admissions).toHaveLength(0);
+    expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('jarvis-command:artifact-generation:v1')!))).toEqual(pending);
+    if (change === 'stale') {
+      await form.getByRole('button', { name: 'Retry', exact: true }).click();
+      await expect.poll(() => reads).toBe(3);
+      await expect(page.getByRole('alert', { name: 'Artifact request refused' })).toContainText('Saved context differs from this failed request');
+      expect(admissions).toHaveLength(0);
+      expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('jarvis-command:artifact-generation:v1')!))).toEqual(pending);
+    }
+  }
+});

@@ -239,6 +239,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
   const [associatedArtifacts, setAssociatedArtifacts] = useState<number | null>(null);
   const [artifactRefresh, setArtifactRefresh] = useState(0);
   const [pendingGeneration, setPendingGeneration] = useState<PendingArtifactGeneration | null>(() => readPendingGeneration());
+  const generationRef = useRef(pendingGeneration); generationRef.current = pendingGeneration;
   const [saveRecovery, setSaveRecovery] = useState(readArtifactSave);
   const pendingArtifactSave = saveRecovery.pending;
   const saveRecoveryRef = useRef(saveRecovery);
@@ -427,7 +428,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
   const artifactContextValue = useMemo(() => ({ projectId, project, session: selectedSession, writeAllowed }), [projectId, project, selectedSession, writeAllowed]);
   artifactSendContext.current = artifactContextValue;
   const artifactSending = useRef(false);
-  async function prepareArtifactInput(prompt: string): Promise<string | null> {
+  async function prepareArtifactInput(prompt: string, alreadyComposed = false): Promise<string | null> {
     if (artifactSending.current || !writeAllowed || !selectedSession) return null;
     artifactSending.current = true;
     const context = artifactSendContext.current;
@@ -442,8 +443,10 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
           setProject(fresh); projects.current?.readback(fresh);
           throw Error('Saved project context changed. Review it in the chat composer, then retry the artifact request.');
         }
-        input = composeProjectInput(prompt, fresh);
+        if (alreadyComposed && !prompt.startsWith(composeProjectInput('', fresh))) throw Error('Saved context differs from this failed request. The pending request is kept. Review the context, then cancel and create a new request.');
+        input = alreadyComposed ? prompt : composeProjectInput(prompt, fresh);
       }
+      if (!input.trim()) throw Error('This failed request has no complete input. Cancel and create a new request.');
       if (input.length > bootstrap.command.liveRoom.maxInputCharacters) throw Error('Complete artifact request including project context exceeds the message limit. Shorten the request or saved context.');
       return input;
     } catch (error) { setProjectSendError(error instanceof Error ? error.message : 'Project readback unavailable. Request not sent.'); return null; }
@@ -500,11 +503,15 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     setPane('artifacts');
     return true;
   }
-  function retryArtifactGeneration() {
+  async function retryArtifactGeneration() {
     if (!pendingGeneration || pendingGeneration.state !== 'failed' || !selectedSession || selectedSession.id !== pendingGeneration.sessionId || projectId !== pendingGeneration.projectId || !writeAllowed || (live.turn && !live.turn.done)) return;
+    const original = pendingGeneration;
+    const input = await prepareArtifactInput(original.prompt, true);
+    if (input === null || generationRef.current !== original) return;
     const clientRequestId = crypto.randomUUID();
     const next: PendingArtifactGeneration = {
-      ...pendingGeneration,
+      ...original,
+      prompt: input,
       sourceRequestId: newGenerationId(),
       clientRequestId,
       publicRunId: null,
@@ -512,9 +519,9 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
       state: 'running',
       message: 'Create with Jarvis is retrying.',
     };
-    setPendingGeneration(next);
     const accepted = live.send(next.sessionId, next.prompt, bootstrap.command.liveRoom.maxInputCharacters, undefined, undefined, clientRequestId, projectId);
-    if (!accepted) setPendingGeneration({ ...next, state: 'failed', message: 'Retry could not start. Check that no run is active and try again.' });
+    if (accepted) setPendingGeneration(next);
+    else setProjectSendError('Retry could not start. The original pending request is kept. Check that no run is active and try again.');
   }
   function cancelArtifactGeneration() {
     setPendingGeneration(null);
@@ -525,7 +532,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     message: pendingArtifactSave?.sourceRequestId === pendingGeneration?.sourceRequestId && pendingArtifactSave ? 'Jarvis completed. Saving artifact version 1...' : pendingGeneration?.message ?? null,
     title: pendingGeneration?.title ?? null,
     type: pendingGeneration?.artifactType ?? null,
-    canRetry: !!pendingGeneration && pendingGeneration.state === 'failed' && selectedSession?.id === pendingGeneration.sessionId && !!writeAllowed && !(live.turn && !live.turn.done),
+    canRetry: !!pendingGeneration && pendingGeneration.state === 'failed' && selectedSession?.id === pendingGeneration.sessionId && projectId === pendingGeneration.projectId && !!writeAllowed && !(live.turn && !live.turn.done),
     canCancel: !!pendingGeneration,
   };
   return <div className={`command-shell${pane ? ' has-context' : ''}`}>
@@ -584,7 +591,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
           <p>{saveAuthorized ? 'Retry the original save to confirm whether it committed.' : 'Open the original chat and load its complete history to recover this save.'}</p>
           <button type="button" className="secondary-button" disabled={!saveAuthorized} onClick={() => setSaveActive(true)}>Recover response save</button>
       </div> : null}
-      <Suspense fallback={<p className="pane-loading" role="status">Loading Artifact Studio…</p>}><ArtifactStudio open selectedSessionId={selectedSession?.id ?? null} projectId={projectId} projectContextText={project?.id === projectId ? projectContext(project) : undefined} canSendPrompt={!!writeAllowed && !(live.turn && !live.turn.done)} pendingSave={saveActive && saveAuthorized && !saveRecovery.error ? pendingArtifactSave : null} onConsumedSave={key => {
+      <Suspense fallback={<p className="pane-loading" role="status">Loading Artifact Studio…</p>}><ArtifactStudio open selectedSessionId={selectedSession?.id ?? null} projectId={projectId} requestError={projectSendError} projectContextText={project?.id === projectId ? projectContext(project) : undefined} canSendPrompt={!!writeAllowed && !(live.turn && !live.turn.done)} pendingSave={saveActive && saveAuthorized && !saveRecovery.error ? pendingArtifactSave : null} onConsumedSave={key => {
         if (saveRecoveryRef.current.pending?.key !== key) return;
         try {
           consumeArtifactSave(key);

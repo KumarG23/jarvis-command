@@ -43,6 +43,7 @@ type ArtifactStudioProps = Readonly<{
   selectedSessionId: string | null;
   projectId: string | null;
   canSendPrompt: boolean;
+  requestError?: string;
   projectContextText?: string | undefined;
   pendingSave: SaveResponseRequest | null;
   onConsumedSave: (key: string) => void;
@@ -84,7 +85,7 @@ const typeLabels: Record<ArtifactType | 'all', string> = {
   file: 'File',
 };
 
-export function ArtifactStudio({ open, selectedSessionId, projectId, canSendPrompt, projectContextText, pendingSave, onConsumedSave, onSendPrompt, onCreateWithJarvis, generation, onRetryGeneration, onCancelGeneration, onClose, fullScreen, onToggleFullScreen, onLibraryChanged }: ArtifactStudioProps) {
+export function ArtifactStudio({ open, selectedSessionId, projectId, canSendPrompt, projectContextText, requestError, pendingSave, onConsumedSave, onSendPrompt, onCreateWithJarvis, generation, onRetryGeneration, onCancelGeneration, onClose, fullScreen, onToggleFullScreen, onLibraryChanged }: ArtifactStudioProps) {
   const [artifacts, setArtifacts] = useState<ArtifactSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<ArtifactMetadata | null>(null);
@@ -441,6 +442,7 @@ export function ArtifactStudio({ open, selectedSessionId, projectId, canSendProm
           </select></label>
         </div>
         {projectId ? <details className="project-input-preview"><summary>Project context included in new requests</summary><pre>{projectContextText ?? 'Project context requires readback before sending.'}</pre><p>Saved file bytes are not automatically delivered to Hermes. Complete requests are checked against the message limit.</p></details> : null}
+        {requestError ? <p role="alert" aria-label="Artifact request refused" className="notice error">{requestError}</p> : null}
         <details className="artifact-create-disclosure">
           <summary><FilePlus2 size={16} /> New text artifact</summary>
           <form className="artifact-create" aria-label="Create text artifact" onSubmit={event => { event.preventDefault(); void createText(); }}>

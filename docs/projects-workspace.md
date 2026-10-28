@@ -16,6 +16,9 @@ changed text requires review and a second explicit send. Oversized input is refu
 without truncation. The existing intent captures composed text once; admission
 retries reuse it exactly. Reload stores only opaque project/session/request/run IDs
 and reconciles read-only. It never rebuilds or resends input from current metadata.
+Failed generation Retry is a new admission: it rechecks current membership/archive
+and saved context before assigning a new ID. A stale captured prompt stays intact;
+review context, cancel and create a new request rather than silently recomposing it.
 
 Project files use P4 storage, immutable version downloads and the existing upload,
 preview and response-save panel. Saved file bytes are not automatically delivered

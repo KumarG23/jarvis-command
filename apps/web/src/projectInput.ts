@@ -18,9 +18,12 @@ export function composeProjectInput(input: string, room?: ProjectRoom | null): s
   return room ? `${projectContext(room)}\n\n[Message]\n${input}` : input;
 }
 export async function readProjectForSend(id: string, sessionId: string, controller: AbortController): Promise<ProjectRoom> {
-  const data = ProjectRoomsSchema.parse(await boundedJson('/api/rooms', {
-    credentials: 'same-origin', headers: { accept: 'application/json' }, cache: 'no-store',
-  }, controller));
+  let data;
+  try {
+    data = ProjectRoomsSchema.parse(await boundedJson('/api/rooms', {
+      credentials: 'same-origin', headers: { accept: 'application/json' }, cache: 'no-store',
+    }, controller));
+  } catch { throw Error('Project readback unavailable. Your draft or pending request is kept. Retry when project storage is available.'); }
   const room = data.rooms.find(item => item.id === id);
   if (!room || room.archived || !room.sessionIds.includes(sessionId)) throw Error('Project is unavailable, archived, or no longer contains this chat. Reload projects. Your draft is kept.');
   return room;
