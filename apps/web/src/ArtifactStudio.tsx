@@ -568,7 +568,7 @@ function ArtifactPreview({ artifact, source }: Readonly<{ artifact: ArtifactMeta
   if (artifact.type === 'html') return <SandboxFrame title={artifact.title} content={source} kind="html" />;
   if (artifact.type === 'svg') return <SandboxFrame title={artifact.title} content={source} kind="svg" />;
   if (artifact.type === 'mermaid') return <MermaidFrame title={artifact.title} graph={source} />;
-  if (artifact.type === 'image' || artifact.type === 'pdf') return <BlobPreview artifact={artifact} />;
+  if (artifact.type === 'image' || artifact.type === 'pdf') return <BinaryPreview artifact={artifact} />;
   return <div className="generic-artifact"><h4>{artifact.originalFilename ?? artifact.title}</h4><p>{artifact.mime} · {formatBytes(artifact.size)} · {artifact.sha256}</p><a className="primary-button" href={downloadUrl(artifact)}><Download size={15} /> Download file</a></div>;
 }
 
@@ -581,34 +581,18 @@ function UnavailableNotice({ artifactId, title, version, reason }: Readonly<{ ar
   </section>;
 }
 
-function BlobPreview({ artifact }: Readonly<{ artifact: ArtifactMetadata }>) {
-  const [url, setUrl] = useState<string | null>(null);
+function BinaryPreview({ artifact }: Readonly<{ artifact: ArtifactMetadata }>) {
   const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    let current: string | null = null;
-    const controller = new AbortController();
-    setUrl(null);
-    setFailed(false);
-    void fetch(`/api/artifacts/${artifact.id}/versions/${artifact.currentVersion}/blob`, { credentials: 'same-origin', cache: 'no-store', signal: controller.signal })
-      .then(response => {
-        if (!response.ok) throw new Error('blob');
-        return response.blob();
-      })
-      .then(blob => {
-        current = URL.createObjectURL(blob);
-        setUrl(current);
-      })
-      .catch(() => { if (!controller.signal.aborted) setFailed(true); });
-    return () => {
-      controller.abort();
-      if (current) URL.revokeObjectURL(current);
-    };
-  }, [artifact.id, artifact.currentVersion]);
-  if (failed) return <UnavailableNotice artifactId={artifact.id} title={artifact.title} version={artifact.currentVersion} reason="Preview unavailable: this file could not be loaded. Download the exact version instead." />;
-  if (!url) return <p role="status">Loading preview…</p>;
-  return artifact.type === 'pdf'
-    ? <iframe className="blob-frame" title={artifact.title} src={url} sandbox="" />
-    : <img className="image-preview" src={url} alt={artifact.title} />;
+  useEffect(() => { setFailed(false); }, [artifact.id, artifact.currentVersion]);
+  // PDFs stay download-only. The fixed blob route deliberately sends
+  // frame-ancestors 'none' (and /download is an attachment), so an iframe would
+  // be refused by the production policy even though the document CSP allows
+  // same-origin frames. A blank frame is never success.
+  if (artifact.type === 'pdf') return <UnavailableNotice artifactId={artifact.id} title={artifact.title} version={artifact.currentVersion} reason="Preview unavailable: PDF files are download-only under the current framing policy. Download the exact version to open it safely." />;
+  if (failed) return <UnavailableNotice artifactId={artifact.id} title={artifact.title} version={artifact.currentVersion} reason="Preview unavailable: this image could not be loaded. Download the exact version instead." />;
+  // Images use the existing authenticated same-origin blob route directly so
+  // the document CSP (img-src 'self' data:) allows them without a blob: URL.
+  return <img className="image-preview" src={`/api/artifacts/${artifact.id}/versions/${artifact.currentVersion}/blob`} alt={artifact.title} onError={() => setFailed(true)} />;
 }
 
 function SandboxFrame({ title, content, kind }: Readonly<{ title: string; content: string; kind: 'html' | 'svg' }>) {
