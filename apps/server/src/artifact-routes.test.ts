@@ -9,7 +9,7 @@ import { ArtifactStore } from './artifact-store';
 
 const roots: string[] = [];
 
-function config(root: string): AppConfig {
+function config(root: string, artifactOverrides: Partial<AppConfig['artifacts']> = {}): AppConfig {
   return {
     nodeEnv: 'test',
     host: '127.0.0.1',
@@ -30,15 +30,15 @@ function config(root: string): AppConfig {
       publicOrigin: 'https://command.example.test',
     },
     webDistDir: undefined,
-    artifacts: { enabled: true, root, maxFileBytes: 1024, maxTotalBytes: 4096, maxArtifacts: 10 },
+    artifacts: { enabled: true, root, maxFileBytes: 1024, maxTotalBytes: 4096, maxArtifacts: 10, ...artifactOverrides },
   };
 }
 
-async function makeApp() {
+async function makeApp(artifactOverrides: Partial<AppConfig['artifacts']> = {}) {
   const root = await mkdtemp(join(tmpdir(), 'jarvis-artifacts-test-'));
   roots.push(root);
   const app = buildApp({
-    config: config(root),
+    config: config(root, artifactOverrides),
     verifyAccess: vi.fn(async assertion => {
       if (assertion !== 'valid') throw new Error('denied');
       return { subject: 'operator', provider: 'cloudflare-access' as const };
@@ -66,6 +66,75 @@ describe('artifact routes', () => {
     try {
       expect((await app.inject({ method: 'GET', url: '/api/artifacts' })).statusCode).toBe(401);
       expect((await app.inject({ method: 'POST', url: '/api/artifacts/text', headers: { ...headers, 'x-jarvis-command': '0' }, payload: '{}' })).statusCode).toBe(403);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('downloads dot-leading titles and every immutable version with exact bytes and matching checksums', async () => {
+    const { app } = await makeApp();
+    try {
+      const v1Bytes = 'v1 exact bytes';
+      const v2Bytes = 'v2 exact bytes\nchanged';
+      const created = await app.inject({
+        method: 'POST',
+        url: '/api/artifacts/text',
+        headers,
+        payload: JSON.stringify({ title: '.hidden notes', type: 'markdown', content: v1Bytes, source: 'human' }),
+      });
+      expect(created.statusCode).toBe(200);
+      const artifact = created.json().artifact;
+      const versioned = await app.inject({
+        method: 'POST',
+        url: `/api/artifacts/${artifact.id}/versions`,
+        headers,
+        payload: JSON.stringify({ baseVersion: 1, content: v2Bytes }),
+      });
+      expect(versioned.statusCode).toBe(200);
+      const metadata = (await app.inject({ method: 'GET', url: `/api/artifacts/${artifact.id}`, headers: { 'cf-access-jwt-assertion': 'valid' } })).json();
+      expect(metadata.versions.map((item: { version: number }) => item.version)).toEqual([1, 2]);
+      expect(metadata.versions[0].sha256).toBe(createHash('sha256').update(v1Bytes).digest('hex'));
+      expect(metadata.versions[1].sha256).toBe(createHash('sha256').update(v2Bytes).digest('hex'));
+
+      const v1Download = await app.inject({ method: 'GET', url: `/api/artifacts/${artifact.id}/versions/1/download`, headers: { 'cf-access-jwt-assertion': 'valid' } });
+      expect(v1Download.statusCode).toBe(200);
+      expect(v1Download.body).toBe(v1Bytes);
+      expect(v1Download.headers['x-artifact-type']).toBe('markdown');
+      expect(v1Download.headers['content-disposition']).toContain('attachment; filename="hidden notes-v1"');
+      expect(v1Download.headers['content-disposition']).not.toContain('filename=".');
+
+      const v2Download = await app.inject({ method: 'GET', url: `/api/artifacts/${artifact.id}/versions/2/download`, headers: { 'cf-access-jwt-assertion': 'valid' } });
+      expect(v2Download.statusCode).toBe(200);
+      expect(v2Download.body).toBe(v2Bytes);
+      expect(createHash('sha256').update(v2Download.body).digest('hex')).toBe(metadata.versions[1].sha256);
+
+      const v1Blob = await app.inject({ method: 'GET', url: `/api/artifacts/${artifact.id}/versions/1/blob`, headers: { 'cf-access-jwt-assertion': 'valid' } });
+      expect(v1Blob.statusCode).toBe(200);
+      expect(v1Blob.body).toBe(v1Bytes);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('serves exact downloads for oversized text while the text source read stays unavailable', async () => {
+    const { app } = await makeApp({ maxFileBytes: 2_000_000, maxTotalBytes: 4_000_000 });
+    try {
+      const html = `<html><body>${'x'.repeat(1_200_000)}</body></html>`;
+      const uploaded = await upload(app, Buffer.from(html), 'text/html', 'large.html', { type: 'html', mime: 'text/html' });
+      expect(uploaded.statusCode).toBe(200);
+      const artifact = uploaded.json().artifact;
+      expect(artifact.size).toBeGreaterThan(1_048_576);
+      expect(artifact.sha256).toBe(createHash('sha256').update(html).digest('hex'));
+
+      const source = await app.inject({ method: 'GET', url: `/api/artifacts/${artifact.id}/versions/1/source`, headers: { 'cf-access-jwt-assertion': 'valid' } });
+      expect(source.statusCode).toBe(415);
+
+      const download = await app.inject({ method: 'GET', url: `/api/artifacts/${artifact.id}/versions/1/download`, headers: { 'cf-access-jwt-assertion': 'valid' } });
+      expect(download.statusCode).toBe(200);
+      expect(download.headers['x-artifact-type']).toBe('html');
+      expect(download.headers['content-disposition']).toContain('attachment; filename="large.html"');
+      expect(download.body.length).toBe(Buffer.byteLength(html));
+      expect(createHash('sha256').update(download.body).digest('hex')).toBe(artifact.sha256);
     } finally {
       await app.close();
     }

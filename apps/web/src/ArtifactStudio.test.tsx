@@ -25,7 +25,7 @@ const baseArtifact: ArtifactMetadata = {
   comments: [],
 };
 
-function mockArtifactBackend(initial: ArtifactMetadata[] = [baseArtifact]) {
+function mockArtifactBackend(initial: ArtifactMetadata[] = [baseArtifact], options: { sourceStatus?: (artifact: ArtifactMetadata) => number | null } = {}) {
   let artifacts = [...initial];
   const fetchMock = vi.fn(async (raw: string, init?: RequestInit) => {
     const url = new URL(raw, 'https://command.example.test');
@@ -63,7 +63,11 @@ function mockArtifactBackend(initial: ArtifactMetadata[] = [baseArtifact]) {
     }
     if (url.pathname.endsWith('/source') && id) {
       const artifact = artifacts.find(item => item.id === id)!;
-      return Response.json({ artifactId: id, version: artifact.currentVersion, type: artifact.type, mime: artifact.mime, size: 13, sha256: artifact.sha256, content: artifact.currentVersion === 1 ? '# Hello' : '# Hello\nchanged' });
+      const status = options.sourceStatus?.(artifact);
+      if (status) return Response.json({ error: 'bad_request' }, { status });
+      const version = Number(url.pathname.match(/\/versions\/(\d+)\/source/)?.[1] ?? artifact.currentVersion);
+      const selected = artifact.versions.find(item => item.version === version) ?? artifact.versions.at(-1)!;
+      return Response.json({ artifactId: id, version, type: selected.type ?? artifact.type, mime: selected.mime, size: selected.size, sha256: selected.sha256, content: version === 1 ? '# Hello' : '# Hello\nchanged' });
     }
     if (url.pathname.endsWith('/versions') && id) {
       const artifact = artifacts.find(item => item.id === id)!;
@@ -229,5 +233,75 @@ describe('ArtifactStudio', () => {
     expect(screen.getByRole('button', { name: /Save new version/ })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: /View current version for editing/ }));
     await waitFor(() => expect(screen.getByLabelText('Edit artifact source')).not.toHaveAttribute('readonly'));
+  });
+
+  it('shows an honest unavailable source with a working download instead of stale or empty preview content', async () => {
+    const oversized: ArtifactMetadata = {
+      ...baseArtifact,
+      id: 'art_' + 'e'.repeat(32),
+      title: 'Oversized page',
+      type: 'html',
+      mime: 'text/html',
+      size: 1_300_000,
+      sha256: 'f'.repeat(64),
+      versions: [{ ...baseArtifact.versions[0]!, type: 'html', mime: 'text/html', size: 1_300_000, sha256: 'f'.repeat(64) }],
+    };
+    const fetchMock = mockArtifactBackend([baseArtifact, oversized], { sourceStatus: artifact => artifact.id === oversized.id ? 415 : null });
+    renderStudio();
+    fireEvent.click((await screen.findByText('Saved answer')).closest('button')!);
+    expect(await screen.findByRole('heading', { name: 'Hello' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Oversized page').closest('button')!);
+    expect(await screen.findByText(/larger than the 1 MiB preview limit/)).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Hello' })).not.toBeInTheDocument();
+    expect(screen.queryByTitle('Oversized page')).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Download version 1' }).getAttribute('href')).toBe(`/api/artifacts/${oversized.id}/versions/1/download`);
+
+    fireEvent.click(screen.getByRole('tab', { name: /source/i }));
+    expect(screen.queryByLabelText('Edit artifact source')).not.toBeInTheDocument();
+    expect(screen.getByText('Editing is disabled until the correct source loads.')).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(`/api/artifacts/${oversized.id}/versions/1/source`, expect.anything());
+  });
+
+  it('offers a download for every immutable historical version with the matching checksum', async () => {
+    const versioned: ArtifactMetadata = {
+      ...baseArtifact,
+      currentVersion: 2,
+      size: 9,
+      sha256: '2'.repeat(64),
+      versions: [
+        { ...baseArtifact.versions[0]!, version: 1, type: 'markdown', mime: 'text/markdown', size: 5, sha256: '1'.repeat(64) },
+        { ...baseArtifact.versions[0]!, version: 2, parentVersion: 1, baseVersion: 1, type: 'markdown', mime: 'text/markdown', size: 9, sha256: '2'.repeat(64), createdAt: '2026-09-22T14:03:00.000Z' },
+      ],
+    };
+    mockArtifactBackend([versioned]);
+    renderStudio();
+    fireEvent.click((await screen.findByText('Saved answer')).closest('button')!);
+    fireEvent.click(screen.getByRole('tab', { name: /versions/i }));
+    expect(screen.getByText('1'.repeat(12))).toBeInTheDocument();
+    expect(screen.getByText('2'.repeat(12))).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Download version 1' })).toHaveAttribute('href', `/api/artifacts/${versioned.id}/versions/1/download`);
+    expect(screen.getByRole('link', { name: 'Download version 2' })).toHaveAttribute('href', `/api/artifacts/${versioned.id}/versions/2/download`);
+  });
+
+  it('keeps binary artifacts downloadable and out of the text editor', async () => {
+    const image: ArtifactMetadata = {
+      ...baseArtifact,
+      id: 'art_' + 'f'.repeat(32),
+      title: 'Photo',
+      type: 'image',
+      mime: 'image/png',
+      size: 2048,
+      sha256: '9'.repeat(64),
+      versions: [{ ...baseArtifact.versions[0]!, type: 'image', mime: 'image/png', size: 2048, sha256: '9'.repeat(64) }],
+    };
+    mockArtifactBackend([image]);
+    renderStudio();
+    fireEvent.click((await screen.findByText('Photo')).closest('button')!);
+    fireEvent.click(screen.getByRole('tab', { name: /source/i }));
+    expect(await screen.findByText(/Binary artifacts can be downloaded but cannot be edited as text/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('Edit artifact source')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: /versions/i }));
+    expect(screen.getByRole('link', { name: 'Download version 1' })).toHaveAttribute('href', `/api/artifacts/${image.id}/versions/1/download`);
   });
 });
