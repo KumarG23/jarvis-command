@@ -75,3 +75,30 @@ it('keeps saved tool output collapsed while retaining its exact payload', async 
   fireEvent.click(summary);
   expect(summary.closest('details')).toHaveAttribute('open');
 });
+
+it('loads 250 canonical IDs across five pages, retaining identical messages and existing DOM/copy controls', async () => {
+  const messages = Array.from({ length: 250 }, (_, index) => ({ id: `canonical:${index}`, sessionId: session.id, role: 'assistant', content: '**identical reply**', timestamp: null, toolName: null, displayKind: null }));
+  const fetchMock = vi.fn(async (url: string) => {
+    const offset = Number(new URL(url, 'http://fixture').searchParams.get('offset'));
+    return Response.json({ sessionId: session.id, messages: messages.slice(offset, offset + 50), pagination: { limit: 50, offset, returned: 50, hasMore: offset < 200 } });
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal('navigator', { clipboard: { writeText } });
+  const onHistory = vi.fn();
+  render(<LiveRoom session={session} onHistory={onHistory} />);
+  await screen.findByRole('button', { name: 'Load more messages' });
+  const first = document.querySelector('[data-message-id="canonical:0"]');
+  for (let page = 1; page < 5; page++) {
+    fireEvent.click(screen.getByRole('button', { name: 'Load more messages' }));
+    await waitFor(() => expect(screen.getAllByRole('article', { name: 'Jarvis response' })).toHaveLength((page + 1) * 50));
+  }
+  expect(document.querySelector('[data-message-id="canonical:0"]')).toBe(first);
+  expect(screen.getAllByRole('button', { name: 'Copy response' })).toHaveLength(250);
+  expect(screen.queryByRole('button', { name: 'Save response as artifact' })).toBeNull();
+  fireEvent.click(screen.getAllByRole('button', { name: 'Copy response' })[249]!);
+  await screen.findByText('Response copied');
+  expect(writeText).toHaveBeenCalledWith('**identical reply**');
+  expect(onHistory).toHaveBeenLastCalledWith(session.id, messages, true);
+  expect(fetchMock.mock.calls.filter(([url]) => url.includes('/messages?')).map(([url]) => new URL(url, 'http://fixture').searchParams.get('offset'))).toEqual(['0', '50', '100', '150', '200']);
+}, 15000);

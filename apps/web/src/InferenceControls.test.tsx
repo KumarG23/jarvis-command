@@ -69,7 +69,13 @@ it('shows supplied counters without optional execution metadata', () => {
 
 it.each(['corrupt', 'stale', 'blocked read'])('requires an explicit choice for %s storage and never silently inherits', async kind => {
   setup();
-  if (kind === 'blocked read') vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw Error('blocked'); });
+  if (kind === 'blocked read') {
+    const getItem = Storage.prototype.getItem;
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(function (this: Storage, key) {
+      if (this === localStorage) throw Error('blocked');
+      return getItem.call(this, key);
+    });
+  }
   else localStorage.setItem(inferencePreferenceKey('jc_one'), kind === 'corrupt' ? '{broken' : JSON.stringify({ provider: 'openai-codex', model: 'gpt-6-sol', reasoningEffort: 'low' }));
   const p = props(); render(<TurnComposer {...p} />); await ready(); send();
   expect(p.send).not.toHaveBeenCalled(); expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('Keep draft');
@@ -78,7 +84,11 @@ it.each(['corrupt', 'stale', 'blocked read'])('requires an explicit choice for %
 });
 
 it('retains in-tab session isolation with blocked storage writes and explains reload limits', async () => {
-  setup(); vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw Error('quota'); });
+  setup(); const setItem = Storage.prototype.setItem;
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+    if (this === localStorage) throw Error('quota');
+    return setItem.call(this, key, value);
+  });
   const p = props(); const view = render(<TurnComposer {...p} />); await chooseSol();
   expect(screen.getByText(/Local preference storage unavailable/)).toBeInTheDocument();
   view.rerender(<TurnComposer {...p} sessionId="jc_two" />); expect(model()).toHaveValue('inherit');

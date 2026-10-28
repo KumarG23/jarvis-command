@@ -397,7 +397,8 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 .run-inspector { margin: 8px 0 16px; font-size: 12px; }
 .run-inspector > summary { min-height: 48px; flex-wrap: wrap; overflow-wrap: anywhere; }
 .run-inspector > summary > svg { flex-shrink: 0; }
-.run-inspector > summary > [role="status"] { flex: 1; min-width: 100px; font-weight: 400; line-height: 1.6; }
+.run-inspector > summary > .run-status-line { flex: 1; min-width: 100px; font-weight: 400; line-height: 1.6; }
+.observation-age { display: block; color: var(--muted); font-size: 12px; }
 .run-inspector > summary > .status-disclosure { color: var(--cyan); font-size: 12px; }
 .run-inspector summary:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; border-radius: 6px; }
 .run-inspector-body { overflow-wrap: anywhere; }
@@ -414,3 +415,17 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
   .run-inspector .inspector-facts { grid-template-columns: minmax(0, 1fr); }
   .run-inspector .turn-activity li { grid-template-columns: 52px minmax(0, 1fr); gap: 6px; }
 }
+
+/* Chat Markdown shares bounded, keyboard-scrollable code/table surfaces. */
+.message-content { min-width: 0; max-width: 100%; overflow-wrap: anywhere; line-height: 1.7; }
+.event-body .message-content p, .message-content p { white-space: normal; margin: .65em 0; }
+.message-content > :first-child { margin-top: 0; }
+.message-content > :last-child { margin-bottom: 0; }
+.message-content pre { max-width: 100%; overflow-x: auto; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); white-space: pre; overflow-wrap: normal; }
+.message-content code { font-family: 'JetBrains Mono', monospace; font-size: .85em; }
+.message-content :not(pre) > code { white-space: pre-wrap; overflow-wrap: anywhere; }
+.message-table { max-width: 100%; overflow-x: auto; }
+.message-table table { border-collapse: collapse; min-width: 100%; }
+.message-table th, .message-table td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+.message-content blockquote { border-left: 3px solid var(--border); margin-left: 0; padding-left: 14px; color: var(--muted); }
+.message-content a { color: var(--cyan); text-decoration: underline; }

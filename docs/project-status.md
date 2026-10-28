@@ -14,15 +14,18 @@ Both proxies stayed at their prior healthy pins. Use the documented
 `/home/studio/COMMAND_PROJECT_OPERATIONS.md` recoverable release path.
 [Live acceptance and exact rollback evidence](https://github.com/KumarG23/jarvis-command/issues/24#issuecomment-6473022817).
 
-Next: [P2 #26](https://github.com/KumarG23/jarvis-command/issues/26), persistent drafts,
+Source candidate: [P2 #26](https://github.com/KumarG23/jarvis-command/issues/26), persistent drafts,
 formatted transcript, 200+ message checks and truthful quiet-run observation age.
-Existing admission/recovery, stop,
-copy and canonical message identity must be preserved.
+PR #29 is built/tested; exact-head review, release and production readback remain
+pending. Existing admission/recovery, stop, copy and canonical IDs are preserved.
 
 Known limits: historical answer/run receipt binding is Unsupported—deferred;
 latest-session receipts remain separate from historical answers. Artifact Studio
-awaits the P4 functional audit. Profile/Bot support is under bounded P5 check #28;
-native room driver proof remains P7. Notifications are P6; production push enablement
+awaits the P4 functional audit. The corrected P5 diagnostic #28 is accepted: profile/Bot operations are
+Unsupported—deferred for this installation’s verified contract. Run-only diagnose
+is available; native/private support elsewhere stays unknown. Unavailable UI,
+release and live verification are still pending, so P5 is not Done. Native room
+driver proof remains P7. Notifications are P6; production push enablement
 will be a separate step. Browser/IDE workbench remains outside the plan.
 
 [Neal review queue #20](https://github.com/KumarG23/jarvis-command/issues/20) holds

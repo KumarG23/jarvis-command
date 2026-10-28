@@ -383,10 +383,10 @@ Each milestone lists what to build, how Sol proves it, and what gets deferred in
 | Historical message↔run binding (#9) | Deferred — Unsupported | Hermes `7b7a26c1` public contract lacks the pair; Final Neal packet |
 | M0 capability matrix (#2) | Superseded by this plan | Findings kept as history; capability checks now live in P5/P7 |
 | P1 Truthful status/usage/model-effort | Done, live; phone check pending | #22/#24, PRs #23/#25; merged `df2f68bb`, app `sha256:1dd938e3…`; [production Sol/Luna readback and rollback](https://github.com/KumarG23/jarvis-command/issues/24#issuecomment-6473022817); 320–430 px emulation passed; §5 observation-age follow-through in #26 |
-| P2 Chat completeness | In progress | #26: persisted drafts and formatted/long chat; one Sol-dev owner |
+| P2 Chat completeness | Source implemented; release pending | #26 / PR #29: same-tab drafts, safe Markdown/code/tables, 250-message/mobile recovery proof and current-tab observation age. Sol exact-head review, release and production readback pending; phone check pending. |
 | P3 Design and shell | Not started | — |
 | P4 Artifacts | Not started | — |
-| P5 Agents | Capability check in progress | #28, Deepseek; bounded existing-access discovery only; native support unproven |
+| P5 Agents | Capability Unsupported — deferred; UI pending | #28 corrected diagnostic accepted: verified Command/Hermes contract lacks profile/Bot operations; run-only diagnose is available. Native/private support elsewhere unknown. Unavailable UI, release and live verification remain pending; P5 not Done. |
 | P6 Notifications | Not started | — |
 | P7 Rooms | Not started | — |
 | P8 Polish, release, Final Neal packet | Not started | — |
