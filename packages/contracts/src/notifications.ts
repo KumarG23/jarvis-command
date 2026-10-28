@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PushStateSchema } from './push';
 import { LiveRunStateSchema, SessionIdSchema, SessionSummarySchema } from './contracts';
 
 // Private in-app inbox (MASTER_PLAN P6, first slice). Text is generic by design: no prompt,
@@ -32,11 +33,12 @@ export const NotificationInboxSchema = z.object({
   items: z.array(NotificationItemSchema).max(100),
   unreadCount: z.number().int().min(0).max(100),
   preferences: NotificationPreferencesSchema,
+  push: PushStateSchema.optional(),
   // Static capability statement so the UI never implies delivery that does not exist.
   delivery: z.object({
     inApp: z.enum(['available', 'incomplete']),
     approvals: z.enum(['available', 'unavailable']).optional(),
-    push: z.literal('unavailable'),
+    push: z.enum(['available', 'unavailable']),
     externalSurfaces: z.literal('unavailable'),
   }).strict(),
 }).strict();

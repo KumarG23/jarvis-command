@@ -1,3 +1,8 @@
+import { NotificationStorageError, NotificationNotFoundError } from './notification-errors';
+export { NotificationStorageError, NotificationNotFoundError } from './notification-errors';
+import { PushStore } from './push-store';
+import type { PushSubscription } from '@jarvis-command/contracts';
+export { MAX_PUSH_RECEIPTS } from './push-store';
 import { randomBytes } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, open, rename, unlink, type FileHandle } from 'node:fs/promises';
@@ -18,15 +23,6 @@ const MAX_SETTLED = 500;
 export const MAX_APPROVAL_RECEIPTS = 1024;
 const MAX_ACTORS = 32;
 const FILE = 'notifications.json';
-
-export class NotificationStorageError extends Error {
-  readonly statusCode = 503;
-  constructor() { super('Notification storage unavailable'); }
-}
-export class NotificationNotFoundError extends Error {
-  readonly statusCode = 404;
-  constructor() { super('Notification not found'); }
-}
 
 export const DEFAULT_PREFERENCES: NotificationPreferences = Object.freeze({
   categories: Object.freeze({ 'run-completed': true, 'run-failed': true, approval: true }),
@@ -92,7 +88,8 @@ export class NotificationStore {
   #queue: Promise<unknown> = Promise.resolve();
   #seen = false;
   #poisoned = false;
-  constructor(readonly directory: string, private readonly now: () => Date = () => new Date()) {}
+  readonly #push: PushStore;
+  constructor(readonly directory: string, private readonly now: () => Date = () => new Date()) { this.#push = new PushStore(directory, now); }
 
   #emptyActor(): ActorState {
     return { preferences: structuredClone(DEFAULT_PREFERENCES), items: [], settled: [], horizon: null, since: this.now().toISOString(), approvals: { ids: [], sealed: false } };
@@ -167,6 +164,25 @@ export class NotificationStore {
 
   find(actor: string, id: string): Promise<NotificationItem | null> {
     return this.read(actor).then(({ items }) => items.find(item => item.id === id) ?? null);
+  }
+
+  readPush(actor: string) { return this.#push.read(actor); }
+  async registerDevice(actor: string, subscription: PushSubscription): Promise<ActorView> {
+    await this.#push.registerDevice(actor, subscription);
+    return this.read(actor);
+  }
+  async revokeDevice(actor: string, id: string): Promise<ActorView> {
+    await this.#push.revokeDevice(actor, id);
+    return this.read(actor);
+  }
+  async claimPush(actor: string, id: string) {
+    const current = await this.read(actor);
+    const item = current.items.find(item => item.id === id);
+    if (!item || !current.preferences.categories[item.category]) return [];
+    return this.#push.claimPush(actor, item);
+  }
+  finishPush(actor: string, id: string, deviceId: string, outcome: 'sent' | 'failed' | 'expired' | 'unknown') {
+    return this.#push.finishPush(actor, id, deviceId, outcome);
   }
 
   #transaction<T>(change: (state: State) => { result: T; write?: boolean }): Promise<T> {

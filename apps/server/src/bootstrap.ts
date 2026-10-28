@@ -1,3 +1,4 @@
+import { createPushService } from './push-service';
 import { AuditLedger } from './audit-ledger';
 import { createCommandProxyClient } from './command-client';
 import { createLiveRoomService } from './live-room-service';
@@ -67,6 +68,7 @@ export function createCommandServer(
       })
     : undefined;
   const notifications = config.command ? new NotificationStore(dirname(config.command.auditLogPath)) : undefined;
+  const push = notifications && config.push ? createPushService(config.push, notifications) : undefined;
   let ledger: AuditLedger | undefined;
   let liveRoom: ReturnType<typeof createLiveRoomService> | undefined;
   const app = buildApp({
@@ -88,7 +90,7 @@ export function createCommandServer(
     liveRoom = createLiveRoomService({
       client,
       ledger,
-      notify: notifications ? createRunNotifier(notifications) : undefined,
+      notify: notifications ? createRunNotifier(notifications, push) : undefined,
       resolveImages: artifactStore
         ? createArtifactImageResolver(artifactStore)
         : async () => { throw Object.assign(new Error('Artifact storage unavailable'), { statusCode: 503 }); },

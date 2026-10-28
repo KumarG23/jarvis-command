@@ -1,3 +1,4 @@
+import { pushConfig, type PushConfig } from './push-service';
 import { tmpdir } from 'node:os';
 import { isAbsolute, resolve } from 'node:path';
 import { z } from 'zod';
@@ -32,6 +33,7 @@ const EnvironmentSchema = z.object({
 });
 
 export type AppConfig = Readonly<{
+  push?: PushConfig;
   nodeEnv: 'development' | 'test' | 'production';
   host: string;
   port: number;
@@ -171,6 +173,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv): AppConfig {
       });
 
   return Object.freeze({
+    push: pushConfig(environment),
     nodeEnv: parsed.NODE_ENV,
     host: parsed.HOST,
     port: parsed.PORT,

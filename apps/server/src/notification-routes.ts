@@ -1,3 +1,6 @@
+import type { PushView } from './push-store';
+import { PushDeviceIdSchema, PushSubscriptionSchema } from '@jarvis-command/contracts';
+import { supportedPushEndpoint, type PushConfig } from './push-service';
 import { createHash } from 'node:crypto';
 import {
   NotificationIdSchema,
@@ -25,14 +28,15 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   return result.data;
 }
 
-const toInbox = (value: ActorView): NotificationInbox => NotificationInboxSchema.parse({
+const toInbox = (value: ActorView, push: PushConfig | undefined, devices: PushView | null): NotificationInbox => NotificationInboxSchema.parse({
   version: 1,
+  push: { capability: push?.capability.state === 'available' && !devices ? { state: 'unavailable', reason: 'storage' } : push?.capability.state === 'available' && devices?.full ? { state: 'unavailable', reason: 'capacity' } : push?.capability ?? { state: 'unavailable', reason: 'disabled' }, devices: devices?.devices ?? [] },
   items: value.items,
   unreadCount: value.items.filter(item => item.readAt === null).length,
   preferences: value.preferences,
   // First-use, 100-item retention, terminal replay boundary, 24h/50-terminal/10-active
   // recovery and unobserved transient approvals prevent a complete-delivery promise.
-  delivery: { inApp: 'incomplete', approvals: value.approvalsUnavailable ? 'unavailable' : 'available', push: 'unavailable', externalSurfaces: 'unavailable' },
+  delivery: { inApp: 'incomplete', approvals: value.approvalsUnavailable ? 'unavailable' : 'available', push: push?.capability.state === 'available' && devices && !devices.full ? 'available' : 'unavailable', externalSurfaces: 'unavailable' },
 });
 
 /**
@@ -44,6 +48,7 @@ export function registerNotificationRoutes(
   routes: FastifyInstance,
   dependencies: Readonly<{
     store: NotificationStore | undefined;
+    push?: PushConfig | undefined;
     liveRoom: ReturnType<typeof createLiveRoomService>;
     subjects: WeakMap<FastifyRequest, string>;
   }>,
@@ -51,8 +56,25 @@ export function registerNotificationRoutes(
   const store = () => { if (!dependencies.store) throw new NotificationStorageError(); return dependencies.store; };
   const actorOf = (request: FastifyRequest) => createHash('sha256').update(dependencies.subjects.get(request)!).digest('hex');
 
+  const inbox = async (value: ActorView, actor: string) => toInbox(value, dependencies.push, await store().readPush(actor).catch(() => null));
+  routes.get('/api/notifications/push', { exposeHeadRoute: false }, async request => {
+    try { return (await inbox(await store().read(actorOf(request)), actorOf(request))).push; }
+    catch { return { capability: { state: 'unavailable', reason: 'storage' }, devices: [] }; }
+  });
+  routes.post('/api/notifications/push/devices', { bodyLimit: 4096 }, async (request, reply) => {
+    if (dependencies.push?.capability.state !== 'available') return reply.code(503).send({ error: 'push_unavailable' });
+    const subscription = parse(PushSubscriptionSchema, request.body);
+    if (!supportedPushEndpoint(subscription.endpoint)) throw Object.assign(new Error('Unsupported push destination'), { statusCode: 400 });
+    return inbox(await store().registerDevice(actorOf(request), subscription), actorOf(request));
+  });
+  routes.post('/api/notifications/push/devices/:deviceId/revoke', { bodyLimit: 64 }, async request => {
+    const { deviceId } = parse(z.object({ deviceId: PushDeviceIdSchema }).strict(), request.params);
+    parse(z.object({}).strict(), request.body);
+    return inbox(await store().revokeDevice(actorOf(request), deviceId), actorOf(request));
+  });
+
   routes.get('/api/notifications', { exposeHeadRoute: false }, async request => (
-    toInbox(await store().read(actorOf(request)))
+    await inbox(await store().read(actorOf(request)), actorOf(request))
   ));
 
   // Reconciles only this actor's admitted, non-terminal runs through the same supported status
@@ -72,18 +94,18 @@ export function registerNotificationRoutes(
     const runs = [...new Set([...dependencies.liveRoom.listUnsettledRuns(subject, RECONCILE_LIMIT), ...undelivered])];
     const results = await Promise.allSettled(runs.map(publicRunId => dependencies.liveRoom.getRun(subject, publicRunId)));
     return NotificationReconcileResponseSchema.parse({
-      inbox: toInbox(await store().read(actorOf(request))),
+      inbox: await inbox(await store().read(actorOf(request)), actorOf(request)),
       checked: runs.length,
       unavailable: results.filter(result => result.status === 'rejected').length,
     });
   });
 
   routes.post('/api/notifications/read', { bodyLimit: 8192 }, async request => (
-    toInbox(await store().markRead(actorOf(request), parse(NotificationReadRequestSchema, request.body)))
+    await inbox(await store().markRead(actorOf(request), parse(NotificationReadRequestSchema, request.body)), actorOf(request))
   ));
 
   routes.post('/api/notifications/preferences', { bodyLimit: 512 }, async request => (
-    toInbox(await store().setPreferences(actorOf(request), parse(NotificationPreferencesSchema, request.body)))
+    await inbox(await store().setPreferences(actorOf(request), parse(NotificationPreferencesSchema, request.body)), actorOf(request))
   ));
 
   // Re-checks current authorization (actor-bound run, then the session) and reconciles
@@ -108,7 +130,7 @@ export function registerNotificationRoutes(
     let session;
     try { session = (await dependencies.liveRoom.getSession(subject, item.sessionId)).session; } catch (error) { return { state: classify(error) }; }
     if (session.id !== item.sessionId) return { state: 'missing' };
-    const inbox = toInbox(await store().markRead(actor, { ids: [item.id] }));
+    const updatedInbox = await inbox(await store().markRead(actor, { ids: [item.id] }), actor);
     return NotificationTargetSchema.parse({
       state: 'available',
       sessionId: item.sessionId,
@@ -117,7 +139,7 @@ export function registerNotificationRoutes(
       runStatus: status.status,
       approvalPending: status.status === 'waiting_for_approval' && status.approval !== null,
       session,
-      inbox,
+      inbox: updatedInbox,
     });
   });
 }

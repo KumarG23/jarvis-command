@@ -34,9 +34,12 @@ capture and cross-surface notifications remain unproven/deferred. Latest-session
 receipts stay separate from historical answers. Artifact association-policy
 tightening and PDF preview enablement remain deferred; full wrong-session
 rejection is not claimed. No auth/Access, credential, network, provider or paid-route
-control changed. Production push remains unavailable pending its disabled-code
-increment and separate enablement. P6 first slice (#46): an in-app inbox for app-originated run finished/failed and
-approval-needed events is built for review, unreleased. #51 prevents pruned approval
+control changed. Production push remains disabled. #56 builds/tests the full push path with local
+ephemeral keys and captured transport; production VAPID/egress/enablement are deferred
+to the Final Neal packet ([details](web-push.md)). P6 inbox (#46/#51) merged via #50
+`98a1b3d`; its attempted release was rolled back after a startup service snapshot
+failure. #57 lazy-service repair/regression is included in #56. Sol owns repaired
+release and live acceptance; no live completion is claimed here. #51 prevents pruned approval
 replay with bounded exact receipts (1,024 per actor); reaching that bound or upgrading
 already-pruned legacy identities makes new approval notifications explicitly unavailable.
 The inbox reports incomplete delivery for first-use, retention and bounded recovery gaps.
