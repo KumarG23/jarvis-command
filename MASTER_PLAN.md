@@ -378,15 +378,15 @@ Each milestone lists what to build, how Sol proves it, and what gets deferred in
 | Item | State | Evidence / note |
 |---|---|---|
 | Desktop chat round trip, reload, lost-ACK (#14/#16) | Done, live | PR #19 `eddae248`; app `sha256:c1d843fc…` |
-| Narrow header/composer (#7) | Merged | PR #10; phone check pending |
-| Latest-session receipt + context denominator (#6) | Merged (partial) | PR #8; per-answer receipt deferred |
+| Narrow header/composer (#7) | Done, live; phone check pending | PR #10; included in current app; narrow-width proof reused in #24 |
+| Latest-session receipt + context denominator (#6) | Partial, live; remainder deferred | PR #8; #6 closed partial/deferred; per-answer receipt remains unsupported |
 | Historical message↔run binding (#9) | Deferred — Unsupported | Hermes `7b7a26c1` public contract lacks the pair; Final Neal packet |
 | M0 capability matrix (#2) | Superseded by this plan | Findings kept as history; capability checks now live in P5/P7 |
-| P1 Truthful status/usage/model-effort | Candidate built; release pending | #22 / PR #23 preferences released; #24 compact Activity/Usage built and candidate-verified against owned Sol/Luna runs. Sol release + production readback pending; phone check pending. |
-| P2 Chat completeness | Not started | — |
+| P1 Truthful status/usage/model-effort | Done, live; phone check pending | #22/#24, PRs #23/#25; merged `df2f68bb`, app `sha256:1dd938e3…`; [production Sol/Luna readback and rollback](https://github.com/KumarG23/jarvis-command/issues/24#issuecomment-6473022817); 320–430 px emulation passed; §5 observation-age follow-through in #26 |
+| P2 Chat completeness | In progress | #26: persisted drafts and formatted/long chat; one Sol-dev owner |
 | P3 Design and shell | Not started | — |
 | P4 Artifacts | Not started | — |
-| P5 Agents | Not started | — |
+| P5 Agents | Capability check in progress | #28, Deepseek; bounded existing-access discovery only; native support unproven |
 | P6 Notifications | Not started | — |
 | P7 Rooms | Not started | — |
 | P8 Polish, release, Final Neal packet | Not started | — |
