@@ -154,7 +154,7 @@ Hermes grounding:
 5. What did the tools/agents do? (expand on demand)
 6. What advanced details do I need? (inspector)
 
-## 4. Five distinct user workflows
+## 4. Six distinct user workflows
 
 ### A. Ordinary Jarvis conversation
 Launch app → last Jarvis chat opens → enter message → server admits exactly one Hermes run → streamed answer appears → after completion, canonical history and usage receipt reconcile → reopen Android/desktop and see one durable answer. User can copy text, open links/files, expand real activity and see model/effort/usage.
@@ -170,6 +170,9 @@ New Room → pick 2–6 existing Hermes profiles → ask a question and @mention
 
 ### E. Producing a usable artifact
 In chat use `Create artifact` or `Save response`, or attach a real image/file. Server records an immutable artifact ID/version/checksum, links it to the authenticated chat/project, and returns a stable resource. Preview relevant types safely, revise text into a new version, download, close/reopen app and get the same bytes. Automatically ingesting arbitrary files produced by tools is a separate feature and only advertised after a verified Hermes artifact event/ownership path exists.
+
+### F. Running a bigger job as a project (Claude Projects–style)
+Projects → New project → name, standing instructions and reference files → start a chat in the project; Jarvis receives the project context and acts as the lead. When Jarvis delegates parts of the job using Hermes' own in-run delegation, each delegated task appears as its own thread under the chat: goal, live status, tools used, usage when reported, and result. The project page gathers every chat, delegated thread and artifact in one place, so Neal can see who is doing what and what has been produced. Reopening on another device shows the same project, threads and artifacts. Jarvis remains the only coordinator: no app-side task queue, scheduler or simulated helper agents. Thread detail comes only from authoritative Hermes events; anything not emitted shows as unavailable.
 
 ## 5. Truthful activity, thinking and usage (P0-level requirements)
 
@@ -349,6 +352,15 @@ Each milestone lists what to build, how Sol proves it, and what gets deferred in
 - **Done:** v1 → v2 → service restart keeps exact bytes/checksums on desktop and mobile emulation; failure and permission cases pass. Released and live-verified.
 - **Deferred instead of blocking:** automatic capture of arbitrary Hermes tool outputs (needs a Hermes event/ownership contract → Final Neal packet).
 
+### P4.5 — Projects workspace (Jarvis as lead, delegated threads, shared artifacts)
+Neal's request (2026-10-28): a Claude Projects–style workspace for bigger jobs (§4F). Builds on the existing `ProjectRooms`, P1's activity events and P4's artifact store.
+- **Capability issue first (one, bounded):** on owned project runs, establish what the installed Hermes actually emits when Jarvis delegates inside a run (`subagent.*` or equivalent events: task identity, parent run, goal text, tool events, status, result, usage), and whether project instructions/files can be supplied through the existing supported run/session contract. Existing access only (§0.3).
+- **Project basics:** create/rename/archive a project with standing instructions and reference files (stored by Command, Command-owned data only); chats started in a project carry that context into their Hermes runs through the supported contract; project list and project page on desktop and mobile.
+- **Delegated threads:** under each project chat turn, every delegated task is a collapsible thread with goal, live status, tool activity, usage when reported and final result, driven by the run's real events and recovered after reload/reconnect without duplication. A project-level view lists all delegated threads across its chats with status filters.
+- **Project artifacts:** one panel per project collecting artifacts saved from its chats and threads (P4 store, same immutability/versioning/sandbox rules).
+- **Done:** create a project, run an owned task where Jarvis delegates at least two sub-tasks, watch both threads live, reload mid-run and see the same threads, then open the project page and find the chat, threads and saved artifacts; desktop live-verified, mobile emulation passes. Released.
+- **Deferred instead of blocking:** if in-run delegation events are not emitted or lack task identity, ship projects with instructions, chats and artifacts, show delegated work as "detail not available from Hermes", and add the exact missing event contract to the Final Neal packet. Named-persona delegation stays with P5's Bot Mode contract. No app-side orchestrator, task queue or fake threads.
+
 ### P5 — Agents: direct chats and delegation  *(JC2-006/007)*
 - **Capability issue first (one, bounded):** what profile discovery, per-profile canonical sessions and `message_agent` the installed Hermes actually supports, using only existing access (§0.3).
 - If profile discovery and per-profile sessions are supported: Agents list from real profiles; direct chats open that profile's own session/memory/model; returning to Jarvis leaves both intact.
@@ -386,6 +398,7 @@ Each milestone lists what to build, how Sol proves it, and what gets deferred in
 | P2 Chat completeness | Source implemented; release pending | #26 / PR #29: same-tab drafts, safe Markdown/code/tables, 250-message/mobile recovery proof and current-tab observation age. Sol exact-head review, release and production readback pending; phone check pending. |
 | P3 Design and shell | Not started | — |
 | P4 Artifacts | Not started | — |
+| P4.5 Projects workspace | Not started | Added 2026-10-28 at Neal's request; §4F, §10 P4.5 |
 | P5 Agents | Capability Unsupported — deferred; UI pending | #28 corrected diagnostic accepted: verified Command/Hermes contract lacks profile/Bot operations; run-only diagnose is available. Native/private support elsewhere unknown. Unavailable UI, release and live verification remain pending; P5 not Done. |
 | P6 Notifications | Not started | — |
 | P7 Rooms | Not started | — |
