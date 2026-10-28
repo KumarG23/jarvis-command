@@ -582,17 +582,17 @@ function UnavailableNotice({ artifactId, title, version, reason }: Readonly<{ ar
 }
 
 function BinaryPreview({ artifact }: Readonly<{ artifact: ArtifactMetadata }>) {
-  const [failed, setFailed] = useState(false);
-  useEffect(() => { setFailed(false); }, [artifact.id, artifact.currentVersion]);
+  const [failedKey, setFailedKey] = useState<string | null>(null);
+  const previewKey = `${artifact.id}:${artifact.currentVersion}`;
   // PDFs stay download-only. The fixed blob route deliberately sends
   // frame-ancestors 'none' (and /download is an attachment), so an iframe would
   // be refused by the production policy even though the document CSP allows
   // same-origin frames. A blank frame is never success.
   if (artifact.type === 'pdf') return <UnavailableNotice artifactId={artifact.id} title={artifact.title} version={artifact.currentVersion} reason="Preview unavailable: PDF files are download-only under the current framing policy. Download the exact version to open it safely." />;
-  if (failed) return <UnavailableNotice artifactId={artifact.id} title={artifact.title} version={artifact.currentVersion} reason="Preview unavailable: this image could not be loaded. Download the exact version instead." />;
+  if (failedKey === previewKey) return <UnavailableNotice artifactId={artifact.id} title={artifact.title} version={artifact.currentVersion} reason="Preview unavailable: this image could not be loaded. Download the exact version instead." />;
   // Images use the existing authenticated same-origin blob route directly so
   // the document CSP (img-src 'self' data:) allows them without a blob: URL.
-  return <img className="image-preview" src={`/api/artifacts/${artifact.id}/versions/${artifact.currentVersion}/blob`} alt={artifact.title} onError={() => setFailed(true)} />;
+  return <img className="image-preview" src={`/api/artifacts/${artifact.id}/versions/${artifact.currentVersion}/blob`} alt={artifact.title} onError={() => setFailedKey(previewKey)} />;
 }
 
 function SandboxFrame({ title, content, kind }: Readonly<{ title: string; content: string; kind: 'html' | 'svg' }>) {
