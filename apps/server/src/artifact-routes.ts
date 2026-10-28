@@ -103,7 +103,7 @@ export function registerArtifactRoutes(app: FastifyInstance, dependencies: Depen
 
     routes.post('/api/artifacts/text', { bodyLimit: 1_100_000 }, async (request) => {
       requireJson(request);
-      const body = ArtifactCreateTextRequestSchema.parse(request.body);
+      const body = parseArtifactRequest(ArtifactCreateTextRequestSchema, request.body);
       await validateKnownAssociation(rooms, body);
       return ArtifactMutationResponseSchema.parse({
         artifact: await requireStore().createText(body, subjects.get(request)!),
@@ -202,7 +202,7 @@ export function registerArtifactRoutes(app: FastifyInstance, dependencies: Depen
       requireJson(request);
       const { artifactId } = paramsSchema.parse(request.params);
       return ArtifactMutationResponseSchema.parse({
-        artifact: await requireStore().createTextVersion(artifactId, ArtifactCreateVersionRequestSchema.parse(request.body), subjects.get(request)!),
+        artifact: await requireStore().createTextVersion(artifactId, parseArtifactRequest(ArtifactCreateVersionRequestSchema, request.body), subjects.get(request)!),
       });
     });
 
@@ -239,6 +239,12 @@ export function registerArtifactRoutes(app: FastifyInstance, dependencies: Depen
       return ArtifactDeleteResponseSchema.parse({ deleted: true, artifactId });
     });
   });
+}
+
+function parseArtifactRequest<T>(schema: z.ZodType<T>, value: unknown): T {
+  const result = schema.safeParse(value);
+  if (!result.success) throw Object.assign(new Error('Invalid artifact request'), { statusCode: 400 });
+  return result.data;
 }
 
 function requireJson(request: FastifyRequest): void {

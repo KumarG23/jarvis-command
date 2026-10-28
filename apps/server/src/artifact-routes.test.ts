@@ -116,6 +116,105 @@ describe('artifact routes', () => {
     }
   });
 
+  it('preserves exact text bytes across create, revision, source, download and a reopened store', async () => {
+    const { app, root } = await makeApp();
+    try {
+      const v1Content = '  indented code\n\n';
+      const v2Content = '\n    indented code\n\n\n';
+      const created = await app.inject({
+        method: 'POST',
+        url: '/api/artifacts/text',
+        headers,
+        payload: JSON.stringify({ title: '  Exact bytes  ', type: 'text', content: v1Content, source: 'human' }),
+      });
+      expect(created.statusCode).toBe(200);
+      const artifact = created.json().artifact;
+      expect(artifact.title).toBe('Exact bytes');
+      expect(artifact.size).toBe(17);
+      expect(artifact.sha256).toBe(createHash('sha256').update(v1Content).digest('hex'));
+
+      const versioned = await app.inject({
+        method: 'POST',
+        url: `/api/artifacts/${artifact.id}/versions`,
+        headers,
+        payload: JSON.stringify({ baseVersion: 1, content: v2Content }),
+      });
+      expect(versioned.statusCode).toBe(200);
+      const metadata = versioned.json().artifact;
+      expect(metadata.currentVersion).toBe(2);
+      expect(metadata.versions[0]).toMatchObject({ size: 17, sha256: createHash('sha256').update(v1Content).digest('hex') });
+      expect(metadata.versions[1]).toMatchObject({
+        size: Buffer.byteLength(v2Content, 'utf8'),
+        sha256: createHash('sha256').update(v2Content).digest('hex'),
+      });
+      expect(metadata.sha256).toBe(createHash('sha256').update(v2Content).digest('hex'));
+
+      for (const [version, content] of [[1, v1Content], [2, v2Content]] as const) {
+        const source = await app.inject({
+          method: 'GET',
+          url: `/api/artifacts/${artifact.id}/versions/${version}/source`,
+          headers: { 'cf-access-jwt-assertion': 'valid' },
+        });
+        expect(source.statusCode).toBe(200);
+        expect(source.json()).toMatchObject({ version, size: Buffer.byteLength(content, 'utf8'), content, sha256: createHash('sha256').update(content).digest('hex') });
+
+        const download = await app.inject({
+          method: 'GET',
+          url: `/api/artifacts/${artifact.id}/versions/${version}/download`,
+          headers: { 'cf-access-jwt-assertion': 'valid' },
+        });
+        expect(download.statusCode).toBe(200);
+        expect(download.body).toBe(content);
+        expect(createHash('sha256').update(download.body).digest('hex')).toBe(createHash('sha256').update(content).digest('hex'));
+      }
+
+      const reopened = new ArtifactStore({ root, maxFileBytes: 1024, maxTotalBytes: 4096, maxArtifacts: 10 });
+      expect((await reopened.readText(artifact.id, 1))).toBe(v1Content);
+      expect((await reopened.readText(artifact.id, 2))).toBe(v2Content);
+      expect((await reopened.readVersionBytes(artifact.id, 1)).bytes.toString('utf8')).toBe(v1Content);
+      expect((await reopened.readMetadata(artifact.id)).versions.map((item: { sha256: string }) => item.sha256)).toEqual(metadata.versions.map((item: { sha256: string }) => item.sha256));
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('rejects blank-only text creates and revisions without storing or mutating a version', async () => {
+    const { app } = await makeApp();
+    try {
+      const blankCreate = await app.inject({
+        method: 'POST',
+        url: '/api/artifacts/text',
+        headers,
+        payload: JSON.stringify({ title: 'Blank', type: 'text', content: ' \n\t ', source: 'human' }),
+      });
+      expect(blankCreate.statusCode).toBe(400);
+      expect(blankCreate.json()).toEqual({ error: 'bad_request' });
+      expect((await app.inject({ method: 'GET', url: '/api/artifacts', headers: { 'cf-access-jwt-assertion': 'valid' } })).json().artifacts).toEqual([]);
+
+      const created = await app.inject({
+        method: 'POST',
+        url: '/api/artifacts/text',
+        headers,
+        payload: JSON.stringify({ title: 'Kept', type: 'text', content: 'v1', source: 'human' }),
+      });
+      const artifact = created.json().artifact;
+      const blankRevision = await app.inject({
+        method: 'POST',
+        url: `/api/artifacts/${artifact.id}/versions`,
+        headers,
+        payload: JSON.stringify({ baseVersion: 1, content: '\n  \n' }),
+      });
+      expect(blankRevision.statusCode).toBe(400);
+      expect(blankRevision.json()).toEqual({ error: 'bad_request' });
+      const metadata = (await app.inject({ method: 'GET', url: `/api/artifacts/${artifact.id}`, headers: { 'cf-access-jwt-assertion': 'valid' } })).json();
+      expect(metadata.currentVersion).toBe(1);
+      const source = await app.inject({ method: 'GET', url: `/api/artifacts/${artifact.id}/versions/1/source`, headers: { 'cf-access-jwt-assertion': 'valid' } });
+      expect(source.json().content).toBe('v1');
+    } finally {
+      await app.close();
+    }
+  });
+
   it('serves exact downloads for oversized text while the text source read stays unavailable', async () => {
     const { app } = await makeApp({ maxFileBytes: 2_000_000, maxTotalBytes: 4_000_000 });
     try {

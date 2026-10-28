@@ -5,6 +5,9 @@ import { ProjectRoomIdSchema } from './project-rooms';
 const IsoTimestampSchema = z.iso.datetime({ offset: true });
 const SafeTextSchema = (maximum: number) => z.string().max(maximum);
 const NonBlankTextSchema = (maximum: number) => z.string().trim().min(1).max(maximum);
+// Artifact content is exact user data: reject blank-only text without rewriting indentation or line endings.
+const NonBlankPreservingTextSchema = (maximum: number) =>
+  z.string().max(maximum).refine(value => value.trim().length > 0, { message: 'Text must contain non-whitespace characters' });
 
 export const ArtifactIdSchema = z.string().regex(/^art_[a-f0-9]{32}$/);
 export const ArtifactTypeSchema = z.enum([
@@ -104,7 +107,7 @@ export const ArtifactCreateTextRequestSchema = z.object({
   title: NonBlankTextSchema(160),
   type: ArtifactTypeSchema.exclude(['image', 'pdf', 'file']),
   mime: ArtifactMimeSchema.optional(),
-  content: NonBlankTextSchema(1_048_576),
+  content: NonBlankPreservingTextSchema(1_048_576),
   sessionId: SessionIdSchema.nullable().optional(),
   projectId: ProjectRoomIdSchema.nullable().optional(),
   runId: z.string().min(1).max(160).nullable().optional(),
@@ -119,7 +122,7 @@ export const ArtifactCreateVersionRequestSchema = z.object({
   baseVersion: ArtifactVersionNumberSchema,
   type: ArtifactTypeSchema.exclude(['image', 'pdf', 'file']).optional(),
   mime: ArtifactMimeSchema.optional(),
-  content: NonBlankTextSchema(1_048_576),
+  content: NonBlankPreservingTextSchema(1_048_576),
   revisionNote: SafeTextSchema(2_000).nullable().optional(),
   feedback: SafeTextSchema(8_000).nullable().optional(),
 }).strict();
