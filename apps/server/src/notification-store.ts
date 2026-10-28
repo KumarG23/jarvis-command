@@ -15,6 +15,7 @@ import { z } from 'zod';
 const MAX_BYTES = 2_097_152;
 export const MAX_ITEMS = 100;
 const MAX_SETTLED = 500;
+export const MAX_APPROVAL_RECEIPTS = 1024;
 const MAX_ACTORS = 32;
 const FILE = 'notifications.json';
 
@@ -39,10 +40,23 @@ const ActorStateSchema = z.object({
   settled: z.array(z.object({ id: NotificationIdSchema, at: z.iso.datetime({ offset: true }) }).strict()).max(MAX_SETTLED),
   // First time this server held state for the actor; reconcile never delivers events before it.
   since: z.iso.datetime({ offset: true }),
-  // Newest settle time dropped from `settled`. Events from runs admitted before it are never
-  // recreated, so replay suppression stays bounded without trusting an unbounded ID list.
+  // Newest settle time dropped from `settled`; only stable terminal event times use it.
   horizon: z.iso.datetime({ offset: true }).nullable(),
-}).strict();
+  // Approvals have a request ID but no supported historical timestamp. Never evict these IDs
+  // or use observation time as replay evidence. At capacity, new approval delivery stops.
+  approvals: z.object({
+    ids: z.array(NotificationIdSchema).max(MAX_APPROVAL_RECEIPTS),
+    sealed: z.boolean(),
+  }).strict().optional(),
+}).strict().transform(actor => ({
+  ...actor,
+  approvals: actor.approvals ?? {
+    // Legacy settled entries don't carry category; conservatively retain all their IDs.
+    ids: [...new Set([...actor.settled.map(entry => entry.id), ...actor.items.map(item => item.id)])],
+    // Already discarded identities cannot be recovered. Do not replay unknown approvals.
+    sealed: actor.horizon !== null,
+  },
+}));
 const StateSchema = z.object({
   version: z.literal(1),
   actors: z.record(z.string().regex(/^[a-f0-9]{64}$/), ActorStateSchema),
@@ -55,10 +69,10 @@ export type NotificationEvent = Readonly<{
   category: NotificationCategory;
   sessionId: string;
   publicRunId: string;
-  /** Event time: terminal audit time or first observation. Never the run's admission time. */
+  /** Stable terminal audit time; approvals use observation time and separate durable ID receipts. */
   eventAt: string;
 }>;
-export type ActorView = Readonly<{ items: NotificationItem[]; preferences: NotificationPreferences; since: string; knownIds: ReadonlySet<string> }>;
+export type ActorView = Readonly<{ items: NotificationItem[]; preferences: NotificationPreferences; since: string; knownIds: ReadonlySet<string>; approvalsUnavailable: boolean }>;
 
 const TEXT: Record<NotificationCategory, { title: string; body: string }> = {
   'run-completed': { title: 'Run finished', body: 'A run you started has finished. Open the chat to read it.' },
@@ -69,6 +83,7 @@ const TEXT: Record<NotificationCategory, { title: string; body: string }> = {
 const view = (actor: ActorState): ActorView => ({
   items: [...actor.items].reverse(), preferences: actor.preferences, since: actor.since,
   knownIds: new Set([...actor.settled.map(entry => entry.id), ...actor.items.map(item => item.id)]),
+  approvalsUnavailable: actor.approvals.sealed || actor.approvals.ids.length >= MAX_APPROVAL_RECEIPTS,
 });
 
 // Single app writer on the same private mount as the audit ledger; never opens the ledger.
@@ -80,7 +95,7 @@ export class NotificationStore {
   constructor(readonly directory: string, private readonly now: () => Date = () => new Date()) {}
 
   #emptyActor(): ActorState {
-    return { preferences: structuredClone(DEFAULT_PREFERENCES), items: [], settled: [], horizon: null, since: this.now().toISOString() };
+    return { preferences: structuredClone(DEFAULT_PREFERENCES), items: [], settled: [], horizon: null, since: this.now().toISOString(), approvals: { ids: [], sealed: false } };
   }
 
   /** Reads the actor's state, creating it once (recording `since`) on first use. */
@@ -98,9 +113,16 @@ export class NotificationStore {
     return this.#transaction(state => {
       const current = state.actors[actor] ?? this.#emptyActor();
       if (current.settled.some(entry => entry.id === event.id) || current.items.some(item => item.id === event.id)) return { result: 'duplicate' as const };
-      // An event no newer than the newest forgotten settle time can only be a replay of a
-      // forgotten one; a never-seen event from an old run carries a recent event time.
-      if (current.horizon !== null && event.eventAt <= current.horizon) return { result: 'duplicate' as const };
+      if (event.category === 'approval') {
+        if (current.approvals.ids.includes(event.id)) return { result: 'duplicate' as const };
+        if (current.approvals.sealed || current.approvals.ids.length >= MAX_APPROVAL_RECEIPTS) return { result: 'suppressed' as const };
+      } else if (current.horizon !== null && event.eventAt <= current.horizon) {
+        // A bounded terminal replay boundary can omit previously unseen older events.
+        // The inbox explicitly reports incomplete delivery, never complete history.
+        return { result: 'duplicate' as const };
+      }
+      const approvals = event.category === 'approval'
+        ? { ...current.approvals, ids: [...current.approvals.ids, event.id] } : current.approvals;
       const at = this.now().toISOString();
       let settled = [...current.settled, { id: event.id, at }];
       let horizon = current.horizon;
@@ -110,14 +132,14 @@ export class NotificationStore {
         settled = settled.slice(1);
       }
       if (!current.preferences.categories[event.category]) {
-        state.actors[actor] = { ...current, settled, horizon };
+        state.actors[actor] = { ...current, settled, horizon, approvals };
         return { result: 'suppressed' as const, write: true };
       }
       const item: NotificationItem = {
         id: event.id, category: event.category, observedAt: at,
         sessionId: event.sessionId, publicRunId: event.publicRunId, ...TEXT[event.category], readAt: null,
       };
-      state.actors[actor] = { ...current, settled, horizon, items: [...current.items, item].slice(-MAX_ITEMS) };
+      state.actors[actor] = { ...current, settled, horizon, approvals, items: [...current.items, item].slice(-MAX_ITEMS) };
       return { result: 'created' as const, write: true };
     });
   }

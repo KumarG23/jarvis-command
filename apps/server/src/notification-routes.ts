@@ -30,7 +30,9 @@ const toInbox = (value: ActorView): NotificationInbox => NotificationInboxSchema
   items: value.items,
   unreadCount: value.items.filter(item => item.readAt === null).length,
   preferences: value.preferences,
-  delivery: { inApp: 'available', push: 'unavailable', externalSurfaces: 'unavailable' },
+  // First-use, 100-item retention, terminal replay boundary, 24h/50-terminal/10-active
+  // recovery and unobserved transient approvals prevent a complete-delivery promise.
+  delivery: { inApp: 'incomplete', approvals: value.approvalsUnavailable ? 'unavailable' : 'available', push: 'unavailable', externalSurfaces: 'unavailable' },
 });
 
 /**

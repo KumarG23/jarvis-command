@@ -110,3 +110,13 @@ it('shows a recoverable error when notification storage is unavailable', async (
   fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
   await waitFor(() => expect(screen.getByRole('list', { name: 'Notifications' })).toBeInTheDocument());
 });
+
+it('does not claim an incomplete empty inbox is caught up and explains unavailable approval delivery', async () => {
+  const limited = { ...inbox([]), delivery: { inApp: 'incomplete', approvals: 'unavailable', push: 'unavailable', externalSurfaces: 'unavailable' } };
+  server(limited);
+  render(<Harness onOpen={() => null} />);
+  expect(await screen.findByRole('heading', { name: 'No recorded unread notifications' })).toBeInTheDocument();
+  expect(screen.queryByText('All caught up')).not.toBeInTheDocument();
+  expect(screen.getByText(/Delivery is incomplete/)).toHaveTextContent('beyond bounded recovery may be missing');
+  expect(screen.getByText(/New approval notifications are unavailable/)).toHaveTextContent('Review approvals in the chat');
+});

@@ -4,7 +4,7 @@ name: PR validation
 # physical Android acceptance.
 on:
   pull_request:
-    branches: [release/gpt6-sol-luna]
+    branches: [release/gpt6-sol-luna, team/command/issue-46]
     types: [opened, synchronize, reopened, ready_for_review]
 
 # Read-only repository token; no secrets, deploy keys or self-hosted runners.

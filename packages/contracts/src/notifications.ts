@@ -34,7 +34,8 @@ export const NotificationInboxSchema = z.object({
   preferences: NotificationPreferencesSchema,
   // Static capability statement so the UI never implies delivery that does not exist.
   delivery: z.object({
-    inApp: z.literal('available'),
+    inApp: z.enum(['available', 'incomplete']),
+    approvals: z.enum(['available', 'unavailable']).optional(),
     push: z.literal('unavailable'),
     externalSurfaces: z.literal('unavailable'),
   }).strict(),
