@@ -364,6 +364,21 @@ export function useLiveTurn() {
     setTurn(current.current); void admit(intent);
     return true;
   }
+  // Attach to an already-admitted run (e.g. from a notification) using only its server-verified
+  // identity. Read-only: it never admits, retries or resubmits, and it never displaces active work.
+  function adopt(identity: { sessionId: string; clientRequestId: string; publicRunId: string }, projectId?: string | null) {
+    if (recoveryBlocked.current || (current.current && !current.current.done)) return false;
+    const bound = { ...(projectId ? { projectId } : {}), ...identity };
+    try { writeRecovery(bound, stored.current); stored.current = bound; }
+    catch { return false; }
+    cleanup.current();
+    if (current.current && !current.current.historyMatched) retain([...completed.current, current.current]);
+    current.current = { ...(projectId ? { projectId } : {}), intent: { sessionId: identity.sessionId, clientRequestId: identity.clientRequestId, input: null }, publicRunId: identity.publicRunId,
+      phase: 'Recovering status', output: '', outputLimited: false, events: [], approval: null, done: false, historyMatched: false, identityVerified: false, activityUnavailable: true };
+    setTurn(current.current);
+    supervise(current.current, true);
+    return true;
+  }
   function retry() {
     if (current.current?.phase !== 'Admission uncertain — retry the same intent' || current.current.intent.input === null) return;
     if (retryExpired()) { update({ phase: 'Admission unknown — retry window expired; writer locked' }); return; }
@@ -452,5 +467,5 @@ export function useLiveTurn() {
   };
   const historyBacklogFull = !!turn?.done && !turn.historyMatched && completedTurns.length >= MAX_UNCONFIRMED_TURNS;
   const historyReady = (sessionId: string | undefined) => !!sessionId && histories.current.get(sessionId)?.complete === true;
-  return { turn, completedTurns, refresh, send, retry, history, historyReady, historyBacklogFull, resume, approve, stop, steer, recoveries, consumeRecovery, refreshStatus, recoveryError };
+  return { turn, completedTurns, refresh, send, adopt, retry, history, historyReady, historyBacklogFull, resume, approve, stop, steer, recoveries, consumeRecovery, refreshStatus, recoveryError };
 }

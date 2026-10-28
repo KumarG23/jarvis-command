@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { emptyInbox } from './empty-inbox';
 
 test.use({ serviceWorkers: 'block', hasTouch: true });
 
@@ -33,6 +34,7 @@ test('inspects and copies a synthetic run receipt at this viewport', async ({ pa
     sessions: [session],
   } }));
   await page.route('**/api/rooms', route => route.fulfill({ json: { version: 1, rooms: [] } }));
+  await page.route('**/api/notifications', route => route.fulfill({ json: emptyInbox }));
   await page.route('**/api/live/model-options', route => route.fulfill({ json: {
     default: { provider: 'openai-codex', model: 'gpt-5.6-sol' },
     options: [{ provider: 'openai-codex', model: 'gpt-5.6-sol', label: 'Sol', reasoningEfforts: ['high'] }],
@@ -122,7 +124,7 @@ test('quiet restored run labels observation age at desktop/mobile widths and rem
     if (path.endsWith('/context')) return route.fulfill({ json: { sessionId, state: 'unavailable', updatedAt: null, receipt: null } });
     const responses: Record<string, unknown> = {
       '/api/bootstrap': { identity: { provider: 'development' }, command: { version: 'synthetic-clock', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 16000, maxSteerCharacters: 4000 } }, hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse'], readinessChecks: {} }, sessions: [session] },
-      '/api/rooms': { version: 1, rooms: [] },
+      '/api/rooms': { version: 1, rooms: [] }, '/api/notifications': emptyInbox,
       '/api/live/model-options': { default: null, options: [] },
       '/api/live/session-controls': { sessionForkPreservesSource: false, sessionCompactionRuns: false },
     };

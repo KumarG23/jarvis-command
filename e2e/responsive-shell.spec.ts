@@ -24,6 +24,7 @@ test('requested picker, unavailable panels, drawer Back and readable responsive 
       '/api/live/model-options': { default: { provider: 'openai-codex', model: 'gpt-6-sol' }, options: [{ provider: 'openai-codex', model: 'gpt-6-sol', label: 'Synthetic Sol', reasoningEfforts: ['medium', 'high'] }] },
       '/api/live/session-controls': { sessionForkPreservesSource: false, sessionCompactionRuns: false },
       '/api/artifacts': { artifacts: [] },
+      '/api/notifications': { version: 1, items: [], unreadCount: 0, preferences: { categories: { 'run-completed': true, 'run-failed': true, approval: true } }, delivery: { inApp: 'available', push: 'unavailable', externalSurfaces: 'unavailable' } },
     };
     if (!(path in responses)) { unexpected.push(path); return route.abort(); }
     return route.fulfill({ json: responses[path] });
@@ -48,7 +49,7 @@ test('requested picker, unavailable panels, drawer Back and readable responsive 
   await expect(page.getByText(/Executed route is reported only/)).toBeVisible();
   await page.keyboard.press('Escape'); await expect(model).toBeHidden(); await expect(chip).toBeFocused();
   await chip.click(); await composer.click(); await expect(model).toBeHidden();
-  for (const [name, reason] of [['Agents', /Agent profiles and direct delegation/], ['Collaboration rooms', /A native writable room driver has not been proven/], ['Notifications', /unavailable until the notifications milestone/]] as const) {
+  for (const [name, reason] of [['Agents', /Agent profiles and direct delegation/], ['Collaboration rooms', /A native writable room driver has not been proven/]] as const) {
     const entry = page.getByRole('button', { name: `${name} Unavailable`, exact: true });
     await entry.click(); await expect(page.getByRole('heading', { name, exact: true })).toBeVisible();
     await expect(page.getByText(reason)).toBeVisible();

@@ -6,6 +6,7 @@ import {
   ProjectRoomsSchema, SessionContextResponseSchema, SessionControlCapabilitiesSchema,
   SessionMessagesPageSchema, SessionMutationResponseSchema,
 } from '@jarvis-command/contracts';
+import { emptyInbox } from './empty-inbox';
 
 // Synthetic local APIs only. The IDs identify the existing issue-2 fixture;
 // the content below is fabricated test content, never a live history readback.
@@ -122,6 +123,7 @@ async function mockApis(page: Page, lifecycle?: 'running' | 'failed') {
     '/api/live/session-controls': SessionControlCapabilitiesSchema.parse({ sessionForkPreservesSource: true, sessionCompactionRuns: true }),
     '/api/live/model-options': InferenceOptionsResponseSchema.parse({ default: { provider: 'openai-codex', model: 'gpt-5.6-sol' }, options: [{ provider: 'openai-codex', model: 'gpt-5.6-sol', label: 'Sol', reasoningEfforts: ['medium'] }] }),
     '/api/artifacts': { artifacts: [] },
+    '/api/notifications': emptyInbox,
   };
   if (lifecycle) {
     responses[`/api/live/context-compactions/${operationId}`] = lifecycle === 'running'

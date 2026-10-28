@@ -1,3 +1,4 @@
+export * from './notifications';
 export * from './project-rooms';
 export * from './artifacts';
 export {

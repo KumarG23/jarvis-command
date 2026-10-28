@@ -30,8 +30,9 @@ Unsupported—deferred for this installation’s verified contract. Run-only dia
 is available; native/private support elsewhere stays unknown. Unavailable UI,
 release and live verification are still pending, so P5 is not Done. P7's bounded
 check #30 likewise found no verified native writable room contract; unavailable
-Agents/Rooms UI is assigned to #31, with exact contracts on #20. Notifications are P6; production push enablement
-will be a separate step. Browser/IDE workbench remains outside the plan.
+Agents/Rooms UI is assigned to #31, with exact contracts on #20. Notifications are P6: #46 builds the in-app inbox (app-originated run finished/failed and approval-needed events;
+unread state and category preferences) for review, unreleased. Web Push, closed-app delivery and CLI/Discord
+events are not available; production push enablement will be a separate step. Browser/IDE workbench remains outside the plan.
 
 [Neal review queue #20](https://github.com/KumarG23/jarvis-command/issues/20) holds
 phone steps and deferred contracts; the Final Neal packet is due at P8. Older M0

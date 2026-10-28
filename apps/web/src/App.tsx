@@ -1,5 +1,5 @@
 import { composeProjectInput, projectContext, readProjectForSend } from './projectInput';
-import { ArtifactListResponseSchema, ArtifactTypeSchema, CommandBootstrapSchema, type ProjectRoom, type ArtifactType, type CommandBootstrap, type SessionSummary } from '@jarvis-command/contracts';
+import { ArtifactListResponseSchema, ArtifactTypeSchema, CommandBootstrapSchema, type NotificationTarget, type ProjectRoom, type ArtifactType, type CommandBootstrap, type SessionSummary } from '@jarvis-command/contracts';
 import { Command, ShieldCheck, Menu, X, Settings2, PanelRight, ChevronRight, MessageSquare, Files, Users, MessagesSquare, Bell } from 'lucide-react';
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -13,6 +13,7 @@ import { useLiveTurn } from './useLiveTurn';
 import { TurnComposer, TurnView } from './TurnView';
 import { SessionContextMeter } from './SessionContextMeter';
 import { SessionLifecycleControls } from './SessionLifecycleControls';
+import { NotificationsPane, useNotifications } from './Notifications';
 
 const ArtifactStudio = lazy(() => import('./ArtifactStudio').then(module => ({ default: module.ArtifactStudio })));
 
@@ -328,6 +329,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     }
   }, [live.turn?.intent, selectedSession?.id]);
   const liveEnabled = bootstrap.command.liveRoom.enabled;
+  const notifications = useNotifications(liveEnabled, `${live.turn?.publicRunId ?? ''}:${live.turn?.done ? 'done' : 'open'}:${live.turn?.approval?.requestId ?? ''}`);
   const hermesOnline = bootstrap.hermes.state === 'online';
   const writeAllowed = liveEnabled && hermesOnline && bootstrap.hermes.capabilities.includes('run_events_sse') && selectedSession?.ownership === 'command' && selectedSession.id.startsWith('jc_');
   const health = bootstrap.hermes.state === 'online' ? 'Hermes available' : bootstrap.hermes.state === 'degraded' ? 'Hermes degraded' : 'Hermes unavailable';
@@ -403,6 +405,21 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
   function openPanel(kind: 'runtime' | 'settings' | 'artifacts' | 'agents' | 'collaboration' | 'notifications', element: HTMLElement) {
     if (kind !== 'artifacts') setSaveActive(false);
     projects.current?.closeDetails(); panelOpener.current = element; setPane(kind); if (navigationOpen) closeNavigation(false);
+  }
+  // Navigation only: the server already re-verified the actor, run and session. Never sends,
+  // approves or alters the draft, and never displaces a run that is active in this tab.
+  function openNotificationTarget(target: Extract<NotificationTarget, { state: 'available' }>): string | null {
+    const settled = ['completed', 'failed', 'cancelled', 'interrupted'].includes(target.runStatus);
+    const sameRun = live.turn?.publicRunId === target.publicRunId;
+    const occupied = !!live.turn && !live.turn.done && !sameRun;
+    let note: string | null = null;
+    if (!settled && !sameRun) {
+      if (occupied) note = 'Opened the chat. Another run is active in this tab, so this run’s live card is not attached here; open it after the active run finishes.';
+      else if (!live.adopt({ sessionId: target.sessionId, clientRequestId: target.clientRequestId, publicRunId: target.publicRunId })) note = 'Opened the chat, but this run’s live card could not be attached. Reload the chat to retry.';
+    }
+    if (projects.current) projects.current.selectChat(target.session); else selectSession(target.session);
+    if (!note) closePanel();
+    return note;
   }
   function closePanel() { setSaveActive(false); if (pane === 'project') projects.current?.closeDetails(); setPane(null); setArtifactPaneFullScreen(false); if (panelOpener.current?.closest('.room-sidebar') && window.matchMedia?.('(max-width: 760px)').matches) menu.current?.focus(); else panelOpener.current?.focus(); }
   const activeElsewhere = live.turn && !live.turn.done && live.turn.intent.sessionId !== selectedSession?.id;
@@ -553,12 +570,12 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
       }} contextTarget={contextTarget}
         onOpenChange={open => { setPane(previous => open ? 'project' : previous === 'project' ? null : previous); if (open && navigationOpen) closeNavigation(); }} onNavigate={() => { if (navigationOpen || (typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 760px)').matches)) closeNavigation(); }} /> : <div className="sidebar-scroll"><p className="empty-copy">Live chat is unavailable.</p>{sessions.map(session => <div key={session.id} className="sidebar-item"><MessageSquare size={17} /><span>{session.title}</span></div>)}</div>}
       <div className="capability-navigation" aria-label="Capabilities">
-        {([{ key: 'agents', label: 'Agents', Icon: Users }, { key: 'collaboration', label: 'Collaboration rooms', Icon: MessagesSquare }, { key: 'notifications', label: 'Notifications', Icon: Bell }] as const).map(({ key, label, Icon }) => <button key={key} className="sidebar-item" type="button" aria-expanded={pane === key} onClick={event => openPanel(key, event.currentTarget)}><Icon size={18} /><span>{label}<small>Unavailable</small></span></button>)}
+        {([{ key: 'agents', label: 'Agents', Icon: Users }, { key: 'collaboration', label: 'Collaboration rooms', Icon: MessagesSquare }, { key: 'notifications', label: 'Notifications', Icon: Bell }] as const).map(({ key, label, Icon }) => <button key={key} className="sidebar-item" type="button" aria-expanded={pane === key} onClick={event => openPanel(key, event.currentTarget)}><Icon size={18} /><span>{label}<small>{key === 'notifications' && liveEnabled ? (notifications.inbox ? (notifications.inbox.unreadCount ? `${notifications.inbox.unreadCount} unread` : 'Inbox') : 'Inbox') : 'Unavailable'}</small></span></button>)}
       </div>
       <footer className="sidebar-footer"><button className="sidebar-item" type="button" onClick={event => openPanel('settings', event.currentTarget)}><Settings2 size={18} /><span>Settings</span></button><div className="account-row"><span className="operator-avatar">NS</span><span>My account<small>{bootstrap.identity.provider === 'development' ? 'Development preview' : 'Personal workspace'}</small></span></div></footer>
     </aside>
     <main className="command-main">
-      <header className="command-header"><button ref={menu} className="icon-button menu-button" type="button" aria-label="Open chat navigation" aria-expanded={navigationOpen} onClick={openNavigation}><Menu size={21} /></button>
+      <header className="command-header"><button ref={menu} className="icon-button menu-button" type="button" aria-label="Open chat navigation" aria-expanded={navigationOpen} onClick={openNavigation}><Menu size={21} />{notifications.inbox?.unreadCount ? <span className="notification-dot" aria-hidden="true" /> : null}</button>
         <div className="room-breadcrumb">{projectName ? <><span aria-label="Selected project">{projectName}</span><ChevronRight size={14} /></> : null}<strong aria-label="Selected session">{selectedSession?.title ?? (projectName ? 'New conversation' : 'Jarvis Command')}</strong></div>
         <div ref={setInferenceTarget} className="requested-route-slot" />
         <div className="header-actions"><SessionContextMeter enabled={bootstrap.command.liveRoom.enabled && selectedSession?.ownership === 'command'} sessionId={selectedSession?.id ?? null} liveUsage={latestUsage} compaction={live.turn && live.turn.intent.sessionId === selectedSession?.id ? live.turn.compaction ?? null : null} refreshVersion={contextRevision} compactedContext={compactedContext} /><SessionLifecycleControls enabled={bootstrap.command.liveRoom.enabled && selectedSession?.ownership === 'command'} session={selectedSession} blocked={!writeAllowed || !!(live.turn && !live.turn.done)} onCompacted={status => { if (status.result) setCompactedContext({ sessionId: status.result.resultSessionId, usedTokens: status.result.afterTokens }); setContextRevision(value => value + 1); }} onSession={async session => { if (projects.current) await projects.current.adoptSession(session); else selectSession(session); }} />{projectName ? <button className={`icon-button${pane === 'project' ? ' active' : ''}`} type="button" aria-label="Open project details" title="Project details" aria-expanded={pane === 'project'} onClick={event => { if (pane === 'project') projects.current?.closeDetails(); else projects.current?.openDetails(event.currentTarget); }}><PanelRight size={19} /></button> : null}
@@ -607,10 +624,10 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
       </div> : null}
       {pane === 'agents' || pane === 'collaboration' || pane === 'notifications' ? <div className="runtime-details" onKeyDown={event => { if (event.key === 'Escape') closePanel(); }}>
         <header className="pane-header"><h2>{pane === 'agents' ? 'Agents' : pane === 'collaboration' ? 'Collaboration rooms' : 'Notifications'}</h2><button ref={panelClose} className="icon-button" type="button" aria-label="Close context" onClick={closePanel}><X size={20} /></button></header>
-        <div className="pane-body unavailable-capability"><p className="eyebrow">Unavailable</p><h3>{pane === 'notifications' ? 'Planned for a later increment' : 'Not available on this installation'}</h3>
-          <p>{pane === 'agents' ? 'Agent profiles and direct delegation are not available through this Command installation’s verified Hermes contract.' : pane === 'collaboration' ? 'Collaboration rooms are not available through this installation’s verified Command contract. A native writable room driver has not been proven.' : 'Notifications and the inbox are unavailable until the notifications milestone (P6). No alerts or push subscriptions are enabled here.'}</p>
+        {pane === 'notifications' && liveEnabled ? <NotificationsPane state={notifications} onOpen={openNotificationTarget} /> : <div className="pane-body unavailable-capability"><p className="eyebrow">Unavailable</p><h3>{pane === 'notifications' ? 'Not available in this connection' : 'Not available on this installation'}</h3>
+          <p>{pane === 'agents' ? 'Agent profiles and direct delegation are not available through this Command installation’s verified Hermes contract.' : pane === 'collaboration' ? 'Collaboration rooms are not available through this installation’s verified Command contract. A native writable room driver has not been proven.' : 'The notification inbox needs live chat, which is unavailable in this connection. No alerts or push subscriptions are enabled here.'}</p>
           {pane !== 'notifications' ? <p>{pane === 'agents' ? 'Profile discovery, canonical profile sessions and Bot delivery have not been verified. Native support elsewhere remains unknown.' : 'Projects organize your chats and references locally in Command. They are separate from native collaboration rooms.'}</p> : null}
-        </div>
+        </div>}
       </div> : null}
       {pane === 'runtime' || pane === 'settings' ? <div className="runtime-details" onKeyDown={event => { if (event.key === 'Escape') closePanel(); }}><header className="pane-header"><h2>{pane === 'runtime' ? 'Hermes connection' : 'Settings'}</h2><button ref={panelClose} className="icon-button" type="button" aria-label="Close context" onClick={closePanel}><X size={20} /></button></header><div className="pane-body">
         <h3>{pane === 'runtime' ? health : 'Your workspace'}</h3><p className="muted">{pane === 'runtime' ? 'Reported connection snapshot' : 'Jarvis Command keeps your conversations connected to Hermes.'}</p>

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { CommandBootstrapSchema, SessionMessagesPageSchema } from '@jarvis-command/contracts';
+import { emptyInbox } from './empty-inbox';
 
 // Clearly labeled synthetic data. Real owned browser/backend evidence is recorded separately.
 const sessionId = 'jc_issue14_synthetic';
@@ -44,7 +45,7 @@ test('lost ACK and mid-run reload recover by GET, with one canonical answer and 
       return route.fulfill({ json: SessionMessagesPageSchema.parse({ sessionId, messages, pagination: { offset: 0, limit: 50, returned: messages.length, hasMore: false } }) });
     }
     const responses: Record<string, unknown> = {
-      '/api/bootstrap': bootstrap, '/api/rooms': { version: 1, rooms: [] },
+      '/api/bootstrap': bootstrap, '/api/rooms': { version: 1, rooms: [] }, '/api/notifications': emptyInbox,
       '/api/live/model-options': { default: { provider: 'openai-codex', model: 'gpt-6-sol' }, options: [{ provider: 'openai-codex', model: 'gpt-6-sol', label: 'Synthetic Sol', reasoningEfforts: ['medium'] }] },
       '/api/live/session-controls': { sessionForkPreservesSource: false, sessionCompactionRuns: false },
       [`/api/live/sessions/${sessionId}/context`]: { sessionId, state: 'unavailable', receipt: null, updatedAt: null },
@@ -115,7 +116,7 @@ test('SYNTHETIC uncertain artifact save survives reload with one exact artifact'
     if (path.endsWith('/context')) return route.fulfill({ json: { sessionId, state: 'unavailable', receipt: null, updatedAt: null } });
     const responses: Record<string, unknown> = {
       '/api/bootstrap': { ...bootstrap, command: { ...bootstrap.command, version: 'SYNTHETIC P4 recovery' }, hermes: { ...bootstrap.hermes, capabilities: ['run_events_sse', 'artifact_studio'] }, sessions: [original] },
-      '/api/rooms': { version: 1, rooms: [] },
+      '/api/rooms': { version: 1, rooms: [] }, '/api/notifications': emptyInbox,
       '/api/live/model-options': { default: { provider: 'openai-codex', model: 'synthetic' }, options: [] },
       '/api/live/session-controls': { sessionForkPreservesSource: false, sessionCompactionRuns: false },
     };

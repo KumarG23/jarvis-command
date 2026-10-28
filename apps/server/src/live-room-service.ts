@@ -41,6 +41,7 @@ import {
 } from '@jarvis-command/contracts';
 
 import type { AuditDraft, AuditRunRecord, AuditLedger } from './audit-ledger';
+import type { RunNotifier } from './run-notifier';
 import {
   type CommandProxyClient,
   type CommandRunEvent,
@@ -61,6 +62,7 @@ type LiveRoomServiceOptions = Readonly<{
   resolveImages?: (references: NonNullable<LiveRunSubmissionRequest['images']>) => Promise<ReadonlyArray<Readonly<{ mime: string; bytes: Buffer }>>>;
   createPublicRunId?: () => string;
   now?: () => Date;
+  notify?: RunNotifier | undefined;
 }>;
 
 type AdmittedRunRecord = AuditRunRecord & Readonly<{ upstreamRunId: string }>;
@@ -89,6 +91,7 @@ export function createLiveRoomService({
   resolveImages,
   createPublicRunId = () => `jcr_${randomBytes(16).toString('hex')}`,
   now = () => new Date(),
+  notify,
 }: LiveRoomServiceOptions) {
   const submissions = new Map<string, { fingerprint: string; operation: Promise<LiveRunSubmissionResponse> }>();
   const compactionSubmissions = new Map<string, { fingerprint: string; operation: Promise<ContextCompactionSubmissionResponse> }>();
@@ -101,6 +104,18 @@ export function createLiveRoomService({
     const record = ledger.findRunByPublicId(actorFingerprint(subject), publicRunId);
     if (!record || !record.upstreamRunId) throw new LiveRoomNotFoundError();
     return record as AdmittedRunRecord;
+  };
+
+  // Notifications come only from observations of the actor's own admitted run: the record
+  // is already actor/run/session bound. Context-compaction operations are not runs.
+  const notifyStatus = async (record: AuditRunRecord, upstream: CommandRunStatus): Promise<void> => {
+    if (!notify || upstream.kind === 'context_compaction') return;
+    const base = { actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId };
+    if (upstream.status === 'completed') await notify({ ...base, category: 'run-completed' });
+    else if (upstream.status === 'failed') await notify({ ...base, category: 'run-failed' });
+    else if (upstream.status === 'waiting_for_approval' && upstream.approval) {
+      await notify({ ...base, category: 'approval', key: upstream.approval.requestId });
+    }
   };
 
   const auditTerminal = async (
@@ -125,6 +140,7 @@ export function createLiveRoomService({
     if (upstream.runId !== record.upstreamRunId || upstream.sessionId !== record.sessionId) {
       throw new LiveRoomNotFoundError();
     }
+    await notifyStatus(record, upstream);
     await auditTerminal(record, upstream.status, upstream.usage);
     return LiveRunStatusSchema.parse({
       publicRunId: record.publicRunId,
@@ -507,6 +523,20 @@ export function createLiveRoomService({
       });
     },
 
+    /** Actor-bound identity of an admitted run, for notification deep links. */
+    getRunIdentity(subject: string, publicRunId: string): Readonly<{ sessionId: string; clientRequestId: string }> {
+      const record = findRun(subject, publicRunId);
+      return { sessionId: record.sessionId, clientRequestId: record.clientRequestId };
+    },
+
+    /** The actor's newest admitted, not-yet-terminal runs, for reopening-time reconciliation. */
+    listUnsettledRuns(subject: string, limit: number): string[] {
+      return ledger.activeRunsForActor(actorFingerprint(subject))
+        .filter(record => record.upstreamRunId)
+        .sort((left, right) => right.requestedAt.localeCompare(left.requestedAt))
+        .slice(0, limit).map(record => record.publicRunId);
+    },
+
     async getRun(subject: string, publicRunId: string): Promise<LiveRunStatus> {
       const record = findRun(subject, publicRunId);
       return projectStatus(record, await client.getRun(record.upstreamRunId!));
@@ -531,7 +561,17 @@ export function createLiveRoomService({
       for await (const upstream of client.streamRunEvents(record.upstreamRunId!, signal)) {
         if (upstream.runId !== record.upstreamRunId) throw new LiveRoomNotFoundError();
         const event = projectEvent(record.publicRunId, upstream);
+        if (event.type === 'approval.request') {
+          await notify?.({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, category: 'approval', key: event.approval.requestId });
+        }
         if (isTerminalEvent(event)) {
+          if (notify && (event.type === 'run.completed' || event.type === 'run.failed')) {
+            // Confirm this is a run, not a compaction operation, before announcing it.
+            const confirmed = await client.getRun(record.upstreamRunId!).catch(() => null);
+            if (confirmed && confirmed.kind !== 'context_compaction' && confirmed.runId === record.upstreamRunId && confirmed.sessionId === record.sessionId) {
+              await notify({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, category: event.type === 'run.completed' ? 'run-completed' : 'run-failed' });
+            }
+          }
           await auditTerminal(
             record,
             terminalEventStatus(event),

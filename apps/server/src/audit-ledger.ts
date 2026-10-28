@@ -192,6 +192,12 @@ export class AuditLedger {
     ));
   }
 
+  public activeRunsForActor(actor: string): AuditRunRecord[] {
+    this.assertHealthy();
+    const terminal = new Set(['completed', 'failed', 'cancelled', 'interrupted']);
+    return [...this.#runsByPublic.values()].filter((record) => record.actor === actor && !terminal.has(record.status));
+  }
+
   public latestReceiptForSession(actor: string, sessionId: string): AuditSessionReceipt | null {
     this.assertHealthy();
     for (let index = this.#entries.length - 1; index >= 0; index -= 1) {

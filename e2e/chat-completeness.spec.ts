@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { emptyInbox } from './empty-inbox';
 
 // Configured, isolated synthetic contract proof. No production API or inference.
 const timestamp = '2026-10-28T15:00:00.000Z';
@@ -41,7 +42,7 @@ test('draft recovery, 250 canonical IDs, narrow code/table scrolling and ten one
     if (path.endsWith('/context')) return route.fulfill({ json: { sessionId: path.split('/')[4], state: 'unavailable', receipt: null, updatedAt: null } });
     const responses: Record<string, unknown> = {
       '/api/bootstrap': { identity: { provider: 'development' }, command: { version: 'synthetic-p2', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 16000, maxSteerCharacters: 4000 } }, hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse'], readinessChecks: {} }, sessions: [session, ...(creates ? [newSession] : [])] },
-      '/api/rooms': { version: 1, rooms: [] },
+      '/api/rooms': { version: 1, rooms: [] }, '/api/notifications': emptyInbox,
       '/api/live/model-options': { default: { provider: 'openai-codex', model: 'synthetic' }, options: [] },
       '/api/live/session-controls': { sessionForkPreservesSource: false, sessionCompactionRuns: false },
     };

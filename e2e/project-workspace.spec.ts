@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { emptyInbox } from './empty-inbox';
 
 const timestamp = '2026-10-28T12:00:00.000Z';
 const sid = 'jc_' + 'a'.repeat(32), pid = 'room_' + 'b'.repeat(32), aid = 'art_' + 'c'.repeat(32);
@@ -18,6 +19,7 @@ for (const width of [1280, 320, 360, 390, 430]) test(`SYNTHETIC project workspac
     const req = route.request(), url = new URL(req.url()), path = url.pathname;
     const json = (body: unknown) => route.fulfill({ json: body });
     if (path === '/api/bootstrap') return json({ identity: { provider: 'development' }, command: { version: 'SYNTHETIC P4.5 fixture', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 16000, maxSteerCharacters: 4000 } }, hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse', 'artifact_studio'], readinessChecks: {} }, sessions: [] });
+    if (path === '/api/notifications') return route.fulfill({ json: emptyInbox });
     if (path === '/api/rooms') {
       if (req.method() === 'POST') { room = { ...req.postDataJSON(), id: pid, sessionIds: [], lastSessionId: null }; return json({ room }); }
       return json({ version: 1, rooms: room ? [room] : [] });
@@ -140,6 +142,7 @@ for (const change of ['archived', 'removed', 'stale', 'unavailable', 'unchanged'
     const path = new URL(route.request().url()).pathname;
     const json = (body: unknown) => route.fulfill({ json: body });
     if (path === '/api/bootstrap') return json({ identity: { provider: 'development' }, command: { version: 'SYNTHETIC generation Retry', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 16000, maxSteerCharacters: 4000 } }, hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse', 'artifact_studio'], readinessChecks: {} }, sessions: [session] });
+    if (path === '/api/notifications') return route.fulfill({ json: emptyInbox });
     if (path === '/api/rooms') {
       reads++;
       if (reads > 1 && change === 'unavailable') return route.fulfill({ status: 503, json: {} });
