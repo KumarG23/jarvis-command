@@ -402,7 +402,7 @@ Neal's request (2026-10-28): a Claude Projects–style workspace for bigger jobs
 | P5 Agents | Capability Unsupported — deferred; unavailable UI live | Accepted #28 reused in #31 / PR #36; verified profile/Bot contract unavailable, run-only diagnose available; native/private support elsewhere unknown. [Unavailable UI released/live-verified](https://github.com/KumarG23/jarvis-command/issues/31#issuecomment-6474818294); phone check pending. |
 | P6 Notifications | In progress — review/release pending; phone check pending | #46 / PR #50 inbox; #51 dependent repair retains bounded exact approval identities and exposes incomplete delivery. Sol review, release and live proof remain required. Disabled Web Push implementation/tests still required; production provisioning/enablement and unsupported cross-surface events stay deferred. |
 | P7 Rooms | Capability Unsupported — deferred; unavailable UI live | Accepted #30 reused in #31 / PR #36; native writable transport/driver/send-stop unproven through existing access. Exact contract on #20; Projects separate. [Unavailable UI released/live-verified](https://github.com/KumarG23/jarvis-command/issues/31#issuecomment-6474818294); phone check pending. |
-| P8 Polish, release, Final Neal packet | Not started | — |
+| P8 Polish, release, Final Neal packet | In progress — short-viewport navigation built; review/release pending; phone check pending | #52 keeps short desktop/split-screen navigation scrollable and keyboard reachable at 1280×360/720 and 320–430 px; browser regression fails on the old stylesheet and passes on candidate. Final Neal packet waits for P6 review/release and remaining milestones. |
 
 ## 12. Acceptance matrix and proof requirements
 

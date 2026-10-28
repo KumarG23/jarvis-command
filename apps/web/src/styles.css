@@ -498,3 +498,10 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 .pane-body .notification-preference input { width: 20px; height: 20px; flex: 0 0 auto; padding: 0; }
 .menu-button { position: relative; }
 .menu-button .notification-dot { position: absolute; top: 8px; right: 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--amber, #f4cf7c); }
+
+/* Short desktop/split-screen: one bounded navigation scroll keeps recent chats,
+   capabilities and footer actions reachable instead of clipping them below the fold. */
+@media (max-height: 600px) {
+  .room-sidebar { overflow-y: auto; overscroll-behavior: contain; scroll-padding-block: 12px; }
+  .sidebar-scroll { flex: 0 0 auto; min-height: 0; overflow-y: visible; }
+}
