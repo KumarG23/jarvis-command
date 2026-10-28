@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom';
 import { ArrowUp, ChevronRight, Command, Copy, FilePlus2, ImagePlus, X } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ArtifactMutationResponseSchema, InferenceOptionsResponseSchema, type InferenceOptionsResponse, type InferenceOverride, type LiveRunSubmissionRequest, type ReasoningEffort, type RunEvent } from '@jarvis-command/contracts';
@@ -255,7 +256,8 @@ function activity(event: RunEvent, done: boolean): string {
 }
 type PendingChatImage = NonNullable<LiveRunSubmissionRequest['images']>[number] & Readonly<{ name: string; size: number }>;
 
-export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, projectId, max, maxSteer, turn, send, retry, resume, steer, recoveries, consumeRecovery, blocked = false, draftsAuthorized = allowed }: Readonly<{
+export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, projectId, max, maxSteer, turn, send, retry, resume, steer, recoveries, consumeRecovery, blocked = false, draftsAuthorized = allowed, inferenceTarget }: Readonly<{
+  inferenceTarget?: HTMLElement | null;
   draftsAuthorized?: boolean;
   blocked?: boolean;
   allowed: boolean; imageAttachmentsEnabled: boolean; sessionId: string | undefined; projectId: string | null; max: number; turn: Turn | null;
@@ -264,6 +266,15 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
   send: (sessionId: string, input: string, max: number, inference?: InferenceOverride, images?: LiveRunSubmissionRequest['images']) => boolean; retry: () => void; resume: () => void;
 }>) {
   const { draft, draftsRef, setRoomDraft, clearForSend, storageUnavailable } = useTextDraft(sessionId, allowed && draftsAuthorized);
+  const picker = useRef<HTMLDetailsElement>(null);
+  useEffect(() => { if (picker.current) picker.current.open = false; }, [sessionId]);
+  useEffect(() => {
+    const dismiss = (event: PointerEvent) => {
+      if (picker.current?.open && !picker.current.contains(event.target as Node)) picker.current.open = false;
+    };
+    document.addEventListener('pointerdown', dismiss);
+    return () => document.removeEventListener('pointerdown', dismiss);
+  }, []);
   const offered = useRef(new WeakSet<DraftRecovery>());
   const [steers, setSteers] = useState<Record<string, string>>({});
   const steerVersions = useRef<Record<string, number>>({});
@@ -424,6 +435,31 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
       setPreflighting(false);
     }
   };
+  const inferencePicker = (<details ref={picker} className={`inference-control${inferenceTarget ? ' header-inference' : ''}`} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }} onKeyDown={event => {
+        if (event.key === 'Escape') { event.stopPropagation(); if (picker.current) picker.current.open = false; picker.current?.querySelector('summary')?.focus(); }
+      }}>
+        <summary title={`Requested · ${selection === 'inherit' ? 'Inherit' : selection === 'invalid' ? 'Selection unavailable' : `${selectedOption?.label ?? selection.model} · ${reasoningEffort}`}`}><span className="requested-label">Requested · </span><span className="requested-choice">{selection === 'inherit' ? 'Inherit' : selection === 'invalid' ? 'Selection unavailable' : `${selectedOption?.label ?? selection.model} · ${reasoningEffort}`}</span></summary>
+        <div className="inference-fields">
+          <p className="route-explanation">Requested for the next message. Executed route is reported only in a run’s Activity / Usage receipt; a latest-session receipt does not identify a selected answer.</p>
+          <label>Model<select aria-label="Model for this prompt" value={selectedModel} disabled={busy || preflighting || inventoryBusy} onChange={(event) => chooseModel(event.target.value)}>
+            <option value="inherit">Inherit ({inferenceOptions?.default.model ?? 'session default'})</option>
+            {selection === 'invalid' ? <option value="invalid" disabled>Stored selection unavailable</option> : null}
+            {typeof selection !== 'string' && !selectedOption ? <option value={selectedModel} disabled>{selection.model} (unavailable)</option> : null}
+            {inferenceOptions?.options.map(option => <option key={`${option.provider}:${option.model}`} value={`${option.provider}:${option.model}`}>{option.label}</option>)}
+          </select></label>
+          <label>Reasoning<select aria-label="Reasoning for this prompt" value={reasoningEffort ?? ''} disabled={busy || preflighting || !selectedOption} onChange={(event) => {
+            if (typeof selection !== 'string' && selectedOption?.reasoningEfforts.includes(event.target.value as ReasoningEffort)) {
+              preference.select({ ...selection, reasoningEffort: event.target.value as ReasoningEffort }); setPreflightError('');
+            }
+          }}>
+            {!reasoningEffort ? <option value="">Session default (not guaranteed)</option> : null}
+            {reasoningEffort && !selectedOption?.reasoningEfforts.includes(reasoningEffort) ? <option value={reasoningEffort} disabled>{reasoningEffort} (unsupported)</option> : null}
+            {(selectedOption?.reasoningEfforts ?? []).map(effort => <option key={effort} value={effort}>{effort}</option>)}
+          </select></label>
+          <p>Preflight request for this chat, saved only in this browser. Offered efforts are requests; execution is confirmed only by the current run receipt. Inherit uses session routing without a guaranteed effort.</p>
+          <button className="secondary-button" type="button" disabled={inventoryBusy || preflighting || busy} onClick={() => { setPreflightError(''); setInventoryRetry(value => value + 1); }}>Retry model choices</button>
+        </div>
+      </details>);
   return <>
     {busy && turn && !turn.done ? <p className="composer-feedback" role="status">{turn.phase}</p> : null}
     {turn?.phase === 'Admission uncertain — retry the same intent' ? <button className="primary-button" type="button" onClick={retry}>Retry same intent</button> : null}
@@ -443,28 +479,7 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
       if (!imageAttachmentsEnabled) return;
       if (Array.from(event.dataTransfer.items).some(item => item.kind === 'file' && item.type.startsWith('image/'))) event.preventDefault();
     }} onDrop={(event) => { if (!imageAttachmentsEnabled) return; const files = Array.from(event.dataTransfer.files); if (files.some(file => file.type.startsWith('image/'))) { event.preventDefault(); void attachImages(files); } }}>
-      <details className="inference-control">
-        <summary>Requested · {selection === 'inherit' ? 'Inherit' : selection === 'invalid' ? 'Selection unavailable' : `${selectedOption?.label ?? selection.model} · ${reasoningEffort}`}</summary>
-        <div className="inference-fields">
-          <label>Model<select aria-label="Model for this prompt" value={selectedModel} disabled={busy || preflighting || inventoryBusy} onChange={(event) => chooseModel(event.target.value)}>
-            <option value="inherit">Inherit ({inferenceOptions?.default.model ?? 'session default'})</option>
-            {selection === 'invalid' ? <option value="invalid" disabled>Stored selection unavailable</option> : null}
-            {typeof selection !== 'string' && !selectedOption ? <option value={selectedModel} disabled>{selection.model} (unavailable)</option> : null}
-            {inferenceOptions?.options.map(option => <option key={`${option.provider}:${option.model}`} value={`${option.provider}:${option.model}`}>{option.label}</option>)}
-          </select></label>
-          <label>Reasoning<select aria-label="Reasoning for this prompt" value={reasoningEffort ?? ''} disabled={busy || preflighting || !selectedOption} onChange={(event) => {
-            if (typeof selection !== 'string' && selectedOption?.reasoningEfforts.includes(event.target.value as ReasoningEffort)) {
-              preference.select({ ...selection, reasoningEffort: event.target.value as ReasoningEffort }); setPreflightError('');
-            }
-          }}>
-            {!reasoningEffort ? <option value="">Session default (not guaranteed)</option> : null}
-            {reasoningEffort && !selectedOption?.reasoningEfforts.includes(reasoningEffort) ? <option value={reasoningEffort} disabled>{reasoningEffort} (unsupported)</option> : null}
-            {(selectedOption?.reasoningEfforts ?? []).map(effort => <option key={effort} value={effort}>{effort}</option>)}
-          </select></label>
-          <p>Preflight request for this chat, saved only in this browser. Offered efforts are requests; execution is confirmed only by the current run receipt. Inherit uses session routing without a guaranteed effort.</p>
-          <button className="secondary-button" type="button" disabled={inventoryBusy || preflighting || busy} onClick={() => { setPreflightError(''); setInventoryRetry(value => value + 1); }}>Retry model choices</button>
-        </div>
-      </details>
+      {inferenceTarget ? createPortal(inferencePicker, inferenceTarget) : inferencePicker}
       {preflighting ? <p role="status">Checking requested model and effort…</p> : null}
       {preflightError || problem || inferenceError ? <p role="status">{preflightError || problem || 'Model choices unavailable; explicitly selected Inherit remains available.'}</p> : null}
       {storageUnavailable ? <p role="status">Draft storage unavailable or full. Text remains in this tab; reload may lose recent edits. Sending requires safely clearing the saved draft.</p> : null}

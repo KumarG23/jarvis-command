@@ -396,12 +396,12 @@ Neal's request (2026-10-28): a Claude Projects–style workspace for bigger jobs
 | M0 capability matrix (#2) | Superseded by this plan | Findings kept as history; capability checks now live in P5/P7 |
 | P1 Truthful status/usage/model-effort | Done, live; phone check pending | #22/#24, PRs #23/#25; merged `df2f68bb`, app `sha256:1dd938e3…`; [production Sol/Luna readback and rollback](https://github.com/KumarG23/jarvis-command/issues/24#issuecomment-6473022817); 320–430 px emulation passed; §5 observation-age follow-through in #26 |
 | P2 Chat completeness | Source implemented; release pending | #26 / PR #29: same-tab drafts, safe Markdown/code/tables, 250-message/mobile recovery proof and current-tab observation age. Sol exact-head review, release and production readback pending; phone check pending. |
-| P3 Design and shell | Not started | — |
+| P3 Design and shell | Source built/tested; CI tracked on #31 PR | #31: graphite/emerald shell, header requested-route picker, readable controls and honest unavailable navigation. Exact-head CI result tracked on #31 PR; Sol review, release and live verification pending; phone check pending. |
 | P4 Artifacts | Not started | — |
 | P4.5 Projects workspace | Not started | Added 2026-10-28 at Neal's request; §4F, §10 P4.5 |
-| P5 Agents | Capability Unsupported — deferred; UI pending | #28 corrected diagnostic accepted: verified Command/Hermes contract lacks profile/Bot operations; run-only diagnose is available. Native/private support elsewhere unknown. Unavailable UI, release and live verification remain pending; P5 not Done. |
+| P5 Agents | Capability Unsupported — deferred; unavailable UI source implemented | Accepted #28 finding reused in #31; profile/Bot contract unverified, native/private support elsewhere unknown. UI source/build verified; exact-head CI tracked on #31 PR; Sol review, release and live verification pending; P5 not Done. |
 | P6 Notifications | Not started | — |
-| P7 Rooms | Not started | — |
+| P7 Rooms | Capability Unsupported — deferred; unavailable UI source implemented | Accepted #30 finding reused in #31: native groups transport/writable driver/send-stop unproven through verified Command contract. Projects remain separate. UI source/build verified; exact-head CI tracked on #31 PR; Sol review, release and live verification pending; P7 not Done. |
 | P8 Polish, release, Final Neal packet | Not started | — |
 
 ## 12. Acceptance matrix and proof requirements

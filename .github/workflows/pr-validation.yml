@@ -7,7 +7,8 @@ on:
     branches: [release/gpt6-sol-luna]
     types: [opened, synchronize, reopened, ready_for_review]
 
-# Read-only token; no secrets, deploy keys, artifacts or self-hosted runners.
+# Read-only repository token; no secrets, deploy keys or self-hosted runners.
+# Only visibly synthetic browser screenshots are uploaded.
 permissions:
   contents: read
 
@@ -34,3 +35,11 @@ jobs:
         if: hashFiles('e2e/header-layout.config.ts') != ''
         run: npx playwright install --with-deps chromium
       - run: scripts/ci-validate.sh
+      - name: Upload synthetic shell screenshots
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: synthetic-p3-shell
+          path: test-results/turn-recovery/**/p3-*.png
+          if-no-files-found: ignore
+          retention-days: 14

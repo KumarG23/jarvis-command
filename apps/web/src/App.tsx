@@ -1,5 +1,5 @@
 import { ArtifactListResponseSchema, ArtifactTypeSchema, CommandBootstrapSchema, type ArtifactType, type CommandBootstrap, type SessionSummary } from '@jarvis-command/contracts';
-import { Command, ShieldCheck, Menu, X, Settings2, PanelRight, ChevronRight, MessageSquare, Files } from 'lucide-react';
+import { Command, ShieldCheck, Menu, X, Settings2, PanelRight, ChevronRight, MessageSquare, Files, Users, MessagesSquare, Bell } from 'lucide-react';
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 
 import './styles.css';
@@ -229,7 +229,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
   const [sessions, setSessions] = useState(bootstrap.sessions);
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [draftAuthorizedSession, setDraftAuthorizedSession] = useState<string | null>(null);
-  const [pane, setPane] = useState<'project' | 'runtime' | 'settings' | 'artifacts' | null>(null);
+  const [pane, setPane] = useState<'project' | 'runtime' | 'settings' | 'artifacts' | 'agents' | 'collaboration' | 'notifications' | null>(null);
   const [artifactPaneFullScreen, setArtifactPaneFullScreen] = useState(false);
   const [associatedArtifacts, setAssociatedArtifacts] = useState<number | null>(null);
   const [artifactRefresh, setArtifactRefresh] = useState(0);
@@ -244,6 +244,8 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     artifactType?: ArtifactType | null;
     content: string;
   } | null>(null);
+  const [inferenceTarget, setInferenceTarget] = useState<HTMLDivElement | null>(null);
+  const navigationEntry = useRef(crypto.randomUUID()), navigationVisible = useRef(false);
   const [contextTarget, setContextTarget] = useState<HTMLDivElement | null>(null);
   const [contextRevision, setContextRevision] = useState(0);
   const [compactedContext, setCompactedContext] = useState<{ sessionId: string; usedTokens: number } | null>(null);
@@ -260,7 +262,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     if (navigationOpen) sidebar.current?.querySelector<HTMLButtonElement>('.close-navigation')?.focus();
   }, [navigationOpen]);
   useEffect(() => {
-    if (pane === 'runtime' || pane === 'settings') panelClose.current?.focus();
+    if (pane && pane !== 'project' && pane !== 'artifacts') panelClose.current?.focus();
     if (pane === 'project') contextTarget?.querySelector<HTMLButtonElement>('[aria-label="Close project details"]')?.focus();
   }, [pane, contextTarget]);
   useEffect(() => {
@@ -363,14 +365,32 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     if (session) setSessions(previous => [session, ...previous.filter(item => item.id !== session.id)]);
     setSelectedSession(session);
   }
-  function closeNavigation() { setNavigationOpen(false); menu.current?.focus(); }
+  function openNavigation() {
+    if (!navigationOpen) {
+      window.history.pushState({ ...window.history.state, commandNavigation: navigationEntry.current }, '');
+      navigationVisible.current = true; setNavigationOpen(true);
+    }
+  }
+  function closeNavigation(restoreFocus = true) {
+    if (window.history.state?.commandNavigation === navigationEntry.current) window.history.back();
+    navigationVisible.current = false; setNavigationOpen(false); if (restoreFocus) menu.current?.focus();
+  }
+  useEffect(() => {
+    const back = () => {
+      const open = window.history.state?.commandNavigation === navigationEntry.current;
+      const wasOpen = navigationVisible.current; navigationVisible.current = open; setNavigationOpen(open);
+      if (wasOpen && !open) menu.current?.focus();
+    };
+    window.addEventListener('popstate', back);
+    return () => window.removeEventListener('popstate', back);
+  }, []);
   function setProjectScope(name: string | null) {
     setProjectName(name);
   }
-  function openPanel(kind: 'runtime' | 'settings' | 'artifacts', element: HTMLElement) {
-    projects.current?.closeDetails(); panelOpener.current = element; setPane(kind); setNavigationOpen(false);
+  function openPanel(kind: 'runtime' | 'settings' | 'artifacts' | 'agents' | 'collaboration' | 'notifications', element: HTMLElement) {
+    projects.current?.closeDetails(); panelOpener.current = element; setPane(kind); if (navigationOpen) closeNavigation(false);
   }
-  function closePanel() { if (pane === 'project') projects.current?.closeDetails(); setPane(null); setArtifactPaneFullScreen(false); panelOpener.current?.focus(); }
+  function closePanel() { if (pane === 'project') projects.current?.closeDetails(); setPane(null); setArtifactPaneFullScreen(false); if (panelOpener.current?.closest('.room-sidebar') && window.matchMedia?.('(max-width: 760px)').matches) menu.current?.focus(); else panelOpener.current?.focus(); }
   const activeElsewhere = live.turn && !live.turn.done && live.turn.intent.sessionId !== selectedSession?.id;
   const latestUsage = [...live.completedTurns, ...(live.turn ? [live.turn] : [])]
     .reverse()
@@ -469,7 +489,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     canCancel: !!pendingGeneration,
   };
   return <div className={`command-shell${pane ? ' has-context' : ''}`}>
-    {navigationOpen ? <button type="button" className="navigation-scrim" aria-label="Close navigation" onClick={closeNavigation} /> : null}
+    {navigationOpen ? <button type="button" className="navigation-scrim" aria-label="Close navigation" onClick={() => closeNavigation()} /> : null}
     <aside ref={sidebar} className={`room-sidebar${navigationOpen ? ' is-open' : ''}`} aria-label="Chat navigation" onKeyDown={event => {
       if (!navigationOpen) return;
       if (event.key === 'Escape') { event.stopPropagation(); closeNavigation(); }
@@ -479,17 +499,21 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
         if (!event.shiftKey && document.activeElement === controls.at(-1)) { event.preventDefault(); controls[0]?.focus(); }
       }
     }}>
-      <div className="sidebar-brand"><Command size={29} /><strong>Jarvis Command</strong><button className="icon-button close-navigation" type="button" aria-label="Close chat navigation" onClick={closeNavigation}><X size={20} /></button></div>
+      <div className="sidebar-brand"><Command size={29} /><strong>Jarvis Command</strong><button className="icon-button close-navigation" type="button" aria-label="Close chat navigation" onClick={() => closeNavigation()}><X size={20} /></button></div>
       {liveEnabled ? <ProjectRooms ref={projects} sessions={sessions} selectedSessionId={selectedSession?.id} onScope={setProjectScope} onProjectScope={setProjectId} onSession={selectSession} onDeleted={sessionId => {
         setSessions(previous => previous.filter(session => session.id !== sessionId));
         if (selectedSession?.id === sessionId) { setSelectedSession(null); setProjectScope(null); setProjectId(null); }
       }} contextTarget={contextTarget}
-        onOpenChange={open => { setPane(previous => open ? 'project' : previous === 'project' ? null : previous); if (open) setNavigationOpen(false); }} onNavigate={() => { if (navigationOpen || (typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 760px)').matches)) closeNavigation(); }} /> : <div className="sidebar-scroll"><p className="empty-copy">Live chat is unavailable.</p>{sessions.map(session => <div key={session.id} className="sidebar-item"><MessageSquare size={17} /><span>{session.title}</span></div>)}</div>}
+        onOpenChange={open => { setPane(previous => open ? 'project' : previous === 'project' ? null : previous); if (open && navigationOpen) closeNavigation(); }} onNavigate={() => { if (navigationOpen || (typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 760px)').matches)) closeNavigation(); }} /> : <div className="sidebar-scroll"><p className="empty-copy">Live chat is unavailable.</p>{sessions.map(session => <div key={session.id} className="sidebar-item"><MessageSquare size={17} /><span>{session.title}</span></div>)}</div>}
+      <div className="capability-navigation" aria-label="Capabilities">
+        {([{ key: 'agents', label: 'Agents', Icon: Users }, { key: 'collaboration', label: 'Collaboration rooms', Icon: MessagesSquare }, { key: 'notifications', label: 'Notifications', Icon: Bell }] as const).map(({ key, label, Icon }) => <button key={key} className="sidebar-item" type="button" aria-expanded={pane === key} onClick={event => openPanel(key, event.currentTarget)}><Icon size={18} /><span>{label}<small>Unavailable</small></span></button>)}
+      </div>
       <footer className="sidebar-footer"><button className="sidebar-item" type="button" onClick={event => openPanel('settings', event.currentTarget)}><Settings2 size={18} /><span>Settings</span></button><div className="account-row"><span className="operator-avatar">NS</span><span>My account<small>{bootstrap.identity.provider === 'development' ? 'Development preview' : 'Personal workspace'}</small></span></div></footer>
     </aside>
     <main className="command-main">
-      <header className="command-header"><button ref={menu} className="icon-button menu-button" type="button" aria-label="Open chat navigation" aria-expanded={navigationOpen} onClick={() => setNavigationOpen(true)}><Menu size={21} /></button>
+      <header className="command-header"><button ref={menu} className="icon-button menu-button" type="button" aria-label="Open chat navigation" aria-expanded={navigationOpen} onClick={openNavigation}><Menu size={21} /></button>
         <div className="room-breadcrumb">{projectName ? <><span aria-label="Selected project">{projectName}</span><ChevronRight size={14} /></> : null}<strong aria-label="Selected session">{selectedSession?.title ?? (projectName ? 'New conversation' : 'Jarvis Command')}</strong></div>
+        <div ref={setInferenceTarget} className="requested-route-slot" />
         <div className="header-actions"><SessionContextMeter enabled={bootstrap.command.liveRoom.enabled && selectedSession?.ownership === 'command'} sessionId={selectedSession?.id ?? null} liveUsage={latestUsage} compaction={live.turn && live.turn.intent.sessionId === selectedSession?.id ? live.turn.compaction ?? null : null} refreshVersion={contextRevision} compactedContext={compactedContext} /><SessionLifecycleControls enabled={bootstrap.command.liveRoom.enabled && selectedSession?.ownership === 'command'} session={selectedSession} blocked={!writeAllowed || !!(live.turn && !live.turn.done)} onCompacted={status => { if (status.result) setCompactedContext({ sessionId: status.result.resultSessionId, usedTokens: status.result.afterTokens }); setContextRevision(value => value + 1); }} onSession={async session => { if (projects.current) await projects.current.adoptSession(session); else selectSession(session); }} />{projectName ? <button className={`icon-button${pane === 'project' ? ' active' : ''}`} type="button" aria-label="Open project details" title="Project details" aria-expanded={pane === 'project'} onClick={event => { if (pane === 'project') projects.current?.closeDetails(); else projects.current?.openDetails(event.currentTarget); }}><PanelRight size={19} /></button> : null}
           {artifactStudioEnabled ? <button className={`artifact-context-button${pane === 'artifacts' ? ' active' : ''}`} type="button" aria-label="Open Artifact Studio" title="Artifacts for this context" aria-expanded={pane === 'artifacts'} onClick={event => openPanel('artifacts', event.currentTarget)}><Files size={17} /><span>Artifacts</span><strong>{associatedArtifacts ?? '...'}</strong></button> : null}
           <button className={`health-button ${bootstrap.hermes.state}`} type="button" aria-label={health} title={health} onClick={event => openPanel('runtime', event.currentTarget)}><span className="status-dot" /><span>Hermes</span></button></div>
@@ -500,14 +524,14 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
       <section ref={conversationScroll} className="timeline" aria-label="Conversation" onScroll={event => { const element = event.currentTarget; followLatest.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}><div ref={conversationContent} className="conversation-content">
         {liveEnabled && selectedSession ? <LiveRoom key={`${selectedSession.id}:${live.refresh?.sessionId === selectedSession.id ? live.refresh.revision : ''}`} session={selectedSession} onHistory={(sessionId, messages, complete) => { live.history(sessionId, messages, complete); setDraftAuthorizedSession(complete ? sessionId : null); }}
           turns={[...live.completedTurns, ...(live.turn ? [live.turn] : [])]} onSaveResponse={artifactStudioEnabled ? message => saveResponseArtifact(message.content, null) : undefined}
-          renderTurn={turn => <TurnView turn={turn} allowed={writeAllowed && turn.intent === live.turn?.intent} approve={live.approve} stop={live.stop} onSaveResponse={artifactStudioEnabled ? saveResponseArtifact : undefined} />} /> : <div className="welcome"><Command size={39} strokeWidth={1.5} /><p className="eyebrow">YOUR SPACE TO THINK & BUILD</p><h1>{projectName ? `Let’s work on ${projectName}.` : 'What are we working on?'}</h1><p>Start a conversation with Jarvis. Keep related work together in projects.</p><button className="secondary-button welcome-action" type="button" onClick={() => { if (window.matchMedia('(max-width: 760px)').matches) setNavigationOpen(true); else projects.current?.focusSearch(); }}>Choose a chat or start a new one <ChevronRight size={17} /></button></div>}
+          renderTurn={turn => <TurnView turn={turn} allowed={writeAllowed && turn.intent === live.turn?.intent} approve={live.approve} stop={live.stop} onSaveResponse={artifactStudioEnabled ? saveResponseArtifact : undefined} />} /> : <div className="welcome"><Command size={39} strokeWidth={1.5} /><p className="eyebrow">YOUR SPACE TO THINK & BUILD</p><h1>{projectName ? `Let’s work on ${projectName}.` : 'What are we working on?'}</h1><p>Start a conversation with Jarvis. Keep related work together in projects.</p><button className="secondary-button welcome-action" type="button" onClick={() => { if (window.matchMedia('(max-width: 760px)').matches) openNavigation(); else projects.current?.focusSearch(); }}>Choose a chat or start a new one <ChevronRight size={17} /></button></div>}
         {live.recoveryError ? <p role="alert" className="notice error">{live.recoveryError}</p> : null}
         {live.turn && !selectedSession && live.turn.intent.input === null ? <TurnView turn={live.turn} allowed={false} approve={live.approve} stop={live.stop} onSaveResponse={artifactStudioEnabled ? saveResponseArtifact : undefined} /> : null}
       </div></section>
       <footer className="composer-wrap">
         {liveEnabled && selectedSession?.ownership === 'command' && !live.historyReady(selectedSession.id) ? <p className="composer-feedback" role="status">Load complete chat history before sending. Retry history or load remaining pages.</p> : null}
         {live.historyBacklogFull ? <p role="alert" className="notice">Unconfirmed reply limit reached. Your replies are retained; retry history before sending more.</p> : null}
-        {liveEnabled ? <TurnComposer draftsAuthorized={draftAuthorizedSession !== null && draftAuthorizedSession === selectedSession?.id} blocked={!!live.recoveryError || !live.historyReady(selectedSession?.id) || live.historyBacklogFull} allowed={!!writeAllowed} imageAttachmentsEnabled={artifactStudioEnabled} sessionId={selectedSession?.id} projectId={projectId} max={bootstrap.command.liveRoom.maxInputCharacters} maxSteer={bootstrap.command.liveRoom.maxSteerCharacters} turn={live.turn} send={live.send} retry={live.retry} resume={live.resume} steer={live.steer} recoveries={live.recoveries} consumeRecovery={live.consumeRecovery} /> : <p className="composer-feedback">Messaging is unavailable in this read-only connection.</p>}
+        {liveEnabled ? <TurnComposer inferenceTarget={inferenceTarget} draftsAuthorized={draftAuthorizedSession !== null && draftAuthorizedSession === selectedSession?.id} blocked={!!live.recoveryError || !live.historyReady(selectedSession?.id) || live.historyBacklogFull} allowed={!!writeAllowed} imageAttachmentsEnabled={artifactStudioEnabled} sessionId={selectedSession?.id} projectId={projectId} max={bootstrap.command.liveRoom.maxInputCharacters} maxSteer={bootstrap.command.liveRoom.maxSteerCharacters} turn={live.turn} send={live.send} retry={live.retry} resume={live.resume} steer={live.steer} recoveries={live.recoveries} consumeRecovery={live.consumeRecovery} /> : <p className="composer-feedback">Messaging is unavailable in this read-only connection.</p>}
       </footer>
     </main>
     <ContextPane open={pane !== null} fullScreen={pane === 'artifacts' && artifactPaneFullScreen}>
@@ -516,6 +540,13 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
         setPendingArtifactSave(previous => previous?.key === key ? null : previous);
         setPendingGeneration(previous => previous?.sourceRequestId === key ? null : previous);
       }} onSendPrompt={sendArtifactPrompt} onCreateWithJarvis={createArtifactWithJarvis} generation={generationStatus} onRetryGeneration={retryArtifactGeneration} onCancelGeneration={cancelArtifactGeneration} onClose={closePanel} fullScreen={artifactPaneFullScreen} onToggleFullScreen={() => setArtifactPaneFullScreen(value => !value)} onLibraryChanged={() => setArtifactRefresh(value => value + 1)} /></Suspense> : null}
+      {pane === 'agents' || pane === 'collaboration' || pane === 'notifications' ? <div className="runtime-details" onKeyDown={event => { if (event.key === 'Escape') closePanel(); }}>
+        <header className="pane-header"><h2>{pane === 'agents' ? 'Agents' : pane === 'collaboration' ? 'Collaboration rooms' : 'Notifications'}</h2><button ref={panelClose} className="icon-button" type="button" aria-label="Close context" onClick={closePanel}><X size={20} /></button></header>
+        <div className="pane-body unavailable-capability"><p className="eyebrow">Unavailable</p><h3>{pane === 'notifications' ? 'Planned for a later increment' : 'Not available on this installation'}</h3>
+          <p>{pane === 'agents' ? 'Agent profiles and direct delegation are not available through this Command installation’s verified Hermes contract.' : pane === 'collaboration' ? 'Collaboration rooms are not available through this installation’s verified Command contract. A native writable room driver has not been proven.' : 'Notifications and the inbox are unavailable until the notifications milestone (P6). No alerts or push subscriptions are enabled here.'}</p>
+          {pane !== 'notifications' ? <p>{pane === 'agents' ? 'Profile discovery, canonical profile sessions and Bot delivery have not been verified. Native support elsewhere remains unknown.' : 'Projects organize your chats and references locally in Command. They are separate from native collaboration rooms.'}</p> : null}
+        </div>
+      </div> : null}
       {pane === 'runtime' || pane === 'settings' ? <div className="runtime-details" onKeyDown={event => { if (event.key === 'Escape') closePanel(); }}><header className="pane-header"><h2>{pane === 'runtime' ? 'Hermes connection' : 'Settings'}</h2><button ref={panelClose} className="icon-button" type="button" aria-label="Close context" onClick={closePanel}><X size={20} /></button></header><div className="pane-body">
         <h3>{pane === 'runtime' ? health : 'Your workspace'}</h3><p className="muted">{pane === 'runtime' ? 'Reported connection snapshot' : 'Jarvis Command keeps your conversations connected to Hermes.'}</p>
         <dl className="runtime-facts"><dt>Version</dt><dd>{bootstrap.command.version}</dd><dt>Identity</dt><dd>{bootstrap.identity.provider === 'cloudflare-access' ? 'Access verified' : 'Development identity'}</dd><dt>Model</dt><dd>{bootstrap.hermes.model === 'hermes-agent' ? 'Adapter label: hermes-agent' : bootstrap.hermes.model ?? 'Not reported'}</dd><dt>Provider</dt><dd>{bootstrap.hermes.provider ?? 'Not reported'}</dd><dt>Active agents</dt><dd>{bootstrap.hermes.activeAgents}</dd></dl>
