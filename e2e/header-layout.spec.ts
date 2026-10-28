@@ -307,6 +307,7 @@ for (const viewport of [
         if (!missing.has(name)) continue;
         if (!await target.evaluate(element => element === document.activeElement)) continue;
         await expect(target, name).toBeInViewport();
+        expect((await box(target)).height, `${name} 44px target`).toBeGreaterThanOrEqual(44);
         const hit = await target.evaluate(element => {
           const rect = element.getBoundingClientRect();
           const found = document.elementFromPoint(rect.left + Math.min(rect.width / 2, 20), rect.top + Math.min(rect.height / 2, 20));
