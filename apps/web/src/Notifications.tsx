@@ -122,8 +122,10 @@ export function NotificationsPane({ state, onOpen }: Readonly<{
 
   return <div className="pane-body notifications-pane">
     <p className="eyebrow">In-app inbox</p>
-    <h3>{inbox ? (inbox.unreadCount ? `${inbox.unreadCount} unread` : 'All caught up') : 'Notifications'}</h3>
+    <h3>{inbox ? (inbox.unreadCount ? `${inbox.unreadCount} unread` : inbox.delivery.inApp === 'incomplete' ? 'No recorded unread notifications' : 'All caught up') : 'Notifications'}</h3>
     <p className="muted small">Shows runs you started in Command that finished or failed, and approvals they are waiting on. Events from the CLI, Discord or other surfaces and closed-app push alerts are not available yet; no browser permission is requested.</p>
+    {inbox?.delivery.inApp === 'incomplete' ? <p role="status" className="notice">Delivery is incomplete. Only the latest 100 notifications are kept. Events before inbox setup or beyond bounded recovery may be missing. Checking runs can recover some recent completions, but cannot recover every past approval. Check the chat for current run and approval status.</p> : null}
+    {inbox?.delivery.approvals === 'unavailable' ? <p role="status" className="notice">New approval notifications are unavailable: durable approval tracking reached its limit or older request identities were already discarded. Existing notifications remain usable. Review approvals in the chat.</p> : null}
     {error ? <p role="alert" className="notice error">{error}</p> : null}
     {error && !inbox ? <button type="button" className="secondary-button" disabled={busy} onClick={() => void state.refresh()}>Try again</button> : null}
     {notice ? <p role="status" className="notice">{notice}</p> : null}

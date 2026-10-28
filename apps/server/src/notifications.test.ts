@@ -7,7 +7,7 @@ import { AuditLedger } from './audit-ledger';
 import { CommandProxyUnavailableError, type CommandProxyClient } from './command-client';
 import { loadConfig } from './config';
 import { createLiveRoomService } from './live-room-service';
-import { NotificationNotFoundError, NotificationStorageError, NotificationStore } from './notification-store';
+import { MAX_APPROVAL_RECEIPTS, NotificationNotFoundError, NotificationStorageError, NotificationStore } from './notification-store';
 import { createRunNotifier, notificationId } from './run-notifier';
 
 const cleanup: Array<() => Promise<void>> = [];
@@ -35,6 +35,43 @@ const record = (store: NotificationStore, actor: string, e: ReturnType<typeof ev
 });
 
 describe('NotificationStore', () => {
+  it('bounds exact approval receipts without evicting identities, and exposes unavailable delivery across restart', async () => {
+    const directory = await privateDirectory();
+    const store = new NotificationStore(directory);
+    await record(store, actorA, event('approval', 1, 'first'));
+    const path = join(directory, 'notifications.json');
+    const state = JSON.parse(await readFile(path, 'utf8'));
+    // Reversible owned fixture near the storage boundary; exercise the final actual write.
+    state.actors[actorA].approvals.ids.push(...Array.from({ length: MAX_APPROVAL_RECEIPTS - 2 }, (_, i) => `ntf_${i.toString(16).padStart(32, '0')}`));
+    await writeFile(path, JSON.stringify(state));
+    expect(await record(store, actorA, event('approval', 1, 'last'))).toBe('created');
+    const restarted = new NotificationStore(directory);
+    expect(await record(restarted, actorA, event('approval', 1, 'beyond'))).toBe('suppressed');
+    expect(await record(restarted, actorA, event('approval', 1, 'first'))).toBe('duplicate');
+    expect((await restarted.read(actorA)).approvalsUnavailable).toBe(true);
+    expect((await restarted.read(actorB)).approvalsUnavailable).toBe(false);
+    expect((await restarted.read(actorA)).items).toHaveLength(2);
+    expect(JSON.parse(await readFile(path, 'utf8')).actors[actorA].approvals.ids).toHaveLength(MAX_APPROVAL_RECEIPTS);
+    expect(await record(restarted, actorA, event('run-completed'))).toBe('created');
+  });
+
+  it.each([null, EVENT_AT])('reads legacy state safely when its forgotten identity horizon is %s', async horizon => {
+    const directory = await privateDirectory();
+    const store = new NotificationStore(directory);
+    await record(store, actorA, event('approval', 1, 'legacy'));
+    const path = join(directory, 'notifications.json');
+    const state = JSON.parse(await readFile(path, 'utf8'));
+    delete state.actors[actorA].approvals;
+    state.actors[actorA].horizon = horizon;
+    await writeFile(path, JSON.stringify(state));
+    const restarted = new NotificationStore(directory);
+    expect((await restarted.read(actorA)).approvalsUnavailable).toBe(horizon !== null);
+    expect(await record(restarted, actorA, event('approval', 1, 'new'))).toBe(horizon === null ? 'created' : 'suppressed');
+    expect(await record(restarted, actorA, event('approval', 1, 'legacy'))).toBe('duplicate');
+    await restarted.markRead(actorA, { all: true }); // persist migration on the next write
+    expect((await new NotificationStore(directory).read(actorA)).approvalsUnavailable).toBe(horizon !== null);
+  });
+
   it('creates one item per event under concurrent observation and keeps identity and read state across restart', async () => {
     const directory = await privateDirectory();
     const store = new NotificationStore(directory);
@@ -165,6 +202,48 @@ async function harness(overrides: Partial<CommandProxyClient> = {}, existing?: {
 const actorHash = async (subject: string) => (await import('node:crypto')).createHash('sha256').update(subject).digest('hex');
 
 describe('server-observed run notifications', () => {
+  it.each([true, false])('never recreates a pruned approval across status/SSE, restart and re-enable (enabled=%s)', async enabled => {
+    const h = await harness();
+    const alice = await actorHash('alice');
+    const run = await h.submit('alice', 1);
+    let time = Date.parse('2026-10-28T14:00:00.000Z');
+    const now = () => new Date(time);
+    const store = new NotificationStore(h.directory, now);
+    await store.setPreferences(alice, { categories: { 'run-completed': true, 'run-failed': true, approval: enabled } });
+    const observed = (requestId: string) => status(1, { status: 'waiting_for_approval', approval: approval(requestId) });
+    h.getRun.mockResolvedValue(observed('req-original') as never);
+    const service = (target: NotificationStore) => createLiveRoomService({ client: h.client, ledger: h.ledger, notify: createRunNotifier(target), now });
+    await service(store).getRun('alice', run.publicRunId);
+    const originalId = notificationId({ actor: alice, publicRunId: run.publicRunId, category: 'approval', key: 'req-original' });
+    if (enabled) await store.markRead(alice, { ids: [originalId] });
+    for (let i = 1; i <= 501; i++) {
+      time += 1000;
+      await store.record(alice, { id: `ntf_${i.toString(16).padStart(32, '0')}`, category: 'run-completed', sessionId: sessionOf(2), publicRunId: runIds[2]!, eventAt: now().toISOString() });
+    }
+    expect((await store.read(alice)).items.some(item => item.id === originalId)).toBe(false);
+    time += 1000;
+    const restarted = new NotificationStore(h.directory, now);
+    await restarted.setPreferences(alice, { categories: { 'run-completed': true, 'run-failed': true, approval: true } });
+    const resumed = service(restarted);
+    (h.client.streamRunEvents as ReturnType<typeof vi.fn>).mockImplementation(async function* () {
+      yield { runId: upstream(1), type: 'approval.request', timestamp: now().toISOString(), approval: approval('req-original') };
+    });
+    await resumed.getRun('alice', run.publicRunId);
+    for await (const event of resumed.streamRunEvents('alice', run.publicRunId, new AbortController().signal)) void event;
+    expect((await restarted.read(alice)).items.some(item => item.id === originalId)).toBe(false);
+    // Same old run, genuinely new request. Admission predates every pruned event.
+    h.getRun.mockResolvedValue(observed('req-later') as never);
+    await Promise.all([resumed.getRun('alice', run.publicRunId), resumed.getRun('alice', run.publicRunId)]);
+    const laterId = notificationId({ actor: alice, publicRunId: run.publicRunId, category: 'approval', key: 'req-later' });
+    await restarted.markRead(alice, { ids: [laterId] });
+    await service(new NotificationStore(h.directory, now)).getRun('alice', run.publicRunId);
+    const items = (await restarted.read(alice)).items.filter(item => item.id === laterId);
+    expect(items).toHaveLength(1);
+    expect(items[0]!.readAt).not.toBeNull();
+    for (const method of ['approveRun', 'steerRun', 'stopRun'] as const) expect(h.client[method]).not.toHaveBeenCalled();
+    expect(h.client.startRun).toHaveBeenCalledTimes(1);
+  }, 120_000);
+
   it('creates one terminal notification across status polls, SSE and a restart, with generic text', async () => {
     const h = await harness({
       streamRunEvents: vi.fn(async function* () {
@@ -288,6 +367,19 @@ async function routeHarness(overrides: Partial<CommandProxyClient> = {}) {
 }
 
 describe('notification routes', () => {
+  it('reports incomplete delivery even on first-use empty inbox and after bounded reconciliation', async () => {
+    const r = await routeHarness();
+    const run = await r.submit('alice', 1);
+    r.getRun.mockResolvedValue(status(1, { status: 'completed' }) as never);
+    const write = vi.spyOn(r.store, 'record').mockRejectedValueOnce(new NotificationStorageError());
+    await r.service.getRun('alice', run.publicRunId); // no successful actor anchor yet
+    write.mockRestore();
+    const inbox = (await r.get('/api/notifications', 'alice')).json();
+    expect(inbox).toMatchObject({ items: [], delivery: { inApp: 'incomplete', approvals: 'available' } });
+    const reconciled = (await r.post('/api/notifications/reconcile', 'alice')).json();
+    expect(reconciled.inbox.delivery.inApp).toBe('incomplete');
+  });
+
   it('requires Access identity and same-origin JSON for every read and write', async () => {
     const r = await routeHarness();
     expect((await r.app.inject({ url: '/api/notifications' })).statusCode).toBe(401);

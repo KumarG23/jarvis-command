@@ -6,7 +6,7 @@ export type RunNotification = Readonly<{
   actor: string;
   sessionId: string;
   publicRunId: string;
-  /** When this event happened as far as Command knows: the terminal audit time, or first observation. */
+  /** Terminal audit time, or this approval observation's time (not historical event identity). */
   eventAt: string;
   category: NotificationCategory;
   /** Distinguishes repeated events of one category within a run, e.g. an approval request ID. */

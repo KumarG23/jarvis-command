@@ -17,12 +17,12 @@ const base = (n: number, category: string, session: typeof chatA, publicRunId: s
 });
 const delivery = { inApp: 'available', push: 'unavailable', externalSurfaces: 'unavailable' };
 
-async function fixture(page: Page) {
+async function fixture(page: Page, incomplete = false) {
   let items = [base(3, 'approval', chatB, runB), base(2, 'run-completed', chatA, runA), base(1, 'run-failed', chatA, runA)];
   let categories = { 'run-completed': true, 'run-failed': true, approval: true };
   let openState: 'available' | 'missing' = 'available';
   const forbidden: string[] = [];
-  const inbox = () => ({ version: 1, items, unreadCount: items.filter(i => i.readAt === null).length, preferences: { categories }, delivery });
+  const inbox = () => ({ version: 1, items, unreadCount: items.filter(i => i.readAt === null).length, preferences: { categories }, delivery: incomplete ? { ...delivery, inApp: 'incomplete', approvals: 'unavailable' } : delivery });
   await page.route('**/api/**', route => {
     const request = route.request(), path = new URL(request.url()).pathname, method = request.method();
     const body = request.postData() ? JSON.parse(request.postData()!) : undefined;
@@ -48,6 +48,22 @@ async function fixture(page: Page) {
     return route.abort();
   });
   return { forbidden, setOpenState: (state: typeof openState) => { openState = state; } };
+}
+
+for (const [width, height] of [[1280, 720], [320, 740], [360, 740], [390, 740], [430, 740], [360, 360]] as const) {
+  test(`incomplete delivery warning at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    const { forbidden } = await fixture(page, true);
+    await page.goto('/');
+    if (width < 760) await page.getByRole('button', { name: 'Open chat navigation' }).click();
+    await page.getByRole('button', { name: /^Notifications 3 unread$/ }).click();
+    await expect(page.getByText(/Delivery is incomplete/)).toBeVisible();
+    await expect(page.getByText(/New approval notifications are unavailable/)).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.getByRole('button', { name: 'Mark all read' }).click();
+    await expect(page.getByRole('heading', { name: 'No recorded unread notifications' })).toBeVisible();
+    expect(forbidden).toEqual([]);
+  });
 }
 
 for (const [width, height] of [[1280, 720], [320, 740], [360, 740], [390, 740], [430, 740], [360, 360], [430, 360]] as const) {
