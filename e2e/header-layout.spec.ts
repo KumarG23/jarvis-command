@@ -250,3 +250,86 @@ for (const viewport of [{ width: 320, height: 640 }, { width: 360, height: 360 }
     });
   }
 }
+
+// Short desktop/split-screen navigation regression: the chat list must not collapse
+// and every existing sidebar action must remain reachable by ordinary Tab scrolling.
+for (const viewport of [
+  { width: 1280, height: 360 }, { width: 1280, height: 720 },
+  { width: 320, height: 640 }, { width: 320, height: 360 },
+  { width: 360, height: 740 }, { width: 360, height: 360 },
+  { width: 390, height: 844 }, { width: 390, height: 360 },
+  { width: 430, height: 740 }, { width: 430, height: 360 },
+]) {
+  test(`sidebar navigation stays scrollable and keyboard reachable ${viewport.width}x${viewport.height}`, async ({ page }, testInfo) => {
+    await page.setViewportSize(viewport);
+    const unexpected = await mockApis(page);
+    const releaseCssPath = process.env.HEADER_RELEASE_CSS;
+    let stylesheets = 0;
+    await page.route('**/assets/*.css', async route => {
+      stylesheets++;
+      if (releaseCssPath) {
+        const body = readFileSync(releaseCssPath);
+        expect(createHash('sha256').update(body).digest('hex')).toBe(testInfo.config.metadata.cssSha256);
+        await route.fulfill({ body, contentType: 'text/css' });
+      } else await route.continue();
+    });
+    await page.goto('/');
+    await expect(page.locator('.command-header')).toBeVisible();
+    const menu = page.getByRole('button', { name: 'Open chat navigation' });
+    if (await menu.isVisible()) await menu.click();
+    // Fixture setup only: select the owned chat without relying on its (possibly clipped) hit target.
+    await page.getByRole('button', { name: session.title, exact: true }).evaluate(element => (element as HTMLElement).click());
+    const draft = 'SYNTHETIC unsent navigation draft';
+    const composer = page.getByRole('textbox', { name: 'Message Jarvis', exact: true });
+    await expect(composer).toBeEnabled();
+    await composer.fill(draft);
+    if (await menu.isVisible() && await menu.getAttribute('aria-expanded') !== 'true') await menu.click();
+    const sidebar = page.locator('.room-sidebar');
+    await expect(sidebar).toBeVisible();
+    const chatList = page.locator('.sidebar-scroll');
+    await expect(chatList).toBeAttached();
+    expect((await box(chatList)).height, 'chat list must not collapse').toBeGreaterThanOrEqual(44);
+
+    const targets: Record<string, Locator> = {
+      'recent chat': page.getByRole('button', { name: session.title, exact: true }),
+      project: page.getByRole('navigation', { name: 'Projects', exact: true }).getByRole('button', { name: projectName, exact: true }),
+      Agents: page.getByRole('button', { name: 'Agents Unavailable', exact: true }),
+      Rooms: page.getByRole('button', { name: 'Collaboration rooms Unavailable', exact: true }),
+      Notifications: page.getByRole('button', { name: 'Notifications Unavailable', exact: true }),
+      Settings: page.getByRole('button', { name: 'Settings', exact: true }),
+    };
+    const missing = new Set(Object.keys(targets));
+    const search = sidebar.getByRole('searchbox', { name: 'Search projects and chats' });
+    await search.focus();
+    for (let press = 0; press < 50 && missing.size; press++) {
+      await page.keyboard.press('Tab');
+      for (const [name, target] of Object.entries(targets)) {
+        if (!missing.has(name)) continue;
+        if (!await target.evaluate(element => element === document.activeElement)) continue;
+        await expect(target, name).toBeInViewport();
+        expect((await box(target)).height, `${name} 44px target`).toBeGreaterThanOrEqual(44);
+        const hit = await target.evaluate(element => {
+          const rect = element.getBoundingClientRect();
+          const found = document.elementFromPoint(rect.left + Math.min(rect.width / 2, 20), rect.top + Math.min(rect.height / 2, 20));
+          return !!found && (found === element || element.contains(found));
+        });
+        expect(hit, `${name} must be visibly hit-testable, not clipped`).toBe(true);
+        expect(await target.evaluate(element => getComputedStyle(element).outlineStyle), `${name} focus outline`).not.toBe('none');
+        missing.delete(name);
+      }
+    }
+    expect([...missing], 'sidebar actions reached by Tab').toEqual([]);
+    const short = viewport.height <= 600;
+    if (short) {
+      expect(await sidebar.evaluate(element => getComputedStyle(element).overflowY), 'short navigation scroll container').not.toBe('visible');
+      expect(await sidebar.evaluate(element => element.scrollTop), 'navigation scrolled to reach Settings').toBeGreaterThan(0);
+    }
+    await expect(composer).toHaveValue(draft);
+    expect(unexpected).toEqual([]);
+    expect(stylesheets).toBe(1); // One complete stylesheet, never an overlay.
+    const evidence = { viewport, cssVariant: testInfo.config.metadata.cssVariant, sidebar: await sidebar.evaluate(element => ({ clientHeight: element.clientHeight, scrollHeight: element.scrollHeight, scrollTop: element.scrollTop, overflowY: getComputedStyle(element).overflowY })), chatList: await box(chatList) };
+    await testInfo.attach('short-navigation', { body: JSON.stringify(evidence, null, 2), contentType: 'application/json' });
+    console.log(JSON.stringify(evidence));
+    await page.screenshot({ path: testInfo.outputPath(`navigation-${viewport.width}x${viewport.height}.png`) });
+  });
+}
