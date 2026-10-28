@@ -469,3 +469,14 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
   .sidebar-search { margin-block: 8px; }
   .sidebar-footer { padding-block: 8px; }
 }
+
+.project-input-preview { flex: 1 1 100%; min-width: 0; max-width: 100%; font-size: .8rem; }
+.project-input-preview summary { cursor: pointer; padding: .5rem 0; }
+.project-input-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow: auto; }
+.project-details li { overflow-wrap: anywhere; margin-block: .6rem; }
+.project-details .project-goal { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+@media (max-height: 500px) {
+  .command-main:has(.project-input-preview) .timeline { padding-block: 4px; }
+  .composer-wrap:has(.project-input-preview) { flex-shrink: 1; min-height: 0; overflow-y: auto; }
+}

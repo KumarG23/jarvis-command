@@ -83,7 +83,7 @@ describe('Selected room recovery', () => {
   it('creates a named project, attaches and reloads an exact conversation outside recents with honest context', async () => {
     const session = { ...bootstrap.sessions[0]!, id: 'jc_' + 'a'.repeat(32), source: 'api_server', ownership: 'command' as const, title: 'Project conversation' };
     let rooms: unknown[] = [];
-    const room = { id: 'room_' + 'b'.repeat(32), name: 'Jarvis Command project', goal: 'Build persistent rooms', repository: '/repo/command', notes: ['vault/Command.md'], sessionIds: [session.id], lastSessionId: session.id };
+    const room = { id: 'room_' + 'b'.repeat(32), name: 'Jarvis Command project', goal: 'Build persistent rooms', instructions: '', archived: false, repository: '/repo/command', notes: ['vault/Command.md'], sessionIds: [session.id], lastSessionId: session.id };
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (url === '/api/rooms') {
         if (init?.method === 'POST') { rooms = [{ ...room, sessionIds: [], lastSessionId: null }]; return Response.json({ room: rooms[0] }); }
@@ -105,9 +105,9 @@ describe('Selected room recovery', () => {
     fireEvent.change(screen.getByLabelText('Note references (one per line)'), { target: { value: room.notes[0] } });
     fireEvent.click(screen.getByRole('button', { name: 'Create project' }));
     await screen.findByText(room.goal);
-    fireEvent.click(screen.getByRole('button', { name: `New chat in ${room.name}` }));
+    fireEvent.click(await screen.findByRole('button', { name: `New chat in ${room.name}` }));
     await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(session.title));
-    expect(screen.getByText(/Context is not applied automatically/)).toBeInTheDocument();
+    expect(await screen.findByText(/Project context included/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Hermes available' }));
     expect(screen.getByText('Adapter label: hermes-agent')).toBeInTheDocument();
     view.unmount(); render(<App loadBootstrap={load} />);

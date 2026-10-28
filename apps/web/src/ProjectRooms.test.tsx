@@ -144,7 +144,7 @@ it('saves existing metadata without resetting the selected conversation and reta
   fail = false;
   fireEvent.click(within(editor).getByRole('button', { name: 'Save changes' }));
   await waitFor(() => expect(screen.queryByRole('form', { name: 'Edit project' })).not.toBeInTheDocument());
-  expect(stored).toEqual({ ...linked, name: 'Revised project', goal: 'Revised goal', repository: '/metadata/only', notes: ['vault/One.md', 'vault/Two.md'] });
+  expect(stored).toEqual({ ...linked, instructions: '', archived: false, name: 'Revised project', goal: 'Revised goal', repository: '/metadata/only', notes: ['vault/One.md', 'vault/Two.md'] });
   expect(onScope).toHaveBeenLastCalledWith('Revised project'); expect(onSession).not.toHaveBeenCalled();
   expect(within(screen.getByRole('navigation', { name: 'Projects' })).getByRole('button', { name: session.title })).toBeInTheDocument();
   expect(sessionStorage.getItem('jarvis-command:project-room:v1')).toBe(room.id);
@@ -303,4 +303,43 @@ it('coalesces rapid room form submissions and reloads an uncertain metadata writ
   fireEvent.click(screen.getByRole('button', { name: 'Reload projects' }));
   await screen.findByRole('button', { name: room.name });
   expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
+});
+
+it('saves instructions with authoritative readback and separates archived projects with reversible restore', async () => {
+  let stored = { ...room, instructions: 'Old instructions', archived: false };
+  sessionStorage.setItem('jarvis-command:project-room:v1', room.id);
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/rooms') return Response.json({ version: 1, rooms: [stored] });
+    if (url === `/api/rooms/${room.id}` && init?.method === 'POST') { stored = { ...stored, ...JSON.parse(String(init.body)) }; return Response.json({ room: stored }); }
+    throw Error('unexpected synthetic request');
+  }));
+  render(<ProjectRooms sessions={[]} onScope={vi.fn()} onSession={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Project details' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Edit project' }));
+  fireEvent.change(screen.getByLabelText('Standing instructions'), { target: { value: 'New saved instructions' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+  await screen.findByText('New saved instructions');
+  fireEvent.click(screen.getByRole('button', { name: 'Archive project' }));
+  await screen.findByRole('button', { name: 'Restore project' });
+  expect(screen.getByRole('heading', { name: 'Archived projects' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Start project chat' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Restore project' }));
+  await screen.findByRole('button', { name: 'Archive project' });
+  expect(stored).toMatchObject({ instructions: 'New saved instructions', archived: false });
+});
+
+it('retains an unsaved instruction draft when metadata POST succeeds but readback fails', async () => {
+  let reads = 0;
+  sessionStorage.setItem('jarvis-command:project-room:v1', room.id);
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url === '/api/rooms') { if (reads++) return Response.json({}, { status: 503 }); return Response.json({ version: 1, rooms: [room] }); }
+    return Response.json({ room });
+  }));
+  render(<ProjectRooms sessions={[]} onScope={vi.fn()} onSession={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Project details' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Edit project' }));
+  fireEvent.change(screen.getByLabelText('Standing instructions'), { target: { value: 'Keep my draft' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+  await screen.findByRole('alert');
+  expect(screen.getByLabelText('Standing instructions')).toHaveValue('Keep my draft');
 });

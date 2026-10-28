@@ -58,6 +58,7 @@ function outputPreview(value: string) {
 
 type TurnIntent = LiveRunSubmissionRequest | (Pick<LiveRunSubmissionRequest, 'sessionId' | 'clientRequestId'> & { input: null });
 export type Turn = {
+  projectId?: string;
   intent: TurnIntent; publicRunId: string | null; phase: string; output: string; outputLimited: boolean;
   events: RunEvent[]; approval: LiveRunStatus['approval']; done: boolean; historyMatched: boolean;
   identityVerified: boolean; controlBusy?: boolean; controlMessage?: string;
@@ -114,7 +115,7 @@ export function useLiveTurn() {
       const identity = readRecovery();
       stored.current = identity;
       if (identity) {
-        current.current = { intent: { sessionId: identity.sessionId, clientRequestId: identity.clientRequestId, input: null }, publicRunId: identity.publicRunId,
+        current.current = { ...(identity.projectId ? { projectId: identity.projectId } : {}), intent: { sessionId: identity.sessionId, clientRequestId: identity.clientRequestId, input: null }, publicRunId: identity.publicRunId,
           phase: identity.publicRunId ? 'Recovering status' : 'Recovering admission — writer locked',
           output: '', outputLimited: false, events: [], approval: null, done: false, historyMatched: false, identityVerified: false, activityUnavailable: true };
         setTurn(current.current);
@@ -140,8 +141,9 @@ export function useLiveTurn() {
         if (!valid()) return;
         if (!identity.publicRunId) throw new Error('unconfirmed admission');
         // Persist only opaque identifiers, with the same compare-and-set guard as ACK.
-        writeRecovery(identity, stored.current);
-        stored.current = identity;
+        const recovered = { ...identity, ...(run.projectId ? { projectId: run.projectId } : {}) };
+        writeRecovery(recovered, stored.current);
+        stored.current = recovered;
         update({ publicRunId: identity.publicRunId, phase: 'Recovering status' });
         supervise(current.current!, true);
       } catch {
@@ -322,7 +324,7 @@ export function useLiveTurn() {
       if (accepted.sessionId !== intent.sessionId || accepted.clientRequestId !== intent.clientRequestId) throw new Error('binding');
       if (cancelled || !alive.current || current.current?.intent !== intent) return;
       update({ identityVerified: true, publicRunId: accepted.publicRunId, phase: `Run ${accepted.status}` });
-      const bound = { sessionId: intent.sessionId, clientRequestId: intent.clientRequestId, publicRunId: accepted.publicRunId };
+      const bound = { ...(current.current.projectId ? { projectId: current.current.projectId } : {}), sessionId: intent.sessionId, clientRequestId: intent.clientRequestId, publicRunId: accepted.publicRunId };
       try { writeRecovery(bound, stored.current); stored.current = bound; }
       catch { setRecoveryError('Reload recovery degraded — keep this tab open. In-memory supervision continues.'); }
       supervise(current.current!);
@@ -335,6 +337,7 @@ export function useLiveTurn() {
     inference?: InferenceOverride,
     images?: LiveRunSubmissionRequest['images'],
     clientRequestId?: string,
+    projectId?: string | null,
   ) {
     const baseline = histories.current.get(sessionId);
     if (!baseline?.complete || (current.current?.done && !current.current.historyMatched && completed.current.length >= MAX_UNCONFIRMED_TURNS)) return false;
@@ -348,7 +351,7 @@ export function useLiveTurn() {
       ...(inference ? { inference } : {}),
       ...(images?.length ? { images } : {}),
     };
-    const pending = { sessionId, clientRequestId: intent.clientRequestId, publicRunId: null };
+    const pending = { ...(projectId ? { projectId } : {}), sessionId, clientRequestId: intent.clientRequestId, publicRunId: null };
     try { writeRecovery(pending, null); stored.current = pending; }
     catch { recoveryBlocked.current = true; setRecoveryError('Local reload recovery unavailable — message not sent; writer locked.'); return false; }
     admissionAge.current = { wall: Date.now(), monotonic: performance.now(), elapsed: 0 };
@@ -356,7 +359,7 @@ export function useLiveTurn() {
       const previous = current.current;
       retain([...completed.current, previous]);
     }
-    current.current = { intent, publicRunId: null, phase: 'Sending', output: '', outputLimited: false, events: [], approval: null, done: false, historyMatched: false, identityVerified: false,
+    current.current = { ...(projectId ? { projectId } : {}), intent, publicRunId: null, phase: 'Sending', output: '', outputLimited: false, events: [], approval: null, done: false, historyMatched: false, identityVerified: false,
       ...(baseline?.complete ? { historyBaseline: [...baseline.ids] } : {}) };
     setTurn(current.current); void admit(intent);
     return true;
