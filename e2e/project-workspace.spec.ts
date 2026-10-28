@@ -28,7 +28,7 @@ for (const width of [1280, 320, 360, 390, 430]) test(`SYNTHETIC project workspac
     if (path === `/api/live/sessions/${sid}`) return json({ session });
     if (path.endsWith('/context')) return json({ sessionId: sid, state: 'unavailable', receipt: null, updatedAt: null });
     if (path.endsWith('/messages')) return json({ sessionId: sid, messages: [{ id: 'synthetic-answer', sessionId: sid, role: 'assistant', content: 'SYNTHETIC saved response', timestamp, toolName: null, displayKind: null }], pagination: { limit: 50, offset: 0, returned: 1, hasMore: false } });
-    if (path === '/api/live/model-options') return json({ default: { provider: 'openai-codex', model: 'gpt-6.1-sol' }, options: [{ provider: 'openai-codex', model: 'gpt-6.1-sol', label: 'SYNTHETIC Sol', reasoningEfforts: ['medium'] }] });
+    if (path === '/api/live/model-options') return json({ default: { provider: 'openai-codex', model: 'gpt-6-sol' }, options: [{ provider: 'openai-codex', model: 'gpt-6-sol', label: 'SYNTHETIC Sol', reasoningEfforts: ['medium'] }] });
     if (path === '/api/live/session-controls') return json({ sessionForkPreservesSource: false, sessionCompactionRuns: false });
     if (path === '/api/artifacts') {
       if (url.searchParams.has('projectId')) expect(url.searchParams.get('projectId')).toBe(pid);
