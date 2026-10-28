@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { CommandBootstrapSchema } from '@jarvis-command/contracts';
+import { emptyInbox } from './empty-inbox';
 
 // Synthetic local fixture only: never reaches Hermes or production.
 const first = 'jc_issue22_one', second = 'jc_issue22_two';
@@ -31,7 +32,7 @@ test('requested choices survive two chats and reload; stale inventory preserves 
     }
     if (path.endsWith('/context')) return route.fulfill({ json: { sessionId: path.includes(first) ? first : second, state: 'unavailable', receipt: null, updatedAt: null } });
     if (path === '/api/live/model-options') { inventories++; return route.fulfill({ json: { default: { provider: sol.provider, model: sol.model }, options } }); }
-    const responses: Record<string, unknown> = { '/api/bootstrap': bootstrap, '/api/rooms': { version: 1, rooms: [] }, '/api/live/session-controls': { sessionForkPreservesSource: false, sessionCompactionRuns: false } };
+    const responses: Record<string, unknown> = { '/api/bootstrap': bootstrap, '/api/rooms': { version: 1, rooms: [] }, '/api/notifications': emptyInbox, '/api/live/session-controls': { sessionForkPreservesSource: false, sessionCompactionRuns: false } };
     if (!(path in responses)) { unexpected.push(path); return route.abort(); }
     return route.fulfill({ json: responses[path] });
   });

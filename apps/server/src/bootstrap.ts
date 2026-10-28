@@ -6,6 +6,9 @@ import { buildApp } from './app';
 import type { AppConfig } from './config';
 import { createHermesClient, type HermesSnapshot } from './hermes-client';
 import { ArtifactStore, versionType } from './artifact-store';
+import { dirname } from 'node:path';
+import { NotificationStore } from './notification-store';
+import { createRunNotifier } from './run-notifier';
 
 export type CompositionOverrides = Readonly<{
   hermes?: Readonly<{
@@ -63,6 +66,7 @@ export function createCommandServer(
         maxArtifacts: config.artifacts.maxArtifacts,
       })
     : undefined;
+  const notifications = config.command ? new NotificationStore(dirname(config.command.auditLogPath)) : undefined;
   let ledger: AuditLedger | undefined;
   let liveRoom: ReturnType<typeof createLiveRoomService> | undefined;
   const app = buildApp({
@@ -70,6 +74,7 @@ export function createCommandServer(
     verifyAccess,
     hermes,
     artifactStore,
+    notifications,
     get liveRoom() { return liveRoom; },
     checkLiveRoom: async () => {
       if (!ledger || !client) throw new Error('Live Room unavailable');
@@ -83,6 +88,7 @@ export function createCommandServer(
     liveRoom = createLiveRoomService({
       client,
       ledger,
+      notify: notifications ? createRunNotifier(notifications) : undefined,
       resolveImages: artifactStore
         ? createArtifactImageResolver(artifactStore)
         : async () => { throw Object.assign(new Error('Artifact storage unavailable'), { statusCode: 503 }); },

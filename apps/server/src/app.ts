@@ -8,6 +8,7 @@ import type { createLiveRoomService } from './live-room-service';
 import { AuditIntegrityError } from './audit-ledger';
 import { ArtifactConflictError, ArtifactDeletedError, ArtifactNotFoundError, ArtifactStorageError, ArtifactStore } from './artifact-store';
 import { RoomStorageError } from './project-room-store';
+import { NotificationNotFoundError, NotificationStorageError, type NotificationStore } from './notification-store';
 import { CommandProxyUnavailableError } from './command-client';
 import type { AppConfig } from './config';
 import type { HermesSnapshot } from './hermes-client';
@@ -25,6 +26,7 @@ type AppDependencies = Readonly<{
   }>;
   liveRoom?: ReturnType<typeof createLiveRoomService> | undefined;
   artifactStore?: ArtifactStore | undefined;
+  notifications?: NotificationStore | undefined;
   checkLiveRoom?: () => Promise<void>;
   liveStreamLimits?: LiveStreamLimits;
   now?: () => Date;
@@ -60,6 +62,8 @@ export function buildApp(dependencies: AppDependencies) {
       : undefined;
     request.log.error({ errorType: errorName }, 'request failed');
     if (error instanceof RoomStorageError) return reply.code(503).send({ error: 'room_storage_unavailable' });
+    if (error instanceof NotificationStorageError) return reply.code(503).send({ error: 'notification_storage_unavailable' });
+    if (error instanceof NotificationNotFoundError) return reply.code(404).send({ error: 'notification_not_found' });
     if (error instanceof ArtifactStorageError) return reply.code(503).send({ error: 'artifact_storage_unavailable' });
     if (error instanceof ArtifactConflictError) return reply.code(409).send({ error: 'artifact_conflict' });
     if (error instanceof ArtifactDeletedError) return reply.code(410).send({ error: 'artifact_deleted' });

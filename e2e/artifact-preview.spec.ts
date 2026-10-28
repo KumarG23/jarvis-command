@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { emptyInbox } from './empty-inbox';
 
 test.use({ serviceWorkers: 'block' });
 
@@ -56,6 +57,7 @@ test('image and binary previews stay honest under the production document CSP at
     sessions: [{ id: sessionId, title: 'Artifact preview chat', source: 'api_server', ownership: 'command', model: null, lastActive: timestamp, messageCount: 0, toolCallCount: 0, pinned: false }],
   } }));
   await page.route('**/api/rooms', route => route.fulfill({ json: { version: 1, rooms: [] } }));
+  await page.route('**/api/notifications', route => route.fulfill({ json: emptyInbox }));
   await page.route(`**/api/live/sessions/${sessionId}/context`, route => route.fulfill({ json: { sessionId, state: 'unavailable', updatedAt: null, receipt: null } }));
   await page.route('**/api/live/model-options', route => route.fulfill({ json: { default: { provider: 'OpenAI', model: 'Astra' }, options: [{ provider: 'openai-codex', model: 'gpt-6-astra', label: 'Astra', reasoningEfforts: ['medium'] }] } }));
   await page.route('**/api/live/session-controls', route => route.fulfill({ json: { sessionForkPreservesSource: false, sessionCompactionRuns: false } }));

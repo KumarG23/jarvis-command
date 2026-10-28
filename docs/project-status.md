@@ -5,7 +5,7 @@ Plan of record: [MASTER_PLAN.md](../MASTER_PLAN.md) on `release/gpt6-sol-luna`.
 P1–P4 and P4.5 are live. Requested/executed route distinctions, honest usage,
 chat recovery/drafts, responsive shell, reliable artifacts and project context
 are delivered. P5 Agents and P7 Rooms remain Unsupported—deferred with honest
-unavailable UI. P6 inbox is in progress with Sonnet on #46; disabled Web Push and
+unavailable UI. P6 inbox is in review on #46 / PR #50 with dependent repair #51; disabled Web Push and
 P8 final acceptance/Neal packet remain pending.
 
 Current reviewed/merged release: `014071e424cf00b4f08e33eb9add918e2565bc2c`
@@ -35,7 +35,11 @@ receipts stay separate from historical answers. Artifact association-policy
 tightening and PDF preview enablement remain deferred; full wrong-session
 rejection is not claimed. No auth/Access, credential, network, provider or paid-route
 control changed. Production push remains unavailable pending its disabled-code
-increment and separate enablement.
+increment and separate enablement. P6 first slice (#46): an in-app inbox for app-originated run finished/failed and
+approval-needed events is built for review, unreleased. #51 prevents pruned approval
+replay with bounded exact receipts (1,024 per actor); reaching that bound or upgrading
+already-pruned legacy identities makes new approval notifications explicitly unavailable.
+The inbox reports incomplete delivery for first-use, retention and bounded recovery gaps.
 
 [Neal review queue #20](https://github.com/KumarG23/jarvis-command/issues/20) holds
 phone steps and deferred contracts; the Final Neal packet is due at P8. Older M0

@@ -67,8 +67,13 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+// The shell reads the notification inbox on load; these suites assert on chat traffic only.
+const emptyInbox = { version: 1, items: [], unreadCount: 0, preferences: { categories: { 'run-completed': true, 'run-failed': true, approval: true } }, delivery: { inApp: 'available', push: 'unavailable', externalSurfaces: 'unavailable' } };
+function withInbox<T extends (...args: never[]) => unknown>(fetcher: T) {
+  return ((url: string, init?: RequestInit) => url === '/api/notifications' ? Promise.resolve(Response.json(emptyInbox)) : (fetcher as unknown as (u: string, i?: RequestInit) => unknown)(url, init)) as unknown as typeof fetch;
+}
 function stubFetch(fetcher: typeof fetch) {
-  vi.stubGlobal('fetch', (url: string, init?: RequestInit) => url === '/api/rooms' ? Promise.resolve(Response.json({ version: 1, rooms: [] })) : fetcher(url, init));
+  vi.stubGlobal('fetch', (url: string, init?: RequestInit) => url === '/api/rooms' ? Promise.resolve(Response.json({ version: 1, rooms: [] })) : url === '/api/notifications' ? Promise.resolve(Response.json(emptyInbox)) : fetcher(url, init));
 }
 
 async function clickEnabled(name: string | RegExp) {
@@ -93,7 +98,7 @@ describe('Selected room recovery', () => {
       if (url === `/api/live/sessions/${session.id}` || url === '/api/live/sessions') return Response.json({ session });
       return Response.json(history(session.id));
     });
-    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('fetch', withInbox(fetchMock));
     const load = async () => ({ ...liveBootstrap, hermes: { ...liveBootstrap.hermes, model: 'hermes-agent', provider: null }, sessions: [] });
     const view = render(<App loadBootstrap={load} />);
     const newProject = await screen.findByRole('button', { name: 'New project' });
@@ -379,7 +384,7 @@ describe('Jarvis Command shell', () => {
       }] });
       return Response.json({ version: 1, rooms: [] });
     });
-    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('fetch', withInbox(fetchMock));
     render(<App loadBootstrap={async () => ({ ...liveBootstrap, sessions: [{ ...liveBootstrap.sessions[0]!, id: 'session_123', ownership: 'command' as const, source: 'web' }] })} />);
     const artifacts = await screen.findByRole('button', { name: 'Open Artifact Studio' });
     await waitFor(() => expect(within(artifacts).getByText('1')).toBeInTheDocument());
@@ -484,7 +489,7 @@ describe('Response artifact recovery', () => {
       }
       return Response.json({});
     });
-    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('fetch', withInbox(fetchMock));
     return { bodies, artifacts, deny: (value: boolean) => { historyDenied = value; } };
   }
   it.each(['lost-ack', 'pre-commit'] as const)('recovers %s with the same key after reload, preserving exact bytes and cleaning up confirmation', async mode => {

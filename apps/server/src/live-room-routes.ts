@@ -9,6 +9,8 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { AppConfig } from './config';
 import type { createLiveRoomService } from './live-room-service';
 import { KeyedSerialQueue } from './keyed-serial-queue';
+import { registerNotificationRoutes } from './notification-routes';
+import type { NotificationStore } from './notification-store';
 
 export type LiveStreamLimits = Readonly<{ maxStreams?: number; lifetimeMs?: number; keepaliveMs?: number; maximumBytes?: number }>;
 
@@ -18,6 +20,7 @@ type Dependencies = Readonly<{
   liveRoom?: ReturnType<typeof createLiveRoomService> | undefined;
   checkLiveRoom?: () => Promise<void>;
   liveStreamLimits?: LiveStreamLimits;
+  notifications?: NotificationStore | undefined;
 }>;
 
 const sessionIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:@+-]{0,159}$/);
@@ -281,6 +284,7 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
       })(), { objectMode: false, highWaterMark: 16_384 });
       return reply.type('text/event-stream; charset=utf-8').header('x-accel-buffering', 'no').send(stream);
     });
+    registerNotificationRoutes(routes, { store: dependencies.notifications, liveRoom: dependencies.liveRoom!, subjects });
     routes.post('/api/live/sessions', async (request) => {
       const parsed = LiveRoomSessionCreateRequestSchema.safeParse(request.body);
       if (!parsed.success) throw Object.assign(new Error('Invalid request'), { statusCode: 400 });

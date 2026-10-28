@@ -41,6 +41,7 @@ import {
 } from '@jarvis-command/contracts';
 
 import type { AuditDraft, AuditRunRecord, AuditLedger } from './audit-ledger';
+import type { RunNotifier } from './run-notifier';
 import {
   type CommandProxyClient,
   type CommandRunEvent,
@@ -61,6 +62,7 @@ type LiveRoomServiceOptions = Readonly<{
   resolveImages?: (references: NonNullable<LiveRunSubmissionRequest['images']>) => Promise<ReadonlyArray<Readonly<{ mime: string; bytes: Buffer }>>>;
   createPublicRunId?: () => string;
   now?: () => Date;
+  notify?: RunNotifier | undefined;
 }>;
 
 type AdmittedRunRecord = AuditRunRecord & Readonly<{ upstreamRunId: string }>;
@@ -89,6 +91,7 @@ export function createLiveRoomService({
   resolveImages,
   createPublicRunId = () => `jcr_${randomBytes(16).toString('hex')}`,
   now = () => new Date(),
+  notify,
 }: LiveRoomServiceOptions) {
   const submissions = new Map<string, { fingerprint: string; operation: Promise<LiveRunSubmissionResponse> }>();
   const compactionSubmissions = new Map<string, { fingerprint: string; operation: Promise<ContextCompactionSubmissionResponse> }>();
@@ -103,19 +106,32 @@ export function createLiveRoomService({
     return record as AdmittedRunRecord;
   };
 
+  // Notifications come only from observations of the actor's own admitted run: the record
+  // is already actor/run/session bound. Context-compaction operations are not runs.
+  const notifyStatus = async (record: AuditRunRecord, upstream: CommandRunStatus, terminalAt: string | null): Promise<void> => {
+    if (!notify || upstream.kind === 'context_compaction') return;
+    const base = { actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId };
+    if (upstream.status === 'completed' && terminalAt) await notify({ ...base, eventAt: terminalAt, category: 'run-completed' });
+    else if (upstream.status === 'failed' && terminalAt) await notify({ ...base, eventAt: terminalAt, category: 'run-failed' });
+    else if (upstream.status === 'waiting_for_approval' && upstream.approval) {
+      await notify({ ...base, eventAt: now().toISOString(), category: 'approval', key: upstream.approval.requestId });
+    }
+  };
+
   const auditTerminal = async (
     record: AuditRunRecord,
     status: LiveRunState,
     receipt: LiveRunUsage | null = null,
-  ): Promise<void> => {
-    if (!TERMINAL_STATES.has(status)) return;
+  ): Promise<string | null> => {
+    if (!TERMINAL_STATES.has(status)) return null;
     const action = `run.${status}` as AuditDraft['action'];
-    await ledger.appendOnce(`terminal:${record.publicRunId}`, auditDraft(record, {
+    const entry = await ledger.appendOnce(`terminal:${record.publicRunId}`, auditDraft(record, {
       action,
       outcome: status === 'completed' ? 'succeeded' : 'failed',
       status,
       receipt,
     }));
+    return entry.timestamp;
   };
 
   const projectStatus = async (
@@ -125,7 +141,10 @@ export function createLiveRoomService({
     if (upstream.runId !== record.upstreamRunId || upstream.sessionId !== record.sessionId) {
       throw new LiveRoomNotFoundError();
     }
-    await auditTerminal(record, upstream.status, upstream.usage);
+    // Terminal audit never depends on notification health; the notification follows the audit and
+    // is re-delivered from the ledger by the inbox reconcile if its write fails.
+    const terminalAt = await auditTerminal(record, upstream.status, upstream.usage);
+    await notifyStatus(record, upstream, terminalAt);
     return LiveRunStatusSchema.parse({
       publicRunId: record.publicRunId,
       sessionId: record.sessionId,
@@ -507,6 +526,27 @@ export function createLiveRoomService({
       });
     },
 
+    /** Actor-bound identity of an admitted run, for notification deep links. */
+    getRunIdentity(subject: string, publicRunId: string): Readonly<{ sessionId: string; clientRequestId: string }> {
+      const record = findRun(subject, publicRunId);
+      return { sessionId: record.sessionId, clientRequestId: record.clientRequestId };
+    },
+
+    /** The actor's terminal completed/failed runs audited after `since`, newest first. */
+    listTerminalRuns(subject: string, since: string, limit: number): Array<Readonly<{ publicRunId: string; status: 'completed' | 'failed' }>> {
+      return ledger.terminalRunsForActor(actorFingerprint(subject), since)
+        .sort((left, right) => right.at.localeCompare(left.at))
+        .slice(0, limit).map(({ publicRunId, status }) => ({ publicRunId, status }));
+    },
+
+    /** The actor's newest admitted, not-yet-terminal runs, for reopening-time reconciliation. */
+    listUnsettledRuns(subject: string, limit: number): string[] {
+      return ledger.activeRunsForActor(actorFingerprint(subject))
+        .filter(record => record.upstreamRunId)
+        .sort((left, right) => right.requestedAt.localeCompare(left.requestedAt))
+        .slice(0, limit).map(record => record.publicRunId);
+    },
+
     async getRun(subject: string, publicRunId: string): Promise<LiveRunStatus> {
       const record = findRun(subject, publicRunId);
       return projectStatus(record, await client.getRun(record.upstreamRunId!));
@@ -531,12 +571,23 @@ export function createLiveRoomService({
       for await (const upstream of client.streamRunEvents(record.upstreamRunId!, signal)) {
         if (upstream.runId !== record.upstreamRunId) throw new LiveRoomNotFoundError();
         const event = projectEvent(record.publicRunId, upstream);
+        if (event.type === 'approval.request') {
+          await notify?.({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, eventAt: now().toISOString(), category: 'approval', key: event.approval.requestId });
+        }
         if (isTerminalEvent(event)) {
-          await auditTerminal(
+          const terminalAt = await auditTerminal(
             record,
             terminalEventStatus(event),
             event.type === 'run.completed' ? event.usage : null,
           );
+          if (notify && terminalAt && (event.type === 'run.completed' || event.type === 'run.failed')) {
+            // Confirm this is a run, not a compaction operation, before announcing it. If this
+            // cannot be confirmed now, the inbox reconcile re-checks it from the ledger.
+            const confirmed = await client.getRun(record.upstreamRunId!).catch(() => null);
+            if (confirmed && confirmed.runId === record.upstreamRunId && confirmed.sessionId === record.sessionId && confirmed.kind !== 'context_compaction') {
+              await notify({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, eventAt: terminalAt, category: event.type === 'run.completed' ? 'run-completed' : 'run-failed' });
+            }
+          }
         }
         yield event;
       }
