@@ -277,7 +277,7 @@ describe('ArtifactStudio', () => {
     mockArtifactBackend([versioned]);
     renderStudio();
     fireEvent.click((await screen.findByText('Saved answer')).closest('button')!);
-    fireEvent.click(screen.getByRole('tab', { name: /versions/i }));
+    fireEvent.click(await screen.findByRole('tab', { name: /versions/i }));
     expect(screen.getByText('1'.repeat(12))).toBeInTheDocument();
     expect(screen.getByText('2'.repeat(12))).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Download version 1' })).toHaveAttribute('href', `/api/artifacts/${versioned.id}/versions/1/download`);
