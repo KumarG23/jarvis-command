@@ -1,9 +1,11 @@
 import { expect, test } from '@playwright/test';
 import { emptyInbox } from './empty-inbox';
 
+test.use({ serviceWorkers: 'block' });
+
 const timestamp = '2026-10-31T20:00:00.000Z';
 const sessions = ['a', 'b', 'c'].map((letter, i) => ({ id: `jc_${letter.repeat(32)}`, title: `SYNTHETIC Pane ${i}`, source: 'api_server', ownership: 'command', model: null, lastActive: timestamp, messageCount: 0, toolCallCount: 0, pinned: false }));
-const project = { id: `room_${'d'.repeat(32)}`, name: 'SYNTHETIC pane link', goal: '', instructions: '', repository: '', notes: [], archived: false, sessionIds: sessions.map(session => session.id), lastSessionId: sessions[0]!.id };
+const project = { id: `room_${'d'.repeat(32)}`, name: 'SYNTHETIC pane link', goal: 'SYNTHETIC read-only link proof', instructions: '', repository: '', notes: [], archived: false, sessionIds: sessions.map(session => session.id), lastSessionId: sessions[0]!.id };
 for (const close of [true, false]) {
   test(`SYNTHETIC pending second-pane link ${close ? 'closed source refuses' : 'current source opens'}`, async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 720 });
