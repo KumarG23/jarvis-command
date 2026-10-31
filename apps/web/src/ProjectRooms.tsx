@@ -230,7 +230,10 @@ export function ProjectRooms({ ref, sessions, selectedSessionId, onScope, onProj
     if (uncertainCreates.includes(room.id) || !!pendingChats.current[room.id]) throw Error('Check the existing chat before creating another thread.');
     // Set before the request: timeout/lost ACK must not offer a create retry.
     markCreation(room.id, true);
-    const { session } = SessionMutationResponseSchema.parse(await request('/api/live/sessions', { title: room.name }));
+    // Fresh upstream names avoid title collisions; editable thread titles stay in Command metadata.
+    // 80 project characters + separator + full UUID stays below the 120-character local title cap.
+    const title = `${room.name.slice(0, 80)} · ${crypto.randomUUID()}`;
+    const { session } = SessionMutationResponseSchema.parse(await request('/api/live/sessions', { title }));
     if (session.ownership !== 'command' || !/^jc_[a-f0-9]{32}$/.test(session.id)) throw Error('New chat identity could not be verified.');
     rememberPendingChat(room.id, session.id);
     if (!mounted.current) return;

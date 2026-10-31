@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { createRef } from 'react';
+import { LiveRoomSessionCreateRequestSchema, type ProjectRoom, type SessionSummary } from '@jarvis-command/contracts';
 import { ProjectRooms, type ProjectRoomsHandle } from './ProjectRooms';
 
 const room = { id: 'room_' + 'a'.repeat(32), name: 'Synthetic project', goal: 'Exact metadata', repository: '/not/read', notes: [], sessionIds: [], lastSessionId: null };
@@ -238,7 +239,7 @@ it('creates a chat inside a project from the project plus control', async () => 
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/api/rooms') return Response.json({ version: 1, rooms: [room] });
     if (url === '/api/live/sessions') {
-      expect(JSON.parse(String(init?.body))).toEqual({ title: room.name });
+      expect(LiveRoomSessionCreateRequestSchema.parse(JSON.parse(String(init?.body))).title).toEqual(expect.stringContaining(`${room.name} · `));
       return Response.json({ session });
     }
     if (url === `/api/rooms/${room.id}/sessions`) return Response.json({ room: attached, session });
@@ -487,4 +488,63 @@ it.each([false, true])('recovers the exact created identity after reload when un
   expect(links).toBe(3);
   expect(screen.getByLabelText('Thread title')).toHaveValue('Preserve unsaved rename');
   expect(JSON.parse(sessionStorage.getItem('jarvis-command:pending-project-attachments:v1')!)).toEqual({});
+});
+
+it.each(['Synthetic project', 'P'.repeat(80)])('creates three distinct upstream titles for %s and retains local lead metadata across reload', async name => {
+  sessionStorage.setItem('jarvis-command:project-room:v1', room.id);
+  let stored: ProjectRoom = { ...room, name, instructions: 'Keep instructions', notes: ['fixture.md'] };
+  const created: SessionSummary[] = [];
+  const titles: string[] = [], attached: string[] = [];
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/rooms') return Response.json({ version: 1, rooms: [stored] });
+    if (url === '/api/live/sessions') {
+      const { title } = LiveRoomSessionCreateRequestSchema.parse(JSON.parse(String(init?.body)));
+      if (!title || titles.includes(title)) return Response.json({}, { status: 400 });
+      titles.push(title);
+      const next: SessionSummary = { ...session, ownership: 'command', id: 'jc_' + String(titles.length).repeat(32), title };
+      created.push(next);
+      return Response.json({ session: next });
+    }
+    if (url === `/api/rooms/${room.id}/sessions`) {
+      const { sessionId } = JSON.parse(String(init?.body));
+      attached.push(sessionId);
+      stored = { ...stored, sessionIds: [...new Set([...stored.sessionIds, sessionId])], lastSessionId: sessionId };
+      return Response.json({ room: stored, session: created.find(s => s.id === sessionId) });
+    }
+    const found = created.find(s => url === `/api/live/sessions/${s.id}`);
+    if (found) return Response.json({ session: found });
+    throw Error(`unexpected ${url}`);
+  });
+  vi.stubGlobal('fetch', fetcher);
+  const onSession = vi.fn();
+  const ref = createRef<ProjectRoomsHandle>();
+  const view = render(<ProjectRooms ref={ref} sessions={[]} onScope={vi.fn()} onSession={onSession} />);
+  for (let index = 0; index < 3; index++) {
+    const create = await screen.findByRole('button', { name: `New chat in ${name}` });
+    await waitFor(() => expect(create).toBeEnabled());
+    fireEvent.click(create);
+    await waitFor(() => expect(created).toHaveLength(index + 1));
+    await waitFor(() => expect(onSession).toHaveBeenLastCalledWith(created[index]));
+    await waitFor(() => expect(create).toBeEnabled());
+    if (index === 0) {
+      // Existing accepted metadata, as read back after local rename/designation.
+      stored = { ...stored, leadSessionId: created[0]!.id, threads: [{ sessionId: created[0]!.id, title: 'Local lead title', archived: false, createdAt: '2026-10-31T18:00:00Z' }] };
+      act(() => ref.current!.readback(stored));
+    }
+  }
+  expect(titles).toHaveLength(3);
+  expect(new Set(titles).size).toBe(3);
+  expect(titles.every(title => title.length <= 120)).toBe(true);
+  expect(attached).toEqual(created.map(s => s.id));
+  const saved = structuredClone(stored);
+  view.unmount();
+  onSession.mockClear();
+  render(<ProjectRooms sessions={created} onScope={vi.fn()} onSession={onSession} />);
+  await waitFor(() => expect(onSession).toHaveBeenLastCalledWith(created[2]));
+  fireEvent.click(await screen.findByRole('button', { name: 'Project details' }));
+  expect(await screen.findByRole('button', { name: 'Open lead: Local lead title' })).toBeInTheDocument();
+  expect(stored).toEqual(saved);
+  expect(stored.instructions).toBe('Keep instructions');
+  expect(stored.notes).toEqual(['fixture.md']);
+  expect(fetcher.mock.calls.filter(([url]) => url === '/api/live/sessions')).toHaveLength(3);
 });
