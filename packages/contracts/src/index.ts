@@ -87,3 +87,4 @@ export type {
   SessionSummary,
 } from './contracts';
 export * from './push';
+export * from './project-roster';

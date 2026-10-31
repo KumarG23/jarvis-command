@@ -183,6 +183,16 @@ export class AuditLedger {
     return this.#runsByPublic.get(runPublicKey(actor, publicRunId)) ?? null;
   }
 
+  /** Latest admission for this actor/session, independent of stored messages. */
+  public latestRunForSession(actor: string, sessionId: string): AuditRunRecord | null {
+    this.assertHealthy();
+    let latest: AuditRunRecord | null = null;
+    for (const record of this.#runsByPublic.values()) {
+      if (record.actor === actor && record.sessionId === sessionId) latest = record;
+    }
+    return latest;
+  }
+
   public activeRunsForSession(sessionId: string): AuditRunRecord[] {
     this.assertHealthy();
     const terminal = new Set(['completed', 'failed', 'cancelled', 'interrupted']);

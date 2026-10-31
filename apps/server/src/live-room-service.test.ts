@@ -605,3 +605,37 @@ it('refuses admission lookup when durable audit storage has changed', async () =
   await expect(service.lookupRunRequest('operator', sessionId, request.clientRequestId)).rejects.toThrow();
   expect(client.startRun).toHaveBeenCalledTimes(1);
 });
+
+it.each([
+  ['running', 'running'], ['waiting_for_approval', 'waiting-approval'], ['queued', 'queued'],
+  ['completed', 'completed'], ['failed', 'failed'], ['cancelled', 'cancelled'],
+  ['stopping', 'unknown'], ['interrupted', 'unknown'],
+] as const)('roster revalidates actor-bound %s as %s without audit writes or message joins', async (upstreamStatus, expected) => {
+  const { ledger, path } = await createLedger();
+  const client = fakeClient({ getRun: vi.fn(async () => ({ runId: upstreamRunId, sessionId, status: upstreamStatus, updatedAt: '2026-10-31T18:00:00Z' }) as never) });
+  const service = createLiveRoomService({ client, ledger, createPublicRunId: () => publicRunId });
+  await service.submitRun('owner', request);
+  const before = await readFile(path);
+  expect(await service.getRosterStatus('other-actor', sessionId)).toEqual({ status: 'idle', runUpdatedAt: null });
+  expect(client.getRun).not.toHaveBeenCalled();
+  expect(await service.getRosterStatus('owner', sessionId)).toEqual({ status: expected, runUpdatedAt: '2026-10-31T18:00:00Z' });
+  expect(await readFile(path)).toEqual(before);
+  expect(client.getMessages).not.toHaveBeenCalled();
+});
+it('roster rejects mismatched authenticated status and reports no inferred external run', async () => {
+  const { ledger } = await createLedger();
+  const client = fakeClient({ getRun: vi.fn(async () => ({ runId: upstreamRunId, sessionId: 'foreign', status: 'running' }) as never) });
+  const service = createLiveRoomService({ client, ledger, createPublicRunId: () => publicRunId });
+  expect(await service.getRosterStatus('owner', 'external:session')).toEqual({ status: 'idle', runUpdatedAt: null });
+  await service.submitRun('owner', request);
+  await expect(service.getRosterStatus('owner', sessionId)).rejects.toBeInstanceOf(LiveRoomNotFoundError);
+});
+it('keeps uncertain latest admission unknown without re-driving or guessing a run id', async () => {
+  const { ledger } = await createLedger();
+  const client = fakeClient({ startRun: vi.fn().mockRejectedValue(Error('lost ACK')) });
+  const service = createLiveRoomService({ client, ledger, createPublicRunId: () => publicRunId });
+  await expect(service.submitRun('owner', request)).rejects.toThrow();
+  expect(await service.getRosterStatus('owner', sessionId)).toEqual({ status: 'unknown', runUpdatedAt: null });
+  expect(client.startRun).toHaveBeenCalledTimes(1);
+  expect(client.getRun).not.toHaveBeenCalled();
+});

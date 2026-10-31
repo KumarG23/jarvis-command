@@ -1,3 +1,5 @@
+import { projectSendSnapshot } from '@jarvis-command/contracts';
+import { createProjectRosterReader } from './project-roster';
 import { Readable } from 'node:stream';
 import { randomBytes } from 'node:crypto';
 import { dirname } from 'node:path';
@@ -75,6 +77,7 @@ async function* encodeEventStream(events: AsyncIterable<RunEvent>, controller: A
 export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Dependencies) {
   const rooms = dependencies.config.command ? new ProjectRoomStore(dirname(dependencies.config.command.auditLogPath)) : undefined;
   const sessionMutations = new KeyedSerialQueue();
+  const readRoster = dependencies.liveRoom ? createProjectRosterReader(dependencies.liveRoom) : undefined;
   app.register(async (routes) => {
     const subjects = new WeakMap<FastifyRequest, string>();
     const activeStreams = new Set<AbortController>();
@@ -120,6 +123,16 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
     routes.get('/api/rooms', { exposeHeadRoute: false }, async () => {
       if (!rooms) throw new RoomStorageError();
       return { version: 1, rooms: await rooms.list() };
+    });
+    routes.get('/api/rooms/:roomId/roster', { exposeHeadRoute: false }, async (request, reply) => {
+      const { roomId } = parse(z.object({ roomId: ProjectRoomIdSchema }).strict(), request.params);
+      if (!rooms || !readRoster) throw new RoomStorageError();
+      const project = (await rooms.list()).find(room => room.id === roomId && !room.archived);
+      if (!project) throw Object.assign(Error('Project missing'), { statusCode: 404 });
+      const result = await readRoster(subjects.get(request)!, project);
+      const fresh = (await rooms.list()).find(room => room.id === roomId);
+      if (!fresh || projectSendSnapshot(fresh) !== projectSendSnapshot(project)) throw Object.assign(Error('Project changed'), { statusCode: 409 });
+      return reply.header('cache-control', 'no-store').send(result);
     });
     routes.post('/api/rooms', { bodyLimit: 65_536 }, async (request) => {
       const metadata = parse(ProjectRoomCreateSchema, request.body);

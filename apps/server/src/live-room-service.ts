@@ -1,3 +1,4 @@
+import { ProjectRosterStatusSchema } from '@jarvis-command/contracts';
 import { createHash, randomBytes } from 'node:crypto';
 
 import {
@@ -403,6 +404,17 @@ export function createLiveRoomService({
   };
 
   return Object.freeze({
+    /** Read-only observation: never discovers external runs or writes audit/notifications. */
+    async getRosterStatus(subject: string, sessionId: string) {
+      const record = ledger.latestRunForSession(actorFingerprint(subject), sessionId);
+      if (!record) return { status: 'idle' as const, runUpdatedAt: null };
+      if (!record.upstreamRunId) return { status: 'unknown' as const, runUpdatedAt: null };
+      const upstream = await client.getRun(record.upstreamRunId);
+      if (upstream.runId !== record.upstreamRunId || upstream.sessionId !== sessionId) throw new LiveRoomNotFoundError();
+      const status = ProjectRosterStatusSchema.safeParse(upstream.status === 'waiting_for_approval' ? 'waiting-approval' : upstream.status);
+      return { status: status.success ? status.data : 'unknown' as const, runUpdatedAt: upstream.updatedAt };
+    },
+
     async getSessionControls(subject: string): Promise<SessionControlCapabilities> {
       void subject;
       const readiness = await client.readReadiness();
