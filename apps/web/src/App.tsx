@@ -236,7 +236,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
   });
   const selectionRef = useRef({ projectId, sessionId: selectedSession?.id ?? null });
   const threadLinkAttempt = useRef(0);
-  const pendingThreadNavigation = useRef<{ projectId: string; sessionId: string } | null>(null);
+  const pendingThreadNavigation = useRef<{ projectId: string; sessionId: string; sourcePane: 'primary' | 'second'; sourceSessionId: string; sourceGeneration: number } | null>(null);
   const [threadLinkFeedback, setThreadLinkFeedback] = useState('');
   useEffect(() => {
     const pending = pendingThreadNavigation.current;
@@ -248,11 +248,12 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
   const [sessions, setSessions] = useState(bootstrap.sessions);
   const [notificationAttachment, setNotificationAttachment] = useState<Extract<NotificationTarget, { state: 'available' }> | null>(null);
   const [secondSessionId, setSecondSessionId] = useState<string | null>(null);
+  const secondSource = useRef<{ sessionId: string | null; generation: number }>({ sessionId: null, generation: 0 });
   const [splitVisible, setSplitVisible] = useState(() => typeof window.matchMedia === 'function' && window.matchMedia('(min-width: 1001px)').matches);
   useEffect(() => {
     if (typeof window.matchMedia !== 'function') return;
     const query = window.matchMedia('(min-width: 1001px)');
-    const changed = () => setSplitVisible(query.matches);
+    const changed = () => { if (!query.matches) invalidateSecondLink(); setSplitVisible(query.matches); };
     query.addEventListener?.('change', changed);
     return () => query.removeEventListener?.('change', changed);
   }, []);
@@ -398,19 +399,31 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     });
     setPane('artifacts');
   }, [generationLive.turn, generationLive.completedTurns, pendingGeneration, pendingArtifactSave?.sourceRequestId]);
+  function invalidateSecondLink() {
+    secondSource.current.generation++;
+    if (pendingThreadNavigation.current?.sourcePane !== 'second') return;
+    pendingThreadNavigation.current = null;
+    threadLinkAttempt.current++;
+    setThreadLinkFeedback('The source conversation changed while this link was checked. No navigation occurred; review the thread and retry.');
+  }
+  function selectSecondPane(id: string | null) {
+    if (id !== secondSource.current.sessionId) invalidateSecondLink();
+    secondSource.current.sessionId = id;
+    setSecondSessionId(id);
+  }
   function selectSession(session: SessionSummary | null) {
     invalidateThreadNavigation(selectionRef.current.projectId, session?.id ?? null);
     selectionRef.current = { ...selectionRef.current, sessionId: session?.id ?? null };
     if (session?.id !== selectedSession?.id) { setDraftAuthorizedSession(null); setSaveActive(false); }
     if (session) setSessions(previous => [session, ...previous.filter(item => item.id !== session.id)]);
-    if (session?.id === secondSessionId) setSecondSessionId(selectedSession?.id ?? null);
+    if (session?.id === secondSessionId) selectSecondPane(selectedSession?.id ?? null);
     setSelectedSession(session);
   }
   function selectProjectId(id: string | null) {
     invalidateThreadNavigation(id, selectionRef.current.sessionId);
     selectionRef.current = { ...selectionRef.current, projectId: id };
     setProjectId(id);
-    if (id !== projectId) setSecondSessionId(null);
+    if (id !== projectId) selectSecondPane(null);
   }
   function invalidateThreadNavigation(projectId: string | null, sessionId: string | null) {
     const pending = pendingThreadNavigation.current;
@@ -419,19 +432,21 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     threadLinkAttempt.current++;
     setThreadLinkFeedback('Your selection changed while this link was checked. No navigation occurred; review the project and retry.');
   }
-  async function openThreadLink(requestedProjectId: string, sessionId: string) {
+  async function openThreadLink(requestedProjectId: string, sessionId: string, sourcePane: 'primary' | 'second' = 'primary') {
     const attempt = ++threadLinkAttempt.current;
     const start = { ...selectionRef.current };
-    if (!start.sessionId || start.projectId !== requestedProjectId) {
+    const source = sourcePane === 'second' ? { ...secondSource.current } : { sessionId: start.sessionId, generation: 0 };
+    if (!source.sessionId || !start.sessionId || start.projectId !== requestedProjectId) {
       setThreadLinkFeedback('Thread links work only inside their selected project. Your current chat was kept.');
       return;
     }
-    pendingThreadNavigation.current = { projectId: start.projectId!, sessionId: start.sessionId };
+    pendingThreadNavigation.current = { projectId: start.projectId!, sessionId: start.sessionId, sourcePane, sourceSessionId: source.sessionId, sourceGeneration: source.generation };
     setThreadLinkFeedback('Checking the project and thread before opening…');
     try {
       const target = await readProjectThreadTarget(requestedProjectId, sessionId, new AbortController());
       if (attempt !== threadLinkAttempt.current) return;
-      if (selectionRef.current.projectId !== start.projectId || selectionRef.current.sessionId !== start.sessionId) {
+      if (selectionRef.current.projectId !== start.projectId || selectionRef.current.sessionId !== start.sessionId
+        || (sourcePane === 'second' && (secondSource.current.sessionId !== source.sessionId || secondSource.current.generation !== source.generation))) {
         pendingThreadNavigation.current = null;
         setThreadLinkFeedback('Your selection changed while this link was checked. No navigation occurred; review the project and retry.');
         return;
@@ -668,7 +683,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
           {artifactStudioEnabled ? <button className={`artifact-context-button${pane === 'artifacts' ? ' active' : ''}`} type="button" aria-label="Open Artifact Studio" title="Artifacts for this context" aria-expanded={pane === 'artifacts'} onClick={event => openPanel('artifacts', event.currentTarget)}><Files size={17} /><span>Artifacts</span><strong>{associatedArtifacts ?? '...'}</strong></button> : null}
           <button className={`health-button ${bootstrap.hermes.state}`} type="button" aria-label={health} title={health} onClick={event => openPanel('runtime', event.currentTarget)}><span className="status-dot" /><span>Hermes</span></button></div>
       </header>
-      {project && project.id === projectId && !project.archived ? <div className="split-controls"><label>Second conversation <select aria-label="Second conversation" value={secondSessionId ?? ''} onChange={event => setSecondSessionId(event.target.value || null)}><option value="">Closed</option>{sessions.filter(session => session.id !== selectedSession?.id && session.ownership === 'command' && project.sessionIds.includes(session.id)).map(session => <option key={session.id} value={session.id}>{session.title}</option>)}</select></label></div> : null}
+      {project && project.id === projectId && !project.archived ? <div className="split-controls"><label>Second conversation <select aria-label="Second conversation" value={secondSessionId ?? ''} onChange={event => selectSecondPane(event.target.value || null)}><option value="">Closed</option>{sessions.filter(session => session.id !== selectedSession?.id && session.ownership === 'command' && project.sessionIds.includes(session.id)).map(session => <option key={session.id} value={session.id}>{session.title}</option>)}</select></label></div> : null}
       {bootstrap.identity.provider === 'development' ? <div className="preview-notice">Development preview · {bootstrap.command.version}</div> : null}
       {!hermesOnline ? <p className="notice error" role="status">{health}. {bootstrap.hermes.state === 'offline' ? 'Check the connection before sending.' : 'Some capabilities may be unavailable.'}</p> : null}
       {activeElsewhere ? <div className="active-run-notice" role="status">Jarvis is working in another chat. <button className="text-button" type="button" onClick={() => { const session = sessions.find(item => item.id === activeElsewhere?.turn?.intent.sessionId); if (session) { if (project?.sessionIds.includes(session.id)) projects.current?.openLinkedChat(project, session); else projects.current?.selectChat(session); } }}>View active chat</button></div> : null}
@@ -688,7 +703,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
         {liveEnabled ? <TurnComposer retainedDrafts={live.composerDrafts} inferenceTarget={inferenceTarget} draftsAuthorized={draftAuthorizedSession !== null && draftAuthorizedSession === selectedSession?.id} blocked={!!live.recoveryError || !live.historyReady(selectedSession?.id) || live.historyBacklogFull} allowed={!!writeAllowed} imageAttachmentsEnabled={artifactStudioEnabled} sessionId={selectedSession?.id} projectId={projectId} project={project} onProjectReadback={room => { setProject(room); projects.current?.readback(room); }} max={bootstrap.command.liveRoom.maxInputCharacters} maxSteer={bootstrap.command.liveRoom.maxSteerCharacters} turn={live.turn} send={(session, input, max, inference, images) => live.send(session, input, max, inference, images, undefined, projectId)} retry={live.retry} resume={live.resume} steer={live.steer} recoveries={live.recoveries} consumeRecovery={live.consumeRecovery} /> : <p className="composer-feedback">Messaging is unavailable in this read-only connection.</p>}
       </footer>
     </main>
-    {secondSession && threads.ready(secondSession.id) ? <ThreadConversation session={secondSession} live={threads.get(secondSession.id)} project={project && project.id === projectId && project.sessionIds.includes(secondSession.id) && !project.archived ? project : null} bootstrap={bootstrap} onClose={() => setSecondSessionId(null)} onFocus={() => { if (project) projects.current?.openLinkedChat(project, secondSession); }} onProjectReadback={room => { setProject(room); projects.current?.readback(room); }} onThreadLink={openThreadLink} onSave={(text, runId) => { selectSession(secondSession); saveResponseArtifact(text, runId, projectId, secondSession.id); }} /> : null}
+    {secondSession && threads.ready(secondSession.id) ? <ThreadConversation session={secondSession} live={threads.get(secondSession.id)} project={project && project.id === projectId && project.sessionIds.includes(secondSession.id) && !project.archived ? project : null} bootstrap={bootstrap} onClose={() => selectSecondPane(null)} onFocus={() => { if (project) projects.current?.openLinkedChat(project, secondSession); }} onProjectReadback={room => { setProject(room); projects.current?.readback(room); }} onThreadLink={(id, sessionId) => { void openThreadLink(id, sessionId, 'second'); }} onSave={(text, runId) => { selectSession(secondSession); saveResponseArtifact(text, runId, projectId, secondSession.id); }} /> : null}
     </div>
     <ContextPane open={pane !== null} fullScreen={pane === 'artifacts' && artifactPaneFullScreen}>
       <div ref={setContextTarget} hidden={pane !== 'project'} />
