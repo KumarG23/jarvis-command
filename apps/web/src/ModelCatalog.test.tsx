@@ -22,7 +22,7 @@ it('groups the observed catalog by provider, explains each unavailable reason, a
   const entries = [
     entry('openai-codex', 'gpt-6-sol', { eligible: true, selectable: true, unavailableReason: null }),
     entry('anthropic', 'claude-haiku-4-5-20251001'),
-    entry('openai', 'gpt-5.5'),
+    entry('openai-api', 'gpt-5.5'),
     entry('openrouter', 'thinkingmachines/inkling:free'),
     entry('openrouter', 'vendor/paid-model'),
     entry('xai-oauth', 'grok-4.7', { advertised: false, eligible: true, unavailableReason: 'not_advertised' }),
@@ -47,8 +47,8 @@ it('groups the observed catalog by provider, explains each unavailable reason, a
   await waitFor(() => expect(model()).toHaveValue('openai-codex:gpt-6-sol'));
 });
 
-it('filters by model or provider while keeping provider groups and an honest empty result', async () => {
-  const entries = [entry('anthropic', 'claude-haiku-5-5'), entry('openai', 'gpt-5.5'), entry('openrouter', 'vendor/model:free')];
+it('names and searches the actual advertised OpenAI API provider slug', async () => {
+  const entries = [entry('anthropic', 'claude-haiku-5-5'), entry('openai-api', 'gpt-5.5'), entry('openrouter', 'vendor/model:free')];
   vi.stubGlobal('fetch', vi.fn(async () => Response.json(inventory(entries))));
   render(<TurnComposer {...props()} />);
   const catalog = await screen.findByRole('region', { name: 'Advertised model catalog' });
@@ -64,7 +64,7 @@ it('filters by model or provider while keeping provider groups and an honest emp
 });
 
 it('renders a contract-valid large catalog with both server and UI bounds stated', () => {
-  const entries = Array.from({ length: 210 }, (_, index) => entry('openai', `model-${String(index).padStart(3, '0')}`));
+  const entries = Array.from({ length: 210 }, (_, index) => entry('openai-api', `model-${String(index).padStart(3, '0')}`));
   const catalog: ModelCatalog = { entries, advertisedCount: 5_000, returned: 210, truncated: true };
   render(<ModelCatalogView catalog={catalog} options={[]} disabled={false} onSelect={vi.fn()} />);
   expect(screen.getByText('210 catalog entries · 5,000 advertised · inventory truncated')).toBeInTheDocument();

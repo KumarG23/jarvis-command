@@ -8,6 +8,7 @@ const MAX_VISIBLE_ENTRIES = 200;
 const PROVIDER_LABELS: Record<string, string> = {
   anthropic: 'Anthropic',
   openai: 'OpenAI',
+  'openai-api': 'OpenAI API',
   'openai-codex': 'OpenAI',
   openrouter: 'OpenRouter',
   'xai-oauth': 'xAI',

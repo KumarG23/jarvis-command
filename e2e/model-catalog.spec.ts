@@ -11,7 +11,7 @@ const catalog = {
   entries: [
     entry('openai-codex', 'gpt-6-sol', null),
     entry('anthropic', 'claude-haiku-5-5', 'not_approved_allowlist'),
-    entry('openai', 'gpt-5.5', 'not_approved_allowlist'),
+    entry('openai-api', 'gpt-5.5', 'not_approved_allowlist'),
     entry('openrouter', 'thinkingmachines/inkling:free', 'not_approved_allowlist'),
     entry('openrouter', 'vendor/paid-model', 'not_approved_allowlist'),
     entry('xai-oauth', 'grok-4.7', 'not_advertised', { advertised: false, eligible: true }),
