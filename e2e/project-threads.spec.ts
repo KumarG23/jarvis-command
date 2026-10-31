@@ -20,6 +20,7 @@ for (const [width, height] of [[1280, 720], [320, 740], [360, 740], [390, 740], 
       if (path === '/api/bootstrap') return json({ identity: { provider: 'development' }, command: { version: 'SYNTHETIC P9.1 fixture', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 16000, maxSteerCharacters: 4000 } }, hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse'], readinessChecks: {} }, sessions: sessions.slice(0, creates) });
       if (path === '/api/notifications') return json(emptyInbox);
       if (path === '/api/rooms') return json({ version: 1, rooms: [room] });
+      if (path.endsWith('/roster')) return json({ project: room, observedAt: timestamp, limit: 4, total: room.sessionIds.length, omitted: 0, partial: false, items: room.sessionIds.map(sessionId => ({ sessionId, title: null, archived: null, lead: room.leadSessionId === sessionId, status: 'idle', statusObservedAt: timestamp, runUpdatedAt: null, messagesObservedAt: timestamp, messages: [], messagesTruncated: false, messagesUnavailable: false })) });
       const thread = path.match(/\/threads\/(jc_[a-c]{32})$/);
       if (thread) {
         const id = thread[1]!, body = req.postDataJSON();
@@ -109,6 +110,7 @@ for (const committed of [false, true]) for (const width of [1280, 360]) {
       if (path === '/api/bootstrap') return json({ identity: { provider: 'development' }, command: { version: 'SYNTHETIC recovery fixture', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 16000, maxSteerCharacters: 4000 } }, hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse'], readinessChecks: {} }, sessions: creates ? [old, created] : [old] });
       if (path === '/api/notifications') return json(emptyInbox);
       if (path === '/api/rooms') return json({ version: 1, rooms: [room] });
+      if (path.endsWith('/roster')) return json({ project: room, observedAt: timestamp, limit: 4, total: room.sessionIds.length, omitted: 0, partial: false, items: room.sessionIds.map(sessionId => ({ sessionId, title: null, archived: null, lead: room.leadSessionId === sessionId, status: 'idle', statusObservedAt: timestamp, runUpdatedAt: null, messagesObservedAt: timestamp, messages: [], messagesTruncated: false, messagesUnavailable: false })) });
       if (path === '/api/live/sessions') { creates++; return json({ session: created }); }
       if (path === `/api/rooms/${room.id}/sessions`) {
         const id = req.postDataJSON().sessionId;

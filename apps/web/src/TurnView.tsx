@@ -1,5 +1,5 @@
-import { composeProjectInput, projectContext, readProjectForSend } from './projectInput';
-import type { ProjectRoom } from '@jarvis-command/contracts';
+import { composeProjectInput, projectContext, readProjectForSend, readProjectRoster, rosterContext, rosterFacts } from './projectInput';
+import { projectSendSnapshot, type ProjectRoster, type ProjectRoom } from '@jarvis-command/contracts';
 import { createPortal } from 'react-dom';
 import { ArrowUp, ChevronRight, Command, Copy, FilePlus2, ImagePlus, X } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
@@ -265,6 +265,23 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
   send: (sessionId: string, input: string, max: number, inference?: InferenceOverride, images?: LiveRunSubmissionRequest['images']) => boolean; retry: () => void; resume: () => void;
 }>) {
   const displayedProject = project?.id === projectId ? project : null;
+  const projectSnapshot = displayedProject ? projectSendSnapshot(displayedProject) : '';
+  const isLead = !!sessionId && displayedProject?.leadSessionId === sessionId;
+  const [roster, setRoster] = useState<ProjectRoster | null>(null);
+  const [rosterError, setRosterError] = useState('');
+  const [rosterRetry, setRosterRetry] = useState(0);
+  const displayedRoster = isLead && roster && projectSendSnapshot(roster.project) === projectSnapshot ? roster : null;
+  useEffect(() => {
+    setRoster(null); setRosterError('');
+    if (!isLead || !allowed || !draftsAuthorized || !projectId) return;
+    const controller = new AbortController();
+    void readProjectRoster(projectId, controller).then(value => {
+      if (controller.signal.aborted) return;
+      if (projectSendSnapshot(value.project) !== projectSnapshot) { setRosterError('Saved project changed. Reload projects and review before sending.'); return; }
+      setRoster(value);
+    }).catch(error => { if (!controller.signal.aborted) setRosterError(String(error.message)); });
+    return () => controller.abort();
+  }, [projectSnapshot, projectId, sessionId, isLead, allowed, draftsAuthorized, rosterRetry]);
   const { draft, draftsRef, setRoomDraft, clearForSend, storageUnavailable } = useTextDraft(sessionId, allowed && draftsAuthorized);
   const picker = useRef<HTMLDetailsElement>(null);
   useEffect(() => { if (picker.current) picker.current.open = false; }, [sessionId]);
@@ -400,7 +417,7 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
   };
   const submit = async () => {
     const message = draft.trim() || (images.length ? 'Review the attached image.' : '');
-    let input = composeProjectInput(message, displayedProject);
+    let input = composeProjectInput(message, displayedProject, displayedRoster, sessionId);
     if (!allowed || !sessionId || busy || imageBusy || preflight.current || !message) return;
     if (problem) { setPreflightError(problem); return; }
     const context = sendContext.current;
@@ -413,11 +430,27 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
         try { fresh = await readProjectForSend(projectId, sessionId, controller); }
         catch (error) { if (sendContext.current === context) setPreflightError(error instanceof Error ? error.message : 'Project readback unavailable. Your draft is kept.'); return; }
         if (controller.signal.aborted || sendContext.current !== context) return;
-        if (!displayedProject || projectContext(fresh) !== projectContext(displayedProject)) {
+        if (!displayedProject || projectSendSnapshot(fresh) !== projectSendSnapshot(displayedProject)) {
           onProjectReadback?.(fresh);
           setPreflightError('Saved project context changed. Review the updated context and send again. Your draft is kept.'); return;
         }
-        input = composeProjectInput(message, fresh);
+        if (fresh.leadSessionId === sessionId) {
+          if (!displayedRoster) { setPreflightError('Lead roster must be loaded and reviewed before sending. Your draft is kept.'); return; }
+          let freshRoster: ProjectRoster;
+          try { freshRoster = await readProjectRoster(projectId, controller); }
+          catch (error) { if (sendContext.current === context) setPreflightError((error as Error).message); return; }
+          if (controller.signal.aborted || sendContext.current !== context) return;
+          if (projectSendSnapshot(freshRoster.project) !== projectSendSnapshot(fresh)) {
+            onProjectReadback?.(freshRoster.project);
+            setRoster(null);
+            setPreflightError('Saved project context changed. Review the updated context and send again. Your draft is kept.'); return;
+          }
+          if (rosterFacts(freshRoster) !== rosterFacts(displayedRoster)) {
+            setRoster(freshRoster);
+            setPreflightError('Project roster changed. Review the updated roster and send again. Your draft is kept.'); return;
+          }
+        }
+        input = composeProjectInput(message, fresh, displayedRoster, sessionId);
       }
       if (input.length > max) { setPreflightError(`Complete message including project context is ${input.length} / ${max} characters. Shorten the message or saved context. Your draft is kept.`); return; }
       if (typeof selection !== 'string') {
@@ -494,7 +527,7 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
       if (Array.from(event.dataTransfer.items).some(item => item.kind === 'file' && item.type.startsWith('image/'))) event.preventDefault();
     }} onDrop={(event) => { if (!imageAttachmentsEnabled) return; const files = Array.from(event.dataTransfer.files); if (files.some(file => file.type.startsWith('image/'))) { event.preventDefault(); void attachImages(files); } }}>
       {inferenceTarget ? createPortal(inferencePicker, inferenceTarget) : inferencePicker}
-      {projectId ? <details className="project-input-preview"><summary>{displayedProject ? 'Project context included' : 'Project context awaiting readback'} · {composeProjectInput(draft.trim() || (images.length ? 'Review the attached image.' : ''), displayedProject).length} / {max} characters</summary>{displayedProject ? <pre>{projectContext(displayedProject)}</pre> : <p>Project context must be read back before sending.</p>}<p>Included as ordinary message text on new sends. Saved non-image files are not delivered to Hermes. Use Attach image explicitly for images.</p></details> : null}
+      {projectId ? <details className="project-input-preview"><summary>{displayedProject ? 'Project context included' : 'Project context awaiting readback'} · {composeProjectInput(draft.trim() || (images.length ? 'Review the attached image.' : ''), displayedProject, displayedRoster, sessionId).length} / {max} characters</summary>{displayedProject ? <><pre>{projectContext(displayedProject)}{displayedRoster ? `\n\n${rosterContext(displayedRoster)}` : ''}</pre>{isLead ? <><p>{displayedRoster ? 'Lead roster included. Review the complete bounded context above.' : rosterError || 'Lead roster loading; sending requires review.'}</p><button type="button" disabled={preflighting} onClick={() => setRosterRetry(value => value + 1)}>Refresh lead roster</button></> : null}</> : <p>Project context must be read back before sending.</p>}<p>Included as ordinary message text on new sends. Saved non-image files are not delivered to Hermes. Use Attach image explicitly for images.</p></details> : null}
       {preflighting ? <p role="status">Checking saved context and requested model…</p> : null}
       {preflightError || problem || inferenceError ? <p role="status">{preflightError || problem || 'Model choices unavailable; explicitly selected Inherit remains available.'}</p> : null}
       {storageUnavailable ? <p role="status">Draft storage unavailable or full. Text remains in this tab; reload may lose recent edits. Sending requires safely clearing the saved draft.</p> : null}

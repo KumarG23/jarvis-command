@@ -321,3 +321,49 @@ it.each(['lead', 'thread', 'failure'])('cleans only removed-session fixture meta
   expect((await restarted.inject({ url: '/api/rooms', headers })).json().rooms).toEqual([...expected, unrelated]);
   await restarted.close();
 });
+
+it('authenticates the narrow read-only roster and refuses missing/archived projects or arbitrary session targets', async () => {
+  const id = 'external:readonly';
+  const getSession = vi.fn(async () => ({ session: { id, title: 'Synthetic external' } }));
+  const getMessages = vi.fn(async () => ({ sessionId: id, messages: [], pagination: { limit: 2, offset: 0, returned: 0, hasMore: false } }));
+  const getRosterStatus = vi.fn(async () => ({ status: 'idle', runUpdatedAt: null }));
+  const { root, make } = await fixture(getSession, { getMessages, getRosterStatus });
+  const app = make();
+  const room = (await app.inject({ method: 'POST', url: '/api/rooms', headers, payload: metadata })).json().room;
+  await app.inject({ method: 'POST', url: `/api/rooms/${room.id}/sessions`, headers, payload: { sessionId: id } });
+  getSession.mockClear();
+  const path = join(root, 'project-rooms.json'), before = await readFile(path);
+  expect((await app.inject({ url: `/api/rooms/${room.id}/roster` })).statusCode).toBe(401);
+  expect((await app.inject({ url: `/api/rooms/${room.id}/roster?sessionId=foreign`, headers })).statusCode).toBe(400);
+  expect(getSession).not.toHaveBeenCalled();
+  const result = await app.inject({ url: `/api/rooms/${room.id}/roster`, headers });
+  expect(result.statusCode).toBe(200); expect(result.headers['cache-control']).toBe('no-store');
+  expect(result.json().items).toMatchObject([{ sessionId: id, status: 'idle', messagesUnavailable: false }]);
+  expect(getSession).toHaveBeenCalledExactlyOnceWith('operator', id);
+  expect(getMessages).toHaveBeenCalledExactlyOnceWith('operator', id, 2, 0);
+  expect(getRosterStatus).toHaveBeenCalledExactlyOnceWith('operator', id);
+  expect(await readFile(path)).toEqual(before);
+  expect((await app.inject({ url: `/api/rooms/room_${'f'.repeat(32)}/roster`, headers })).statusCode).toBe(404);
+  await app.inject({ method: 'POST', url: `/api/rooms/${room.id}`, headers, payload: { ...metadata, archived: true } });
+  expect((await app.inject({ url: `/api/rooms/${room.id}/roster`, headers })).statusCode).toBe(404);
+  await app.close();
+});
+
+it('rejects project changes during roster reads instead of returning stale membership', async () => {
+  let entered!: () => void, release!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const id = 'jc_' + 'a'.repeat(32);
+  const getSession = vi.fn(async () => ({ session: { id, title: 'SYNTHETIC' } }));
+  const getRosterStatus = vi.fn(async () => { entered(); await pending; return { status: 'idle', runUpdatedAt: null }; });
+  const getMessages = vi.fn(async () => ({ sessionId: id, messages: [], pagination: { limit: 2, offset: 0, returned: 0, hasMore: false } }));
+  const { make } = await fixture(getSession, { getRosterStatus, getMessages }); const app = make();
+  const room = (await app.inject({ method: 'POST', url: '/api/rooms', headers, payload: metadata })).json().room;
+  await app.inject({ method: 'POST', url: `/api/rooms/${room.id}/sessions`, headers, payload: { sessionId: id } });
+  const read = app.inject({ url: `/api/rooms/${room.id}/roster`, headers }).then(result => result);
+  await started;
+  await app.inject({ method: 'POST', url: `/api/rooms/${room.id}`, headers, payload: { ...metadata, goal: 'Changed during read' } });
+  release();
+  expect((await read).statusCode).toBe(409);
+  await app.close();
+});
