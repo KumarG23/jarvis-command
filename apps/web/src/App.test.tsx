@@ -150,6 +150,79 @@ describe('Selected room recovery', () => {
   });
 });
 
+it('opens a freshly verified project thread outside bootstrap and roster bounds without writes, preserving drafts', async () => {
+  const current = { ...bootstrap.sessions[0]!, id: 'jc_' + 'a'.repeat(32), source: 'api_server', ownership: 'command' as const, title: 'Project lead' };
+  const otherRecent = { ...current, id: 'jc_' + 'c'.repeat(32), title: 'Other recent chat' };
+  const target = { ...current, id: 'jc_' + 'b'.repeat(32), title: 'Thread outside bootstrap' };
+  const project = { id: 'room_' + 'd'.repeat(32), name: 'Thread navigation project', goal: 'Navigate safely', instructions: '', archived: false, repository: '', notes: [], sessionIds: [current.id, target.id], lastSessionId: current.id,
+    threads: [{ sessionId: target.id, title: 'Verified target', archived: false, createdAt: '2026-10-31T12:00:00Z' }] };
+  sessionStorage.setItem('jarvis-command:selected-session:v1', current.id);
+  sessionStorage.setItem('jarvis-command:project-room:v1', project.id);
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/rooms') return Response.json({ version: 1, rooms: [project] });
+    if (url === `/api/live/sessions/${current.id}`) return Response.json({ session: current });
+    if (url === `/api/live/sessions/${target.id}`) return Response.json({ session: target });
+    if (url.startsWith('/api/sessions/')) {
+      const id = new URL(url, 'http://command.test').pathname.split('/')[3]!;
+      const content = id === current.id ? `[Open verified thread](thread:${target.id})` : 'Target thread conversation';
+      return Response.json(history(id, 0, ['Question', content], false));
+    }
+    if (url === '/api/live/model-options') return Response.json({ default: { provider: 'openai-codex', model: 'gpt-6.1-sol' }, options: [] });
+    if (url === '/api/notifications') return Response.json(emptyInbox);
+    throw Error(`unexpected request ${url} ${init?.method ?? 'GET'}`);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  render(<App loadBootstrap={async () => ({ ...liveBootstrap, sessions: [current, otherRecent] })} />);
+  await screen.findByText('Question');
+  const composer = await screen.findByRole('textbox', { name: 'Message Jarvis' });
+  fireEvent.change(composer, { target: { value: 'draft stays with lead' } });
+  fireEvent.click(await screen.findByRole('button', { name: 'Open verified thread' }));
+  await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(target.title));
+  expect(screen.getByLabelText('Selected project')).toHaveTextContent(project.name);
+  fireEvent.click(await screen.findByRole('button', { name: 'Other recent chat' }));
+  await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(otherRecent.title));
+  fireEvent.click(await screen.findByRole('button', { name: project.name }));
+  fireEvent.click(within(screen.getByRole('navigation', { name: 'Recent chats' })).getByRole('button', { name: current.title }));
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('draft stays with lead'));
+  expect(fetchMock.mock.calls.some(([, init]) => init?.method && init.method !== 'GET')).toBe(false);
+  expect(fetchMock.mock.calls.some(([url]) => /\/runs|\/sessions$|\/sessions\/[^/]+\/fork|\/threads\//.test(url))).toBe(false);
+});
+
+it('does not navigate when the selected project chat changes during thread readback', async () => {
+  const current = { ...bootstrap.sessions[0]!, id: 'jc_' + 'a'.repeat(32), source: 'api_server', ownership: 'command' as const, title: 'Project lead' };
+  const otherRecent = { ...current, id: 'jc_' + 'c'.repeat(32), title: 'Other recent chat' };
+  const target = { ...current, id: 'jc_' + 'b'.repeat(32), title: 'Target thread' };
+  const project = { id: 'room_' + 'd'.repeat(32), name: 'Thread navigation project', goal: 'Navigate safely', instructions: '', archived: false, repository: '', notes: [], sessionIds: [current.id, target.id], lastSessionId: current.id,
+    threads: [{ sessionId: target.id, title: target.title, archived: false, createdAt: '2026-10-31T12:00:00Z' }] };
+  sessionStorage.setItem('jarvis-command:selected-session:v1', current.id); sessionStorage.setItem('jarvis-command:project-room:v1', project.id);
+  const pending = deferred<Response>();
+  let targetReads = 0;
+  const fetchMock = vi.fn(async (url: string) => {
+    if (url === '/api/rooms') return Response.json({ version: 1, rooms: [project] });
+    if (url === `/api/live/sessions/${current.id}`) return Response.json({ session: current });
+    if (url === `/api/live/sessions/${target.id}`) { targetReads++; return pending.promise; }
+    if (url.startsWith('/api/sessions/')) { const id = new URL(url, 'http://command.test').pathname.split('/')[3]!; return Response.json(history(id, 0, ['Question', `[Open target](thread:${target.id})`], false)); }
+    if (url === '/api/live/model-options') return Response.json({ default: { provider: 'openai-codex', model: 'gpt-6.1-sol' }, options: [] });
+    if (url === '/api/notifications') return Response.json(emptyInbox);
+    throw Error(`unexpected request ${url}`);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  render(<App loadBootstrap={async () => ({ ...liveBootstrap, sessions: [current, otherRecent] })} />);
+  await screen.findByText('Question');
+  await waitFor(() => expect(screen.getByLabelText('Selected project')).toHaveTextContent(project.name));
+  await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(current.title));
+  const readsBeforeLink = targetReads;
+  fireEvent.click(await screen.findByRole('button', { name: 'Open target' }));
+  await waitFor(() => expect(targetReads).toBeGreaterThan(readsBeforeLink));
+  expect(screen.getByText(/Checking the project and thread/)).toBeInTheDocument();
+  fireEvent.click(await screen.findByRole('button', { name: 'Other recent chat' }));
+  await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(otherRecent.title));
+  expect(screen.getByText(/selection changed while this link was checked/i)).toBeInTheDocument();
+  await act(async () => pending.resolve(Response.json({ session: target })));
+  expect(screen.getByLabelText('Selected session')).toHaveTextContent(otherRecent.title);
+  expect(await screen.findByText(/selection changed while this link was checked/i)).toBeInTheDocument();
+});
+
 describe('Command session creation', () => {
   it('creates once with the exact mutation boundary, selects the validated session and adds navigation', async () => {
     const pending = deferred<Response>();

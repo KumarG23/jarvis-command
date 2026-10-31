@@ -1,8 +1,9 @@
 import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { TurnComposer } from './TurnView';
-import { composeProjectInput, projectContext } from './projectInput';
+import { composeProjectInput, projectContext, readProjectThreadTarget, rosterContext } from './projectInput';
 import { useLiveTurn } from './useLiveTurn';
+import { ProjectRoomsSchema, SessionMutationResponseSchema } from '@jarvis-command/contracts';
 
 const sessionId = 'jc_' + 'a'.repeat(32);
 const room = { id: 'room_' + 'b'.repeat(32), name: 'SYNTHETIC project', goal: 'Test context', instructions: 'Keep synthetic data separate.', repository: '/synthetic', notes: ['synthetic.md'], sessionIds: [sessionId], lastSessionId: sessionId };
@@ -146,6 +147,55 @@ it('previews and injects one quoted untrusted roster only for the designated lea
   expect(input).toBe(`${preview}\n\n[Message]\nlead question`);
   expect(input.match(/\[Project roster —/g)).toHaveLength(1);
   expect(input.length).toBeLessThan(16000);
+  expect(rosterContext(makeRoster())).toContain('[label](thread:SESSION_ID)');
+});
+
+it('re-reads exact project membership and session facts for a linked thread beyond the roster bound', async () => {
+  const ids = Array.from({ length: 8 }, (_, index) => `jc_${String(index + 1).repeat(32)}`);
+  const target = ids[7]!;
+  const freshRoom = { ...room, sessionIds: ids, lastSessionId: target, threads: [{ sessionId: target, title: 'Thread eight', archived: false, createdAt: '2026-10-31T12:00:00Z' }] };
+  const session = { id: target, title: 'Thread eight upstream', source: 'api_server', ownership: 'command', model: null, lastActive: '2026-10-31T12:00:00Z', messageCount: 0, toolCallCount: 0, pinned: false };
+  expect(() => ProjectRoomsSchema.parse({ version: 1, rooms: [freshRoom] })).not.toThrow();
+  expect(() => SessionMutationResponseSchema.parse({ session })).not.toThrow();
+  const fetcher = vi.fn(async (url: string) => url === '/api/rooms'
+    ? Response.json({ version: 1, rooms: [freshRoom] })
+    : Response.json({ session }));
+  vi.stubGlobal('fetch', fetcher);
+  const result = await readProjectThreadTarget(room.id, target, new AbortController());
+  expect(result).toEqual({ room: freshRoom, session });
+  expect(fetcher.mock.calls.map(([url]) => url).sort()).toEqual(['/api/live/sessions/' + target, '/api/rooms'].sort());
+  const calls = fetcher.mock.calls as unknown as Array<[string, RequestInit]>;
+  expect(calls.every(([, init]) => init.credentials === 'same-origin' && init.cache === 'no-store')).toBe(true);
+});
+
+it.each(['missing project', 'archived project', 'missing membership', 'archived thread', 'wrong session identity'])('refuses a stale %s thread link', async mode => {
+  const target = 'jc_' + 'f'.repeat(32);
+  const linkedRoom = { ...room, sessionIds: [target], lastSessionId: target };
+  const freshRoom = mode === 'missing project' ? null : mode === 'archived project' ? { ...linkedRoom, archived: true }
+    : mode === 'missing membership' ? { ...linkedRoom, sessionIds: [], lastSessionId: null }
+      : mode === 'archived thread' ? { ...linkedRoom, threads: [{ sessionId: target, title: 'Archived', archived: true, createdAt: '2026-10-31T12:00:00Z' }] }
+        : linkedRoom;
+  const responseSession = { id: mode === 'wrong session identity' ? sessionId : target, title: 'Target', source: 'api_server', ownership: 'command', model: null, lastActive: '2026-10-31T12:00:00Z', messageCount: 0, toolCallCount: 0, pinned: false };
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/rooms'
+    ? Response.json({ version: 1, rooms: freshRoom ? [freshRoom] : [] })
+    : Response.json({ session: responseSession })));
+  await expect(readProjectThreadTarget(room.id, target, new AbortController())).rejects.toThrow(/stale or unavailable/);
+});
+
+it('reports unavailable project or session readback without falling back', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => { throw Error('offline'); }));
+  await expect(readProjectThreadTarget(room.id, sessionId, new AbortController())).rejects.toThrow(/readback is unavailable/);
+});
+it('allows a linked external session to open with its read-only ownership intact', async () => {
+  const externalId = 'discord:channel+message';
+  const external = { id: externalId, title: 'External saved chat', source: 'discord', ownership: 'external', model: null, lastActive: '2026-10-31T12:00:00Z', messageCount: 1, toolCallCount: 0, pinned: false };
+  const linked = { ...room, sessionIds: [externalId], lastSessionId: externalId };
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/rooms'
+    ? Response.json({ version: 1, rooms: [linked] })
+    : Response.json({ session: external })));
+  const target = await readProjectThreadTarget(room.id, externalId, new AbortController());
+  expect(target.session.ownership).toBe('external');
+  expect(target.room.sessionIds).toContain(externalId);
 });
 it('ordinary linked sends retain existing context with no roster reads', async () => {
   const ordinaryId = 'jc_' + 'c'.repeat(32);

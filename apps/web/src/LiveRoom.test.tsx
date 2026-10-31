@@ -76,6 +76,31 @@ it('keeps saved tool output collapsed while retaining its exact payload', async 
   expect(summary.closest('details')).toHaveAttribute('open');
 });
 
+it('renders stored and live assistant thread links consistently; user and tool messages stay inert', async () => {
+  const target = 'jc_' + 'c'.repeat(32), projectId = 'room_' + 'd'.repeat(32);
+  const token = `[open thread](thread:${target})`;
+  const messages = [
+    { id: 'user:token', sessionId: session.id, role: 'user', content: token, timestamp: null, toolName: null, displayKind: null },
+    { id: 'assistant:token', sessionId: session.id, role: 'assistant', content: token, timestamp: null, toolName: null, displayKind: null },
+    { id: 'tool:token', sessionId: session.id, role: 'tool', content: token, timestamp: null, toolName: 'tool', displayKind: null },
+  ];
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ sessionId: session.id, messages, pagination: { limit: 50, offset: 0, returned: 3, hasMore: false } })));
+  const onThreadLink = vi.fn();
+  const turn: Turn = { intent: { sessionId: session.id, clientRequestId: 'live-link', input: 'question' }, publicRunId: 'jcr_' + 'e'.repeat(32), phase: 'Run completed', done: true, output: token, outputLimited: false, historyMatched: false, identityVerified: true, approval: null, events: [] };
+  const view = render(<LiveRoom session={session} onHistory={vi.fn()} threadProjectId={projectId} threadProjectSessionIds={[target]} onThreadLink={onThreadLink} />);
+  const storedControl = await screen.findByRole('button', { name: 'open thread' });
+  fireEvent.click(storedControl);
+  expect(onThreadLink).toHaveBeenCalledExactlyOnceWith(projectId, target);
+  expect(document.querySelector('[data-message-id="user:token"] button')).toBeNull();
+  expect(document.querySelector('[data-message-id="tool:token"] button')).toBeNull();
+  view.unmount();
+  render(<TurnView turn={turn} threadProjectId={projectId} threadProjectSessionIds={[target]} onThreadLink={onThreadLink} allowed={false} approve={vi.fn()} stop={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'open thread' }));
+  expect(onThreadLink).toHaveBeenCalledTimes(2);
+  expect(onThreadLink).toHaveBeenNthCalledWith(1, projectId, target);
+  expect(onThreadLink).toHaveBeenNthCalledWith(2, projectId, target);
+});
+
 it('loads 250 canonical IDs across five pages, retaining identical messages and existing DOM/copy controls', async () => {
   const messages = Array.from({ length: 250 }, (_, index) => ({ id: `canonical:${index}`, sessionId: session.id, role: 'assistant', content: '**identical reply**', timestamp: null, toolName: null, displayKind: null }));
   const fetchMock = vi.fn(async (url: string) => {
