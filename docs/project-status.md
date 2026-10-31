@@ -52,6 +52,12 @@ with bounded exact receipts (1,024 per actor); capacity/legacy gaps make new
 approval notifications explicitly unavailable. It reports incomplete delivery
 for first-use, retention and bounded recovery gaps.
 
+**Reopened 2026-10-31 (owner decision on #20/#61):** two new milestones — P9
+Independent project threads and P10 Model catalog — are admitted in
+[MASTER_PLAN §10](../MASTER_PLAN.md) with a [capability matrix](p9-p10-capability-matrix.md).
+Only the plan amendment (#63) exists; no thread or catalog feature is implemented
+or live. The accepted P1–P8 baseline above is unchanged.
+
 [Neal review queue #20](https://github.com/KumarG23/jarvis-command/issues/20) holds
 the posted Final Neal packet with pending phone steps, enablement and deferred
 contracts. Older M0 issues #2/#6/#9 are closed as superseded or partial/deferred, preserving history.
