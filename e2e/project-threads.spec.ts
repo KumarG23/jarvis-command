@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { emptyInbox } from './empty-inbox';
+import { LiveRoomSessionCreateRequestSchema } from '../packages/contracts/src/contracts';
 import type { ProjectRoom } from '../packages/contracts/src/project-rooms';
 
 const timestamp = '2026-10-31T18:00:00.000Z';
@@ -8,14 +9,15 @@ const sessions = ['a', 'b', 'c'].map(letter => ({ id: 'jc_' + letter.repeat(32),
 for (const [width, height] of [[1280, 720], [320, 740], [360, 740], [390, 740], [430, 740], [360, 360]] as const) {
   test(`SYNTHETIC independent project threads ${width}x${height}`, async ({ page }, info) => {
     await page.setViewportSize({ width: width, height: height });
-    let room: ProjectRoom = { id: 'room_' + 'd'.repeat(32), name: 'SYNTHETIC thread workspace', goal: 'Verify independent threads', instructions: 'Preserve project instructions', repository: '', notes: ['fixture reference'], sessionIds: sessions.slice(0, 2).map(s => s.id), lastSessionId: null };
+    let room: ProjectRoom = { id: 'room_' + 'd'.repeat(32), name: 'SYNTHETIC thread workspace'.padEnd(80, 'x'), goal: 'Verify independent threads', instructions: 'Preserve project instructions', repository: '', notes: ['fixture reference'], sessionIds: [], lastSessionId: null };
     const errors: string[] = [], unexpected: string[] = [], sends: string[] = [];
     let creates = 0;
+    const upstreamTitles = new Set<string>();
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/api/**', async route => {
       const req = route.request(), path = new URL(req.url()).pathname;
       const json = (body: unknown) => route.fulfill({ json: body });
-      if (path === '/api/bootstrap') return json({ identity: { provider: 'development' }, command: { version: 'SYNTHETIC P9.1 fixture', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 16000, maxSteerCharacters: 4000 } }, hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse'], readinessChecks: {} }, sessions: sessions.slice(0, 2) });
+      if (path === '/api/bootstrap') return json({ identity: { provider: 'development' }, command: { version: 'SYNTHETIC P9.1 fixture', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 16000, maxSteerCharacters: 4000 } }, hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse'], readinessChecks: {} }, sessions: sessions.slice(0, creates) });
       if (path === '/api/notifications') return json(emptyInbox);
       if (path === '/api/rooms') return json({ version: 1, rooms: [room] });
       const thread = path.match(/\/threads\/(jc_[a-c]{32})$/);
@@ -30,7 +32,13 @@ for (const [width, height] of [[1280, 720], [320, 740], [360, 740], [390, 740], 
         room = { ...room, sessionIds: [...new Set([...room.sessionIds, id])], lastSessionId: id };
         return json({ room, session: sessions.find(s => s.id === id) });
       }
-      if (path === '/api/live/sessions') { creates++; return json({ session: sessions[2] }); }
+      if (path === '/api/live/sessions') {
+        const { title } = LiveRoomSessionCreateRequestSchema.parse(req.postDataJSON());
+        if (!title || upstreamTitles.has(title)) return route.fulfill({ status: 400, json: { error: 'SYNTHETIC repeated title' } });
+        expect(title.length).toBeLessThanOrEqual(120);
+        upstreamTitles.add(title);
+        return json({ session: sessions[creates++] });
+      }
       if (/^\/api\/live\/sessions\/jc_[a-c]{32}$/.test(path)) return json({ session: sessions.find(s => path.endsWith(s.id)) });
       if (path.endsWith('/messages')) { const id = path.split('/')[3]; return json({ sessionId: id, messages: [], pagination: { limit: 50, offset: 0, returned: 0, hasMore: false } }); }
       if (path.endsWith('/context')) return json({ sessionId: path.split('/')[4], state: 'unavailable', receipt: null, updatedAt: null });
@@ -42,6 +50,12 @@ for (const [width, height] of [[1280, 720], [320, 740], [360, 740], [390, 740], 
     await page.goto('/');
     if (width < 760) await page.getByRole('button', { name: 'Open chat navigation' }).click();
     await page.getByRole('button', { name: room.name, exact: true }).click();
+    // Each create is an explicit user action, including the first lead candidate.
+    for (const session of sessions.slice(0, 2)) {
+      await page.getByRole('button', { name: `New chat in ${room.name}` }).click();
+      await expect(page.getByLabel('Selected session')).toHaveText(session.title);
+      if (width < 760) await page.getByRole('button', { name: 'Open chat navigation' }).click();
+    }
     await page.getByRole('button', { name: 'Project details', exact: true }).click();
     await expect(page.getByText(/No lead designated/)).toBeVisible();
     const first = page.getByRole('group', { name: `Thread: ${sessions[0]!.title}` });
@@ -75,8 +89,9 @@ for (const [width, height] of [[1280, 720], [320, 740], [360, 740], [390, 740], 
     await page.reload();
     await expect(page.getByLabel('Selected session')).toHaveText(sessions[0]!.title);
     expect(room.leadSessionId).toBe(sessions[0]!.id);
-    expect(room.sessionIds).toHaveLength(3);
-    expect(creates).toBe(1); expect(sends).toEqual([]); expect(errors).toEqual([]); expect(unexpected).toEqual([]);
+    expect(room.sessionIds).toEqual(sessions.map(s => s.id));
+    expect(room.threads?.find(t => t.sessionId === sessions[1]!.id)?.title).toBe(title);
+    expect(creates).toBe(3); expect(upstreamTitles.size).toBe(3); expect(sends).toEqual([]); expect(errors).toEqual([]); expect(unexpected).toEqual([]);
   });
 }
 
