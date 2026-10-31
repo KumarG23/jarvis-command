@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { createRef } from 'react';
 import { LiveRoomSessionCreateRequestSchema, type ProjectRoom, type SessionSummary } from '@jarvis-command/contracts';
 import { ProjectRooms, type ProjectRoomsHandle } from './ProjectRooms';
+import { createReadbackFixture } from './readbackFixture';
 
 const room = { id: 'room_' + 'a'.repeat(32), name: 'Synthetic project', goal: 'Exact metadata', repository: '/not/read', notes: [], sessionIds: [], lastSessionId: null };
 const session = { id: 'jc_' + 'b'.repeat(32), title: 'Created conversation', source: 'api_server', ownership: 'command', model: null, lastActive: '2026-09-06T12:00:00Z', messageCount: 0, toolCallCount: 0, pinned: false };
@@ -443,6 +444,7 @@ it.each([false, true])('recovers the exact created identity after reload when un
   const old = { ...session, id: 'jc_' + 'd'.repeat(32), title: 'Unrelated old chat' };
   let stored = { ...room, sessionIds: [old.id], lastSessionId: null as string | null };
   let links = 0;
+  const readbacks = createReadbackFixture<Response>();
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/api/rooms') return Response.json({ version: 1, rooms: [stored] });
     if (url === '/api/live/sessions') return Response.json({ session });
@@ -453,7 +455,8 @@ it.each([false, true])('recovers the exact created identity after reload when un
       if (links === 1 && !committed) return Response.json({}, { status: 503 });
       stored = { ...stored, sessionIds: [...new Set([...stored.sessionIds, id])], lastSessionId: id };
       if (links === 1) return Response.json({}, { status: 503 });
-      return Response.json({ room: stored, session: id === old.id ? old : session });
+      const response = Response.json({ room: stored, session: id === old.id ? old : session });
+      return readbacks.read(id, () => response);
     }
     throw Error(`unexpected ${url}`);
   });
@@ -466,10 +469,13 @@ it.each([false, true])('recovers the exact created identity after reload when un
   view.unmount();
   render(<ProjectRooms sessions={[old, session] as never} onScope={vi.fn()} onSession={vi.fn()} />);
   await screen.findByRole('button', { name: 'Project details' });
+  readbacks.arm();
   const projectNav = screen.getByRole('navigation', { name: 'Projects' });
   await waitFor(() => expect(within(projectNav).getByRole('button', { name: old.title })).toBeEnabled());
   fireEvent.click(within(projectNav).getByRole('button', { name: old.title }));
   await waitFor(() => expect(links).toBe(2));
+  await waitFor(() => expect(readbacks.pending(old.id)).toBe(1));
+  await act(async () => readbacks.resolve(old.id, Response.json({ room: stored, session: old })));
   await waitFor(() => expect(within(projectNav).getByRole('button', { name: old.title })).toBeEnabled());
   expect(screen.getByRole('button', { name: createName })).toBeDisabled();
   expect(screen.getByRole('button', { name: `Finish adding chat to ${room.name}` })).toBeEnabled();
@@ -483,9 +489,11 @@ it.each([false, true])('recovers the exact created identity after reload when un
     fireEvent.click(screen.getByRole('button', { name: `Add ${session.title} to project` }));
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Add chat to project' })).getByRole('button', { name: 'Add to project' }));
   }
-  await waitFor(() => expect(screen.getByRole('button', { name: createName })).toBeEnabled());
   expect(fetcher.mock.calls.filter(([url]) => url === '/api/live/sessions')).toHaveLength(1);
-  expect(links).toBe(3);
+  await waitFor(() => expect(links).toBe(3));
+  await waitFor(() => expect(readbacks.pending(session.id)).toBe(1));
+  await act(async () => readbacks.resolve(session.id, Response.json({ room: stored, session })));
+  await waitFor(() => expect(screen.getByRole('button', { name: createName })).toBeEnabled());
   expect(screen.getByLabelText('Thread title')).toHaveValue('Preserve unsaved rename');
   expect(JSON.parse(sessionStorage.getItem('jarvis-command:pending-project-attachments:v1')!)).toEqual({});
 });
