@@ -18,7 +18,7 @@ async function request(path: string, body?: unknown) {
   if (!response.ok) throw Error('Project operation could not be confirmed. Reload projects before retrying; the change may already have been saved.');
   return response.json() as Promise<unknown>;
 }
-export type ProjectRoomsHandle = { readback: (room: ProjectRoom) => void; openDetails: (opener?: HTMLElement) => void; closeDetails: () => void; focusSearch: () => void; selectChat: (session: SessionSummary) => void; adoptSession: (session: SessionSummary) => Promise<void> };
+export type ProjectRoomsHandle = { readback: (room: ProjectRoom) => void; openDetails: (opener?: HTMLElement) => void; closeDetails: () => void; focusSearch: () => void; selectChat: (session: SessionSummary) => void; openLinkedChat: (room: ProjectRoom, session: SessionSummary) => boolean; adoptSession: (session: SessionSummary) => Promise<void> };
 type Props = Readonly<{
   ref?: Ref<ProjectRoomsHandle>;
   sessions: SessionSummary[];
@@ -99,6 +99,14 @@ export function ProjectRooms({ ref, sessions, selectedSessionId, onScope, onProj
     closeDetails: closeDrawer,
     focusSearch: () => search.current?.focus(),
     selectChat: session => { if (!draft) void perform(() => chooseChat(session)); },
+    openLinkedChat: (room, session) => {
+      if (draft || working.current || room.archived || !room.sessionIds.includes(session.id)
+        || room.threads?.some(thread => thread.sessionId === session.id && thread.archived)) return false;
+      setRooms(previous => previous.map(item => item.id === room.id ? room : item));
+      setSelected(room); setExpanded(room.id); remember(room.id); setOpen(false);
+      callbacks.current.onScope(room.name); callbacks.current.onProjectScope?.(room.id); callbacks.current.onSession(session); callbacks.current.onNavigate?.();
+      return true;
+    },
     adoptSession: async session => {
       if (draft || working.current) throw Error('Finish the current project operation before switching chats.');
       working.current = true; setBusy(true); setError(null);

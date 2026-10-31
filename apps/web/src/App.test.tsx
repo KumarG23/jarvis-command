@@ -63,8 +63,9 @@ function history(sessionId = 'session_123', offset = 0, contents = ['First quest
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => { resolve = done; });
-  return { promise, resolve };
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((done, fail) => { resolve = done; reject = fail; });
+  return { promise, resolve, reject };
 }
 
 // The shell reads the notification inbox on load; these suites assert on chat traffic only.
@@ -148,6 +149,136 @@ describe('Selected room recovery', () => {
     expect(sessionStorage.getItem('jarvis-command:selected-session:v1')).toBe('session_123');
     expect(sessionStorage.getItem('jarvis-command:selected-session:v1')).not.toContain('Assistant answer');
   });
+});
+
+it('opens a freshly verified project thread outside bootstrap and roster bounds without writes, preserving drafts', async () => {
+  const current = { ...bootstrap.sessions[0]!, id: 'jc_' + 'a'.repeat(32), source: 'api_server', ownership: 'command' as const, title: 'Project lead' };
+  const otherRecent = { ...current, id: 'jc_' + 'c'.repeat(32), title: 'Other recent chat' };
+  const target = { ...current, id: 'jc_' + 'b'.repeat(32), title: 'Thread outside bootstrap' };
+  const project = { id: 'room_' + 'd'.repeat(32), name: 'Thread navigation project', goal: 'Navigate safely', instructions: '', archived: false, repository: '', notes: [], sessionIds: [current.id, target.id], lastSessionId: current.id,
+    threads: [{ sessionId: target.id, title: 'Verified target', archived: false, createdAt: '2026-10-31T12:00:00Z' }] };
+  sessionStorage.setItem('jarvis-command:selected-session:v1', current.id);
+  sessionStorage.setItem('jarvis-command:project-room:v1', project.id);
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/rooms') return Response.json({ version: 1, rooms: [project] });
+    if (url === `/api/live/sessions/${current.id}`) return Response.json({ session: current });
+    if (url === `/api/live/sessions/${target.id}`) return Response.json({ session: target });
+    if (url.startsWith('/api/sessions/')) {
+      const id = new URL(url, 'http://command.test').pathname.split('/')[3]!;
+      const content = id === current.id ? `[Open verified thread](thread:${target.id})` : 'Target thread conversation';
+      return Response.json(history(id, 0, ['Question', content], false));
+    }
+    if (url === '/api/live/model-options') return Response.json({ default: { provider: 'openai-codex', model: 'gpt-6.1-sol' }, options: [] });
+    if (url === '/api/notifications') return Response.json(emptyInbox);
+    throw Error(`unexpected request ${url} ${init?.method ?? 'GET'}`);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  render(<App loadBootstrap={async () => ({ ...liveBootstrap, sessions: [current, otherRecent] })} />);
+  await screen.findByText('Question');
+  const composer = await screen.findByRole('textbox', { name: 'Message Jarvis' });
+  fireEvent.change(composer, { target: { value: 'draft stays with lead' } });
+  fireEvent.click(await screen.findByRole('button', { name: 'Open verified thread' }));
+  await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(target.title));
+  expect(screen.getByLabelText('Selected project')).toHaveTextContent(project.name);
+  fireEvent.click(await screen.findByRole('button', { name: 'Other recent chat' }));
+  await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(otherRecent.title));
+  fireEvent.click(await screen.findByRole('button', { name: project.name }));
+  fireEvent.click(within(screen.getByRole('navigation', { name: 'Recent chats' })).getByRole('button', { name: current.title }));
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('draft stays with lead'));
+  expect(fetchMock.mock.calls.some(([, init]) => init?.method && init.method !== 'GET')).toBe(false);
+  expect(fetchMock.mock.calls.some(([url]) => /\/runs|\/sessions$|\/sessions\/[^/]+\/fork|\/threads\//.test(url))).toBe(false);
+});
+
+it('does not navigate when the selected project chat changes during thread readback', async () => {
+  const current = { ...bootstrap.sessions[0]!, id: 'jc_' + 'a'.repeat(32), source: 'api_server', ownership: 'command' as const, title: 'Project lead' };
+  const otherRecent = { ...current, id: 'jc_' + 'c'.repeat(32), title: 'Other recent chat' };
+  const target = { ...current, id: 'jc_' + 'b'.repeat(32), title: 'Target thread' };
+  const project = { id: 'room_' + 'd'.repeat(32), name: 'Thread navigation project', goal: 'Navigate safely', instructions: '', archived: false, repository: '', notes: [], sessionIds: [current.id, target.id], lastSessionId: current.id,
+    threads: [{ sessionId: target.id, title: target.title, archived: false, createdAt: '2026-10-31T12:00:00Z' }] };
+  sessionStorage.setItem('jarvis-command:selected-session:v1', current.id); sessionStorage.setItem('jarvis-command:project-room:v1', project.id);
+  const pending = deferred<Response>();
+  let targetReads = 0;
+  const fetchMock = vi.fn(async (url: string) => {
+    if (url === '/api/rooms') return Response.json({ version: 1, rooms: [project] });
+    if (url === `/api/live/sessions/${current.id}`) return Response.json({ session: current });
+    if (url === `/api/live/sessions/${target.id}`) { targetReads++; return pending.promise; }
+    if (url.startsWith('/api/sessions/')) { const id = new URL(url, 'http://command.test').pathname.split('/')[3]!; return Response.json(history(id, 0, ['Question', `[Open target](thread:${target.id})`], false)); }
+    if (url === '/api/live/model-options') return Response.json({ default: { provider: 'openai-codex', model: 'gpt-6.1-sol' }, options: [] });
+    if (url === '/api/notifications') return Response.json(emptyInbox);
+    throw Error(`unexpected request ${url}`);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  render(<App loadBootstrap={async () => ({ ...liveBootstrap, sessions: [current, otherRecent] })} />);
+  await screen.findByText('Question');
+  await waitFor(() => expect(screen.getByLabelText('Selected project')).toHaveTextContent(project.name));
+  await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(current.title));
+  const readsBeforeLink = targetReads;
+  fireEvent.click(await screen.findByRole('button', { name: 'Open target' }));
+  await waitFor(() => expect(targetReads).toBeGreaterThan(readsBeforeLink));
+  expect(screen.getByText(/Checking the project and thread/)).toBeInTheDocument();
+  fireEvent.click(await screen.findByRole('button', { name: 'Other recent chat' }));
+  await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(otherRecent.title));
+  expect(screen.getByText(/selection changed while this link was checked/i)).toBeInTheDocument();
+  await act(async () => pending.resolve(Response.json({ session: target })));
+  expect(screen.getByLabelText('Selected session')).toHaveTextContent(otherRecent.title);
+  expect(await screen.findByText(/selection changed while this link was checked/i)).toBeInTheDocument();
+});
+
+it('keeps the newer link selection guard when an older overlapping read fails', async () => {
+  const current = { ...bootstrap.sessions[0]!, id: 'jc_' + 'a'.repeat(32), source: 'api_server', ownership: 'command' as const, title: 'Project lead' };
+  const otherRecent = { ...current, id: 'jc_' + 'c'.repeat(32), title: 'Other recent chat' };
+  const firstTarget = { ...current, id: 'jc_' + 'b'.repeat(32), title: 'First thread' };
+  const secondTarget = { ...current, id: 'jc_' + 'e'.repeat(32), title: 'Second thread' };
+  const project = { id: 'room_' + 'd'.repeat(32), name: 'Thread navigation project', goal: 'Navigate safely', instructions: '', archived: false, repository: '', notes: [], sessionIds: [current.id, firstTarget.id, secondTarget.id], lastSessionId: current.id,
+    threads: [firstTarget, secondTarget].map(session => ({ sessionId: session.id, title: session.title, archived: false, createdAt: '2026-10-31T12:00:00Z' })) };
+  sessionStorage.setItem('jarvis-command:selected-session:v1', current.id); sessionStorage.setItem('jarvis-command:project-room:v1', project.id);
+  const firstRead = deferred<Response>();
+  const secondRead = deferred<Response>();
+  let armedReads = false;
+  let firstTargetReads = 0;
+  let secondTargetReads = 0;
+  const fetchMock = vi.fn(async (url: string) => {
+    if (url === '/api/rooms') return Response.json({ version: 1, rooms: [project] });
+    if (url === `/api/live/sessions/${current.id}`) return Response.json({ session: current });
+    if (url === `/api/live/sessions/${firstTarget.id}`) {
+      if (armedReads) { firstTargetReads++; return firstRead.promise; }
+      return Response.json({ session: firstTarget });
+    }
+    if (url === `/api/live/sessions/${secondTarget.id}`) {
+      if (armedReads) { secondTargetReads++; return secondRead.promise; }
+      return Response.json({ session: secondTarget });
+    }
+    if (url.startsWith('/api/sessions/')) {
+      const id = new URL(url, 'http://command.test').pathname.split('/')[3]!;
+      const content = id === current.id ? `[Open first](thread:${firstTarget.id}) [Open second](thread:${secondTarget.id})` : 'Target thread conversation';
+      return Response.json(history(id, 0, ['Question', content], false));
+    }
+    if (url === '/api/live/model-options') return Response.json({ default: { provider: 'openai-codex', model: 'gpt-6.1-sol' }, options: [] });
+    if (url === '/api/notifications') return Response.json(emptyInbox);
+    throw Error(`unexpected request ${url}`);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  render(<App loadBootstrap={async () => ({ ...liveBootstrap, sessions: [current, otherRecent] })} />);
+  await screen.findByText('Question');
+  await waitFor(() => expect(screen.getByLabelText('Selected project')).toHaveTextContent(project.name));
+  await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(current.title));
+  armedReads = true;
+  fireEvent.click(await screen.findByRole('button', { name: 'Open first' }));
+  await waitFor(() => expect(firstTargetReads).toBe(1));
+  fireEvent.click(screen.getByRole('button', { name: 'Open second' }));
+  await waitFor(() => expect(secondTargetReads).toBe(1));
+
+  await act(async () => firstRead.reject(new Error('First link read failed')));
+  expect(screen.getByLabelText('Selected session')).toHaveTextContent(current.title);
+  fireEvent.click(await screen.findByRole('button', { name: 'Other recent chat' }));
+  await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(otherRecent.title));
+  fireEvent.click(await screen.findByRole('button', { name: project.name }));
+  fireEvent.click(within(screen.getByRole('navigation', { name: 'Recent chats' })).getByRole('button', { name: current.title }));
+  await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(current.title));
+
+  await act(async () => secondRead.resolve(Response.json({ session: secondTarget })));
+  await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(current.title));
+  expect(screen.getByText(/selection changed while this link was checked/i)).toBeInTheDocument();
 });
 
 describe('Command session creation', () => {
