@@ -8,6 +8,7 @@ import { boundedJson, type DraftRecovery, type Turn } from './useLiveTurn';
 import { MessageContent } from './MessageContent';
 import { useTextDraft } from './textDraft';
 import { routeDecision, selectionProblem, useInferencePreference } from './inferencePreference';
+import { ModelCatalogView, providerLabel } from './ModelCatalog';
 
 export function TurnView({ turn, allowed, approve, stop, onSaveResponse }: Readonly<{ turn: Turn; allowed: boolean; approve: (run: Turn, choice: 'once' | 'deny') => void; stop: (run: Turn) => void; onSaveResponse?: ((text: string, runId: string | null) => void) | undefined }>) {
   const [confirmation, setConfirmation] = useState<Turn | null>(null);
@@ -183,12 +184,6 @@ export function ExecutionReceipt({ usage }: Readonly<{ usage: NonNullable<Turn['
   </section>;
 }
 
-function providerLabel(provider: string | null): string {
-  if (provider === 'openai-codex') return 'OpenAI';
-  if (provider === 'xai-oauth') return 'xAI';
-  return provider ?? 'provider unknown';
-}
-
 function modelLabel(model: string | null): string {
   return ({
     'gpt-6-astra': 'Astra',
@@ -340,7 +335,7 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
     let active = true;
     setInventoryBusy(true);
     void boundedJson('/api/live/model-options', {
-      credentials: 'same-origin', headers: { accept: 'application/json' },
+      credentials: 'same-origin', headers: { accept: 'application/json' }, cache: 'no-store',
     }, controller).then((body) => {
       const options = InferenceOptionsResponseSchema.parse(body);
       if (active) { setInferenceOptions(options); setInferenceError(false); }
@@ -475,6 +470,7 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
             {(selectedOption?.reasoningEfforts ?? []).map(effort => <option key={effort} value={effort}>{effort}</option>)}
           </select></label>
           <p>Preflight request for this chat, saved only in this browser. Offered efforts are requests; execution is confirmed only by the current run receipt. Inherit uses session routing without a guaranteed effort.</p>
+          {inferenceOptions?.catalog ? <ModelCatalogView catalog={inferenceOptions.catalog} options={inferenceOptions.options} disabled={busy || preflighting || inventoryBusy} onSelect={chooseModel} /> : null}
           <button className="secondary-button" type="button" disabled={inventoryBusy || preflighting || busy} onClick={() => { setPreflightError(''); setInventoryRetry(value => value + 1); }}>Retry model choices</button>
         </div>
       </details>);
