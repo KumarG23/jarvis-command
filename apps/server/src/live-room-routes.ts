@@ -155,7 +155,8 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
         await rooms.update(previous => previous.map(room => {
           if (!room.sessionIds.includes(sessionId)) return room;
           const sessionIds = room.sessionIds.filter(id => id !== sessionId);
-          return { ...room, sessionIds, lastSessionId: room.lastSessionId === sessionId ? sessionIds.at(-1) ?? null : room.lastSessionId };
+          return { ...room, sessionIds, ...(room.threads ? { threads: room.threads.filter(thread => thread.sessionId !== sessionId) } : {}),
+            ...(room.leadSessionId === sessionId ? { leadSessionId: null } : {}), lastSessionId: room.lastSessionId === sessionId ? sessionIds.at(-1) ?? null : room.lastSessionId };
         }));
         return result;
       });
