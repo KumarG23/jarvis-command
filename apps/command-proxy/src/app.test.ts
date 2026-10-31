@@ -65,15 +65,45 @@ function upstreamSession(id: string, source: string) {
   };
 }
 
-function upstreamModelOptions(authenticated = true) {
+type UpstreamModelOptionsFixture = {
+  provider: string;
+  model: string;
+  providers: Array<{ slug: string; authenticated: boolean; models: string[] } & Record<string, unknown>>;
+  [key: string]: unknown;
+};
+
+function upstreamModelOptions(authenticated = true): UpstreamModelOptionsFixture {
   return {
     provider: 'openai-codex',
     model: 'gpt-5.6-sol',
     providers: [
-      { slug: 'openai-codex', authenticated, api_url: 'private', models: ['gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'unapproved-model'] },
-      { slug: 'xai-oauth', authenticated: true, warning: 'private', models: ['grok-4.6', 'grok-4.7'] },
+      { slug: 'openai-codex', authenticated, api_url: 'private', api_key: 'provider-credential-sentinel', models: ['gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'unapproved-model'] },
+      { slug: 'xai-oauth', authenticated, warning: 'private', extra: { credential: 'nested-credential-sentinel' }, models: ['grok-4.6', 'grok-4.7'] },
     ],
     api_key: 'must-not-cross-the-wire',
+  };
+}
+
+function catalogEntry(
+  provider: string,
+  model: string,
+  overrides: Partial<{
+    advertised: boolean;
+    authenticated: boolean;
+    eligible: boolean;
+    selectable: boolean;
+    unavailableReason: 'provider_unauthenticated' | 'not_approved_allowlist' | 'not_advertised' | null;
+  }> = {},
+) {
+  return {
+    provider,
+    model,
+    advertised: true,
+    authenticated: true,
+    eligible: true,
+    selectable: true,
+    unavailableReason: null,
+    ...overrides,
   };
 }
 
@@ -455,27 +485,204 @@ describe('session projection and ownership', () => {
 });
 
 describe('run creation and control', () => {
-  it('publishes only authenticated curated model choices without provider metadata', async () => {
+  it('publishes only authenticated curated model choices and a sanitized advertised catalog', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(upstreamModelOptions()));
     const app = createApp(fetcher);
     const response = await app.inject({ url: '/api/model/options', headers: authHeaders() });
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({
-      default: { provider: 'openai-codex', model: 'gpt-5.6-sol' },
-      options: [
-        ['openai-codex', 'gpt-6-astra', 'Astra'],
-        ['openai-codex', 'gpt-6-sol', 'Sol'],
-        ['openai-codex', 'gpt-6-luna', 'Luna'],
-        ['openai-codex', 'gpt-5.6-sol', 'Sol 5.6'],
-        ['openai-codex', 'gpt-5.6-terra', 'Terra'],
-        ['openai-codex', 'gpt-5.6-luna', 'Luna 5.6'],
-        ['xai-oauth', 'grok-4.7', 'Grok 4.7'],
-        ['xai-oauth', 'grok-4.6', 'Grok 4.6'],
-      ].map(([provider, model, label]) => ({ provider, model, label, reasoningEfforts: ['minimal', 'low', 'medium', 'high', 'xhigh'] })),
+    const body = response.json();
+    expect(body.default).toEqual({ provider: 'openai-codex', model: 'gpt-5.6-sol' });
+    expect(body.options).toEqual([
+      ['openai-codex', 'gpt-6-astra', 'Astra'],
+      ['openai-codex', 'gpt-6-sol', 'Sol'],
+      ['openai-codex', 'gpt-6-luna', 'Luna'],
+      ['openai-codex', 'gpt-5.6-sol', 'Sol 5.6'],
+      ['openai-codex', 'gpt-5.6-terra', 'Terra'],
+      ['openai-codex', 'gpt-5.6-luna', 'Luna 5.6'],
+      ['xai-oauth', 'grok-4.7', 'Grok 4.7'],
+      ['xai-oauth', 'grok-4.6', 'Grok 4.6'],
+    ].map(([provider, model, label]) => ({ provider, model, label, reasoningEfforts: ['minimal', 'low', 'medium', 'high', 'xhigh'] })));
+    expect(body.catalog).toEqual({
+      entries: [
+        catalogEntry('openai-codex', 'gpt-5.6-luna'),
+        catalogEntry('openai-codex', 'gpt-5.6-sol'),
+        catalogEntry('openai-codex', 'gpt-5.6-terra'),
+        catalogEntry('openai-codex', 'gpt-6-astra'),
+        catalogEntry('openai-codex', 'gpt-6-luna'),
+        catalogEntry('openai-codex', 'gpt-6-sol'),
+        catalogEntry('openai-codex', 'unapproved-model', {
+          eligible: false, selectable: false, unavailableReason: 'not_approved_allowlist',
+        }),
+        catalogEntry('xai-oauth', 'grok-4.6'),
+        catalogEntry('xai-oauth', 'grok-4.7'),
+      ],
+      advertisedCount: 9,
+      returned: 9,
+      truncated: false,
     });
+    expect(response.headers['cache-control']).toBe('no-store');
     expect(response.payload).not.toContain('api_key');
     expect(response.payload).not.toContain('api_url');
-    expect(response.payload).not.toContain('unapproved-model');
+    expect(response.payload).not.toContain('must-not-cross-the-wire');
+    expect(response.payload).not.toContain('provider-credential-sentinel');
+    expect(response.payload).not.toContain('nested-credential-sentinel');
+    expect(response.payload).not.toContain('warning');
+  });
+
+  it('tolerates more than 500 advertised models, dedupes, and keeps existing choices stable', async () => {
+    const catalogModels = Array.from({ length: 620 }, (_, index) => `catalog-model-${String(index).padStart(4, '0')}`);
+    const curatedModels = ['gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'];
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({
+      provider: 'openai-codex',
+      model: 'gpt-5.6-sol',
+      providers: [
+        { slug: 'openai-codex', authenticated: true, models: [...catalogModels, ...curatedModels, catalogModels[0]!, 'gpt-6-astra'] },
+        { slug: 'xai-oauth', authenticated: true, models: ['grok-4.6', 'grok-4.7'] },
+      ],
+    }));
+    const app = createApp(fetcher);
+    const response = await app.inject({ url: '/api/model/options', headers: authHeaders() });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.options.map((option: { provider: string; model: string }) => `${option.provider}:${option.model}`)).toEqual([
+      'openai-codex:gpt-6-astra', 'openai-codex:gpt-6-sol', 'openai-codex:gpt-6-luna',
+      'openai-codex:gpt-5.6-sol', 'openai-codex:gpt-5.6-terra', 'openai-codex:gpt-5.6-luna',
+      'xai-oauth:grok-4.7', 'xai-oauth:grok-4.6',
+    ]);
+    expect(body.catalog.advertisedCount).toBe(628);
+    expect(body.catalog.returned).toBe(628);
+    expect(body.catalog.truncated).toBe(false);
+    const keys = body.catalog.entries.map((entry: { provider: string; model: string }) => `${entry.provider}\u0000${entry.model}`);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(body.catalog.entries).toContainEqual(catalogEntry('openai-codex', 'catalog-model-0619', {
+      eligible: false, selectable: false, unavailableReason: 'not_approved_allowlist',
+    }));
+  });
+
+  it('bounds large catalogs by bytes and count with honest truncation', async () => {
+    const slug = `provider-${'p'.repeat(100)}`;
+    const models = Array.from({ length: 1_200 }, (_, index) => `${String(index).padStart(5, '0')}${'m'.repeat(145)}`);
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({
+      provider: 'openai-codex',
+      model: 'gpt-5.6-sol',
+      providers: [{ slug, authenticated: true, models }],
+    }));
+    const app = createApp(fetcher);
+    const response = await app.inject({ url: '/api/model/options', headers: authHeaders() });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.catalog.advertisedCount).toBe(1_200);
+    expect(body.catalog.returned).toBe(body.catalog.entries.length);
+    expect(body.catalog.returned).toBeLessThan(1_200);
+    expect(body.catalog.truncated).toBe(true);
+    expect(body.catalog.entries.length).toBeLessThanOrEqual(1_000);
+    expect(Buffer.byteLength(response.payload)).toBeLessThan(400_000);
+  });
+
+  it('reports absent and unauthenticated inventory without enabling selection', async () => {
+    const absent = createApp(vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({
+      provider: 'openai-codex', model: 'gpt-5.6-sol', providers: [],
+    })));
+    const absentResponse = await absent.inject({ url: '/api/model/options', headers: authHeaders() });
+    expect(absentResponse.statusCode).toBe(200);
+    const absentBody = absentResponse.json();
+    expect(absentBody.options).toEqual([]);
+    expect(absentBody.catalog.advertisedCount).toBe(0);
+    expect(absentBody.catalog.entries).toHaveLength(8);
+    expect(absentBody.catalog.entries.every((entry: Record<string, unknown>) => (
+      entry.advertised === false
+      && entry.eligible === true
+      && entry.selectable === false
+      && entry.unavailableReason === 'not_advertised'
+    ))).toBe(true);
+
+    const unauthenticated = createApp(vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(upstreamModelOptions(false))));
+    const unauthenticatedResponse = await unauthenticated.inject({ url: '/api/model/options', headers: authHeaders() });
+    expect(unauthenticatedResponse.statusCode).toBe(200);
+    const unauthenticatedBody = unauthenticatedResponse.json();
+    expect(unauthenticatedBody.options).toEqual([]);
+    expect(unauthenticatedBody.catalog.entries
+      .filter((entry: { provider: string }) => entry.provider === 'openai-codex')
+      .every((entry: Record<string, unknown>) => (
+        entry.authenticated === false
+        && entry.selectable === false
+        && entry.unavailableReason === 'provider_unauthenticated'
+      ))).toBe(true);
+  });
+
+  it('shows advertised OpenRouter entries as ineligible and refuses to submit them', async () => {
+    const fixture = upstreamModelOptions();
+    fixture.providers.push({
+      slug: 'openrouter',
+      authenticated: true,
+      models: ['z-ai/glm-4.5-air:free', 'anthropic/claude-sonnet-4.5'],
+    });
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(fixture));
+    const app = createApp(fetcher);
+    const response = await app.inject({ url: '/api/model/options', headers: authHeaders() });
+    expect(response.statusCode).toBe(200);
+    const entries = response.json().catalog.entries.filter((entry: { provider: string }) => entry.provider === 'openrouter');
+    expect(entries).toEqual([
+      catalogEntry('openrouter', 'anthropic/claude-sonnet-4.5', { eligible: false, selectable: false, unavailableReason: 'not_approved_allowlist' }),
+      catalogEntry('openrouter', 'z-ai/glm-4.5-air:free', { eligible: false, selectable: false, unavailableReason: 'not_approved_allowlist' }),
+    ]);
+
+    for (const model of ['z-ai/glm-4.5-air:free', 'anthropic/claude-sonnet-4.5']) {
+      const submission = await app.inject({
+        method: 'POST', url: '/v1/runs',
+        headers: authHeaders({ 'content-type': 'application/json', 'idempotency-key': `jc-openrouter-${model.replaceAll('/', '-')}` }),
+        payload: { sessionId: commandSessionId, input: 'Use an unapproved route.', inference: { provider: 'openrouter', model, reasoningEffort: 'low' } },
+      });
+      expect(submission.statusCode).toBe(400);
+      expect(submission.json()).toEqual({ error: 'invalid_request' });
+    }
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-reads inventory on each request and fails closed on refresh or protocol errors', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse({ error: 'private' }, 500))
+      .mockResolvedValueOnce(jsonResponse(upstreamModelOptions()))
+      .mockResolvedValueOnce(jsonResponse(upstreamModelOptions(false)));
+    const app = createApp(fetcher);
+
+    const failed = await app.inject({ url: '/api/model/options', headers: authHeaders() });
+    expect(failed.statusCode).toBe(503);
+    expect(failed.json()).toEqual({ error: 'upstream_unavailable' });
+    expect(failed.payload).not.toContain('private');
+
+    const refreshed = await app.inject({ url: '/api/model/options', headers: authHeaders() });
+    expect(refreshed.statusCode).toBe(200);
+    expect(refreshed.json().options).toHaveLength(8);
+
+    const revalidated = await app.inject({ url: '/api/model/options', headers: authHeaders() });
+    expect(revalidated.statusCode).toBe(200);
+    expect(revalidated.json().options).toEqual([]);
+    expect(fetcher).toHaveBeenCalledTimes(3);
+
+    const malformed = createApp(vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({
+      provider: 'openai-codex',
+      model: 'gpt-5.6-sol',
+      providers: [{ authenticated: true, models: ['gpt-5.6-sol'] }],
+    })));
+    const malformedResponse = await malformed.inject({ url: '/api/model/options', headers: authHeaders() });
+    expect(malformedResponse.statusCode).toBe(503);
+    expect(malformedResponse.json()).toEqual({ error: 'upstream_unavailable' });
+  });
+
+  it('revalidates a stale selection against fresh inventory before admission', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'api_server')))
+      .mockResolvedValueOnce(jsonResponse(upstreamModelOptions(false)));
+    const app = createApp(fetcher);
+    const response = await app.inject({
+      method: 'POST', url: '/v1/runs',
+      headers: authHeaders({ 'content-type': 'application/json', 'idempotency-key': 'jc-stale-selection' }),
+      payload: { sessionId: commandSessionId, input: 'Stale choice.', inference: { provider: 'openai-codex', model: 'gpt-5.6-sol', reasoningEffort: 'high' } },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toEqual({ error: 'inference_unavailable' });
+    expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
   it('validates an available override and translates it to the exact Hermes run contract', async () => {
