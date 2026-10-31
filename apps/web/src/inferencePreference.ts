@@ -20,15 +20,16 @@ function read(sessionId: string): Preference {
 }
 
 export function useInferencePreference(sessionId: string | undefined) {
-  const [memory, setMemory] = useState<Record<string, Preference>>({});
+  const [memory, setMemory] = useState<Record<string, Preference & { snapshot: Preference }>>({});
   const stored = useMemo(() => sessionId ? read(sessionId) : { selection: 'inherit' as const, storageUnavailable: false }, [sessionId]);
-  const preference = sessionId ? memory[sessionId] ?? stored : stored;
+  const local = sessionId ? memory[sessionId] : undefined;
+  const preference = local && (local.snapshot === stored || local.storageUnavailable) ? local : stored;
   const select = (selection: Exclude<Selection, 'invalid'>) => {
     if (!sessionId) return;
     let storageUnavailable = false;
     try { localStorage.setItem(inferencePreferenceKey(sessionId), JSON.stringify(selection)); }
     catch { storageUnavailable = true; }
-    setMemory(previous => ({ ...previous, [sessionId]: { selection, storageUnavailable } }));
+    setMemory(previous => ({ ...previous, [sessionId]: { selection, storageUnavailable, snapshot: stored } }));
   };
   return { ...preference, select };
 }

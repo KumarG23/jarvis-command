@@ -1,6 +1,6 @@
 import { LiveRunRequestLookupSchema, LiveRunSteerResponseSchema, LiveRunStopResponseSchema, LiveRunApprovalResponseSchema, LiveRunSubmissionResponseSchema, LiveRunStatusSchema, RunEventSchema, type InferenceOverride, type LiveRunSubmissionRequest, type LiveRunStatus, type RunEvent, type SessionMessage } from '@jarvis-command/contracts';
 import { useEffect, useRef, useState } from 'react';
-import { clearRecovery, readRecovery, writeRecovery, type RecoveryIdentity } from './turnRecovery';
+import { clearRecovery, readRecovery, writeRecovery, readThreadRecovery, writeThreadRecovery, type RecoveryIdentity } from './turnRecovery';
 import { matchTurn, projectTurns } from './timeline';
 
 const eventNames = ['message.delta', 'tool.started', 'tool.completed', 'subagent.start', 'subagent.complete', 'approval.request', 'approval.responded', 'run.steered', 'context.compaction.started', 'context.compaction.progress', 'context.compaction.completed', 'context.compaction.aborted', 'run.completed', 'run.failed', 'run.cancelled', 'run.interrupted'] as const;
@@ -69,11 +69,16 @@ export type Turn = {
   compaction?: LiveRunStatus['compaction'];
   error?: string | null;
   activityUnavailable?: boolean;
+  statusObservedAt?: string;
   telemetry?: { admissionAttempts: number; streamConnections: number; statusChecks: number };
 };
 export type DraftRecovery = { intent: TurnIntent; input: string; kind: 'terminal' | 'uncertain' };
 
-export function useLiveTurn() {
+export function useLiveTurn(sessionScope?: string, foreground = true) {
+  const foregroundRef = useRef(foreground); foregroundRef.current = foreground;
+  const readStored = () => sessionScope ? readThreadRecovery(sessionScope) : readRecovery();
+  const writeStored = (value: RecoveryIdentity, expected: RecoveryIdentity | null) => sessionScope ? writeThreadRecovery(sessionScope, value, expected) : writeRecovery(value, expected);
+  const clearStored = (expected: RecoveryIdentity) => sessionScope ? writeThreadRecovery(sessionScope, null, expected) : clearRecovery(expected);
   const [recoveryError, setRecoveryError] = useState<string | null>(null);
   const recoveryBlocked = useRef(false);
   const stored = useRef<RecoveryIdentity | null>(null);
@@ -102,6 +107,7 @@ export function useLiveTurn() {
     age.elapsed = Math.max(age.elapsed, Date.now() - age.wall, performance.now() - age.monotonic);
     return age.elapsed >= 23 * 60 * 60 * 1000;
   };
+  const pollingRuns = useRef(new WeakSet<TurnIntent>());
   const histories = useRef(new Map<string, { ids: Set<string>; complete: boolean }>());
 
   const update = (change: Partial<Turn>) => {
@@ -112,7 +118,7 @@ export function useLiveTurn() {
   useEffect(() => {
     alive.current = true;
     try {
-      const identity = readRecovery();
+      const identity = readStored();
       stored.current = identity;
       if (identity) {
         current.current = { ...(identity.projectId ? { projectId: identity.projectId } : {}), intent: { sessionId: identity.sessionId, clientRequestId: identity.clientRequestId, input: null }, publicRunId: identity.publicRunId,
@@ -125,6 +131,16 @@ export function useLiveTurn() {
     } catch { recoveryBlocked.current = true; setRecoveryError('Local reload recovery unreadable or invalid — writer locked. No stored content displayed.'); }
     return () => { alive.current = false; cleanup.current(); mutation.current?.abort(); };
   }, []);
+
+  const previousForeground = useRef(foreground);
+  useEffect(() => {
+    if (previousForeground.current === foreground) return;
+    previousForeground.current = foreground;
+    const run = current.current;
+    if (!sessionScope || !run?.publicRunId || run.done) return;
+    cleanup.current();
+    supervise(run, !foreground, false, true);
+  }, [foreground]);
 
   function recoverAdmission(run: Turn) {
     const controller = new AbortController();
@@ -142,7 +158,7 @@ export function useLiveTurn() {
         if (!identity.publicRunId) throw new Error('unconfirmed admission');
         // Persist only opaque identifiers, with the same compare-and-set guard as ACK.
         const recovered = { ...identity, ...(run.projectId ? { projectId: run.projectId } : {}) };
-        writeRecovery(recovered, stored.current);
+        writeStored(recovered, stored.current);
         stored.current = recovered;
         update({ publicRunId: identity.publicRunId, phase: 'Recovering status' });
         supervise(current.current!, true);
@@ -166,6 +182,13 @@ export function useLiveTurn() {
     let eventCount = run.events.length;
     let eventBytes = run.events.reduce((bytes, event) => bytes + new TextEncoder().encode(JSON.stringify(event)).length, 0);
     let previewBytes = new TextEncoder().encode(run.output).length;
+    statusOnly = (!!sessionScope && (!foregroundRef.current || pollingRuns.current.has(run.intent))) || statusOnly;
+    if (sessionScope && statusOnly) {
+      // A status snapshot has no event cursor. Once polling has supplied output,
+      // never append a replacement consuming-queue stream to that snapshot.
+      pollingRuns.current.add(run.intent);
+      update({ activityUnavailable: true });
+    }
     let limited = statusOnly || run.outputLimited;
     const valid = () => !closed && alive.current && current.current?.intent === run.intent;
     cleanup.current = () => { closed = true; controller?.abort(); source?.close(); clearTimeout(timer); };
@@ -201,9 +224,9 @@ export function useLiveTurn() {
         const newerApproval = approvalRevision !== revisionAtStart || current.current!.approval !== approvalAtStart;
         // A status snapshot has no stream cursor: applying it during a healthy
         // stream can rewind output or double-count later deltas. Terminal wins.
-        update({ identityVerified: true, historyBinding: done ? status.historyBinding : undefined,
+        update({ identityVerified: true, statusObservedAt: new Date().toISOString(), historyBinding: done ? status.historyBinding : undefined,
           phase: !done && newerApproval ? current.current!.phase : `Run ${status.status}`,
-          ...(status.output === null || (!done && (keepStream || !!current.current!.output)) ? {} : outputPreview(status.output)),
+          ...(status.output === null || (!done && (keepStream || (!statusOnly && !!current.current!.output))) ? {} : outputPreview(status.output)),
           approval: done ? null : preserveApproval || newerApproval ? current.current!.approval : status.approval,
           usage: status.usage,
           error: status.error,
@@ -215,7 +238,7 @@ export function useLiveTurn() {
           update({ terminalPendingSteer: status.pendingSteer !== null });
           try {
             if (stored.current) {
-              clearRecovery(stored.current);
+              clearStored(stored.current);
               stored.current = null; recoveryBlocked.current = false; setRecoveryError(null);
             }
           } catch { recoveryBlocked.current = true; setRecoveryError('Local reload recovery could not be cleared safely — writer locked. Trusted operator reconciliation required.'); }
@@ -232,7 +255,7 @@ export function useLiveTurn() {
         if (valid() && !streamOpen) {
           if (polls >= 12) update({ phase: 'Disconnected — supervision paused; run outcome unknown' });
           else if (reconnects < 2 && !limited && !terminalObserved) timer = setTimeout(() => { reconnects++; connect(); }, 2_000);
-          else timer = setTimeout(() => { void reconcile(); }, 2_000);
+          else timer = setTimeout(() => { void reconcile(); }, sessionScope && !foregroundRef.current ? (document.visibilityState === 'hidden' ? 30_000 : Math.min(30_000, 2_000 * 2 ** Math.min(polls, 4))) : 2_000);
         }
       }
     }
@@ -323,9 +346,9 @@ export function useLiveTurn() {
       }, controller));
       if (accepted.sessionId !== intent.sessionId || accepted.clientRequestId !== intent.clientRequestId) throw new Error('binding');
       if (cancelled || !alive.current || current.current?.intent !== intent) return;
-      update({ identityVerified: true, publicRunId: accepted.publicRunId, phase: `Run ${accepted.status}` });
+      update({ identityVerified: true, statusObservedAt: new Date().toISOString(), publicRunId: accepted.publicRunId, phase: `Run ${accepted.status}` });
       const bound = { ...(current.current.projectId ? { projectId: current.current.projectId } : {}), sessionId: intent.sessionId, clientRequestId: intent.clientRequestId, publicRunId: accepted.publicRunId };
-      try { writeRecovery(bound, stored.current); stored.current = bound; }
+      try { writeStored(bound, stored.current); stored.current = bound; }
       catch { setRecoveryError('Reload recovery degraded — keep this tab open. In-memory supervision continues.'); }
       supervise(current.current!);
     } catch { if (!cancelled && alive.current && current.current?.intent === intent) update({ phase: 'Admission uncertain — retry the same intent' }); }
@@ -340,7 +363,7 @@ export function useLiveTurn() {
     projectId?: string | null,
   ) {
     const baseline = histories.current.get(sessionId);
-    if (!baseline?.complete || (current.current?.done && !current.current.historyMatched && completed.current.length >= MAX_UNCONFIRMED_TURNS)) return false;
+    if ((sessionScope && sessionId !== sessionScope) || !baseline?.complete || (current.current?.done && !current.current.historyMatched && completed.current.length >= MAX_UNCONFIRMED_TURNS)) return false;
     if (recoveryBlocked.current || (current.current && !current.current.done) || !input.trim() || input.length > max) return false;
     cleanup.current();
     mutation.current?.abort(); mutation.current = null;
@@ -352,7 +375,7 @@ export function useLiveTurn() {
       ...(images?.length ? { images } : {}),
     };
     const pending = { ...(projectId ? { projectId } : {}), sessionId, clientRequestId: intent.clientRequestId, publicRunId: null };
-    try { writeRecovery(pending, null); stored.current = pending; }
+    try { writeStored(pending, null); stored.current = pending; }
     catch { recoveryBlocked.current = true; setRecoveryError('Local reload recovery unavailable — message not sent; writer locked.'); return false; }
     admissionAge.current = { wall: Date.now(), monotonic: performance.now(), elapsed: 0 };
     if (current.current && !current.current.historyMatched) {
@@ -367,9 +390,9 @@ export function useLiveTurn() {
   // Attach to an already-admitted run (e.g. from a notification) using only its server-verified
   // identity. Read-only: it never admits, retries or resubmits, and it never displaces active work.
   function adopt(identity: { sessionId: string; clientRequestId: string; publicRunId: string }, projectId?: string | null) {
-    if (recoveryBlocked.current || (current.current && !current.current.done)) return false;
+    if ((sessionScope && identity.sessionId !== sessionScope) || recoveryBlocked.current || (current.current && !current.current.done)) return false;
     const bound = { ...(projectId ? { projectId } : {}), ...identity };
-    try { writeRecovery(bound, stored.current); stored.current = bound; }
+    try { writeStored(bound, stored.current); stored.current = bound; }
     catch { return false; }
     cleanup.current();
     if (current.current && !current.current.historyMatched) retain([...completed.current, current.current]);

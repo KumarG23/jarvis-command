@@ -28,7 +28,7 @@ function write(room: string, text: string) {
 // Read only after the selected session's canonical history has authorized access.
 // Text only, same tab and preview namespace. Never evict another unsent draft.
 export function useTextDraft(sessionId: string | undefined, authorized: boolean) {
-  const [memory, setMemory] = useState<Drafts>({});
+  const [memory, setMemory] = useState<Record<string, { text: string; snapshot: { text: string; failed: boolean }; failed: boolean }>>({});
   const [failed, setFailed] = useState<boolean | null>(null);
   const draftsRef = useRef<Drafts>({});
   const stored = useMemo(() => {
@@ -36,13 +36,17 @@ export function useTextDraft(sessionId: string | undefined, authorized: boolean)
     try { return { text: read()[sessionId] ?? '', failed: false }; }
     catch { return { text: '', failed: true }; }
   }, [sessionId, authorized]);
-  const draft = sessionId && authorized ? memory[sessionId] ?? stored.text : '';
+  const local = sessionId ? memory[sessionId] : undefined;
+  // Re-entering a room reads the latest persisted draft, including edits made
+  // in the other pane. Keep unsaved memory when storage itself failed.
+  const draft = sessionId && authorized ? local && (local.snapshot === stored || local.failed) ? local.text : stored.text : '';
   if (sessionId && authorized) draftsRef.current[sessionId] = draft;
   const setRoomDraft = (room: string, text: string) => {
     draftsRef.current[room] = text;
-    setMemory(previous => ({ ...previous, [room]: text }));
+    let writeFailed = false;
     try { write(room, text); setFailed(false); }
-    catch { setFailed(true); }
+    catch { writeFailed = true; setFailed(true); }
+    setMemory(previous => ({ ...previous, [room]: { text, snapshot: stored, failed: writeFailed } }));
   };
   // Must finish before admission. If stale persisted text cannot be removed,
   // retain the visible draft and refuse this send rather than resurrect it later.
