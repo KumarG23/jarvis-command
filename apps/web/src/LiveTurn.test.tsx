@@ -384,8 +384,14 @@ it('hands the submitted user and answer to saved history once, in conversation o
 });
 
 it('retains unsaved completed turns when another identical message is submitted and sessions switch', async () => {
-  setup(); await open(); await send();
+  const fetchMock = setup(); await open(); await send();
   await act(async () => Source.instances[0]!.onerror?.());
+  // The second run is still working when navigation starts background polling.
+  // This legacy fixture reuses a public id; do not report the first completion
+  // as the status of the active second run.
+  const originalFetch = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation((url, init) => url === `/api/live/runs/${id}`
+    ? Promise.resolve(Response.json(status('running', { output: null }))) : originalFetch(url, init));
   fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: 'Hello Jarvis' } });
   fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
   await waitFor(() => expect(Source.instances).toHaveLength(2));

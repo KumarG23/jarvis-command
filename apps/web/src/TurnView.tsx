@@ -6,6 +6,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ArtifactMutationResponseSchema, InferenceOptionsResponseSchema, type InferenceOptionsResponse, type InferenceOverride, type LiveRunSubmissionRequest, type ReasoningEffort, type RunEvent } from '@jarvis-command/contracts';
 import { boundedJson, type DraftRecovery, type Turn } from './useLiveTurn';
 import { MessageContent } from './MessageContent';
+import { useComposerDrafts, type ComposerDrafts, type PendingChatImage } from './composerDrafts';
 import { useTextDraft } from './textDraft';
 import { routeDecision, selectionProblem, useInferencePreference } from './inferencePreference';
 import { ModelCatalogView, providerLabel } from './ModelCatalog';
@@ -142,6 +143,7 @@ function runStatus(turn: Turn): string {
     : last?.type === 'tool.completed' ? `Tool ${last.error ? 'failed' : 'completed'}: ${last.tool}`
     : turn.output ? 'Reply output received' : 'Working…';
   if (/^Reconnecting/.test(turn.phase)) return `Reconnecting · Last reported: ${observed}`;
+  if (turn.approval && /^(Disconnected|Recovering|Admission unknown)/.test(turn.phase)) return `${turn.phase} · Last reported: ${observed}`;
   if (turn.approval) return observed;
   if (!['Run running', 'Run queued'].includes(turn.phase)) return turn.phase;
   return turn.phase === 'Run queued' && !last && !turn.output ? 'Run queued' : observed;
@@ -251,9 +253,9 @@ function activity(event: RunEvent, done: boolean): string {
     case 'run.cancelled': return 'Run cancelled';
   }
 }
-type PendingChatImage = NonNullable<LiveRunSubmissionRequest['images']>[number] & Readonly<{ name: string; size: number }>;
 
-export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, projectId, project, onProjectReadback, max, maxSteer, turn, send, retry, resume, steer, recoveries, consumeRecovery, blocked = false, draftsAuthorized = allowed, inferenceTarget }: Readonly<{
+export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled, sessionId, projectId, project, onProjectReadback, max, maxSteer, turn, send, retry, resume, steer, recoveries, consumeRecovery, blocked = false, draftsAuthorized = allowed, inferenceTarget }: Readonly<{
+  retainedDrafts?: ComposerDrafts;
   project?: ProjectRoom | null;
   onProjectReadback?: (room: ProjectRoom) => void;
   inferenceTarget?: HTMLElement | null;
@@ -282,7 +284,10 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
     }).catch(error => { if (!controller.signal.aborted) setRosterError(String(error.message)); });
     return () => controller.abort();
   }, [projectSnapshot, projectId, sessionId, isLead, allowed, draftsAuthorized, rosterRetry]);
-  const { draft, draftsRef, setRoomDraft, clearForSend, storageUnavailable } = useTextDraft(sessionId, allowed && draftsAuthorized);
+  const ownDrafts = useComposerDrafts();
+  const memory = retainedDrafts ?? ownDrafts;
+  const { steers, setSteers, steerVersions, imagesBySession, setImagesBySession, imageBusy, setImageBusy, imageError, setImageError } = memory;
+  const { draft, draftsRef, setRoomDraft, clearForSend, storageUnavailable } = useTextDraft(sessionId, allowed && draftsAuthorized, memory.text);
   const picker = useRef<HTMLDetailsElement>(null);
   useEffect(() => { if (picker.current) picker.current.open = false; }, [sessionId]);
   useEffect(() => {
@@ -293,12 +298,10 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
     return () => document.removeEventListener('pointerdown', dismiss);
   }, []);
   const offered = useRef(new WeakSet<DraftRecovery>());
-  const [steers, setSteers] = useState<Record<string, string>>({});
-  const steerVersions = useRef<Record<string, number>>({});
   const latestTurn = useRef(turn); latestTurn.current = turn;
   const [inferenceOptions, setInferenceOptions] = useState<InferenceOptionsResponse | null>(null);
   const [inferenceError, setInferenceError] = useState(false);
-  const preference = useInferencePreference(sessionId);
+  const preference = useInferencePreference(sessionId, memory.preferences);
   const selection = preference.selection;
   const selectedModel = typeof selection === 'string' ? selection : `${selection.provider}:${selection.model}`;
   const reasoningEffort = typeof selection === 'string' ? undefined : selection.reasoningEffort;
@@ -315,9 +318,6 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
     setPreflightError('');
     return () => { preflight.current?.abort(); };
   }, [sessionId]);
-  const [imagesBySession, setImagesBySession] = useState<Record<string, PendingChatImage[]>>({});
-  const [imageBusy, setImageBusy] = useState(false);
-  const [imageError, setImageError] = useState('');
   const imageInput = useRef<HTMLInputElement>(null);
   const images = sessionId ? imagesBySession[sessionId] ?? [] : [];
   const setDraft = (value: string) => { if (sessionId) setRoomDraft(sessionId, value); };
@@ -546,6 +546,6 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
       }} />
       <button className="primary-button" type="submit" disabled={busy || preflighting || imageBusy || (!draft.trim() && !images.length) || draft.length > max} aria-label="Send message" title="Send message"><ArrowUp size={20} /></button>
     </form> : <p className="composer-feedback">{sessionId ? 'Messaging is unavailable for this chat.' : 'Choose New chat to begin.'}</p>}
-    <details className="turn-limit"><summary>Connection & recovery details</summary><p>One writer in this tab; the server enforces cross-tab/session concurrency. Only opaque session, project, request and run identifiers are stored for reload recovery. Requested model/effort preferences are stored locally per chat and application environment. Known runs resume by status reads, never message retransmission. Pending admission without a run ID uses a read-only request lookup and stays locked while the outcome is unknown. Unsent text drafts are saved in this tab (up to 32 chats, 16,000 characters per draft and 128 KiB total). Image bytes are never saved in draft storage. Drafts appear only after selected-chat access is confirmed; sending clears the saved text before admission.</p></details>
+    <details className="turn-limit"><summary>Connection & recovery details</summary><p>One writer per chat in this tab; the server enforces cross-tab/session concurrency. Only opaque session, project, request and run identifiers are stored for reload recovery. Requested model/effort preferences are stored locally per chat and application environment. Known runs resume by status reads, never message retransmission. Pending admission without a run ID uses a read-only request lookup and stays locked while the outcome is unknown. Unsent text drafts are saved in this tab (up to 32 chats, 16,000 characters per draft and 128 KiB total). Image bytes are never saved in draft storage. Drafts appear only after selected-chat access is confirmed; sending clears the saved text before admission.</p></details>
   </>;
 }
