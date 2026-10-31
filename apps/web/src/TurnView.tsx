@@ -6,6 +6,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ArtifactMutationResponseSchema, InferenceOptionsResponseSchema, type InferenceOptionsResponse, type InferenceOverride, type LiveRunSubmissionRequest, type ReasoningEffort, type RunEvent } from '@jarvis-command/contracts';
 import { boundedJson, type DraftRecovery, type Turn } from './useLiveTurn';
 import { MessageContent } from './MessageContent';
+import { useComposerDrafts, type ComposerDrafts, type PendingChatImage } from './composerDrafts';
 import { useTextDraft } from './textDraft';
 import { routeDecision, selectionProblem, useInferencePreference } from './inferencePreference';
 import { ModelCatalogView, providerLabel } from './ModelCatalog';
@@ -252,9 +253,9 @@ function activity(event: RunEvent, done: boolean): string {
     case 'run.cancelled': return 'Run cancelled';
   }
 }
-type PendingChatImage = NonNullable<LiveRunSubmissionRequest['images']>[number] & Readonly<{ name: string; size: number }>;
 
-export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, projectId, project, onProjectReadback, max, maxSteer, turn, send, retry, resume, steer, recoveries, consumeRecovery, blocked = false, draftsAuthorized = allowed, inferenceTarget }: Readonly<{
+export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled, sessionId, projectId, project, onProjectReadback, max, maxSteer, turn, send, retry, resume, steer, recoveries, consumeRecovery, blocked = false, draftsAuthorized = allowed, inferenceTarget }: Readonly<{
+  retainedDrafts?: ComposerDrafts;
   project?: ProjectRoom | null;
   onProjectReadback?: (room: ProjectRoom) => void;
   inferenceTarget?: HTMLElement | null;
@@ -283,7 +284,10 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
     }).catch(error => { if (!controller.signal.aborted) setRosterError(String(error.message)); });
     return () => controller.abort();
   }, [projectSnapshot, projectId, sessionId, isLead, allowed, draftsAuthorized, rosterRetry]);
-  const { draft, draftsRef, setRoomDraft, clearForSend, storageUnavailable } = useTextDraft(sessionId, allowed && draftsAuthorized);
+  const ownDrafts = useComposerDrafts();
+  const memory = retainedDrafts ?? ownDrafts;
+  const { steers, setSteers, steerVersions, imagesBySession, setImagesBySession, imageBusy, setImageBusy, imageError, setImageError } = memory;
+  const { draft, draftsRef, setRoomDraft, clearForSend, storageUnavailable } = useTextDraft(sessionId, allowed && draftsAuthorized, memory.text);
   const picker = useRef<HTMLDetailsElement>(null);
   useEffect(() => { if (picker.current) picker.current.open = false; }, [sessionId]);
   useEffect(() => {
@@ -294,12 +298,10 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
     return () => document.removeEventListener('pointerdown', dismiss);
   }, []);
   const offered = useRef(new WeakSet<DraftRecovery>());
-  const [steers, setSteers] = useState<Record<string, string>>({});
-  const steerVersions = useRef<Record<string, number>>({});
   const latestTurn = useRef(turn); latestTurn.current = turn;
   const [inferenceOptions, setInferenceOptions] = useState<InferenceOptionsResponse | null>(null);
   const [inferenceError, setInferenceError] = useState(false);
-  const preference = useInferencePreference(sessionId);
+  const preference = useInferencePreference(sessionId, memory.preferences);
   const selection = preference.selection;
   const selectedModel = typeof selection === 'string' ? selection : `${selection.provider}:${selection.model}`;
   const reasoningEffort = typeof selection === 'string' ? undefined : selection.reasoningEffort;
@@ -316,9 +318,6 @@ export function TurnComposer({ allowed, imageAttachmentsEnabled, sessionId, proj
     setPreflightError('');
     return () => { preflight.current?.abort(); };
   }, [sessionId]);
-  const [imagesBySession, setImagesBySession] = useState<Record<string, PendingChatImage[]>>({});
-  const [imageBusy, setImageBusy] = useState(false);
-  const [imageError, setImageError] = useState('');
   const imageInput = useRef<HTMLInputElement>(null);
   const images = sessionId ? imagesBySession[sessionId] ?? [] : [];
   const setDraft = (value: string) => { if (sessionId) setRoomDraft(sessionId, value); };

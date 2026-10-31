@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { appStorageKey } from './appEnvironment';
 
 export const textDraftKey = () => appStorageKey('jarvis-command:text-drafts:v1');
@@ -6,6 +6,8 @@ const MAX_SESSIONS = 32;
 const MAX_TEXT = 16000;
 const MAX_STORAGE = 131072;
 type Drafts = Record<string, string>;
+export type TextDraftMemory = Record<string, { text: string; snapshot: { text: string; failed: boolean }; failed: boolean }>;
+export type RetainedTextDrafts = readonly [TextDraftMemory, Dispatch<SetStateAction<TextDraftMemory>>];
 function read(): Drafts {
   const raw = sessionStorage.getItem(textDraftKey());
   if (raw === null) return Object.create(null) as Drafts;
@@ -27,8 +29,9 @@ function write(room: string, text: string) {
 
 // Read only after the selected session's canonical history has authorized access.
 // Text only, same tab and preview namespace. Never evict another unsent draft.
-export function useTextDraft(sessionId: string | undefined, authorized: boolean) {
-  const [memory, setMemory] = useState<Record<string, { text: string; snapshot: { text: string; failed: boolean }; failed: boolean }>>({});
+export function useTextDraft(sessionId: string | undefined, authorized: boolean, retainedMemory?: RetainedTextDrafts) {
+  const ownMemory = useState<TextDraftMemory>({});
+  const [memory, setMemory] = retainedMemory ?? ownMemory;
   const [failed, setFailed] = useState<boolean | null>(null);
   const draftsRef = useRef<Drafts>({});
   const stored = useMemo(() => {
@@ -54,5 +57,5 @@ export function useTextDraft(sessionId: string | undefined, authorized: boolean)
     try { write(room, ''); setFailed(false); return true; }
     catch { setFailed(true); return false; }
   };
-  return { draft, draftsRef, setRoomDraft, clearForSend, storageUnavailable: failed ?? stored.failed };
+  return { draft, draftsRef, setRoomDraft, clearForSend, storageUnavailable: failed ?? (local?.failed || stored.failed) };
 }

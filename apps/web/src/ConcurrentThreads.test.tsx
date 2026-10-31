@@ -1,6 +1,7 @@
-import { act, render, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { createReadbackFixture } from './readbackFixture';
+import { TurnComposer } from './TurnView';
 import { useThreadTurns } from './useThreadTurns';
 import { readThreadRecoveries, readThreadRecovery, recoveryKey, threadRecoveryKey, writeThreadRecovery } from './turnRecovery';
 
@@ -10,9 +11,10 @@ const requestA = '12345678-1234-4234-8234-123456789abc';
 const requestB = '12345678-1234-4234-8234-123456789abd';
 const timestamp = '2026-10-31T20:00:00.000Z';
 let threads: ReturnType<typeof useThreadTurns>;
-function Harness({ visible = [] as string[] }) {
+function Harness({ visible = [] as string[], composerFor }: { visible?: string[]; composerFor?: string }) {
   threads = useThreadTurns([a, b], visible);
-  return <>{threads.supervisors}</>;
+  const live = threads.get(composerFor);
+  return <>{threads.supervisors}{composerFor && threads.ready(composerFor) ? <TurnComposer retainedDrafts={live.composerDrafts} sessionId={composerFor} projectId={null} allowed draftsAuthorized imageAttachmentsEnabled max={4000} maxSteer={100} turn={live.turn} send={live.send} retry={live.retry} resume={live.resume} steer={live.steer} recoveries={live.recoveries} consumeRecovery={live.consumeRecovery} /> : null}</>;
 }
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -255,4 +257,39 @@ it.each(['malformed', 'duplicate-session', 'foreign-lookup', 'expired-access'] a
   expect(sessionStorage.getItem(threadRecoveryKey)).toBe(bytes);
   if (fault === 'malformed' || fault === 'duplicate-session') expect(threads.get(a).recoveryError).toContain('writer locked');
   else expect(threads.get(a).turn?.phase).toMatch(/unknown|unconfirmed/);
+});
+
+it('retains unsent guidance and image references when its composer closes and reopens in another pane', async () => {
+  const f = fixture(); const view = render(<Harness composerFor={a} />); await ready(); sendBoth();
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Steer Jarvis' })).toBeEnabled());
+  fireEvent.change(screen.getByRole('textbox', { name: 'Steer Jarvis' }), { target: { value: 'SYNTHETIC unsent A guidance' } });
+  act(() => threads.get(a).composerDrafts.setImagesBySession({ [a]: [{ artifactId: `art_${'c'.repeat(32)}`, version: 1, name: 'SYNTHETIC-A.png', size: 100 }] }));
+  expect(screen.getByText('SYNTHETIC-A.png')).toBeInTheDocument();
+  view.rerender(<Harness />);
+  view.rerender(<Harness composerFor={b} />);
+  expect(screen.getByRole('textbox', { name: 'Steer Jarvis' })).toHaveValue('');
+  expect(screen.queryByText('SYNTHETIC-A.png')).not.toBeInTheDocument();
+  view.rerender(<Harness />);
+  view.rerender(<Harness composerFor={a} />);
+  expect(screen.getByRole('textbox', { name: 'Steer Jarvis' })).toHaveValue('SYNTHETIC unsent A guidance');
+  expect(screen.getByText('SYNTHETIC-A.png')).toBeInTheDocument();
+  expect(f.posts).toHaveLength(2); // Opening/closing never sends guidance or images.
+});
+
+it('retains a failed-storage text draft across composer unmount without sending it', async () => {
+  const f = fixture(); const view = render(<Harness composerFor={a} />); await ready();
+  const original = Storage.prototype.setItem;
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+    if (key.includes('text-drafts')) throw new Error('SYNTHETIC storage full');
+    original.call(this, key, value);
+  });
+  fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: 'SYNTHETIC unsaved memory A' } });
+  view.rerender(<Harness />);
+  view.rerender(<Harness composerFor={b} />);
+  expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('');
+  view.rerender(<Harness />);
+  view.rerender(<Harness composerFor={a} />);
+  expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('SYNTHETIC unsaved memory A');
+  expect(screen.getByText(/Draft storage unavailable or full/)).toBeInTheDocument();
+  expect(f.posts).toHaveLength(0);
 });

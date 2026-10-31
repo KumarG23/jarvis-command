@@ -1,17 +1,21 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useComposerDrafts, type ComposerDrafts } from './composerDrafts';
 import { useLiveTurn } from './useLiveTurn';
 import { readThreadRecoveries } from './turnRecovery';
 
-type Supervisor = ReturnType<typeof useLiveTurn>;
+type Supervisor = ReturnType<typeof useLiveTurn> & { composerDrafts: ComposerDrafts };
 // Supervisors stay mounted when panes change. Navigation never owns transport,
 // admission or control lifetime. Each supervisor polls its exact admitted run.
 const ThreadSupervisor = memo(function ThreadSupervisor({ sessionId, foreground, publish }: { sessionId: string; foreground: boolean; publish: (id: string, live: Supervisor) => void }) {
   const live = useLiveTurn(sessionId, foreground);
-  useLayoutEffect(() => { publish(sessionId, live); });
+  const composerDrafts = useComposerDrafts();
+  useLayoutEffect(() => { publish(sessionId, { ...live, composerDrafts }); });
   return null;
 });
 export function useThreadTurns(sessionIds: readonly string[], visibleIds: readonly string[]) {
-  const fallback = useLiveTurn('__unselected__', false);
+  const fallbackLive = useLiveTurn('__unselected__', false);
+  const fallbackDrafts = useComposerDrafts();
+  const fallback = { ...fallbackLive, composerDrafts: fallbackDrafts };
   const [visible, setVisible] = useState(document.visibilityState !== 'hidden');
   useEffect(() => {
     const changed = () => setVisible(document.visibilityState !== 'hidden');

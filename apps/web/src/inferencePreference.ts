@@ -1,9 +1,11 @@
 import { InferenceOverrideSchema, type InferenceOptionsResponse, type InferenceOverride, type LiveRunUsage } from '@jarvis-command/contracts';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { appStorageKey } from './appEnvironment';
 
 type Selection = InferenceOverride | 'inherit' | 'invalid';
 type Preference = { selection: Selection; storageUnavailable: boolean };
+export type PreferenceMemory = Record<string, Preference & { snapshot: Preference }>;
+export type RetainedPreferences = readonly [PreferenceMemory, Dispatch<SetStateAction<PreferenceMemory>>];
 export const inferencePreferenceKey = (sessionId: string) => appStorageKey(`jarvis-command:requested-inference:${sessionId}`);
 
 function read(sessionId: string): Preference {
@@ -19,8 +21,9 @@ function read(sessionId: string): Preference {
   }
 }
 
-export function useInferencePreference(sessionId: string | undefined) {
-  const [memory, setMemory] = useState<Record<string, Preference & { snapshot: Preference }>>({});
+export function useInferencePreference(sessionId: string | undefined, retainedMemory?: RetainedPreferences) {
+  const ownMemory = useState<PreferenceMemory>({});
+  const [memory, setMemory] = retainedMemory ?? ownMemory;
   const stored = useMemo(() => sessionId ? read(sessionId) : { selection: 'inherit' as const, storageUnavailable: false }, [sessionId]);
   const local = sessionId ? memory[sessionId] : undefined;
   const preference = local && (local.snapshot === stored || local.storageUnavailable) ? local : stored;

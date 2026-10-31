@@ -2,10 +2,11 @@ import { type CommandBootstrap, type ProjectRoom, type SessionSummary } from '@j
 import { useState } from 'react';
 import { LiveRoom } from './LiveRoom';
 import { TurnComposer, TurnView } from './TurnView';
+import type { ComposerDrafts } from './composerDrafts';
 import { type useLiveTurn } from './useLiveTurn';
 
 type Props = {
-  session: SessionSummary; live: ReturnType<typeof useLiveTurn>; project: ProjectRoom | null;
+  session: SessionSummary; live: ReturnType<typeof useLiveTurn> & { composerDrafts: ComposerDrafts }; project: ProjectRoom | null;
   bootstrap: CommandBootstrap; onClose: () => void; onFocus: () => void;
   onProjectReadback: (room: ProjectRoom) => void;
   onThreadLink: (projectId: string, sessionId: string) => void;
@@ -21,6 +22,6 @@ export function ThreadConversation({ session, live, project, bootstrap, onClose,
       <LiveRoom key={`${session.id}:${live.refresh?.revision ?? ''}`} session={session} threadProjectId={project?.id ?? null} threadProjectSessionIds={project?.sessionIds ?? []} onThreadLink={onThreadLink} onHistory={(id, messages, complete) => { live.history(id, messages, complete); setAuthorized(complete ? id : null); }} turns={[...live.completedTurns, ...(live.turn ? [live.turn] : [])]} onSaveResponse={artifacts ? message => onSave(message.content, null) : undefined} renderTurn={turn => <TurnView turn={turn} allowed={allowed && turn.intent === live.turn?.intent} approve={live.approve} stop={live.stop} threadProjectId={project?.id ?? null} threadProjectSessionIds={project?.sessionIds ?? []} onThreadLink={onThreadLink} onSaveResponse={artifacts ? onSave : undefined} />} />
       {live.recoveryError ? <p role="alert">{live.recoveryError}</p> : null}
     </div></section>
-    <footer className="composer-wrap"><TurnComposer allowed={allowed} draftsAuthorized={authorized === session.id} blocked={!!live.recoveryError || !live.historyReady(session.id) || live.historyBacklogFull} imageAttachmentsEnabled={artifacts} sessionId={session.id} projectId={project?.id ?? null} project={project} onProjectReadback={onProjectReadback} max={bootstrap.command.liveRoom.maxInputCharacters} maxSteer={bootstrap.command.liveRoom.maxSteerCharacters} turn={live.turn} send={(id, input, max, inference, images) => live.send(id, input, max, inference, images, undefined, project?.id)} retry={live.retry} resume={live.resume} steer={live.steer} recoveries={live.recoveries} consumeRecovery={live.consumeRecovery} /></footer>
+    <footer className="composer-wrap"><TurnComposer retainedDrafts={live.composerDrafts} allowed={allowed} draftsAuthorized={authorized === session.id} blocked={!!live.recoveryError || !live.historyReady(session.id) || live.historyBacklogFull} imageAttachmentsEnabled={artifacts} sessionId={session.id} projectId={project?.id ?? null} project={project} onProjectReadback={onProjectReadback} max={bootstrap.command.liveRoom.maxInputCharacters} maxSteer={bootstrap.command.liveRoom.maxSteerCharacters} turn={live.turn} send={(id, input, max, inference, images) => live.send(id, input, max, inference, images, undefined, project?.id)} retry={live.retry} resume={live.resume} steer={live.steer} recoveries={live.recoveries} consumeRecovery={live.consumeRecovery} /></footer>
   </section>;
 }
