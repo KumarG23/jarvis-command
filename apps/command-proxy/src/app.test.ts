@@ -559,6 +559,54 @@ describe('run creation and control', () => {
     }));
   });
 
+  it('keeps duplicate provider rows consistent with executable options in either order', async () => {
+    const providerRows = [
+      [
+        { slug: 'openai-codex', authenticated: false, models: [] },
+        { slug: 'openai-codex', authenticated: true, models: ['gpt-6-sol'] },
+      ],
+      [
+        { slug: 'openai-codex', authenticated: true, models: ['gpt-6-sol'] },
+        { slug: 'openai-codex', authenticated: false, models: [] },
+      ],
+    ];
+    for (const providers of providerRows) {
+      const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({
+        provider: 'openai-codex', model: 'gpt-5.6-sol', providers,
+      }));
+      const app = createApp(fetcher);
+      const response = await app.inject({ url: '/api/model/options', headers: authHeaders() });
+      expect(response.statusCode).toBe(200);
+      const body = response.json();
+      const executable = body.options
+        .map((option: { provider: string; model: string }) => `${option.provider}:${option.model}`)
+        .sort();
+      const selectable = body.catalog.entries
+        .filter((entry: { selectable: boolean }) => entry.selectable)
+        .map((entry: { provider: string; model: string }) => `${entry.provider}:${entry.model}`)
+        .sort();
+      expect(selectable).toEqual(executable);
+      expect(executable).toEqual([]);
+      expect(body.catalog.entries).toContainEqual(catalogEntry('openai-codex', 'gpt-6-sol', {
+        authenticated: false, selectable: false, unavailableReason: 'provider_unauthenticated',
+      }));
+    }
+
+    const admissionFetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'api_server')))
+      .mockResolvedValueOnce(jsonResponse({
+        provider: 'openai-codex', model: 'gpt-5.6-sol', providers: providerRows[0],
+      }));
+    const admissionApp = createApp(admissionFetcher);
+    const submission = await admissionApp.inject({
+      method: 'POST', url: '/v1/runs',
+      headers: authHeaders({ 'content-type': 'application/json', 'idempotency-key': 'jc-duplicate-provider' }),
+      payload: { sessionId: commandSessionId, input: 'Do not route.', inference: { provider: 'openai-codex', model: 'gpt-6-sol', reasoningEffort: 'high' } },
+    });
+    expect(submission.statusCode).toBe(409);
+    expect(submission.json()).toEqual({ error: 'inference_unavailable' });
+  });
+
   it('bounds large catalogs by bytes and count with honest truncation', async () => {
     const slug = `provider-${'p'.repeat(100)}`;
     const models = Array.from({ length: 1_200 }, (_, index) => `${String(index).padStart(5, '0')}${'m'.repeat(145)}`);

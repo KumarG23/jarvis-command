@@ -681,15 +681,43 @@ async function readInferenceOptions(
   const upstream = UpstreamModelOptionsSchema.parse(await requestJson({
     path: '/api/model/options', method: 'GET', config, fetcher,
   }));
+  const providers = canonicalProviderInventory(upstream);
   const options = CURATED_INFERENCE_OPTIONS.filter((candidate) => {
-    const provider = upstream.providers.find(item => item.slug === candidate.provider);
-    return provider?.authenticated === true && provider.models.includes(candidate.model);
+    const provider = providers.get(candidate.provider);
+    return provider?.authenticated === true && provider.models.has(candidate.model);
   }).map(option => ({ ...option, reasoningEfforts: [...REASONING_EFFORTS] }));
   return InferenceOptionsResponseSchema.parse({
     default: { provider: upstream.provider, model: upstream.model },
     options,
-    catalog: projectModelCatalog(upstream),
+    catalog: projectModelCatalog(providers),
   });
+}
+
+type ProviderInventory = {
+  authenticated: boolean;
+  models: Set<string>;
+};
+
+// Fold duplicate provider rows into one canonical inventory before either selection or
+// the catalog is derived, so the two views can never disagree. Duplicates are ambiguous:
+// a provider is authenticated only when every row says so, and its models are the union.
+function canonicalProviderInventory(
+  upstream: z.infer<typeof UpstreamModelOptionsSchema>,
+): Map<string, ProviderInventory> {
+  const inventory = new Map<string, ProviderInventory>();
+  for (const provider of upstream.providers) {
+    const existing = inventory.get(provider.slug);
+    if (!existing) {
+      inventory.set(provider.slug, {
+        authenticated: provider.authenticated === true,
+        models: new Set(provider.models),
+      });
+      continue;
+    }
+    existing.authenticated = existing.authenticated && provider.authenticated === true;
+    for (const model of provider.models) existing.models.add(model);
+  }
+  return inventory;
 }
 
 type CatalogCandidate = Readonly<{
@@ -704,16 +732,16 @@ type CatalogCandidate = Readonly<{
 // missing from the catalog first, then advertised entries, each group sorted by
 // provider/model) so repeat reads and truncation are stable across identical catalogs.
 function projectModelCatalog(
-  upstream: z.infer<typeof UpstreamModelOptionsSchema>,
+  providers: ReadonlyMap<string, ProviderInventory>,
 ): ModelCatalog {
   const curatedKeys = new Set(CURATED_INFERENCE_OPTIONS.map(option => catalogKey(option.provider, option.model)));
   const advertised = new Map<string, CatalogCandidate>();
-  for (const provider of upstream.providers) {
+  for (const [slug, provider] of providers) {
     for (const model of provider.models) {
-      const key = catalogKey(provider.slug, model);
+      const key = catalogKey(slug, model);
       if (advertised.has(key)) continue;
       advertised.set(key, {
-        provider: provider.slug,
+        provider: slug,
         model,
         advertised: true,
         authenticated: provider.authenticated === true,
@@ -726,7 +754,7 @@ function projectModelCatalog(
   for (const option of CURATED_INFERENCE_OPTIONS) {
     const key = catalogKey(option.provider, option.model);
     if (advertised.has(key)) continue;
-    const provider = upstream.providers.find(item => item.slug === option.provider);
+    const provider = providers.get(option.provider);
     missingCurated.push({
       provider: option.provider,
       model: option.model,
