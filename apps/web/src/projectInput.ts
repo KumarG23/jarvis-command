@@ -35,8 +35,10 @@ export function rosterContext(roster: ProjectRoster): string {
   ].join('\n');
 }
 export function rosterFacts(roster: ProjectRoster): string {
+  // runUpdatedAt may be normalized from read time when Hermes omits timestamps.
+  // Compare semantic facts; retain the reviewed observation labels in the payload.
   return JSON.stringify({ ...roster, observedAt: null, project: projectSendSnapshot(roster.project),
-    items: roster.items.map(item => ({ ...item, statusObservedAt: null, messagesObservedAt: null })) });
+    items: roster.items.map(item => ({ ...item, statusObservedAt: null, messagesObservedAt: null, runUpdatedAt: null })) });
 }
 export function composeProjectInput(input: string, room?: ProjectRoom | null, roster?: ProjectRoster | null, sessionId?: string): string {
   return room ? `${projectContext(room)}${roster && sessionId === room.leadSessionId && projectSendSnapshot(roster.project) === projectSendSnapshot(room) ? `\n\n${rosterContext(roster)}` : ''}\n\n[Message]\n${input}` : input;
