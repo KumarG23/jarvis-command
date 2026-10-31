@@ -117,7 +117,7 @@ it('denies invalid metadata updates without registry or upstream mutation', asyn
   for (const [changed, status] of [[{ origin: 'https://evil.example' }, 403], [{ 'cf-access-jwt-assertion': '' }, 401], [{ 'cf-access-jwt-assertion': 'denied' }, 401], [{ 'x-jarvis-command': '' }, 403], [{ 'content-type': 'text/plain' }, 415]] as const) {
     expect((await app.inject({ method: 'POST', url, headers: { ...headers, ...changed }, payload: JSON.stringify(metadata) })).statusCode).toBe(status);
   }
-  for (const payload of [{ ...metadata, name: '' }, { ...metadata, sessionIds: [] }, { ...metadata, id: room.id }, { ...metadata, lastSessionId: null }, { ...metadata, notes: ['bad\nreference'] }, { ...metadata, goal: 'x'.repeat(2001) }]) {
+  for (const payload of [{ ...metadata, name: '' }, { ...metadata, sessionIds: [] }, { ...metadata, id: room.id }, { ...metadata, lastSessionId: null }, { ...metadata, leadSessionId: null }, { ...metadata, threads: [] }, { ...metadata, notes: ['bad\nreference'] }, { ...metadata, goal: 'x'.repeat(2001) }]) {
     expect((await app.inject({ method: 'POST', url, headers, payload })).statusCode).toBe(400);
   }
   expect((await app.inject({ method: 'POST', url, headers, payload: { ...metadata, goal: 'x'.repeat(70000) } })).statusCode).toBe(413);
@@ -191,4 +191,57 @@ it('reads legacy metadata then persists bounded instructions and reversible arch
   await restarted.close(); const again = make();
   expect((await again.inject({ url: '/api/rooms', headers })).json().rooms).toEqual([restored]);
   await again.close();
+});
+
+it.each([false, true])('loads, edits and restarts version-one fixture metadata (threads: %s)', async withThreads => {
+  const a = 'jc_' + 'a'.repeat(32), b = 'jc_' + 'b'.repeat(32);
+  const thread = (sessionId: string, archived: boolean) => ({ sessionId, title: 'SYNTHETIC thread', archived, createdAt: '2026-10-31T18:00:00.000Z' });
+  const legacy = { ...metadata, id: 'room_' + 'c'.repeat(32), instructions: 'Keep instructions', archived: false, sessionIds: [a, b], lastSessionId: b };
+  const room = { ...legacy, ...(withThreads ? { leadSessionId: a, threads: [thread(a, false), thread(b, true)] } : {}) };
+  const { root, make } = await fixture();
+  await writeFile(join(root, 'project-rooms.json'), JSON.stringify({ version: 1, rooms: [room] }), { mode: 0o600 });
+  const app = make();
+  expect((await app.inject({ url: '/api/rooms', headers })).json()).toEqual({ version: 1, rooms: [room] });
+  const updated = { ...metadata, name: 'Edited fixture', instructions: 'Edited instructions', archived: true };
+  const response = await app.inject({ method: 'POST', url: `/api/rooms/${room.id}`, headers, payload: updated });
+  expect(response.statusCode).toBe(200);
+  const expected = { ...room, ...updated };
+  expect(response.json().room).toEqual(expected);
+  await app.close();
+  const restarted = make();
+  expect((await restarted.inject({ url: '/api/rooms', headers })).json()).toEqual({ version: 1, rooms: [expected] });
+  expect(JSON.parse(await readFile(join(root, 'project-rooms.json'), 'utf8'))).toEqual({ version: 1, rooms: [expected] });
+  await restarted.close();
+});
+it.each(['lead', 'thread', 'failure'])('cleans only removed-session fixture metadata across projects and restart (%s)', async kind => {
+  const a = 'jc_' + 'a'.repeat(32), b = 'jc_' + 'b'.repeat(32);
+  const removed = kind === 'thread' ? b : a;
+  const threads = [a, b].map(sessionId => ({ sessionId, title: 'SYNTHETIC thread', archived: false, createdAt: '2026-10-31T18:00:00.000Z' }));
+  const base = { ...metadata, sessionIds: [a, b], lastSessionId: removed, leadSessionId: a, threads };
+  const rooms = ['c', 'd'].map(hex => ({ ...base, id: 'room_' + hex.repeat(32) }));
+  const unrelated = { ...metadata, id: 'room_' + 'e'.repeat(32), sessionIds: [], lastSessionId: null };
+  const deleteSession = vi.fn(async () => {
+    if (kind === 'failure') throw Object.assign(Error('Synthetic refusal'), { statusCode: 409 });
+    return { deleted: true, sessionId: removed };
+  });
+  const { root, make } = await fixture(vi.fn(), { deleteSession });
+  const path = join(root, 'project-rooms.json');
+  await writeFile(path, JSON.stringify({ version: 1, rooms: [...rooms, unrelated] }), { mode: 0o600 });
+  const before = await readFile(path);
+  const app = make();
+  const response = await app.inject({ method: 'DELETE', url: `/api/live/sessions/${removed}`, headers: { 'cf-access-jwt-assertion': 'valid', origin: 'https://command.example', 'x-jarvis-command': '1' } });
+  expect(response.statusCode).toBe(kind === 'failure' ? 409 : 200);
+  expect(deleteSession).toHaveBeenCalledExactlyOnceWith('operator', removed);
+  const expected = kind === 'failure' ? rooms : rooms.map(room => ({ ...room,
+    sessionIds: room.sessionIds.filter(id => id !== removed),
+    lastSessionId: removed === a ? b : a,
+    leadSessionId: removed === a ? null : a,
+    threads: room.threads.filter(thread => thread.sessionId !== removed),
+  }));
+  expect((await app.inject({ url: '/api/rooms', headers })).json().rooms).toEqual([...expected, unrelated]);
+  if (kind === 'failure') expect(await readFile(path)).toEqual(before);
+  await app.close();
+  const restarted = make();
+  expect((await restarted.inject({ url: '/api/rooms', headers })).json().rooms).toEqual([...expected, unrelated]);
+  await restarted.close();
 });
