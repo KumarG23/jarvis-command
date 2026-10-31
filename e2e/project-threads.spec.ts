@@ -79,3 +79,62 @@ for (const [width, height] of [[1280, 720], [320, 740], [360, 740], [390, 740], 
     expect(creates).toBe(1); expect(sends).toEqual([]); expect(errors).toEqual([]); expect(unexpected).toEqual([]);
   });
 }
+
+for (const committed of [false, true]) for (const width of [1280, 360]) {
+  test(`SYNTHETIC lost attachment ACK committed=${committed} at ${width}px preserves identity and drafts`, async ({ page }) => {
+    await page.setViewportSize({ width, height: width === 1280 ? 720 : 360 });
+    const old = sessions[0]!, created = sessions[1]!;
+    const room: ProjectRoom = { id: 'room_' + 'd'.repeat(32), name: 'SYNTHETIC recovery project', goal: 'Exact recovery', repository: '', notes: [], sessionIds: [old.id], lastSessionId: old.id };
+    let creates = 0, attachments = 0;
+    const unexpected: string[] = [];
+    await page.addInitScript(id => sessionStorage.setItem('jarvis-command:project-room:v1', id), room.id);
+    await page.route('**/api/**', async route => {
+      const req = route.request(), path = new URL(req.url()).pathname;
+      const json = (body: unknown) => route.fulfill({ json: body });
+      if (path === '/api/bootstrap') return json({ identity: { provider: 'development' }, command: { version: 'SYNTHETIC recovery fixture', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 16000, maxSteerCharacters: 4000 } }, hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse'], readinessChecks: {} }, sessions: creates ? [old, created] : [old] });
+      if (path === '/api/notifications') return json(emptyInbox);
+      if (path === '/api/rooms') return json({ version: 1, rooms: [room] });
+      if (path === '/api/live/sessions') { creates++; return json({ session: created }); }
+      if (path === `/api/rooms/${room.id}/sessions`) {
+        const id = req.postDataJSON().sessionId;
+        if (id === created.id) attachments++;
+        if (id === old.id || committed || attachments > 1) {
+          room.sessionIds = [...new Set([...room.sessionIds, id])]; room.lastSessionId = id;
+        }
+        if (id === created.id && attachments === 1) return route.abort('failed');
+        return json({ room, session: id === old.id ? old : created });
+      }
+      if (/^\/api\/live\/sessions\/jc_[ab]{32}$/.test(path)) return json({ session: path.endsWith(old.id) ? old : created });
+      if (path.endsWith('/messages')) return json({ sessionId: path.split('/')[3], messages: [], pagination: { limit: 50, offset: 0, returned: 0, hasMore: false } });
+      if (path.endsWith('/context')) return json({ sessionId: path.split('/')[4], state: 'unavailable', receipt: null, updatedAt: null });
+      if (path === '/api/live/model-options') return json({ default: { provider: 'openai-codex', model: 'gpt-6-sol' }, options: [{ provider: 'openai-codex', model: 'gpt-6-sol', label: 'SYNTHETIC Sol', reasoningEfforts: ['medium'] }] });
+      if (path === '/api/live/session-controls') return json({ sessionForkPreservesSource: false, sessionCompactionRuns: false });
+      unexpected.push(`${req.method()} ${path}`); return route.abort();
+    });
+    await page.goto('/');
+    const composer = page.getByRole('textbox', { name: 'Message Jarvis', exact: true });
+    await composer.fill('SYNTHETIC retained unsent draft');
+    const openNav = async () => { if (width < 760) await page.getByRole('button', { name: 'Open chat navigation' }).click(); };
+    await openNav();
+    const newChat = page.getByRole('button', { name: `New chat in ${room.name}` });
+    await newChat.click();
+    const finish = page.getByRole('button', { name: `Finish adding chat to ${room.name}` });
+    await expect(finish).toBeVisible();
+    await page.reload();
+    await expect(page.getByLabel('Selected session')).toHaveText(committed ? created.title : old.title);
+    await openNav();
+    await expect(finish).toBeVisible(); await expect(newChat).toBeDisabled();
+    await page.getByRole('navigation', { name: 'Projects' }).getByRole('button', { name: old.title, exact: true }).click();
+    await expect(composer).toHaveValue('SYNTHETIC retained unsent draft');
+    await openNav();
+    await expect(newChat).toBeDisabled();
+    await finish.click();
+    await expect(page.getByLabel('Selected session')).toHaveText(created.title);
+    if (width < 760) await page.getByRole('button', { name: 'Close chat navigation' }).click();
+    await openNav();
+    await expect(newChat).toBeEnabled();
+    await page.getByRole('navigation', { name: 'Projects' }).getByRole('button', { name: old.title, exact: true }).click();
+    await expect(composer).toHaveValue('SYNTHETIC retained unsent draft');
+    expect(creates).toBe(1); expect(attachments).toBe(2); expect(unexpected).toEqual([]);
+  });
+}

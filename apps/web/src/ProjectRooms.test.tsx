@@ -437,29 +437,54 @@ it('keeps a thread rename draft when write succeeds but readback is unavailable'
   expect(screen.getByLabelText('Thread title')).toHaveValue('Keep this thread draft');
 });
 
-it('keeps an uncertain attachment paused after remount and recovers by attaching the existing identity', async () => {
+it.each([false, true])('recovers the exact created identity after reload when uncertain attachment committed: %s', async committed => {
   sessionStorage.setItem('jarvis-command:project-room:v1', room.id);
+  const old = { ...session, id: 'jc_' + 'd'.repeat(32), title: 'Unrelated old chat' };
+  let stored = { ...room, sessionIds: [old.id], lastSessionId: null as string | null };
   let links = 0;
-  const fetcher = vi.fn(async (url: string) => {
-    if (url === '/api/rooms') return Response.json({ version: 1, rooms: [room] });
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/rooms') return Response.json({ version: 1, rooms: [stored] });
     if (url === '/api/live/sessions') return Response.json({ session });
+    if (url === `/api/live/sessions/${session.id}`) return Response.json({ session });
     if (url.endsWith('/sessions')) {
-      if (++links === 1) return Response.json({}, { status: 503 });
-      return Response.json({ room: { ...room, sessionIds: [session.id], lastSessionId: session.id }, session });
+      const id = JSON.parse(String(init?.body)).sessionId;
+      links++;
+      if (links === 1 && !committed) return Response.json({}, { status: 503 });
+      stored = { ...stored, sessionIds: [...new Set([...stored.sessionIds, id])], lastSessionId: id };
+      if (links === 1) return Response.json({}, { status: 503 });
+      return Response.json({ room: stored, session: id === old.id ? old : session });
     }
     throw Error(`unexpected ${url}`);
   });
   vi.stubGlobal('fetch', fetcher);
-  const view = render(<ProjectRooms sessions={[]} onScope={vi.fn()} onSession={vi.fn()} />);
-  fireEvent.click(await screen.findByRole('button', { name: `New chat in ${room.name}` }));
+  const view = render(<ProjectRooms sessions={[old, session] as never} onScope={vi.fn()} onSession={vi.fn()} />);
+  const createName = `New chat in ${room.name}`;
+  const create = await screen.findByRole('button', { name: createName });
+  await waitFor(() => expect(create).toBeEnabled()); fireEvent.click(create);
   await screen.findByRole('button', { name: `Finish adding chat to ${room.name}` });
   view.unmount();
-  render(<ProjectRooms sessions={[session] as never} onScope={vi.fn()} onSession={vi.fn()} />);
+  render(<ProjectRooms sessions={[old, session] as never} onScope={vi.fn()} onSession={vi.fn()} />);
   await screen.findByRole('button', { name: 'Project details' });
-  expect(screen.getByRole('button', { name: `New chat in ${room.name}` })).toBeDisabled();
-  fireEvent.click(screen.getByRole('button', { name: `Add ${session.title} to project` }));
-  fireEvent.click(screen.getByRole('button', { name: 'Add to project' }));
-  await waitFor(() => expect(screen.getByRole('button', { name: `New chat in ${room.name}` })).toBeEnabled());
+  const projectNav = screen.getByRole('navigation', { name: 'Projects' });
+  await waitFor(() => expect(within(projectNav).getByRole('button', { name: old.title })).toBeEnabled());
+  fireEvent.click(within(projectNav).getByRole('button', { name: old.title }));
+  await waitFor(() => expect(links).toBe(2));
+  await waitFor(() => expect(within(projectNav).getByRole('button', { name: old.title })).toBeEnabled());
+  expect(screen.getByRole('button', { name: createName })).toBeDisabled();
+  expect(screen.getByRole('button', { name: `Finish adding chat to ${room.name}` })).toBeEnabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Project details' }));
+  fireEvent.click(within(screen.getByRole('group', { name: `Thread: ${old.title}` })).getByRole('button', { name: 'Rename thread' }));
+  fireEvent.change(screen.getByLabelText('Thread title'), { target: { value: 'Preserve unsaved rename' } });
+  if (committed) {
+    // Exact successful readback of the already-linked new chat must reconcile it.
+    fireEvent.click(within(projectNav).getByRole('button', { name: session.title }));
+  } else {
+    fireEvent.click(screen.getByRole('button', { name: `Add ${session.title} to project` }));
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Add chat to project' })).getByRole('button', { name: 'Add to project' }));
+  }
+  await waitFor(() => expect(screen.getByRole('button', { name: createName })).toBeEnabled());
   expect(fetcher.mock.calls.filter(([url]) => url === '/api/live/sessions')).toHaveLength(1);
-  expect(links).toBe(2);
+  expect(links).toBe(3);
+  expect(screen.getByLabelText('Thread title')).toHaveValue('Preserve unsaved rename');
+  expect(JSON.parse(sessionStorage.getItem('jarvis-command:pending-project-attachments:v1')!)).toEqual({});
 });

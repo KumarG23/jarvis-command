@@ -7,6 +7,7 @@ import { CreateSession } from './CreateSession';
 
 import { appStorageKey } from './appEnvironment';
 
+const PENDING_KEY = appStorageKey('jarvis-command:pending-project-attachments:v1');
 const UNCERTAIN_KEY = appStorageKey('jarvis-command:uncertain-project-create:v1');
 const KEY = appStorageKey('jarvis-command:project-room:v1');
 async function request(path: string, body?: unknown) {
@@ -54,7 +55,25 @@ export function ProjectRooms({ ref, sessions, selectedSessionId, onScope, onProj
     });
   }
   const [attachId, setAttachId] = useState('');
-  const [pendingProjectChat, setPendingProjectChat] = useState<{ roomId: string; roomName: string; session: SessionSummary } | null>(null);
+  // Persist only confirmed identity, not titles/transcripts. This is a recovery
+  // hint; the attachment endpoint still verifies actor, session and membership.
+  const [pendingProjectChats, setPendingProjectChats] = useState<Record<string, string>>(() => {
+    try {
+      const value: unknown = JSON.parse(sessionStorage.getItem(PENDING_KEY) ?? '{}');
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+      return Object.fromEntries(Object.entries(value).filter(([roomId, id]) => /^room_[a-f0-9]{32}$/.test(roomId)
+        && typeof id === 'string' && /^jc_[a-f0-9]{32}$/.test(id)).slice(0, 100));
+    } catch { return {}; }
+  });
+  const pendingChats = useRef(pendingProjectChats);
+  function rememberPendingChat(roomId: string, id: string | null) {
+    const next = { ...pendingChats.current };
+    if (id) next[roomId] = id; else delete next[roomId];
+    pendingChats.current = next;
+    // Write synchronously, including when a create response arrives after unmount.
+    try { sessionStorage.setItem(PENDING_KEY, JSON.stringify(next)); } catch { /* In-memory recovery still applies. */ }
+    if (mounted.current) setPendingProjectChats(next);
+  }
   const [draft, setDraft] = useState<{ id: string; name: string; goal: string; instructions: string; archived: boolean; repository: string; notes: string } | null>(null);
   const [query, setQuery] = useState('');
   const [known, setKnown] = useState<Record<string, SessionSummary>>({});
@@ -199,18 +218,22 @@ export function ProjectRooms({ ref, sessions, selectedSessionId, onScope, onProj
     } else if (selected?.id === room.id) setSelected(room);
     setRooms(previous => previous.map(item => item.id === room.id ? room : item)); setKnown(previous => ({ ...previous, [id]: session }));
     if (selectChat) callbacks.current.onSession(session);
-    if (!rooms.find(item => item.id === roomId)?.sessionIds.includes(id) || pendingProjectChat?.session.id === id) markCreation(roomId, false);
-    setPendingProjectChat(previous => previous?.session.id === id ? null : previous); setAttachId('');
+    const pendingId = pendingChats.current[roomId];
+    if (pendingId === id || (!pendingId && !rooms.find(item => item.id === roomId)?.sessionIds.includes(id))) {
+      markCreation(roomId, false);
+      rememberPendingChat(roomId, null);
+    }
+    setAttachId('');
   }
   async function attach(id: string) { if (selected) await linkToProject(selected.id, id); }
   async function createProjectChat(room: ProjectRoom) {
-    if (uncertainCreates.includes(room.id) || pendingProjectChat?.roomId === room.id) throw Error('Check the existing chat before creating another thread.');
+    if (uncertainCreates.includes(room.id) || !!pendingChats.current[room.id]) throw Error('Check the existing chat before creating another thread.');
     // Set before the request: timeout/lost ACK must not offer a create retry.
     markCreation(room.id, true);
     const { session } = SessionMutationResponseSchema.parse(await request('/api/live/sessions', { title: room.name }));
     if (session.ownership !== 'command' || !/^jc_[a-f0-9]{32}$/.test(session.id)) throw Error('New chat identity could not be verified.');
+    rememberPendingChat(room.id, session.id);
     if (!mounted.current) return;
-    setPendingProjectChat({ roomId: room.id, roomName: room.name, session });
     setKnown(previous => ({ ...previous, [session.id]: session }));
     try {
       await linkToProject(room.id, session.id, true, true);
@@ -237,7 +260,7 @@ export function ProjectRooms({ ref, sessions, selectedSessionId, onScope, onProj
   const filter = query.trim().toLowerCase();
   const sessionTitle = (id: string) => sessions.find(session => session.id === id)?.title ?? known[id]?.title;
   const threadTitle = (room: ProjectRoom, id: string) => room.threads?.find(thread => thread.sessionId === id)?.title ?? sessionTitle(id) ?? 'Saved chat';
-  const creationBlocked = (roomId: string) => uncertainCreates.includes(roomId) || pendingProjectChat?.roomId === roomId;
+  const creationBlocked = (roomId: string) => uncertainCreates.includes(roomId) || !!pendingProjectChats[roomId];
   const filtered = rooms.filter(room => [room.name, room.goal, room.repository, ...room.notes, ...room.sessionIds.map(id => threadTitle(room, id))].some(value => value.toLowerCase().includes(filter))).sort((a, b) => Number(!!a.archived) - Number(!!b.archived));
   const recent = sessions.filter(session => session.title.toLowerCase().includes(filter));
   const allKnown = [...sessions, ...Object.values(known).filter(session => !sessions.some(item => item.id === session.id))];
@@ -322,8 +345,11 @@ export function ProjectRooms({ ref, sessions, selectedSessionId, onScope, onProj
   </div> : null;
   return <>
     <CreateSession disabled={busy} onCreated={session => { void chooseChat(session); }} />
-    {uncertainCreates.some(id => id !== pendingProjectChat?.roomId) ? <div className="project-chat-recovery" role="alert"><p>A project chat creation is unconfirmed. Check recent chats after reloading the app, then add the existing chat to its project. Creating another chat in that project is paused to avoid duplicates.</p></div> : null}
-    {pendingProjectChat ? <div className="project-chat-recovery" role="alert"><p>Chat created. Adding it to {pendingProjectChat.roomName} still needs confirmation.</p><button className="text-button" type="button" disabled={busy} onClick={() => void perform(() => linkToProject(pendingProjectChat.roomId, pendingProjectChat.session.id, true, true))}>Finish adding chat to {pendingProjectChat.roomName}</button></div> : null}
+    {uncertainCreates.some(id => !pendingProjectChats[id]) ? <div className="project-chat-recovery" role="alert"><p>A project chat creation is unconfirmed. Check recent chats after reloading the app, then add the existing chat to its project. Creating another chat in that project is paused to avoid duplicates.</p></div> : null}
+    {Object.entries(pendingProjectChats).map(([roomId, id]) => {
+      const name = rooms.find(room => room.id === roomId)?.name ?? 'project';
+      return <div key={roomId} className="project-chat-recovery" role="alert"><p>Chat created. Adding it to {name} still needs confirmation.</p><button className="text-button" type="button" disabled={busy || !loaded} onClick={() => void perform(() => linkToProject(roomId, id, true, true))}>Finish adding chat to {name}</button></div>;
+    })}
     <label className="sidebar-search"><Search size={17} /><input ref={search} type="search" aria-label="Search projects and chats" placeholder="Search" value={query} onChange={event => setQuery(event.target.value)} />{query ? <button className="icon-button" type="button" aria-label="Clear search" onClick={() => setQuery('')}><X size={15} /></button> : null}</label>
     <div className="sidebar-scroll">
       <nav aria-label="Projects" className="sidebar-section"><div className="section-heading"><h2>Projects</h2><button className="icon-button" type="button" aria-label="New project" disabled={busy || !!draft} onClick={event => showDetails(event.currentTarget, true)}><Plus size={17} /></button></div>
