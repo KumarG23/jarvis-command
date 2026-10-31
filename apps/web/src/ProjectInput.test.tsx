@@ -4,6 +4,7 @@ import { TurnComposer } from './TurnView';
 import { composeProjectInput, projectContext, readProjectThreadTarget, rosterContext } from './projectInput';
 import { useLiveTurn } from './useLiveTurn';
 import { ProjectRoomsSchema, SessionMutationResponseSchema, type ProjectRoster } from '@jarvis-command/contracts';
+import { createReadbackFixture } from './readbackFixture';
 
 const sessionId = 'jc_' + 'a'.repeat(32);
 const room = { id: 'room_' + 'b'.repeat(32), name: 'SYNTHETIC project', goal: 'Test context', instructions: 'Keep synthetic data separate.', repository: '/synthetic', notes: ['synthetic.md'], sessionIds: [sessionId], lastSessionId: sessionId };
@@ -150,20 +151,34 @@ it('previews and injects one quoted untrusted roster only for the designated lea
   expect(rosterContext(makeRoster())).toContain('[label](thread:SESSION_ID)');
 });
 
-// Match Hermes' timestamp-less terminal run: normalized runUpdatedAt advances on
-// every authenticated read even though all reviewed facts remain unchanged.
-function terminalRoster(read: number): ProjectRoster {
-  const time = `2026-10-31T18:00:${String(read).padStart(2, '0')}.000Z`;
+// Match Hermes' timestamp-less terminal run: normalized timestamps can advance
+// independently of the unchanged semantic facts in this synthetic readback.
+function terminalRoster(readbacks: ReturnType<typeof createReadbackFixture<unknown>>): ProjectRoster {
+  const time = readbacks.observationTime();
   const roster = makeRoster();
   return { ...roster, observedAt: time, items: roster.items.map(item => ({ ...item,
     status: 'completed', statusObservedAt: time, messagesObservedAt: time, runUpdatedAt: time,
   })) };
 }
+function semanticRoster(roster: ProjectRoster) {
+  return {
+    project: roster.project, limit: roster.limit, total: roster.total, omitted: roster.omitted, partial: roster.partial,
+    items: roster.items.map(({ sessionId, title, archived, lead, status, messages, messagesUnavailable, messagesTruncated }) =>
+      ({ sessionId, title, archived, lead, status, messages, messagesUnavailable, messagesTruncated })),
+  };
+}
 it('admits the first explicit lead send once across observation and normalized terminal-run timestamp drift', async () => {
   let reads = 0;
+  const readbacks = createReadbackFixture<unknown>();
+  const observations: ProjectRoster[] = [];
   const fetcher = vi.fn(async (url: string) => {
     if (url === '/api/rooms') return Response.json({ version: 1, rooms: [leadRoom] });
-    if (url.endsWith('/roster')) return Response.json(terminalRoster(++reads));
+    if (url.endsWith('/roster')) {
+      if (++reads > 1) readbacks.advanceObservation();
+      const roster = terminalRoster(readbacks);
+      observations.push(roster);
+      return Response.json(roster);
+    }
     return Response.json({ default: { provider: 'openai-codex', model: 'test' }, options: [] });
   });
   vi.stubGlobal('fetch', fetcher);
@@ -174,6 +189,8 @@ it('admits the first explicit lead send once across observation and normalized t
   enter('unchanged terminal facts');
   await waitFor(() => expect(send).toHaveBeenCalledExactlyOnceWith(sessionId, `${reviewed}\n\n[Message]\nunchanged terminal facts`, 16000, undefined, []));
   expect(reads).toBe(2);
+  expect(observations[1]!.observedAt).not.toBe(observations[0]!.observedAt);
+  expect(semanticRoster(observations[1]!)).toEqual(semanticRoster(observations[0]!));
   expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('');
   expect(String(send.mock.calls[0]![1]).match(/\[Project roster —/g)).toHaveLength(1);
   const calls = fetcher.mock.calls as unknown as Array<[string, RequestInit]>;
@@ -182,10 +199,12 @@ it('admits the first explicit lead send once across observation and normalized t
 it.each(['title', 'archive', 'status', 'excerpt', 'role', 'excerpt truncation', 'page truncation', 'unavailability', 'partial', 'roster omission'])(
   'requires review of changed %s facts despite drifting timestamps, then admits one explicit retry', async mode => {
     let reads = 0;
+    const readbacks = createReadbackFixture<unknown>();
     const fetcher = vi.fn(async (url: string) => {
       if (url === '/api/rooms') return Response.json({ version: 1, rooms: [leadRoom] });
       if (url.endsWith('/roster')) {
-        const roster = terminalRoster(++reads);
+        if (++reads > 1) readbacks.advanceObservation();
+        const roster = terminalRoster(readbacks);
         if (reads > 1) {
           const item = roster.items[0]!;
           if (mode === 'title') item.title = 'Changed title';

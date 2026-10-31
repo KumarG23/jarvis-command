@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { App } from './App';
 import { artifactSaveKey } from './artifactSaveRecovery';
+import { createReadbackFixture } from './readbackFixture';
 
 const bootstrap: CommandBootstrap = {
   identity: {
@@ -196,12 +197,12 @@ it('does not navigate when the selected project chat changes during thread readb
   const project = { id: 'room_' + 'd'.repeat(32), name: 'Thread navigation project', goal: 'Navigate safely', instructions: '', archived: false, repository: '', notes: [], sessionIds: [current.id, target.id], lastSessionId: current.id,
     threads: [{ sessionId: target.id, title: target.title, archived: false, createdAt: '2026-10-31T12:00:00Z' }] };
   sessionStorage.setItem('jarvis-command:selected-session:v1', current.id); sessionStorage.setItem('jarvis-command:project-room:v1', project.id);
-  const pending = deferred<Response>();
+  const readbacks = createReadbackFixture<Response>();
   let targetReads = 0;
   const fetchMock = vi.fn(async (url: string) => {
     if (url === '/api/rooms') return Response.json({ version: 1, rooms: [project] });
     if (url === `/api/live/sessions/${current.id}`) return Response.json({ session: current });
-    if (url === `/api/live/sessions/${target.id}`) { targetReads++; return pending.promise; }
+    if (url === `/api/live/sessions/${target.id}`) { targetReads++; return readbacks.read(target.id, () => Response.json({ session: target })); }
     if (url.startsWith('/api/sessions/')) { const id = new URL(url, 'http://command.test').pathname.split('/')[3]!; return Response.json(history(id, 0, ['Question', `[Open target](thread:${target.id})`], false)); }
     if (url === '/api/live/model-options') return Response.json({ default: { provider: 'openai-codex', model: 'gpt-6.1-sol' }, options: [] });
     if (url === '/api/notifications') return Response.json(emptyInbox);
@@ -212,14 +213,16 @@ it('does not navigate when the selected project chat changes during thread readb
   await screen.findByText('Question');
   await waitFor(() => expect(screen.getByLabelText('Selected project')).toHaveTextContent(project.name));
   await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(current.title));
+  readbacks.arm();
   const readsBeforeLink = targetReads;
   fireEvent.click(await screen.findByRole('button', { name: 'Open target' }));
   await waitFor(() => expect(targetReads).toBeGreaterThan(readsBeforeLink));
+  await waitFor(() => expect(readbacks.pending(target.id)).toBe(1));
   expect(screen.getByText(/Checking the project and thread/)).toBeInTheDocument();
   fireEvent.click(await screen.findByRole('button', { name: 'Other recent chat' }));
   await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(otherRecent.title));
   expect(screen.getByText(/selection changed while this link was checked/i)).toBeInTheDocument();
-  await act(async () => pending.resolve(Response.json({ session: target })));
+  await act(async () => readbacks.resolve(target.id, Response.json({ session: target })));
   expect(screen.getByLabelText('Selected session')).toHaveTextContent(otherRecent.title);
   expect(await screen.findByText(/selection changed while this link was checked/i)).toBeInTheDocument();
 });
@@ -232,21 +235,19 @@ it('keeps the newer link selection guard when an older overlapping read fails', 
   const project = { id: 'room_' + 'd'.repeat(32), name: 'Thread navigation project', goal: 'Navigate safely', instructions: '', archived: false, repository: '', notes: [], sessionIds: [current.id, firstTarget.id, secondTarget.id], lastSessionId: current.id,
     threads: [firstTarget, secondTarget].map(session => ({ sessionId: session.id, title: session.title, archived: false, createdAt: '2026-10-31T12:00:00Z' })) };
   sessionStorage.setItem('jarvis-command:selected-session:v1', current.id); sessionStorage.setItem('jarvis-command:project-room:v1', project.id);
-  const firstRead = deferred<Response>();
-  const secondRead = deferred<Response>();
-  let armedReads = false;
+  const readbacks = createReadbackFixture<Response>();
   let firstTargetReads = 0;
   let secondTargetReads = 0;
   const fetchMock = vi.fn(async (url: string) => {
     if (url === '/api/rooms') return Response.json({ version: 1, rooms: [project] });
     if (url === `/api/live/sessions/${current.id}`) return Response.json({ session: current });
     if (url === `/api/live/sessions/${firstTarget.id}`) {
-      if (armedReads) { firstTargetReads++; return firstRead.promise; }
-      return Response.json({ session: firstTarget });
+      firstTargetReads++;
+      return readbacks.read(firstTarget.id, () => Response.json({ session: firstTarget }));
     }
     if (url === `/api/live/sessions/${secondTarget.id}`) {
-      if (armedReads) { secondTargetReads++; return secondRead.promise; }
-      return Response.json({ session: secondTarget });
+      secondTargetReads++;
+      return readbacks.read(secondTarget.id, () => Response.json({ session: secondTarget }));
     }
     if (url.startsWith('/api/sessions/')) {
       const id = new URL(url, 'http://command.test').pathname.split('/')[3]!;
@@ -262,13 +263,15 @@ it('keeps the newer link selection guard when an older overlapping read fails', 
   await screen.findByText('Question');
   await waitFor(() => expect(screen.getByLabelText('Selected project')).toHaveTextContent(project.name));
   await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(current.title));
-  armedReads = true;
+  readbacks.arm();
   fireEvent.click(await screen.findByRole('button', { name: 'Open first' }));
-  await waitFor(() => expect(firstTargetReads).toBe(1));
+  await waitFor(() => expect(firstTargetReads).toBeGreaterThan(0));
+  await waitFor(() => expect(readbacks.pending(firstTarget.id)).toBe(1));
   fireEvent.click(screen.getByRole('button', { name: 'Open second' }));
-  await waitFor(() => expect(secondTargetReads).toBe(1));
+  await waitFor(() => expect(secondTargetReads).toBeGreaterThan(0));
+  await waitFor(() => expect(readbacks.pending(secondTarget.id)).toBe(1));
 
-  await act(async () => firstRead.reject(new Error('First link read failed')));
+  await act(async () => readbacks.reject(firstTarget.id, new Error('First link read failed')));
   expect(screen.getByLabelText('Selected session')).toHaveTextContent(current.title);
   fireEvent.click(await screen.findByRole('button', { name: 'Other recent chat' }));
   await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(otherRecent.title));
@@ -276,7 +279,7 @@ it('keeps the newer link selection guard when an older overlapping read fails', 
   fireEvent.click(within(screen.getByRole('navigation', { name: 'Recent chats' })).getByRole('button', { name: current.title }));
   await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(current.title));
 
-  await act(async () => secondRead.resolve(Response.json({ session: secondTarget })));
+  await act(async () => readbacks.resolve(secondTarget.id, Response.json({ session: secondTarget })));
   await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(current.title));
   expect(screen.getByText(/selection changed while this link was checked/i)).toBeInTheDocument();
 });
