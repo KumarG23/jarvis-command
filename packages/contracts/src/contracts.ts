@@ -44,12 +44,41 @@ export const InferenceOptionSchema = z.discriminatedUnion('provider', [
   OpenAiCodexInferenceSchema.omit({ reasoningEffort: true }).extend(InferenceOptionFields).strict(),
   GrokInferenceSchema.omit({ reasoningEffort: true }).extend(InferenceOptionFields).strict(),
 ]);
+
+// A sanitized, bounded view of the catalog Hermes advertises. Only these facts cross the
+// BFF boundary; upstream URLs, credentials, warnings and unknown fields never do. The
+// four states stay separate: advertisement and authentication do not grant eligibility,
+// and only advertised + authenticated + eligible entries are selectable.
+export const MODEL_CATALOG_MAX_ENTRIES = 1_000;
+export const ModelCatalogUnavailableReasonSchema = z.enum([
+  'provider_unauthenticated',
+  'not_approved_allowlist',
+  'not_advertised',
+]);
+export const ModelCatalogEntrySchema = z.object({
+  provider: NonBlankTextSchema(120),
+  model: NonBlankTextSchema(160),
+  advertised: z.boolean(),
+  authenticated: z.boolean(),
+  eligible: z.boolean(),
+  selectable: z.boolean(),
+  unavailableReason: ModelCatalogUnavailableReasonSchema.nullable(),
+}).strict();
+export const ModelCatalogSchema = z.object({
+  entries: z.array(ModelCatalogEntrySchema).max(MODEL_CATALOG_MAX_ENTRIES),
+  advertisedCount: z.number().int().nonnegative().max(1_000_000),
+  returned: z.number().int().nonnegative().max(MODEL_CATALOG_MAX_ENTRIES),
+  truncated: z.boolean(),
+}).strict();
+
 export const InferenceOptionsResponseSchema = z.object({
   default: z.object({
     provider: NonBlankTextSchema(120),
     model: NonBlankTextSchema(160),
   }).strict(),
-  options: z.array(InferenceOptionSchema).min(1).max(8),
+  // Empty is an honest state: nothing curated is currently advertised and authenticated.
+  options: z.array(InferenceOptionSchema).max(8),
+  catalog: ModelCatalogSchema.optional(),
 }).strict();
 export const LiveRunStateSchema = z.enum([
   'queued',
@@ -398,6 +427,9 @@ export type CommandBootstrap = z.infer<typeof CommandBootstrapSchema>;
 export type HermesState = z.infer<typeof HermesStateSchema>;
 export type InferenceOption = z.infer<typeof InferenceOptionSchema>;
 export type InferenceOptionsResponse = z.infer<typeof InferenceOptionsResponseSchema>;
+export type ModelCatalog = z.infer<typeof ModelCatalogSchema>;
+export type ModelCatalogEntry = z.infer<typeof ModelCatalogEntrySchema>;
+export type ModelCatalogUnavailableReason = z.infer<typeof ModelCatalogUnavailableReasonSchema>;
 export type InferenceOverride = z.infer<typeof InferenceOverrideSchema>;
 export type LiveExecutionReceipt = z.infer<typeof LiveExecutionReceiptSchema>;
 export type LiveCompaction = z.infer<typeof LiveCompactionSchema>;

@@ -4,6 +4,8 @@ import {
   CommandBootstrapSchema,
   InferenceOptionsResponseSchema,
   LiveRunSubmissionRequestSchema,
+  MODEL_CATALOG_MAX_ENTRIES,
+  ModelCatalogSchema,
   SessionSummarySchema,
 } from './contracts';
 import { ProjectRoomSchema } from './project-rooms';
@@ -186,5 +188,40 @@ describe('per-prompt inference contracts', () => {
     };
     expect(InferenceOptionsResponseSchema.parse(payload)).toEqual(payload);
     expect(() => InferenceOptionsResponseSchema.parse({ ...payload, apiKey: 'nope' })).toThrow();
+  });
+
+  it('keeps an empty selection honest and catalog metadata strictly allowlisted', () => {
+    const entry = {
+      provider: 'openrouter',
+      model: 'private-model:free',
+      advertised: true,
+      authenticated: true,
+      eligible: false,
+      selectable: false,
+      unavailableReason: 'not_approved_allowlist',
+    };
+    const payload = {
+      default: { provider: 'openai-codex', model: 'gpt-5.6-sol' },
+      options: [],
+      catalog: { entries: [entry], advertisedCount: 1, returned: 1, truncated: false },
+    };
+    expect(InferenceOptionsResponseSchema.parse(payload)).toEqual(payload);
+    expect(ModelCatalogSchema.parse(payload.catalog)).toEqual(payload.catalog);
+    expect(() => InferenceOptionsResponseSchema.parse({
+      ...payload,
+      catalog: { ...payload.catalog, entries: [{ ...entry, apiKey: 'secret' }] },
+    })).toThrow();
+    expect(() => InferenceOptionsResponseSchema.parse({
+      ...payload,
+      catalog: { ...payload.catalog, warning: 'private' },
+    })).toThrow();
+    expect(() => ModelCatalogSchema.parse({
+      ...payload.catalog,
+      entries: Array.from({ length: MODEL_CATALOG_MAX_ENTRIES + 1 }, () => entry),
+    })).toThrow();
+    expect(() => ModelCatalogSchema.parse({
+      ...payload.catalog,
+      entries: [{ ...entry, unavailableReason: 'provider_guessed' }],
+    })).toThrow();
   });
 });
