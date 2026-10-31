@@ -1,7 +1,7 @@
 import { Readable } from 'node:stream';
 import { randomBytes } from 'node:crypto';
 import { dirname } from 'node:path';
-import { ProjectRoomCreateSchema, ProjectRoomIdSchema, CommandSessionIdSchema } from '@jarvis-command/contracts';
+import { ProjectRoomCreateSchema, ProjectRoomIdSchema, CommandSessionIdSchema, ProjectThreadUpdateSchema } from '@jarvis-command/contracts';
 import { ProjectRoomStore, RoomStorageError } from './project-room-store';
 import { z } from 'zod';
 import { ContextCompactionSubmissionRequestSchema, LiveRoomSessionCreateRequestSchema, LiveRunSubmissionRequestSchema, LiveRoomSessionContinueRequestSchema, LiveRunApprovalRequestSchema, LiveRunSteerRequestSchema, RunEventSchema, type RunEvent } from '@jarvis-command/contracts';
@@ -22,6 +22,10 @@ type Dependencies = Readonly<{
   liveStreamLimits?: LiveStreamLimits;
   notifications?: NotificationStore | undefined;
 }>;
+
+function projectThreadTitle(title: string) {
+  return [...title].map(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127 ? ' ' : character).join('').trim().slice(0, 120) || 'Project thread';
+}
 
 const sessionIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_.:@+-]{0,159}$/);
 const runParamsSchema = z.object({ publicRunId: z.string().regex(/^jcr_[a-f0-9]{32}$/) }).strict();
@@ -173,8 +177,39 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
         if (!(await rooms.list()).some(room => room.id === roomId)) throw Object.assign(new Error('Room missing'), { statusCode: 404 });
         const { session } = await dependencies.liveRoom!.getSession(subjects.get(request)!, sessionId);
         if (session.id !== sessionId) throw new RoomStorageError();
-        const updated = await rooms.update(previous => previous.map(room => room.id !== roomId ? room : { ...room, sessionIds: [...new Set([...room.sessionIds, sessionId])], lastSessionId: sessionId }));
+        const updated = await rooms.update(previous => previous.map(room => room.id !== roomId ? room : { ...room,
+          threads: room.threads?.some(thread => thread.sessionId === sessionId) ? room.threads : [...(room.threads ?? []), {
+            sessionId, title: projectThreadTitle(session.title), createdAt: new Date().toISOString(), archived: false,
+          }], sessionIds: [...new Set([...room.sessionIds, sessionId])], lastSessionId: sessionId }));
         return { room: updated.find(room => room.id === roomId)!, session };
+      });
+    });
+    // Narrow Command-only metadata operation; never renames/archives upstream.
+    routes.post('/api/rooms/:roomId/threads/:sessionId', { bodyLimit: 2048 }, async (request) => {
+      const { roomId, sessionId } = parse(z.object({ roomId: ProjectRoomIdSchema, sessionId: sessionIdSchema }).strict(), request.params);
+      const metadata = parse(ProjectThreadUpdateSchema, request.body);
+      if (!rooms) throw new RoomStorageError();
+      return sessionMutations.run(sessionId, async () => {
+        const room = (await rooms.list()).find(item => item.id === roomId);
+        if (!room?.sessionIds.includes(sessionId)) throw Object.assign(new Error('Thread missing'), { statusCode: 404 });
+        const { session } = await dependencies.liveRoom!.getSession(subjects.get(request)!, sessionId);
+        if (session.id !== sessionId) throw new RoomStorageError();
+        if (metadata.designateLead && (session.ownership !== 'command' || !CommandSessionIdSchema.safeParse(sessionId).success)) {
+          throw Object.assign(new Error('Lead requires a writable Command chat'), { statusCode: 400 });
+        }
+        const updated = await rooms.update(previous => previous.map(current => {
+          if (current.id !== roomId) return current;
+          if (!current.sessionIds.includes(sessionId)) throw Object.assign(new Error('Thread missing'), { statusCode: 404 });
+          const old = current.threads?.find(thread => thread.sessionId === sessionId);
+          const thread = { sessionId, title: old?.title ?? (projectThreadTitle(session.title)),
+            createdAt: old?.createdAt ?? new Date().toISOString(), archived: old?.archived ?? false,
+            ...(metadata.title !== undefined ? { title: metadata.title } : {}), ...(metadata.archived !== undefined ? { archived: metadata.archived } : {}) };
+          const leadSessionId = metadata.designateLead ? sessionId : current.leadSessionId;
+          if (thread.archived && leadSessionId === sessionId) throw Object.assign(new Error('Restore or reassign the lead before archiving'), { statusCode: 409 });
+          return { ...current, ...(leadSessionId !== undefined ? { leadSessionId } : {}),
+            threads: [...(current.threads ?? []).filter(item => item.sessionId !== sessionId), thread] };
+        }));
+        return { room: updated.find(item => item.id === roomId)! };
       });
     });
     routes.get('/api/sessions/:sessionId/messages', { exposeHeadRoute: false }, async (request) => {

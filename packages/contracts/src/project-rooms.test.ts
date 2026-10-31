@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { ProjectRoomSchema } from './project-rooms';
+import { ProjectRoomSchema, ProjectThreadUpdateSchema } from './project-rooms';
 
 const id = 'jc_' + 'a'.repeat(32), other = 'jc_' + 'b'.repeat(32);
 const legacy = { id: 'room_' + 'c'.repeat(32), name: 'Fixture', goal: 'Preserve', instructions: 'Keep', repository: '/ref', notes: ['note'], sessionIds: [id], lastSessionId: id };
@@ -19,4 +19,10 @@ it.each([
   { sessionIds: [id, id] }, { sessionIds: ['discord:reference'], threads: [{ ...thread, sessionId: 'discord:reference' }], lastSessionId: null, leadSessionId: 'discord:reference' },
 ])('rejects invalid metadata %j', fields => {
   expect(ProjectRoomSchema.safeParse({ ...legacy, ...fields }).success).toBe(false);
+});
+it('bounds narrow updates and rejects ids, timestamps, unknown fields and empty requests', () => {
+  for (const body of [{}, { sessionId: other }, { createdAt: thread.createdAt }, { leadSessionId: id }, { title: 'x', unexpected: true }, { designateLead: false }, { title: 'x'.repeat(121) }]) {
+    expect(ProjectThreadUpdateSchema.safeParse(body).success).toBe(false);
+  }
+  expect(ProjectThreadUpdateSchema.parse({ title: '  New title  ' })).toEqual({ title: 'New title' });
 });
