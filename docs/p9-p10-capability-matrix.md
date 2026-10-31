@@ -1,56 +1,67 @@
 # P9 / P10 capability matrix (2026-10-31, issue #63)
 
-Plan: [MASTER_PLAN §10 P9–P10](../MASTER_PLAN.md). Method: current source on this branch plus prior accepted live evidence in the plan status table. No live service, model inference or write was used for this document, and no private host paths or logs are recorded.
+Plan: [MASTER_PLAN §10 P9–P10](../MASTER_PLAN.md). Method: current source on this branch plus accepted live evidence in the plan status table. No live service, model inference or write was used; no private host paths or logs are recorded.
 
-**States.** *Supported* = implemented here and covered by accepted live evidence (cited). *Source-only* = implemented and tested here, not freshly live-read for this issue. *Unsupported* = no contract exists. *Unknown* = cannot be established with existing access; stays unknown, no endpoint or availability is assumed. Installed Hermes source is not readable from this worker; the delegated-subtask question is settled in #35 and not repeated.
+**States.**
+- **Supported** — implemented in this repo and tied to a source anchor or accepted proof.
+- **Planned** — a Command-side change that does not exist yet.
+- **Unsupported** — only where accepted evidence says so (#9, #35, plan §2).
+- **Unknown** — Hermes may or may not offer it. Installed Hermes source is not readable from this worker and no raw runtime catalog was observed, so what the Command adapter does not call is *not consumed*, not proven absent.
+
+Anchors are files under `apps/` / `packages/`. `proxy` = `apps/command-proxy/src/app.ts`, `svc` = `apps/server/src/live-room-service.ts`, `routes` = `apps/server/src/live-room-routes.ts`.
 
 ## P9 — independent threads
 
-| Capability | State | Current contract / finding |
+| Capability | State | Anchor / evidence |
 |---|---|---|
-| Create session | Supported (P2/P4.5) | `POST /api/live/sessions` → proxy `POST /api/sessions`: `jc_<32hex>` id, source `api_server`, optional title; audited per actor. |
-| List sessions | Supported, limited | Read proxy `GET /api/sessions` (limit ≤ 50, offset, `include_children=false`); bootstrap shows the 12 newest. No project, owner or title filter. A roster cannot be built from the global list. |
-| Resume session | Supported | A run on the same `session_id`; `GET /api/sessions/:id`; messages paged (limit ≤ 100, oldest first, session id re-checked). |
-| Rename / archive session in Hermes | Unknown (unused) | No PATCH exists in source. Thread title/archived are Command metadata only. |
-| Project ↔ session link | Command metadata only | `ProjectRoom.sessionIds` (≤ 100) + `lastSessionId`; attach checks the session exists. Hermes has no project field (Unsupported upstream). **Missing in Command:** lead designation and thread metadata (title, archived, createdAt). |
-| Session ownership / writability | Supported | Runs, fork and delete need a `jc_` id with source `jarvis-command`/`api_server` (proxy); other sessions attach read-only. Actor = Access subject fingerprint in the audit ledger. Single-user: no per-actor session ownership upstream. |
-| Start run, no duplicates | Supported (P2) | `POST /v1/runs` with `Idempotency-Key`; durable idempotency ≥ 24 h; ledger replays by `clientRequestId`. |
-| One run per thread | Supported (Command) | BFF rejects a second run while the session has an unsettled admission. Hermes-side guard unknown. |
-| Concurrent threads | Source-only, bounded | No cross-session cap in source, but mutating requests are limited to 30/min, reads 240/min, and **live SSE to 4 streams** (server and proxy). Hermes' own concurrent-run ceiling is Unknown. Multi-thread UI must poll status, not hold a stream per thread. |
-| Per-session run status | Supported for Command-admitted runs only | Status needs a run id (`GET /v1/runs/:id`); Command finds it via its ledger (`activeRunsForSession`, `listUnsettledRuns`). No Hermes list-runs-by-session is used: runs started by CLI/Discord are Unknown. |
-| Stop / steer / approval per run | Supported (P2/P6) | `run_stop`, `run_steer`, approval endpoints, all per run and audited. Steer is *queued*; consumption and cancellation are not claimed. |
-| Recovery | Supported | Request lookup, unsettled-run reconcile on reopen, idempotent replay. Covers Command-admitted runs only. |
-| Bounded roster summary | Source-only (new projection) | Derivable from session fields (title, lastActive, messageCount, toolCallCount, model) + a bounded last-message page. No Hermes summary endpoint; summaries must be stored-message excerpts, not generated. |
-| Lead context injection | Supported mechanism | Plain-text prefix in the run `input` (`projectContext`, P4.5, exactly-once proven), cap 16,000 chars. A roster must fit a fixed budget inside it and be labelled untrusted data. |
-| Validated thread links | Command-only, missing | No upstream need. BFF/UI validate a token against the project's `sessionIds`; anything else renders inert. |
-| Historical message↔run join, delegated sub-tasks | Unsupported (#9, #35) | Unchanged; do not infer. |
-| Writes into other threads, auto-spawn, approvals on behalf of the user | Out of scope | Not built (plan P9 invariants). |
+| Create session | Supported | `POST /api/sessions` (`proxy` ~368): `jc_<32hex>` id, source `api_server`, optional title; `svc.createSession` audits it. Live: P2/P4.5. |
+| List sessions | Supported, limited | `read-proxy/src/app.ts` `GET /api/sessions` (limit ≤ 50, offset, `include_children=false`). Bootstrap reads 12 (`server/src/hermes-client.ts`). No project/owner/title filter is requested. |
+| Resume / read session | Supported | A run on the same `session_id`; `GET /api/sessions/:id` and paged messages (`proxy` 305, 342; limit ≤ 100). |
+| Rename / archive session in Hermes | Unknown, not consumed | No such call in the adapter (it uses GET/POST/DELETE only). Thread title/archived would be Command metadata. |
+| Hermes-side project field, per-project ownership, session summary endpoint | Unknown, not consumed | Not requested by any adapter call. Not claimed absent. |
+| Project ↔ session link | Supported (Command metadata) | `ProjectRoom.sessionIds` ≤ 100 + `lastSessionId` (`packages/contracts/src/project-rooms.ts`); attach route `routes` `/api/rooms/:roomId/sessions` checks the session exists. Live: P4.5. |
+| Lead designation, thread metadata (title, archived, createdAt) | Planned | Not in `ProjectRoomSchema`. P9.1. |
+| Session writability | Supported | `isWritableSession` (`proxy` ~697): `jc_` id and source in `COMMAND_SOURCES` required for run/fork/delete; others are read-only. Actor identity is the audit-ledger subject fingerprint. |
+| Start run, no duplicates | Supported | `POST /v1/runs` with `Idempotency-Key` (`proxy` ~440); ledger replay by `clientRequestId` (`svc` ~176–205). Live: P2. |
+| One run per thread | Supported (Command-side) | `svc` 209–213 rejects a second unsettled run on the session. Any Hermes-side guard is Unknown. |
+| Concurrent threads | Supported with limits | Mutating 30/min, reads 240/min (`routes` 101); live SSE capped at 4 (`routes` 224, `proxy` `MAX_ACTIVE_STREAMS`). Hermes' own concurrency ceiling is Unknown. UI must poll status. |
+| Per-session run status | Supported for Command-admitted runs | `GET /v1/runs/:id` (`proxy` 511) needs a run id from the ledger (`activeRunsForSession`). Runs started outside Command, and any Hermes list-runs-by-session, are Unknown, not consumed. |
+| Stop / steer / approval per run | Supported | `proxy` 621, 642; `svc` `steerRun`/`stopRun`/`approveRun`. Steer is queued; consumption not claimed (P2 evidence). |
+| Recovery after reload/restart | Supported | `svc.lookupRunRequest` (517), `listUnsettledRuns` (543); Command-admitted runs only. |
+| Lead context injection | Supported mechanism | Text prefix in run input: `apps/web/src/projectInput.ts` `composeProjectInput`; input cap 16,000 (`proxy` 205). Exactly-once proven for instructions (P4.5). |
+| Roster projection (bounded, read-only, stored-message excerpts) | **Planned / missing** | No roster code exists. P9.2. Fields would come from session GET fields and a bounded message page already consumed above. |
+| Validated thread links | **Planned / missing** | Would validate against `sessionIds`; nothing built. P9.3. |
+| Historical message↔run join | Unsupported | Plan §2, #9. |
+| Delegated sub-task detail | Unsupported | #35 (settled, not repeated). |
 
 ## P10 — model catalog
 
-| Item | State | Finding |
+Four separate questions per entry: **advertised** (in Hermes catalog), **authenticated** (provider flag), **eligible** (approved free/included, Command-side), **selectable** (all three). Authentication does not prove a route is included or spend is approved.
+
+| Item | State | Anchor / finding |
 |---|---|---|
-| Catalog source | Supported | Hermes `GET /api/model/options`: `provider`, `model`, `providers[{slug, authenticated, models[]}]` (extra fields pass through unvalidated); capability `model_options`. |
-| Currently selectable | Supported | Only Command's **curated 8**: `openai-codex` gpt-6-astra/-sol/-luna, gpt-5.6-sol/-terra/-luna and `xai-oauth` grok-4.7/-4.6, each kept only if its provider is `authenticated` and lists the model. |
-| Anthropic / Haiku, OpenAI API-key, OpenRouter `:free` | **Not selectable today**; advertised: **Unknown** | No source entry exists for them. Whether Hermes advertises or authenticates them cannot be read with existing access (the ops helper has no catalog read; the BFF endpoint returns only the filtered list behind Access). Names in #62 are requests, not availability. |
-| Aliases | None | Exact provider+model strings and hard-coded labels; whether Hermes normalises aliases is Unknown. |
-| Capability limits | Gap | The same five effort levels (`minimal`…`xhigh`) are attached to every option and the contract requires an effort. Effort support per model is not sourced from Hermes; it must not be assumed for new families. |
-| Large catalogs | **Defect risk** | Upstream schema caps `models` at 500 and providers at 100; a larger list (OpenRouter) fails the whole parse, so the existing selector would error. Needs tolerant parsing/truncation. |
-| `:free` identification | Rule only | Match the advertised id suffix `:free`; no price inference, no paid fallback (`require_model_lock` is sent on every override). |
-| Refresh / failure | Supported | Fresh no-cache GET per send in the web client, proxy re-reads the catalog at admission; absent entry → 409 `inference_unavailable`, upstream failure → error with draft kept. No catalog cache to go stale. |
-| Credentials | Supported | Provider/model credentials stay in Hermes/server; clients get slug, model, label only. |
-| Requested vs executed | Supported for current routes (P1); Unknown for new providers | Executed route is read from the run receipt; whether receipts carry provider/model for Anthropic/OpenRouter is unproven. |
-| Hermes change | Not performed | If Hermes does not advertise/authenticate these families, enabling them is a provider/credential change outside worker authority → Final Neal packet addendum. No narrower Hermes source change is identified. |
+| Catalog source | Supported | Hermes `GET /api/model/options` read by `readInferenceOptions` (`proxy` 669): `provider`, `model`, `providers[{slug, authenticated, models[]}]` (`proxy` 193–201). |
+| Eligibility control | Supported | `CURATED_INFERENCE_OPTIONS` (`proxy` 46): `openai-codex` gpt-6-astra/-sol/-luna, gpt-5.6-sol/-terra/-luna and `xai-oauth` grok-4.7/-4.6. Selectable = advertised ∩ authenticated ∩ this list (`proxy` 675–679). This is the existing route/spend control and stays. |
+| Anthropic/Haiku, OpenAI API-key, OpenRouter `:free` | Not selectable today; advertised and authenticated: **Unknown**; eligibility: **Unknown** | No allowlist entry. No existing-access read of the raw catalog (ops helper has none; BFF `/api/live/model-options` returns only the filtered list behind Access). #62 names are requests, not availability. |
+| Aliases | Unknown | Exact strings and hard-coded labels only; Hermes alias normalisation not observed. |
+| Effort levels | Gap | The same five levels (`proxy` 45) are attached to every option; the contract requires one. Per-model support is not sourced; do not assume for new families. |
+| Large catalogs | Defect risk | `models` `.max(500)` / providers `.max(100)` (`proxy` 199–200): a larger list fails the whole parse, breaking the selector. |
+| `:free` rule | Planned | Id suffix `:free` is necessary only; still needs an allowlist entry and approved eligibility. No price inference. |
+| Refresh / failure | Supported | Fresh no-cache GET per send (`apps/web/src/TurnView.tsx` ~431); proxy re-reads at admission, absent → 409 `inference_unavailable` (`proxy` 445). |
+| No paid fallback | Supported | `upstreamInference` sends `require_model_lock: true`. Catalog expansion must not change this. |
+| Credentials | Supported | Clients get provider/model/label only (`InferenceOptionsResponseSchema`). |
+| Requested vs executed | Supported for current routes (P1); Unknown for new providers | Executed route comes from the run receipt; Anthropic/OpenRouter receipts unobserved. |
+| Hermes change | Not performed | If Hermes does not advertise/authenticate these families, enabling them is a provider/credential change outside worker authority. Eligibility of any API-billed family is a lead decision. |
 
-## Follow-up slices (for Sol to admit)
+## Follow-up slices
 
-| # | Slice | Depends on | Focused / runtime check |
+| # | Slice | Depends on | Checks |
 |---|---|---|---|
-| P9.1 | Lead + thread metadata on `ProjectRoom` (contract, store migration-safe, routes), create/attach/open thread | #63 | contracts/store/route tests incl. legacy rooms without the fields; one owned create round trip |
-| P9.2 | Read-only roster projection + bounded, labelled lead-context injection | P9.1 | tests: bounds, unknown states, external session attached read-only, injection once per send, no inference by Command; one owned lead send |
-| P9.3 | Validated thread links (`sessionIds` membership, inert otherwise) | P9.2 | forged/foreign/archived id tests; jump chip works desktop + mobile emulation |
-| P9.4 | Concurrent-thread UI: per-thread indicator, inbox, split view, mobile drawer | P9.1–P9.3; serialize with P10.2 | two owned concurrent runs, reload/restart no duplicate, stop one only; 320–430 px |
-| P10.1 | Tolerant catalog read model, advertised-vs-selectable, optional effort, raw-list visibility for Sol | #63 | proxy tests: >500 models, unauthenticated provider, `:free` rule, no alias guessing; Sol reads the live advertised list |
-| P10.2 | Selector UI for the extended catalog and unavailable reasons | P10.1; serialize with P9.4 | selector tests, fresh-inventory-per-send unchanged; desktop + mobile |
-| P10.3 | Live proof on advertised free/included routes, requested vs executed | P10.1–P10.2 | one owned run per entry, receipt compared; no paid route |
-| P9.5 | Phone check items into Final Neal packet addendum | P9.4, P10.2 | **phone check pending** |
+| P9.1 | Lead + thread metadata on `ProjectRoom`, create/attach/open | #63 | contract/store/route tests incl. legacy rooms; one owned create round trip |
+| P9.2 | Roster projection + bounded labelled lead injection | P9.1 | bounds, unknown states, read-only external session, injected once per send; one owned lead send |
+| P9.3 | Validated thread links | P9.2 | forged/foreign/archived ids inert; desktop + 320–430 px |
+| P9.4 | Concurrent-thread UI | P9.1–P9.3; serialize with P10.2 | two owned concurrent runs, no duplicates on reload/restart, stop one only |
+| P10.1 | Tolerant catalog read model with separate advertised/authenticated/eligible/selectable fields, optional effort, raw-list visibility for Sol | #63 | proxy tests: >500 models, unauthenticated provider, advertised-but-ineligible entry rejected at admission, no alias guessing; Sol reads the live list |
+| P10.2 | Selector UI with unavailable reasons | P10.1; serialize with P9.4 | selector tests; fresh inventory per send unchanged |
+| P10.3 | Live proof | P10.1–P10.2 and lead-approved eligibility | one owned run per advertised, authenticated, approved free/included entry; executed vs requested; no spend |
+| P9.5 | Phone checks to Final Neal packet addendum | P9.4, P10.2 | **phone check pending** |
