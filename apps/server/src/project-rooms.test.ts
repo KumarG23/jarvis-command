@@ -22,7 +22,7 @@ it('updates only metadata atomically alongside attachment and persists exact ide
     app.inject({ method: 'POST', url: `/api/rooms/${room.id}/sessions`, headers, payload: { sessionId: id } }),
   ]);
   expect(results.map(result => result.statusCode)).toEqual([200, 200]);
-  const expected = { ...room, ...updated, sessionIds: [id], lastSessionId: id };
+  const expected = { ...room, ...updated, sessionIds: [id], lastSessionId: id, threads: results[1]!.json().room.threads };
   expect((await app.inject({ url: '/api/rooms', headers })).json().rooms).toEqual([expected]);
   await app.close(); const restarted = make();
   expect((await restarted.inject({ url: '/api/rooms', headers })).json().rooms).toEqual([expected]);
@@ -182,7 +182,7 @@ it('reads legacy metadata then persists bounded instructions and reversible arch
   expect((await app.inject({ method: 'POST', url: `/api/rooms/${legacy.id}`, headers, payload: next })).statusCode).toBe(200);
   await app.close(); const restarted = make();
   const saved = (await restarted.inject({ url: '/api/rooms', headers })).json().rooms[0];
-  expect(saved).toEqual({ ...legacy, ...next, sessionIds: [id], lastSessionId: id });
+  expect(saved).toEqual({ ...legacy, ...next, sessionIds: [id], lastSessionId: id, threads: [{ sessionId: id, title: session.title, archived: false, createdAt: expect.any(String) }] });
   for (const invalid of [{ ...next, instructions: 'x'.repeat(4001) }, { ...next, archived: 'yes' }]) {
     expect((await restarted.inject({ method: 'POST', url: `/api/rooms/${legacy.id}`, headers, payload: invalid })).statusCode).toBe(400);
   }
@@ -191,4 +191,80 @@ it('reads legacy metadata then persists bounded instructions and reversible arch
   await restarted.close(); const again = make();
   expect((await again.inject({ url: '/api/rooms', headers })).json().rooms).toEqual([restored]);
   await again.close();
+});
+
+it('preserves a legacy file through explicit lead, rename, archive/restore, reassignment and restart', async () => {
+  const a = 'jc_' + 'a'.repeat(32), b = 'jc_' + 'b'.repeat(32), external = 'discord:reference';
+  const getSession = vi.fn(async (_subject: string, id: string) => ({ session: { id, title: 'Fixture title', ownership: id === external ? 'external' : 'command' } }));
+  const { root, make } = await fixture(getSession);
+  const legacy = { ...metadata, instructions: 'Keep instructions', id: 'room_' + 'c'.repeat(32), sessionIds: [a, b, external], lastSessionId: a };
+  await writeFile(join(root, 'project-rooms.json'), JSON.stringify({ version: 1, rooms: [legacy] }), { mode: 0o600 });
+  let app = make();
+  expect((await app.inject({ url: '/api/rooms', headers })).json().rooms).toEqual([legacy]);
+  const change = (id: string, payload: Record<string, unknown>) => app.inject({ method: 'POST', url: `/api/rooms/${legacy.id}/threads/${id}`, headers, payload });
+  expect((await change(external, { designateLead: true })).statusCode).toBe(400);
+  expect((await change('jc_' + 'f'.repeat(32), { title: 'Foreign' })).statusCode).toBe(404);
+  expect((await change(a, { designateLead: true })).json().room.leadSessionId).toBe(a);
+  expect((await change(a, { archived: true })).statusCode).toBe(409);
+  const renamed = (await change(a, { title: 'Lead title' })).json().room;
+  const tracked = renamed.threads[0].createdAt;
+  expect((await change(b, { designateLead: true })).json().room.leadSessionId).toBe(b);
+  expect((await change(a, { archived: true })).json().room.threads.find((t: { sessionId: string }) => t.sessionId === a).archived).toBe(true);
+  expect((await change(a, { designateLead: true })).statusCode).toBe(409);
+  const restored = (await change(a, { archived: false, designateLead: true })).json().room;
+  expect(restored).toMatchObject({ ...legacy, leadSessionId: a });
+  expect(restored.threads.find((t: { sessionId: string }) => t.sessionId === a)).toEqual({ sessionId: a, title: 'Lead title', archived: false, createdAt: tracked });
+  // Ordinary project edits merge without dropping new metadata or legacy references.
+  const updated = (await app.inject({ method: 'POST', url: `/api/rooms/${legacy.id}`, headers, payload: { ...metadata, name: 'Renamed project', instructions: 'Keep instructions' } })).json().room;
+  expect(updated.threads).toEqual(restored.threads);
+  await app.close(); app = make();
+  expect((await app.inject({ url: '/api/rooms', headers })).json().rooms).toEqual([updated]);
+  expect(getSession.mock.calls.every(([subject]) => subject === 'operator')).toBe(true);
+  await app.close();
+});
+
+it('validates thread writes before persistence, verifies exact identity, and cleans lead metadata on fixture deletion', async () => {
+  const id = 'jc_' + 'a'.repeat(32);
+  const session = { id, title: 'Fixture', ownership: 'command' };
+  const getSession = vi.fn(async () => ({ session }));
+  const { root, make } = await fixture(getSession, { deleteSession: vi.fn(async () => ({ deleted: true, sessionId: id })) });
+  const app = make();
+  const room = (await app.inject({ method: 'POST', url: '/api/rooms', headers, payload: metadata })).json().room;
+  const attach = () => app.inject({ method: 'POST', url: `/api/rooms/${room.id}/sessions`, headers, payload: { sessionId: id } });
+  const first = (await attach()).json().room;
+  expect(first.leadSessionId).toBeUndefined();
+  expect(first.threads).toEqual([{ sessionId: id, title: 'Fixture', archived: false, createdAt: expect.any(String) }]);
+  expect((await attach()).json().room.threads).toEqual(first.threads);
+  const url = `/api/rooms/${room.id}/threads/${id}`;
+  const path = join(root, 'project-rooms.json'); const before = await readFile(path);
+  for (const payload of [{}, { title: 'x'.repeat(121) }, { title: 'bad\ntitle' }, { sessionId: id }, { threads: [first.threads[0], first.threads[0]] }, { createdAt: '2026-01-01T00:00:00Z' }]) {
+    expect((await app.inject({ method: 'POST', url, headers, payload })).statusCode).toBe(400);
+  }
+  session.id = 'jc_' + 'b'.repeat(32);
+  expect((await app.inject({ method: 'POST', url, headers, payload: { title: 'Wrong identity' } })).statusCode).toBe(503);
+  expect(await readFile(path)).toEqual(before);
+  session.id = id;
+  expect((await app.inject({ method: 'POST', url, headers, payload: { designateLead: true } })).statusCode).toBe(200);
+  const deletion = await app.inject({ method: 'DELETE', url: `/api/live/sessions/${id}`, headers: { 'cf-access-jwt-assertion': 'valid', origin: 'https://command.example', 'x-jarvis-command': '1' } });
+  expect(deletion.statusCode).toBe(200);
+  expect((await app.inject({ url: '/api/rooms', headers })).json().rooms[0]).toMatchObject({ sessionIds: [], lastSessionId: null, leadSessionId: null, threads: [] });
+  await app.close();
+});
+
+it('serializes concurrent lead designation and thread archive against current project metadata', async () => {
+  const ids = ['a', 'b'].map(letter => 'jc_' + letter.repeat(32));
+  const getSession = vi.fn(async (_actor: string, id: string) => ({ session: { id, ownership: 'command', title: 'Fixture thread' } }));
+  const { make } = await fixture(getSession); const app = make();
+  const room = (await app.inject({ method: 'POST', url: '/api/rooms', headers, payload: metadata })).json().room;
+  for (const sessionId of ids) await app.inject({ method: 'POST', url: `/api/rooms/${room.id}/sessions`, headers, payload: { sessionId } });
+  const change = (id: string, payload: Record<string, unknown>) => app.inject({ method: 'POST', url: `/api/rooms/${room.id}/threads/${id}`, headers, payload });
+  const results = await Promise.all(ids.map(id => change(id!, { designateLead: true })));
+  expect(results.map(r => r.statusCode)).toEqual([200, 200]);
+  const current = (await app.inject({ url: '/api/rooms', headers })).json().rooms[0];
+  expect(ids).toContain(current.leadSessionId);
+  const race = await Promise.all([change(current.leadSessionId, { archived: true }), change(current.leadSessionId, { designateLead: true })]);
+  expect(race.map(r => r.statusCode)).toEqual([409, 200]);
+  const saved = (await app.inject({ url: '/api/rooms', headers })).json().rooms[0];
+  expect(saved.threads.find((t: { sessionId: string }) => t.sessionId === saved.leadSessionId).archived).toBe(false);
+  await app.close();
 });
