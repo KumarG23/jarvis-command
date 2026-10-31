@@ -64,3 +64,20 @@ it.each(['file-mode', 'hardlink', 'schema', 'file-owner', 'directory-owner'])('r
   await expect(store.update(() => [])).rejects.toMatchObject({ statusCode: 503 });
   expect(await fs.readFile(path)).toEqual(before);
 });
+
+it('retains committed thread metadata after uncertain sync and allows exact restart readback', async () => {
+  const { root, store } = await fixture();
+  const id = 'jc_' + 'a'.repeat(32);
+  const next = { ...room, instructions: 'Preserved', sessionIds: [id], lastSessionId: id, leadSessionId: id,
+    threads: [{ sessionId: id, title: 'Explicit lead', archived: false, createdAt: '2026-10-31T18:00:00Z' }] };
+  const originalOpen = fs.open;
+  vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+    const handle = await originalOpen(...args);
+    if (String(args[0]) === root) vi.spyOn(handle, 'sync').mockRejectedValueOnce(Error('injected postcommit sync failure'));
+    return handle;
+  });
+  await expect(store.update(() => [next])).rejects.toMatchObject({ statusCode: 503 });
+  vi.restoreAllMocks();
+  await expect(store.update(() => [room])).rejects.toMatchObject({ statusCode: 503 });
+  expect(await new ProjectRoomStore(root).list()).toEqual([next]);
+});

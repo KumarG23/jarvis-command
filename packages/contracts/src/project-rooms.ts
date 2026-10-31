@@ -19,6 +19,11 @@ export const ProjectThreadSchema = z.object({
   createdAt: z.iso.datetime(),
   archived: z.boolean(),
 }).strict();
+export const ProjectThreadUpdateSchema = z.object({
+  title: ProjectThreadSchema.shape.title.optional(),
+  archived: z.boolean().optional(),
+  designateLead: z.literal(true).optional(),
+}).strict().refine(value => Object.keys(value).length > 0);
 export const ProjectRoomSchema = ProjectRoomCreateSchema.extend({
   id: ProjectRoomIdSchema,
   sessionIds: z.array(SessionIdSchema).max(100),

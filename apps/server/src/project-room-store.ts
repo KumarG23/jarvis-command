@@ -74,7 +74,7 @@ export class ProjectRoomStore {
         return next.rooms;
       } catch (error) {
         if (renamed) this.#poisoned = true; // Commit may have landed: require readback/restart, never silently retry.
-        if (error instanceof Error && 'statusCode' in error && error.statusCode === 404) throw error;
+        if (error instanceof Error && 'statusCode' in error && [400, 404, 409].includes(error.statusCode as number)) throw error;
         throw new RoomStorageError();
       } finally {
         if (staging) await unlink(staging).catch(() => undefined);
