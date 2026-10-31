@@ -302,11 +302,16 @@ describe('server-observed run notifications', () => {
     expect(h.service.listUnsettledRuns('alice', 10)).toEqual([]);
     expect((await h.store.read(alice)).items).toEqual([]);
     // Reconcile re-delivers the missing event once, then is idempotent (also across restart).
-    const first = (await h.post('/api/notifications/reconcile', 'alice')).json();
-    expect(first).toMatchObject({ checked: 1, unavailable: 0 });
-    expect(first.inbox.items).toHaveLength(1);
-    await h.post('/api/notifications/reconcile', 'alice');
-    expect((await new NotificationStore(h.directory).read(alice)).items).toHaveLength(1);
+    // The route windows recovery by wall-clock Date.now(); align only that reading with the fixed
+    // fixture clock (timers stay real) so the run stays inside the 24-hour recovery window.
+    const wallClock = vi.spyOn(Date, 'now').mockImplementation(() => h.clock.now.getTime());
+    try {
+      const first = (await h.post('/api/notifications/reconcile', 'alice')).json();
+      expect(first).toMatchObject({ checked: 1, unavailable: 0 });
+      expect(first.inbox.items).toHaveLength(1);
+      await h.post('/api/notifications/reconcile', 'alice');
+      expect((await new NotificationStore(h.directory).read(alice)).items).toHaveLength(1);
+    } finally { wallClock.mockRestore(); }
     await expect(h.service.deleteSession('alice', sessionOf(1))).resolves.toEqual({ deleted: true, sessionId: sessionOf(1) });
   });
 
