@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { TurnComposer } from './TurnView';
 import { composeProjectInput, projectContext, readProjectThreadTarget, rosterContext } from './projectInput';
 import { useLiveTurn } from './useLiveTurn';
-import { ProjectRoomsSchema, SessionMutationResponseSchema } from '@jarvis-command/contracts';
+import { ProjectRoomsSchema, SessionMutationResponseSchema, type ProjectRoster } from '@jarvis-command/contracts';
 
 const sessionId = 'jc_' + 'a'.repeat(32);
 const room = { id: 'room_' + 'b'.repeat(32), name: 'SYNTHETIC project', goal: 'Test context', instructions: 'Keep synthetic data separate.', repository: '/synthetic', notes: ['synthetic.md'], sessionIds: [sessionId], lastSessionId: sessionId };
@@ -149,6 +149,76 @@ it('previews and injects one quoted untrusted roster only for the designated lea
   expect(input.length).toBeLessThan(16000);
   expect(rosterContext(makeRoster())).toContain('[label](thread:SESSION_ID)');
 });
+
+// Match Hermes' timestamp-less terminal run: normalized runUpdatedAt advances on
+// every authenticated read even though all reviewed facts remain unchanged.
+function terminalRoster(read: number): ProjectRoster {
+  const time = `2026-10-31T18:00:${String(read).padStart(2, '0')}.000Z`;
+  const roster = makeRoster();
+  return { ...roster, observedAt: time, items: roster.items.map(item => ({ ...item,
+    status: 'completed', statusObservedAt: time, messagesObservedAt: time, runUpdatedAt: time,
+  })) };
+}
+it('admits the first explicit lead send once across observation and normalized terminal-run timestamp drift', async () => {
+  let reads = 0;
+  const fetcher = vi.fn(async (url: string) => {
+    if (url === '/api/rooms') return Response.json({ version: 1, rooms: [leadRoom] });
+    if (url.endsWith('/roster')) return Response.json(terminalRoster(++reads));
+    return Response.json({ default: { provider: 'openai-codex', model: 'test' }, options: [] });
+  });
+  vi.stubGlobal('fetch', fetcher);
+  const send = vi.fn<Parameters<typeof TurnComposer>[0]['send']>(() => true);
+  const view = render(<TurnComposer {...base} project={leadRoom} send={send} />);
+  await screen.findByText(/Lead roster included/);
+  const reviewed = view.container.querySelector('.project-input-preview pre')!.textContent;
+  enter('unchanged terminal facts');
+  await waitFor(() => expect(send).toHaveBeenCalledExactlyOnceWith(sessionId, `${reviewed}\n\n[Message]\nunchanged terminal facts`, 16000, undefined, []));
+  expect(reads).toBe(2);
+  expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('');
+  expect(String(send.mock.calls[0]![1]).match(/\[Project roster —/g)).toHaveLength(1);
+  const calls = fetcher.mock.calls as unknown as Array<[string, RequestInit]>;
+  expect(calls.filter(([url]) => url === '/api/rooms' || url.endsWith('/roster')).every(([, init]) => init.credentials === 'same-origin' && init.cache === 'no-store')).toBe(true);
+});
+it.each(['title', 'archive', 'status', 'excerpt', 'role', 'excerpt truncation', 'page truncation', 'unavailability', 'partial', 'roster omission'])(
+  'requires review of changed %s facts despite drifting timestamps, then admits one explicit retry', async mode => {
+    let reads = 0;
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === '/api/rooms') return Response.json({ version: 1, rooms: [leadRoom] });
+      if (url.endsWith('/roster')) {
+        const roster = terminalRoster(++reads);
+        if (reads > 1) {
+          const item = roster.items[0]!;
+          if (mode === 'title') item.title = 'Changed title';
+          if (mode === 'archive') item.archived = true;
+          if (mode === 'status') item.status = 'failed';
+          if (mode === 'excerpt') item.messages[0]!.text = 'Changed stored excerpt';
+          if (mode === 'role') item.messages[0]!.role = 'assistant';
+          if (mode === 'excerpt truncation') item.messages[0]!.truncated = true;
+          if (mode === 'page truncation') item.messagesTruncated = true;
+          if (mode === 'unavailability') item.messagesUnavailable = true;
+          if (mode === 'partial') roster.partial = true;
+          if (mode === 'roster omission') { roster.items = []; roster.omitted = 1; roster.partial = true; }
+        }
+        return Response.json(roster);
+      }
+      return Response.json({ default: { provider: 'openai-codex', model: 'test' }, options: [] });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    const send = vi.fn<Parameters<typeof TurnComposer>[0]['send']>(() => true);
+    const view = render(<TurnComposer {...base} project={leadRoom} send={send} />);
+    await screen.findByText(/Lead roster included/);
+    const initial = view.container.querySelector('.project-input-preview pre')!.textContent;
+    enter('review then retry');
+    await screen.findByText(/Project roster changed/);
+    expect(send).not.toHaveBeenCalled();
+    expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('review then retry');
+    const reviewed = view.container.querySelector('.project-input-preview pre')!.textContent;
+    expect(reviewed).not.toBe(initial);
+    fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+    await waitFor(() => expect(send).toHaveBeenCalledExactlyOnceWith(sessionId, `${reviewed}\n\n[Message]\nreview then retry`, 16000, undefined, []));
+    expect(reads).toBe(3);
+    expect(String(send.mock.calls[0]![1]).match(/\[Project roster —/g)).toHaveLength(1);
+  });
 
 it('re-reads exact project membership and session facts for a linked thread beyond the roster bound', async () => {
   const ids = Array.from({ length: 8 }, (_, index) => `jc_${String(index + 1).repeat(32)}`);
