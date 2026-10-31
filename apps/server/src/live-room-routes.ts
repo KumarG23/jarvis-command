@@ -77,7 +77,9 @@ async function* encodeEventStream(events: AsyncIterable<RunEvent>, controller: A
 export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Dependencies) {
   const rooms = dependencies.config.command ? new ProjectRoomStore(dirname(dependencies.config.command.auditLogPath)) : undefined;
   const sessionMutations = new KeyedSerialQueue();
-  const readRoster = dependencies.liveRoom ? createProjectRosterReader(dependencies.liveRoom) : undefined;
+  // Production initializes the lazy liveRoom getter in onReady, after routes
+  // register. Bind on first use, retaining one shared projection gate thereafter.
+  let readRoster: ReturnType<typeof createProjectRosterReader> | undefined;
   app.register(async (routes) => {
     const subjects = new WeakMap<FastifyRequest, string>();
     const activeStreams = new Set<AbortController>();
@@ -126,7 +128,9 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
     });
     routes.get('/api/rooms/:roomId/roster', { exposeHeadRoute: false }, async (request, reply) => {
       const { roomId } = parse(z.object({ roomId: ProjectRoomIdSchema }).strict(), request.params);
-      if (!rooms || !readRoster) throw new RoomStorageError();
+      const liveRoom = dependencies.liveRoom;
+      if (!rooms || !liveRoom) throw new RoomStorageError();
+      readRoster ??= createProjectRosterReader(liveRoom);
       const project = (await rooms.list()).find(room => room.id === roomId && !room.archived);
       if (!project) throw Object.assign(Error('Project missing'), { statusCode: 404 });
       const result = await readRoster(subjects.get(request)!, project);
