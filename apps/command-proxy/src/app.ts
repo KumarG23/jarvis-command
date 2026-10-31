@@ -5,6 +5,7 @@ import {
   ApprovalRequestIdSchema,
   InferenceOptionsResponseSchema,
   InferenceOverrideSchema,
+  MODEL_CATALOG_MAX_ENTRIES,
   OpaqueIdentifierSchema,
   SessionIdSchema,
   LiveRoomSessionContinueRequestSchema,
@@ -19,6 +20,8 @@ import {
   type InferenceOverride,
   type LiveRunState,
   type LiveRunUsage,
+  type ModelCatalog,
+  type ModelCatalogEntry,
   type SessionMessage,
   type SessionSummary,
 } from '@jarvis-command/contracts';
@@ -43,6 +46,9 @@ const CHAT_IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] 
 const MAX_CHAT_IMAGE_BYTES = 6 * 1024 * 1024;
 const COMMAND_SOURCES = new Set(['jarvis-command', 'api_server']);
 const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh'] as const;
+const MAX_UPSTREAM_PROVIDERS = 200;
+const MAX_UPSTREAM_MODELS_PER_PROVIDER = 5_000;
+const MAX_CATALOG_BYTES = 262_144;
 const CURATED_INFERENCE_OPTIONS = [
   { provider: 'openai-codex', model: 'gpt-6-astra', label: 'Astra' },
   { provider: 'openai-codex', model: 'gpt-6-sol', label: 'Sol' },
@@ -196,8 +202,10 @@ const UpstreamModelOptionsSchema = z.object({
   providers: z.array(z.object({
     slug: z.string().min(1).max(120),
     authenticated: z.boolean(),
-    models: z.array(z.string().min(1).max(160)).max(500),
-  }).passthrough()).max(100),
+    // Hermes may advertise large catalogs; the projection below applies the
+    // user-visible byte/count bounds instead of failing the whole inventory.
+    models: z.array(z.string().min(1).max(160)).max(MAX_UPSTREAM_MODELS_PER_PROVIDER),
+  }).passthrough()).max(MAX_UPSTREAM_PROVIDERS),
 }).passthrough();
 
 const RunCreateBodySchema = z.object({
@@ -673,14 +681,129 @@ async function readInferenceOptions(
   const upstream = UpstreamModelOptionsSchema.parse(await requestJson({
     path: '/api/model/options', method: 'GET', config, fetcher,
   }));
+  const providers = canonicalProviderInventory(upstream);
   const options = CURATED_INFERENCE_OPTIONS.filter((candidate) => {
-    const provider = upstream.providers.find(item => item.slug === candidate.provider);
-    return provider?.authenticated === true && provider.models.includes(candidate.model);
+    const provider = providers.get(candidate.provider);
+    return provider?.authenticated === true && provider.models.has(candidate.model);
   }).map(option => ({ ...option, reasoningEfforts: [...REASONING_EFFORTS] }));
   return InferenceOptionsResponseSchema.parse({
     default: { provider: upstream.provider, model: upstream.model },
     options,
+    catalog: projectModelCatalog(providers),
   });
+}
+
+type ProviderInventory = {
+  authenticated: boolean;
+  models: Set<string>;
+};
+
+// Fold duplicate provider rows into one canonical inventory before either selection or
+// the catalog is derived, so the two views can never disagree. Duplicates are ambiguous:
+// a provider is authenticated only when every row says so, and its models are the union.
+function canonicalProviderInventory(
+  upstream: z.infer<typeof UpstreamModelOptionsSchema>,
+): Map<string, ProviderInventory> {
+  const inventory = new Map<string, ProviderInventory>();
+  for (const provider of upstream.providers) {
+    const existing = inventory.get(provider.slug);
+    if (!existing) {
+      inventory.set(provider.slug, {
+        authenticated: provider.authenticated === true,
+        models: new Set(provider.models),
+      });
+      continue;
+    }
+    existing.authenticated = existing.authenticated && provider.authenticated === true;
+    for (const model of provider.models) existing.models.add(model);
+  }
+  return inventory;
+}
+
+type CatalogCandidate = Readonly<{
+  provider: string;
+  model: string;
+  advertised: boolean;
+  authenticated: boolean;
+  eligible: boolean;
+}>;
+
+// Project only explicit allowlisted facts. Ordering is deterministic (curated entries
+// missing from the catalog first, then advertised entries, each group sorted by
+// provider/model) so repeat reads and truncation are stable across identical catalogs.
+function projectModelCatalog(
+  providers: ReadonlyMap<string, ProviderInventory>,
+): ModelCatalog {
+  const curatedKeys = new Set(CURATED_INFERENCE_OPTIONS.map(option => catalogKey(option.provider, option.model)));
+  const advertised = new Map<string, CatalogCandidate>();
+  for (const [slug, provider] of providers) {
+    for (const model of provider.models) {
+      const key = catalogKey(slug, model);
+      if (advertised.has(key)) continue;
+      advertised.set(key, {
+        provider: slug,
+        model,
+        advertised: true,
+        authenticated: provider.authenticated === true,
+        eligible: curatedKeys.has(key),
+      });
+    }
+  }
+
+  const missingCurated: CatalogCandidate[] = [];
+  for (const option of CURATED_INFERENCE_OPTIONS) {
+    const key = catalogKey(option.provider, option.model);
+    if (advertised.has(key)) continue;
+    const provider = providers.get(option.provider);
+    missingCurated.push({
+      provider: option.provider,
+      model: option.model,
+      advertised: false,
+      authenticated: provider?.authenticated === true,
+      eligible: true,
+    });
+  }
+
+  const candidates = [
+    ...missingCurated.sort(compareCatalogCandidates),
+    ...[...advertised.values()].sort(compareCatalogCandidates),
+  ];
+  const entries: ModelCatalogEntry[] = [];
+  let bytes = 0;
+  for (const candidate of candidates) {
+    if (entries.length >= MODEL_CATALOG_MAX_ENTRIES) break;
+    const entry: ModelCatalogEntry = {
+      ...candidate,
+      selectable: candidate.advertised && candidate.authenticated && candidate.eligible,
+      unavailableReason: candidate.advertised && candidate.authenticated && candidate.eligible
+        ? null
+        : !candidate.advertised
+          ? 'not_advertised'
+          : !candidate.authenticated
+            ? 'provider_unauthenticated'
+            : 'not_approved_allowlist',
+    };
+    const size = Buffer.byteLength(JSON.stringify(entry)) + 1;
+    if (entries.length > 0 && bytes + size > MAX_CATALOG_BYTES) break;
+    entries.push(entry);
+    bytes += size;
+  }
+  return {
+    entries,
+    advertisedCount: advertised.size,
+    returned: entries.length,
+    truncated: entries.length < candidates.length,
+  };
+}
+
+function catalogKey(provider: string, model: string): string {
+  return `${provider}\u0000${model}`;
+}
+
+function compareCatalogCandidates(a: CatalogCandidate, b: CatalogCandidate): number {
+  if (a.provider !== b.provider) return a.provider < b.provider ? -1 : 1;
+  if (a.model === b.model) return 0;
+  return a.model < b.model ? -1 : 1;
 }
 
 function upstreamInference(inference: InferenceOverride) {

@@ -143,10 +143,17 @@ describe('Command proxy client', () => {
     fetcher.mockResolvedValueOnce(jsonResponse({ ready: true, durableIdempotency: false, retentionSeconds: 86400, externalContinue: false }));
     await expect(client.readReadiness()).rejects.toEqual(new CommandProxyUnavailableError());
   });
-  it('reads the strict curated inference inventory', async () => {
+  it('reads the strict curated inference inventory and sanitized catalog', async () => {
     const inventory = {
       default: { provider: 'openai-codex', model: 'gpt-5.6-sol' },
       options: [{ provider: 'openai-codex', model: 'gpt-5.6-luna', label: 'Luna', reasoningEfforts: ['minimal', 'low', 'medium'] }],
+      catalog: {
+        entries: [{
+          provider: 'openai-codex', model: 'gpt-5.6-luna',
+          advertised: true, authenticated: true, eligible: true, selectable: true, unavailableReason: null,
+        }],
+        advertisedCount: 1, returned: 1, truncated: false,
+      },
     };
     const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(inventory));
     const client = createCommandProxyClient({ baseUrl, commandProxyKey, fetcher });
