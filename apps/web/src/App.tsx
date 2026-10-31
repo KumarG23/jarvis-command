@@ -441,8 +441,9 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
       }
       setThreadLinkFeedback('');
     } catch (error) {
+      if (attempt !== threadLinkAttempt.current) return;
       pendingThreadNavigation.current = null;
-      if (attempt === threadLinkAttempt.current && selectionRef.current.projectId === start.projectId && selectionRef.current.sessionId === start.sessionId) {
+      if (selectionRef.current.projectId === start.projectId && selectionRef.current.sessionId === start.sessionId) {
         setThreadLinkFeedback(error instanceof Error ? error.message : 'Thread link could not be checked. Your current chat was kept; review the project and retry.');
       }
     }
