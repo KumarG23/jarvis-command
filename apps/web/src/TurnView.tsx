@@ -142,6 +142,7 @@ function runStatus(turn: Turn): string {
     : last?.type === 'tool.completed' ? `Tool ${last.error ? 'failed' : 'completed'}: ${last.tool}`
     : turn.output ? 'Reply output received' : 'Working…';
   if (/^Reconnecting/.test(turn.phase)) return `Reconnecting · Last reported: ${observed}`;
+  if (turn.approval && /^(Disconnected|Recovering|Admission unknown)/.test(turn.phase)) return `${turn.phase} · Last reported: ${observed}`;
   if (turn.approval) return observed;
   if (!['Run running', 'Run queued'].includes(turn.phase)) return turn.phase;
   return turn.phase === 'Run queued' && !last && !turn.output ? 'Run queued' : observed;

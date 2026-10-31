@@ -24,7 +24,7 @@ it('retains the latest draft when the same thread moves between two panes repeat
 it('uses the latest requested selection after a thread moves panes without silently restoring an older route', () => {
   const first = renderHook(({ id }) => useInferencePreference(id), { initialProps: { id: 'jc_a' } });
   const second = renderHook(({ id }) => useInferencePreference(id), { initialProps: { id: 'jc_b' } });
-  const choice = { provider: 'openai-codex', model: 'gpt-6-sol', reasoningEffort: 'low' as const };
+  const choice = { provider: 'openai-codex', model: 'gpt-6-sol', reasoningEffort: 'low' } as const;
   act(() => first.result.current.select(choice));
   first.rerender({ id: 'jc_b' }); second.rerender({ id: 'jc_a' });
   expect(second.result.current.selection).toEqual(choice);

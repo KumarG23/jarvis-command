@@ -1,5 +1,6 @@
 import { act, render, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
+import { createReadbackFixture } from './readbackFixture';
 import { useThreadTurns } from './useThreadTurns';
 import { readThreadRecoveries, readThreadRecovery, recoveryKey, threadRecoveryKey, writeThreadRecovery } from './turnRecovery';
 
@@ -72,13 +73,14 @@ it('admits two explicit sends independently, guards each busy session and retain
 it('accepts reversed ACK/status responses only in their original thread and fails closed on a foreign status', async () => {
   const ackA = deferred<Response>(), ackB = deferred<Response>();
   const f = fixture(body => body.sessionId === a ? ackA.promise : ackB.promise);
-  const readA = deferred<Response>(), readB = deferred<Response>();
-  f.reads.mockImplementation(url => url.includes(runA) ? readA.promise : readB.promise);
+  const readbacks = createReadbackFixture<Response>();
+  readbacks.arm();
+  f.reads.mockImplementation(url => readbacks.read(url.includes(runA) ? a : b, () => Response.json(status(a))));
   render(<Harness />); await ready(); sendBoth();
   await act(async () => { ackB.resolve(Response.json({ sessionId: b, clientRequestId: requestB, publicRunId: runB, status: 'running', replayed: false })); });
   expect(threads.get(a).turn?.publicRunId).toBeNull();
   await act(async () => { ackA.resolve(Response.json({ sessionId: a, clientRequestId: requestA, publicRunId: runA, status: 'running', replayed: false })); });
-  await act(async () => { readB.resolve(Response.json(status(b, { output: 'B only' }))); readA.resolve(Response.json(status(b, { output: 'must not enter A' }))); });
+  await act(async () => { readbacks.resolve(b, Response.json(status(b, { output: 'B only' }))); readbacks.resolve(a, Response.json(status(b, { output: 'must not enter A' }))); });
   expect(threads.get(b).turn?.output).toBe('B only');
   expect(threads.get(a).turn?.output).toBe('');
   expect(threads.get(a).turn?.phase).toContain('unconfirmed');
