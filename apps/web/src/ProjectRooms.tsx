@@ -18,7 +18,7 @@ async function request(path: string, body?: unknown) {
   if (!response.ok) throw Error('Project operation could not be confirmed. Reload projects before retrying; the change may already have been saved.');
   return response.json() as Promise<unknown>;
 }
-export type ProjectRoomsHandle = { readback: (room: ProjectRoom) => void; openDetails: (opener?: HTMLElement) => void; closeDetails: () => void; focusSearch: () => void; selectChat: (session: SessionSummary) => void; openLinkedChat: (room: ProjectRoom, session: SessionSummary) => boolean; adoptSession: (session: SessionSummary) => Promise<void> };
+export type ProjectRoomsHandle = { readback: (room: ProjectRoom) => void; openDetails: (opener?: HTMLElement) => void; closeDetails: () => void; focusSearch: () => void; selectChat: (session: SessionSummary) => boolean; openLinkedChat: (room: ProjectRoom, session: SessionSummary) => boolean; adoptSession: (session: SessionSummary) => Promise<void> };
 type Props = Readonly<{
   ref?: Ref<ProjectRoomsHandle>;
   sessions: SessionSummary[];
@@ -30,12 +30,13 @@ type Props = Readonly<{
   artifactsEnabled?: boolean;
   onProjectScope?: (id: string | null) => void;
   onSession: (session: SessionSummary | null) => void;
+  onResolvedSessions?: (sessions: SessionSummary[]) => void;
   onDeleted?: (sessionId: string) => void;
   contextTarget?: HTMLElement | null;
   onOpenChange?: (open: boolean) => void;
   onNavigate?: () => void;
 }>;
-export function ProjectRooms({ ref, sessions, threadStatuses, selectedSessionId, onScope, onProjectScope, onProjectChange, onOpenArtifacts, artifactsEnabled, onSession, onDeleted, contextTarget, onOpenChange, onNavigate }: Props) {
+export function ProjectRooms({ ref, sessions, threadStatuses, selectedSessionId, onScope, onProjectScope, onProjectChange, onOpenArtifacts, artifactsEnabled, onSession, onResolvedSessions, onDeleted, contextTarget, onOpenChange, onNavigate }: Props) {
   const [rooms, setRooms] = useState<ProjectRoom[]>([]);
   const [selected, setSelected] = useState<ProjectRoom | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -83,7 +84,7 @@ export function ProjectRooms({ ref, sessions, threadStatuses, selectedSessionId,
   const [projectTarget, setProjectTarget] = useState<SessionSummary | null>(null);
   const [targetRoomId, setTargetRoomId] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<SessionSummary | null>(null);
-  const callbacks = useRef({ onScope, onProjectScope, onSession, onDeleted, onOpenChange, onNavigate }); callbacks.current = { onScope, onProjectScope, onSession, onDeleted, onOpenChange, onNavigate };
+  const callbacks = useRef({ onScope, onProjectScope, onSession, onResolvedSessions, onDeleted, onOpenChange, onNavigate }); callbacks.current = { onScope, onProjectScope, onSession, onResolvedSessions, onDeleted, onOpenChange, onNavigate };
   const mounted = useRef(true), working = useRef(false);
   const opener = useRef<HTMLElement | null>(null), closeButton = useRef<HTMLButtonElement | null>(null), search = useRef<HTMLInputElement | null>(null);
   const roomCreation = useRef({ name: '', goal: '', instructions: '', repository: '', notes: '' });
@@ -99,7 +100,7 @@ export function ProjectRooms({ ref, sessions, threadStatuses, selectedSessionId,
     openDetails: element => showDetails(element),
     closeDetails: closeDrawer,
     focusSearch: () => search.current?.focus(),
-    selectChat: session => { if (!draft) void perform(() => chooseChat(session)); },
+    selectChat: session => { if (draft || working.current) return false; void perform(() => chooseChat(session)); return true; },
     openLinkedChat: (room, session) => {
       if (draft || working.current || room.archived || !room.sessionIds.includes(session.id)
         || room.threads?.some(thread => thread.sessionId === session.id && thread.archived)) return false;
@@ -154,10 +155,16 @@ export function ProjectRooms({ ref, sessions, threadStatuses, selectedSessionId,
     }
     if (mounted.current && expected.title !== undefined) setThreadDraft(null);
   }
+  function rememberSession(session: SessionSummary) {
+    // Publish only this fresh authenticated fact, never older cached facts for
+    // unrelated chats. Local thread labels remain on the project metadata.
+    setKnown(previous => ({ ...previous, [session.id]: session }));
+    callbacks.current.onResolvedSessions?.([session]);
+  }
   async function resolveSession(id: string) {
     const { session } = SessionMutationResponseSchema.parse(await request(`/api/live/sessions/${id}`));
     if (session.id !== id) throw Error('Saved chat unavailable. No replacement was selected.');
-    if (mounted.current) setKnown(previous => ({ ...previous, [id]: session }));
+    if (mounted.current) rememberSession(session);
     return session;
   }
   async function choose(room: ProjectRoom | null) {
@@ -208,7 +215,7 @@ export function ProjectRooms({ ref, sessions, threadStatuses, selectedSessionId,
         await Promise.all(ids.slice(index, index + 4).map(async id => {
           try { const { session } = SessionMutationResponseSchema.parse(await request(`/api/live/sessions/${id}`));
             if (session.id !== id) throw Error('identity');
-            if (current) setKnown(previous => ({ ...previous, [id]: session }));
+            if (current) rememberSession(session);
           } catch { if (current) setTitleError(true); }
         }));
       }
@@ -225,7 +232,7 @@ export function ProjectRooms({ ref, sessions, threadStatuses, selectedSessionId,
     if (activateRoom) {
       setSelected(room); setExpanded(room.id); remember(room.id); callbacks.current.onScope(room.name); callbacks.current.onProjectScope?.(room.id);
     } else if (selected?.id === room.id) setSelected(room);
-    setRooms(previous => previous.map(item => item.id === room.id ? room : item)); setKnown(previous => ({ ...previous, [id]: session }));
+    setRooms(previous => previous.map(item => item.id === room.id ? room : item)); rememberSession(session);
     if (selectChat) callbacks.current.onSession(session);
     const pendingId = pendingChats.current[roomId];
     if (pendingId === id || (!pendingId && !rooms.find(item => item.id === roomId)?.sessionIds.includes(id))) {
@@ -246,7 +253,7 @@ export function ProjectRooms({ ref, sessions, threadStatuses, selectedSessionId,
     if (session.ownership !== 'command' || !/^jc_[a-f0-9]{32}$/.test(session.id)) throw Error('New chat identity could not be verified.');
     rememberPendingChat(room.id, session.id);
     if (!mounted.current) return;
-    setKnown(previous => ({ ...previous, [session.id]: session }));
+    rememberSession(session);
     try {
       await linkToProject(room.id, session.id, true, true);
       setOpen(false);

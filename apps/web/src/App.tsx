@@ -2,9 +2,9 @@ import { readThreadRecoveries } from './turnRecovery';
 import { ThreadConversation } from './ThreadConversation';
 import { PushLink } from './PushLink';
 import { composeProjectInput, projectContext, readProjectForSend, readProjectThreadTarget } from './projectInput';
-import { ArtifactListResponseSchema, ArtifactTypeSchema, CommandBootstrapSchema, type NotificationTarget, type ProjectRoom, type ArtifactType, type CommandBootstrap, type SessionSummary } from '@jarvis-command/contracts';
+import { ArtifactListResponseSchema, SessionMutationResponseSchema, ArtifactTypeSchema, CommandBootstrapSchema, type NotificationTarget, type ProjectRoom, type ArtifactType, type CommandBootstrap, type SessionSummary } from '@jarvis-command/contracts';
 import { Command, ShieldCheck, Menu, X, Settings2, PanelRight, ChevronRight, MessageSquare, Files, Users, MessagesSquare, Bell } from 'lucide-react';
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import './styles.css';
 import { LiveRoom } from './LiveRoom';
@@ -12,6 +12,7 @@ import { readArtifactSave, persistArtifactSave, consumeArtifactSave, saveRecover
 import { ProjectRooms, type ProjectRoomsHandle } from './ProjectRooms';
 import { ContextPane } from './ContextPane';
 import { appStorageKey, previewPath, recoverSignIn } from './appEnvironment';
+import { boundedJson } from './useLiveTurn';
 import { useThreadTurns } from './useThreadTurns';
 import { TurnComposer, TurnView } from './TurnView';
 import { SessionContextMeter } from './SessionContextMeter';
@@ -246,6 +247,13 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     setThreadLinkFeedback('Your selection changed while this link was checked. No navigation occurred; review the project and retry.');
   }, [projectId, selectedSession?.id]);
   const [sessions, setSessions] = useState(bootstrap.sessions);
+  const mergeResolvedSessions = useCallback((resolved: SessionSummary[]) => {
+    if (!resolved.length) return;
+    setSessions(previous => [...previous.filter(session => !resolved.some(item => item.id === session.id)), ...resolved]);
+  }, []);
+  const retainedNavigation = useRef<{ controller: AbortController } | null>(null);
+  const [retainedFeedback, setRetainedFeedback] = useState('');
+  useEffect(() => () => retainedNavigation.current?.controller.abort(), []);
   const [notificationAttachment, setNotificationAttachment] = useState<Extract<NotificationTarget, { state: 'available' }> | null>(null);
   const [secondSessionId, setSecondSessionId] = useState<string | null>(null);
   const secondSource = useRef<{ sessionId: string | null; generation: number }>({ sessionId: null, generation: 0 });
@@ -412,6 +420,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     setSecondSessionId(id);
   }
   function selectSession(session: SessionSummary | null) {
+    invalidateRetainedNavigation();
     invalidateThreadNavigation(selectionRef.current.projectId, session?.id ?? null);
     selectionRef.current = { ...selectionRef.current, sessionId: session?.id ?? null };
     if (session?.id !== selectedSession?.id) { setDraftAuthorizedSession(null); setSaveActive(false); }
@@ -420,6 +429,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     setSelectedSession(session);
   }
   function selectProjectId(id: string | null) {
+    invalidateRetainedNavigation();
     invalidateThreadNavigation(id, selectionRef.current.sessionId);
     selectionRef.current = { ...selectionRef.current, projectId: id };
     setProjectId(id);
@@ -433,6 +443,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     setThreadLinkFeedback('Your selection changed while this link was checked. No navigation occurred; review the project and retry.');
   }
   async function openThreadLink(requestedProjectId: string, sessionId: string, sourcePane: 'primary' | 'second' = 'primary') {
+    invalidateRetainedNavigation();
     const attempt = ++threadLinkAttempt.current;
     const start = { ...selectionRef.current };
     const source = sourcePane === 'second' ? { ...secondSource.current } : { sessionId: start.sessionId, generation: 0 };
@@ -463,6 +474,40 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
       if (selectionRef.current.projectId === start.projectId && selectionRef.current.sessionId === start.sessionId) {
         setThreadLinkFeedback(error instanceof Error ? error.message : 'Thread link could not be checked. Your current chat was kept; review the project and retry.');
       }
+    }
+  }
+  function invalidateRetainedNavigation() {
+    if (!retainedNavigation.current) return;
+    retainedNavigation.current.controller.abort();
+    retainedNavigation.current = null;
+    setRetainedFeedback('Your selection changed while the retained chat was checked. Your current chat and drafts were kept; retry to open it.');
+  }
+  async function openRetainedThread(sessionId: string, retainedProjectId?: string) {
+    // A later retained click also supersedes an in-flight message thread link.
+    pendingThreadNavigation.current = null;
+    threadLinkAttempt.current++;
+    setThreadLinkFeedback('');
+    retainedNavigation.current?.controller.abort();
+    const attempt = { controller: new AbortController() };
+    retainedNavigation.current = attempt;
+    setRetainedFeedback('Checking the retained chat before opening…');
+    try {
+      // Recovery ids are hints, never session facts. Always verify exact access; a
+      // retained project's identity must not be replaced with the current project.
+      const target = retainedProjectId
+        ? await readProjectThreadTarget(retainedProjectId, sessionId, attempt.controller)
+        : { room: null, session: SessionMutationResponseSchema.parse(await boundedJson(`/api/live/sessions/${encodeURIComponent(sessionId)}`, {
+          credentials: 'same-origin', redirect: 'error', cache: 'no-store', headers: { accept: 'application/json' },
+        }, attempt.controller)).session };
+      if (retainedNavigation.current !== attempt) return;
+      if (target.session.id !== sessionId || target.session.ownership !== 'command') throw Error('Retained chat identity or ownership is unavailable. Your current chat and drafts were kept.');
+      retainedNavigation.current = null;
+      const opened = target.room ? projects.current?.openLinkedChat(target.room, target.session) : projects.current?.selectChat(target.session);
+      setRetainedFeedback(opened ? '' : 'Project navigation is busy or has an edit draft. Your current chat and drafts were kept; finish the edit and retry.');
+    } catch {
+      if (retainedNavigation.current !== attempt) return;
+      retainedNavigation.current = null;
+      setRetainedFeedback('Retained chat access or project membership could not be verified. Your current chat and drafts were kept; retry. No message was sent.');
     }
   }
   function openNavigation() {
@@ -660,13 +705,14 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
       }
     }}>
       <div className="sidebar-brand"><Command size={29} /><strong>Jarvis Command</strong><button className="icon-button close-navigation" type="button" aria-label="Close chat navigation" onClick={() => closeNavigation()}><X size={20} /></button></div>
-      {liveEnabled ? <ProjectRooms ref={projects} threadStatuses={threadStatuses} sessions={sessions} selectedSessionId={selectedSession?.id} onScope={setProjectScope} onProjectScope={selectProjectId} onProjectChange={setProject} artifactsEnabled={artifactStudioEnabled} onOpenArtifacts={() => { projects.current?.closeDetails(); setPane('artifacts'); }} onSession={selectSession} onDeleted={sessionId => {
+      {liveEnabled ? <ProjectRooms ref={projects} onResolvedSessions={mergeResolvedSessions} threadStatuses={threadStatuses} sessions={sessions} selectedSessionId={selectedSession?.id} onScope={setProjectScope} onProjectScope={selectProjectId} onProjectChange={setProject} artifactsEnabled={artifactStudioEnabled} onOpenArtifacts={() => { projects.current?.closeDetails(); setPane('artifacts'); }} onSession={selectSession} onDeleted={sessionId => {
         setSessions(previous => previous.filter(session => session.id !== sessionId));
         if (selectedSession?.id === sessionId) { selectSession(null); setProjectScope(null); selectProjectId(null); }
       }} contextTarget={contextTarget}
         onOpenChange={open => { setPane(previous => open ? 'project' : previous === 'project' ? null : previous); if (open && navigationOpen) closeNavigation(); }} onNavigate={() => { if (navigationOpen || (typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 760px)').matches)) closeNavigation(); }} /> : <div className="sidebar-scroll"><p className="empty-copy">Live chat is unavailable.</p>{sessions.map(session => <div key={session.id} className="sidebar-item"><MessageSquare size={17} /><span>{session.title}</span></div>)}</div>}
       <div className="thread-status-list" aria-label="Thread supervision">
-        {threads.all.filter(item => item.turn).map(item => <button type="button" className="sidebar-item" aria-label={`Supervise ${sessions.find(session => session.id === item.turn!.intent.sessionId)?.title ?? item.turn!.intent.sessionId}`} key={item.turn!.intent.sessionId} onClick={() => { const session = sessions.find(session => session.id === item.turn!.intent.sessionId); if (session) { if (project?.sessionIds.includes(session.id)) projects.current?.openLinkedChat(project, session); else projects.current?.selectChat(session); } }}><span>{sessions.find(session => session.id === item.turn!.intent.sessionId)?.title ?? 'Retained thread'}<small>{item.turn!.phase} · latest Command run; stored history separate{item.turn!.statusObservedAt ? ` · checked ${new Date(item.turn!.statusObservedAt).toLocaleTimeString()}` : ' · status observation unavailable'}</small></span></button>)}
+        {navigationOpen && retainedFeedback ? <p role="status" className="notice">{retainedFeedback}</p> : null}
+        {threads.all.filter(item => item.turn).map(item => <button type="button" className="sidebar-item" aria-label={`Supervise ${sessions.find(session => session.id === item.turn!.intent.sessionId)?.title ?? item.turn!.intent.sessionId}`} key={item.turn!.intent.sessionId} onClick={() => { void openRetainedThread(item.turn!.intent.sessionId, item.turn!.projectId); }}><span>{sessions.find(session => session.id === item.turn!.intent.sessionId)?.title ?? 'Retained thread'}<small>{item.turn!.phase} · latest Command run; stored history separate{item.turn!.statusObservedAt ? ` · checked ${new Date(item.turn!.statusObservedAt).toLocaleTimeString()}` : ' · status observation unavailable'}</small></span></button>)}
       </div>
       <div className="capability-navigation" aria-label="Capabilities">
         {([{ key: 'agents', label: 'Agents', Icon: Users }, { key: 'collaboration', label: 'Collaboration rooms', Icon: MessagesSquare }, { key: 'notifications', label: 'Notifications', Icon: Bell }] as const).map(({ key, label, Icon }) => <button key={key} className="sidebar-item" type="button" aria-expanded={pane === key} onClick={event => openPanel(key, event.currentTarget)}><Icon size={18} /><span>{label}<small>{key === 'notifications' && liveEnabled ? (notifications.inbox ? (notifications.inbox.unreadCount ? `${notifications.inbox.unreadCount} unread` : 'Inbox') : 'Inbox') : 'Unavailable'}</small></span></button>)}
@@ -683,10 +729,16 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
           {artifactStudioEnabled ? <button className={`artifact-context-button${pane === 'artifacts' ? ' active' : ''}`} type="button" aria-label="Open Artifact Studio" title="Artifacts for this context" aria-expanded={pane === 'artifacts'} onClick={event => openPanel('artifacts', event.currentTarget)}><Files size={17} /><span>Artifacts</span><strong>{associatedArtifacts ?? '...'}</strong></button> : null}
           <button className={`health-button ${bootstrap.hermes.state}`} type="button" aria-label={health} title={health} onClick={event => openPanel('runtime', event.currentTarget)}><span className="status-dot" /><span>Hermes</span></button></div>
       </header>
-      {project && project.id === projectId && !project.archived ? <div className="split-controls"><label>Second conversation <select aria-label="Second conversation" value={secondSessionId ?? ''} onChange={event => selectSecondPane(event.target.value || null)}><option value="">Closed</option>{sessions.filter(session => session.id !== selectedSession?.id && session.ownership === 'command' && project.sessionIds.includes(session.id)).map(session => <option key={session.id} value={session.id}>{session.title}</option>)}</select></label></div> : null}
+      {project && project.id === projectId && !project.archived ? <div className="split-controls"><label>Second conversation <select aria-label="Second conversation" value={secondSessionId ?? ''} onChange={event => selectSecondPane(event.target.value || null)}><option value="">Closed</option>{project.sessionIds.filter(id => id !== selectedSession?.id).map(id => {
+        const session = sessions.find(session => session.id === id), thread = project.threads?.find(thread => thread.sessionId === id);
+        const title = thread?.title ?? session?.title ?? 'Saved chat';
+        const reason = thread?.archived ? 'Archived' : !session ? 'Unavailable — retry chat titles in project navigation' : session.ownership !== 'command' ? 'Read-only external chat' : '';
+        return <option key={id} value={id} disabled={!!reason}>{title}{session && session.title !== title ? ` · ${session.title}` : ''}{reason ? ` · ${reason}` : ''}</option>;
+      })}</select></label></div> : null}
+      {!navigationOpen && retainedFeedback ? <p role="status" className="notice">{retainedFeedback}</p> : null}
       {bootstrap.identity.provider === 'development' ? <div className="preview-notice">Development preview · {bootstrap.command.version}</div> : null}
       {!hermesOnline ? <p className="notice error" role="status">{health}. {bootstrap.hermes.state === 'offline' ? 'Check the connection before sending.' : 'Some capabilities may be unavailable.'}</p> : null}
-      {activeElsewhere ? <div className="active-run-notice" role="status">Jarvis is working in another chat. <button className="text-button" type="button" onClick={() => { const session = sessions.find(item => item.id === activeElsewhere?.turn?.intent.sessionId); if (session) { if (project?.sessionIds.includes(session.id)) projects.current?.openLinkedChat(project, session); else projects.current?.selectChat(session); } }}>View active chat</button></div> : null}
+      {activeElsewhere ? <div className="active-run-notice" role="status">Jarvis is working in another chat. <button className="text-button" type="button" onClick={() => { if (activeElsewhere?.turn) void openRetainedThread(activeElsewhere.turn.intent.sessionId, activeElsewhere.turn.projectId); }}>View active chat</button></div> : null}
       <section ref={conversationScroll} className="timeline" aria-label="Conversation" onScroll={event => { const element = event.currentTarget; followLatest.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}><div ref={conversationContent} className="conversation-content">
         {liveEnabled && selectedSession && threads.ready(selectedSession.id) ? <LiveRoom key={`${selectedSession.id}:${live.refresh?.sessionId === selectedSession.id ? live.refresh.revision : ''}`} session={selectedSession} threadProjectId={project && project.id === projectId && !project.archived ? projectId : null} threadProjectSessionIds={project && project.id === projectId && !project.archived ? project.sessionIds : undefined} onThreadLink={openThreadLink} onHistory={(sessionId, messages, complete) => { live.history(sessionId, messages, complete); setDraftAuthorizedSession(complete ? sessionId : null); }}
           turns={[...live.completedTurns, ...(live.turn ? [live.turn] : [])]} onSaveResponse={artifactStudioEnabled ? message => saveResponseArtifact(message.content, null) : undefined}
