@@ -43,5 +43,5 @@ recovery evidence is missing. The plan's P1–P8 and P10 evidence and earlier P9
 failure/rollback history remain in §11.
 
 The [Final Neal packet/review queue #20](https://github.com/KumarG23/jarvis-command/issues/20)
-holds deferred contracts and phone steps; Sol will post the P9 addendum and close
-#84/#61 after this status update merges.
+contains deferred contracts, phone steps and the [P9/P10 addendum](https://github.com/KumarG23/jarvis-command/issues/20#issuecomment-6558299788).
+All reopened milestones are Done or Deferred; no further Command work is admitted.
