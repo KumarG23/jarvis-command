@@ -1,0 +1,58 @@
+# Documentation projection of MASTER_PLAN.md §10 and §12; current disposition/evidence comments cite §11.
+# This file grants no authority, never turns Deferred into pending implementation, and does not replenish the completed product backlog.
+# P1: Done/live; phone check pending. Historical per-answer receipt remains unsupported. Evidence: §11 P1 / https://github.com/KumarG23/jarvis-command/issues/24#issuecomment-6473022817
+milestones:
+  - id: P1
+    title: Truthful status, usage and model/effort
+    acceptance:
+      - For at least two models on owned live runs, status, activity, counters and requested-versus-executed route match authoritative run status and receipt without fabricated values (§10 P1; §12 model, usage and unknown-state scenarios).
+# P2: Done/live; phone check pending. Evidence: §11 P2 / https://github.com/KumarG23/jarvis-command/issues/26#issuecomment-6474024278
+  - id: P2
+    title: Chat completeness
+    acceptance:
+      - Ten distinct and repeated-text sends, reload, restart and lost-ACK recovery retain canonical history with at most one admission per send (§10 P2; §12 network-drop, reload and repeated-message scenarios).
+# P3: Done/live; phone check pending. Evidence: §11 P3 / https://github.com/KumarG23/jarvis-command/issues/31#issuecomment-6474818294
+  - id: P3
+    title: Design foundation and responsive shell
+    acceptance:
+      - Desktop and 320–430 px emulation support keyboard navigation, long code and scrolling without horizontal overflow or visible demo data (§10 P3; §12 desktop and long-output scenarios).
+# P4: Done/live; phone check pending. Association policy and PDF preview remain deferred. Evidence: §11 P4 / https://github.com/KumarG23/jarvis-command/issues/44#issuecomment-6476317648
+  - id: P4
+    title: Artifact reliability
+    acceptance:
+      - Artifact v1-to-v2 bytes, checksums and versions survive service restart on desktop and mobile emulation; HTML and SVG remain sandboxed (§10 P4; §12 artifact restart scenario).
+# P4.5: Done/live; phone check pending. Delegation detail and non-image transport remain unsupported/deferred. Evidence: §11 P4.5 / https://github.com/KumarG23/jarvis-command/issues/41#issuecomment-6476318118
+  - id: P4_5
+    title: Projects workspace
+    acceptance:
+      - A project retains instructions, chats, files and saved response across restart, with unsupported delegation detail shown as unavailable (§10 P4.5; §12 artifact restart scenario).
+# P5: Capability unsupported/deferred; unavailable UI live; phone check pending. Evidence: §11 P5 / https://github.com/KumarG23/jarvis-command/issues/31#issuecomment-6474818294
+  - id: P5
+    title: Agents, direct chats and delegation
+    acceptance:
+      - Supported profile and message-agent capabilities work end to end; unsupported capabilities are visibly unavailable with the reason (§10 P5; §12 Bot DM scenario).
+# P6: Done/live; production Web Push disabled; phone check pending. Production VAPID/egress and cross-surface discovery remain deferred. Evidence: §11 P6 / https://github.com/KumarG23/jarvis-command/pull/59#issuecomment-6478505568
+  - id: P6
+    title: Notifications and inbox
+    acceptance:
+      - In-app app-originated events appear without duplicates, and the push path passes local-key tests while production push remains disabled (§10 P6; §12 notification and disabled-preference scenarios).
+# P7: Capability unsupported/deferred; unavailable UI live; phone check pending. Evidence: §11 P7 / https://github.com/KumarG23/jarvis-command/issues/31#issuecomment-6474818294
+  - id: P7
+    title: Collaboration rooms
+    acceptance:
+      - A proven writable native driver supports room actions; otherwise the UI reports unavailable and does not simulate a room conversation (§10 P7; §12 unsupported-room-driver scenario).
+# P8: Done/live; Final Neal packet posted; phone check pending. Evidence: §11 P8 / https://github.com/KumarG23/jarvis-command/issues/20#issuecomment-6478521212 and https://github.com/KumarG23/jarvis-command/issues/52#issuecomment-6477626307
+  - id: P8
+    title: Field polish, release and Final Neal packet
+    acceptance:
+      - Desktop daily-use scenarios pass, known limits are documented, and the Final Neal packet records phone checks and deferred contracts (§10 P8; §12 definition of done and §11 P8 evidence).
+# P9: Done/live; phone check pending. External runs and historical message/run joins remain unknown/unsupported. Evidence: §11 P9 / https://github.com/KumarG23/jarvis-command/pull/89#issuecomment-6558260722 and https://github.com/KumarG23/jarvis-command/issues/20#issuecomment-6558299788
+  - id: P9
+    title: Independent project threads
+    acceptance:
+      - Two owned threads recover their exact runs after restart/reload with one admission each; lead roster links validate and steering/stopping one thread leaves the other independent (§10 P9; §12 reload and network-drop scenarios).
+# P10: Done/live; phone check pending. New-family eligibility stays deferred; only existing approved free/included allowlisted routes are selectable. Evidence: §11 P10 / https://github.com/KumarG23/jarvis-command/pull/75#issuecomment-6547754852 and https://github.com/KumarG23/jarvis-command/issues/20#issuecomment-6558299788
+  - id: P10
+    title: Model catalog
+    acceptance:
+      - Every selectable model is advertised, authenticated and on the existing approved eligibility allowlist; other entries remain unavailable with a reason, with no paid fallback or credential exposure (§10 P10; §12 model-selection scenario).

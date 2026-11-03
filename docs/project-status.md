@@ -2,6 +2,8 @@
 
 Plan of record: [MASTER_PLAN.md](../MASTER_PLAN.md) on `release/gpt6-sol-luna`.
 
+Checkable acceptance projection: [ROADMAP.yaml](../ROADMAP.yaml) maps the existing §10 milestones to their §11 dispositions and evidence. It adds no work or authority.
+
 ## Live release
 
 Current source: `55d61b8db16a4798429dcf99a79fc8d377c1ef82` (PR #89).
