@@ -5,7 +5,7 @@ milestones:
   - id: P1
     title: Truthful status, usage and model/effort
     acceptance:
-      - For two owned live runs, status, activity, counters and requested-versus-executed route match authoritative run status and receipt without fabricated values (§10 P1; §12 model, usage and unknown-state scenarios).
+      - For at least two models on owned live runs, status, activity, counters and requested-versus-executed route match authoritative run status and receipt without fabricated values (§10 P1; §12 model, usage and unknown-state scenarios).
 # P2: Done/live; phone check pending. Evidence: §11 P2 / https://github.com/KumarG23/jarvis-command/issues/26#issuecomment-6474024278
   - id: P2
     title: Chat completeness
