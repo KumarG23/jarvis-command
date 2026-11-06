@@ -78,12 +78,12 @@ milestones:
     title: Visual identity
     acceptance:
       - Restrained AA semantic accents and deterministic project icons use existing optional metadata; model-family marks use verified executed identity only, with desktop/360 px evidence (§10 P11).
-# P12: Reopened; staged. Phase 2 follows live Phase 1 and supported exact binding.
+# P12: PR124 backend combined head 2c632a40 re-reviewed and gate-merged 7f89450; validate42291840581 green. REACTIONS_MODE disabled; phase1 UI/release/live/phone pending; phase2 staged, exact binding Unsupported. §11 P12 / reviews 6695197670, 6695243452.
   - id: P12
     title: Message reactions
     acceptance:
       - Durable audited user reactions enter the next explicit run as bounded deduplicated context; verified phase 2 markers require exact target binding; no reaction admits a run or approval (§10 P12).
-# P6.1: PR119 merged/released ef80628, app 1999ee…, rollback release-app-1793994675572931464 restores 28f30500…. #99 two-attempt authenticated readback partial: desktop GET/recreation persistence; mobile/360px acceptance unverified. PR120 backend findings 1–2 accepted at 370e969; exact-target/presence UI finding remains open; writer unmerged/unreleased. Binding Unsupported; production push disabled. §11 P6.1 / #99 readback 6694077728 / PR120 review 6694582187.
+# P6.1: PR119 merged/released ef80628, app 1999ee…, rollback release-app-1793994675572931464 restores 28f30500…. #99 partial authenticated desktop readback only; 360/mobile unverified. PR120 exact-focus/presence source accepted at 02e776d; CI42288870427 failed synthetic fixtures, same99 owner repairing; unmerged/unreleased, no live/phone claim. Exact binding Unsupported; push disabled. §11 P6.1 / #99 6694077728 / PR120 6695208630.
   - id: P6_1
     title: Reply notifications
     acceptance:
