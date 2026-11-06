@@ -43,3 +43,25 @@ it('accepts bounded identity choices for writes and unknown future tokens only o
     expect(ProjectRoomCreateSchema.safeParse({ ...metadata, ...fields }).success).toBe(false);
   }
 });
+
+// Retain bridge read coverage; the writer accepts only the known enum choices.
+it.each([
+  [{ projectIcon: 'orbit', projectColor: 'violet' }, true],
+  [{ projectIcon: 'auto' }, true], [{ projectColor: 'auto' }, true],
+  [{ projectIcon: 'future-glyph', projectColor: 'future-accent' }, false],
+  [{ projectIcon: 'g'.repeat(32), projectColor: 'c'.repeat(32) }, false],
+] as const)('reads and retains bounded identity metadata %j (writable: %s)', (fields, writable) => {
+  const room = { ...legacy, ...fields };
+  expect(ProjectRoomSchema.parse(room)).toEqual(room);
+  expect(ProjectRoomsSchema.parse({ version: 1, rooms: [room] }).rooms).toEqual([room]);
+  const metadata = { name: legacy.name, goal: legacy.goal, repository: legacy.repository, notes: legacy.notes };
+  expect(ProjectRoomCreateSchema.safeParse({ ...metadata, ...fields }).success).toBe(writable);
+});
+it.each([
+  { projectIcon: 'g'.repeat(33) }, { projectColor: 'c'.repeat(33) },
+  { projectIcon: '' }, { projectColor: '#fff' }, { projectIcon: '../private' },
+  { projectIcon: null }, { projectColor: [] }, { projectIcon: { glyph: 'orbit' } },
+  { unexpectedIdentity: 'orbit' },
+])('rejects malformed or unrelated read metadata %j', fields => {
+  expect(ProjectRoomSchema.safeParse({ ...legacy, ...fields }).success).toBe(false);
+});

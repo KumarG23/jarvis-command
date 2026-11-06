@@ -1,6 +1,6 @@
 # Issue 97 — P11 project identity candidate
 
-Source-only first vertical slice against `release/gpt6-sol-luna`; baseline `518b400`.
+Source-only first vertical slice against `release/gpt6-sol-luna`; original candidate baseline `518b400`.
 This does **not** complete P11. Verified executed-model marks remain staged after
 #96's exclusive picker/inference work. No model, receipt or historical-route marks
 changed. No plan/ROADMAP, runtime configuration, provider, auth or network changes.
@@ -14,7 +14,14 @@ existing serialized metadata merge preserves them. No migration or second store.
 List, selected project header, details and roster context retain text labels;
 decoration is hidden from assistive technology and preserves exact label text.
 
-Focused evidence:
+Integration with accepted reader bridge `d45fac6`: 31 contract, 44 store/route
+and 37 identity/metadata UI checks pass. Workspace typecheck, changed-file lint,
+and affected server/web builds pass. Production schema/UI and browser fixtures
+are unchanged from original #110; accepted layout evidence is reused. Bridge
+read/preservation, malformed-token, store/tombstone/restart checks remain; only
+reader-only assertions rejecting intended known enum writes are adapted.
+
+Original candidate evidence (retained):
 
 - Before implementation, new contract regression failed (16 existing checks
   passed); after implementation all 17 project-contract checks pass.
@@ -71,9 +78,15 @@ Screenshots (all visibly synthetic):
 | 360×360 | [list](issue-97/360x360-SYNTHETIC-before-list.png), [details](issue-97/360x360-SYNTHETIC-before-details.png) | [list](issue-97/360x360-SYNTHETIC-after-list.png), [details](issue-97/360x360-SYNTHETIC-after-details.png), [settings](issue-97/360x360-SYNTHETIC-after-settings.png), [header](issue-97/360x360-SYNTHETIC-after-header.png) |
 
 Rollback compatibility: existing projects load without identity metadata. Once
-new fields have been saved, older binaries with strict pre-P11 room schemas cannot
-read them. Lead release/rollback must retain an identity-aware reader or use the
-existing approved metadata recovery procedure; no live store was touched here.
+new fields have been saved, pre-bridge strict readers cannot read them. The
+independently accepted/released reader bridge, PR #116 / `d45fac6`, is the established
+rollback path: retain immutable app
+`sha256:0a2881afbcbcf2ccbea2a0cb209659c8235339c2fda8b7c43aebe0de1f37c8f1`.
+[Lead bridge acceptance](https://github.com/KumarG23/jarvis-command/pull/116#issuecomment-6693225527)
+records its authenticated readback and retention. The bridge's earlier rollback
+`release-app-1793992056206232872` restores a pre-bridge image and is unsuitable after
+identity writes. No approved metadata recovery operation is established; no private
+snapshot replacement is proposed or live store touched in this source work.
 Sol owns exact-head review, merge, recoverable release/rollback and authenticated
 acceptance. **Phone check pending**: on Pixel, choose glyph/accent, save/reopen,
 rename/archive/restore, inspect list/header/roster labels, then verify keyboard
