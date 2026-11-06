@@ -81,3 +81,28 @@ it('retains committed thread metadata after uncertain sync and allows exact rest
   await expect(store.update(() => [room])).rejects.toMatchObject({ statusCode: 503 });
   expect(await new ProjectRoomStore(root).list()).toEqual([next]);
 });
+
+it('does not commit deletion when retained snapshot creation fails', async () => {
+  const { store, path, before } = await fixture();
+  const original = fs.open;
+  vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+    if (String(args[0]).includes('.project-rooms-snapshot-')) throw Error('fixture snapshot failure');
+    return original(...args);
+  });
+  await expect(store.remove(room.id, async () => {})).rejects.toMatchObject({ statusCode: 503 });
+  expect(await fs.readFile(path)).toEqual(before);
+  expect(await store.list()).toEqual([room]);
+});
+it('serializes deletion against a second instance and preserves legacy records plus tombstones after restart', async () => {
+  const { root, store } = await fixture();
+  const second = new ProjectRoomStore(root);
+  let enter!: () => void, release!: () => void;
+  const started = new Promise<void>(resolve => { enter = resolve; });
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const removal = store.remove(room.id, async () => { enter(); await pending; });
+  await started;
+  const update = second.update(rooms => [...rooms, { ...room, id: `room_${'b'.repeat(32)}` }]);
+  release(); await removal; await update;
+  expect(await new ProjectRoomStore(root).deletedIds()).toEqual([room.id]);
+  expect((await new ProjectRoomStore(root).list()).map(item => item.id)).toEqual([`room_${'b'.repeat(32)}`]);
+});

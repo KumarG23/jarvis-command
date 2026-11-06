@@ -35,7 +35,16 @@ export const ProjectRoomSchema = ProjectRoomCreateSchema.extend({
   && (room.threads ?? []).every(thread => room.sessionIds.includes(thread.sessionId))
   && (!room.leadSessionId || (room.sessionIds.includes(room.leadSessionId)
     && room.threads?.some(thread => thread.sessionId === room.leadSessionId && !thread.archived))));
-export const ProjectRoomsSchema = z.object({ version: z.literal(1), rooms: z.array(ProjectRoomSchema).max(100) }).strict()
-  .refine(store => new Set(store.rooms.map(room => room.id)).size === store.rooms.length);
+export const ProjectRoomsSchema = z.object({ version: z.literal(1), rooms: z.array(ProjectRoomSchema).max(100), deletedRoomIds: z.array(ProjectRoomIdSchema).optional() }).strict()
+  .refine(store => new Set(store.rooms.map(room => room.id)).size === store.rooms.length
+    && new Set(store.deletedRoomIds ?? []).size === (store.deletedRoomIds?.length ?? 0)
+    && !store.rooms.some(room => store.deletedRoomIds?.includes(room.id)));
 export type ProjectRoom = z.infer<typeof ProjectRoomSchema>;
 export type ProjectRoomCreate = z.infer<typeof ProjectRoomCreateSchema>;
+
+export const ProjectDeletePreviewSchema = z.object({
+  roomId: ProjectRoomIdSchema, name: z.string(), chats: z.number().int().nonnegative(),
+  artifacts: z.number().int().nonnegative().nullable(), availabilityReason: z.string().optional(), token: z.string().regex(/^[a-f0-9]{64}$/),
+  enabled: z.boolean(), contentsAvailable: z.literal(false), reason: z.string(),
+}).strict();
+export const ProjectDeleteRequestSchema = z.object({ roomId: ProjectRoomIdSchema, mode: z.literal('project-only'), token: z.string().regex(/^[a-f0-9]{64}$/) }).strict();

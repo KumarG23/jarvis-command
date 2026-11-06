@@ -1,5 +1,6 @@
+import type { z } from 'zod';
 import { ProjectReferences } from './ProjectReferences';
-import { ProjectThreadUpdateSchema, ProjectRoomSchema, ProjectRoomsSchema, ProjectRoomCreateSchema, SessionMutationResponseSchema, type ProjectRoom, type SessionSummary } from '@jarvis-command/contracts';
+import { ProjectDeletePreviewSchema, ProjectThreadUpdateSchema, ProjectRoomSchema, ProjectRoomsSchema, ProjectRoomCreateSchema, SessionMutationResponseSchema, type ProjectRoom, type SessionSummary } from '@jarvis-command/contracts';
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronDown, ChevronRight, Folder, FolderPlus, MessageSquare, Plus, Search, Trash2, X, FileText, Link, Pencil } from 'lucide-react';
@@ -15,6 +16,7 @@ async function request(path: string, body?: unknown) {
     headers: { accept: 'application/json', ...(body === undefined ? {} : { 'content-type': 'application/json', 'x-jarvis-command': '1' }) },
     ...(body === undefined ? {} : { method: 'POST', body: JSON.stringify(body) }) });
   if (response.status === 404 && body !== undefined && /^\/api\/rooms\/room_[a-f0-9]{32}$/.test(path)) throw Error('Project editing is unavailable on this server, or this project no longer exists. Your draft is kept here until you reload or cancel. Reload projects to check availability.');
+  if (!response.ok && /\/delete$/.test(path)) { const body = await response.json().catch(() => null) as { error?: string } | null; throw Error(body?.error ?? 'Project deletion could not be confirmed.'); }
   if (!response.ok) throw Error('Project operation could not be confirmed. Reload projects before retrying; the change may already have been saved.');
   return response.json() as Promise<unknown>;
 }
@@ -85,6 +87,11 @@ export function ProjectRooms({ ref, sessions, threadStatuses, selectedSessionId,
   const [titleAttempt, setTitleAttempt] = useState(0);
   const [projectTarget, setProjectTarget] = useState<SessionSummary | null>(null);
   const [targetRoomId, setTargetRoomId] = useState('');
+  const [projectDelete, setProjectDelete] = useState<z.infer<typeof ProjectDeletePreviewSchema> | null>(null);
+  const cancelDelete = useRef<HTMLButtonElement | null>(null);
+  const deleteOpener = useRef<HTMLElement | null>(null);
+  const [deleteUncertain, setDeleteUncertain] = useState(false);
+  useEffect(() => { if (projectDelete && !busy) cancelDelete.current?.focus(); }, [projectDelete, busy]);
   const [deleteTarget, setDeleteTarget] = useState<SessionSummary | null>(null);
   const callbacks = useRef({ onScope, onProjectScope, onSession, onResolvedSessions, onDeleted, onOpenChange, onNavigate }); callbacks.current = { onScope, onProjectScope, onSession, onResolvedSessions, onDeleted, onOpenChange, onNavigate };
   const mounted = useRef(true), working = useRef(false);
@@ -195,10 +202,10 @@ export function ProjectRooms({ ref, sessions, threadStatuses, selectedSessionId,
   async function load(remembered?: string) {
     const data = ProjectRoomsSchema.parse(await request('/api/rooms'));
     if (!mounted.current) return;
-    setRooms(data.rooms); setLoaded(true);
+    reconcileProjects(data.rooms);
     if (remembered) {
       const room = data.rooms.find(item => item.id === remembered);
-      if (!room) throw Error('Remembered project unavailable. Choose another project or a recent chat.');
+      if (!room) { remember(null); callbacks.current.onScope(null); callbacks.current.onProjectScope?.(null); return; }
       await choose(room);
     }
   }
@@ -274,6 +281,41 @@ export function ProjectRooms({ ref, sessions, threadStatuses, selectedSessionId,
       // exact target available for an explicit retry without locking navigation.
     }
   }
+  function closeProjectDelete() { setProjectDelete(null); deleteOpener.current?.focus(); }
+  async function inspectDeletion(room: ProjectRoom, element: HTMLElement) {
+    deleteOpener.current = element;
+    const preview = ProjectDeletePreviewSchema.parse(await request(`/api/rooms/${room.id}/deletion`));
+    if (preview.roomId !== room.id) throw Error('Project identity differs. Reload projects.');
+    setDeleteUncertain(false); setProjectDelete(preview);
+  }
+  function reconcileProjects(next: ProjectRoom[]) {
+    setRooms(next); setLoaded(true);
+    for (const id of Object.keys(pendingChats.current)) if (!next.some(room => room.id === id)) { rememberPendingChat(id, null); markCreation(id, false); }
+    for (const id of uncertainCreates) if (!next.some(room => room.id === id)) markCreation(id, false);
+    if (selected && !next.some(room => room.id === selected.id)) {
+      setSelected(null); setExpanded(null); setOpen(false); setDraft(null); setThreadDraft(null); remember(null);
+      callbacks.current.onScope(null); callbacks.current.onProjectScope?.(null);
+    }
+    if (projectTarget && !next.some(room => room.id === targetRoomId)) { setProjectTarget(null); setTargetRoomId(''); }
+  }
+  async function readDeletion(id: string) {
+    const data = ProjectRoomsSchema.parse(await request('/api/rooms'));
+    reconcileProjects(data.rooms);
+    if (data.rooms.some(room => room.id === id)) throw Error('Project remains. Close this confirmation and review fresh counts before another attempt.');
+    setProjectDelete(null); setDeleteUncertain(false);
+    requestAnimationFrame(() => search.current?.focus());
+  }
+  async function deleteProject() {
+    if (!projectDelete || deleteUncertain) return;
+    const target = projectDelete;
+    for (const id of rooms.find(room => room.id === target.roomId)?.sessionIds ?? []) await resolveSession(id);
+    // Set before dispatch: an uncertain acknowledgement never permits a resend.
+    setDeleteUncertain(true);
+    let failure: unknown;
+    try { await request(`/api/rooms/${target.roomId}/delete`, { roomId: target.roomId, mode: 'project-only', token: target.token }); }
+    catch (error) { failure = error; }
+    try { await readDeletion(target.roomId); } catch (error) { throw failure ?? error; }
+  }
   async function deleteChat(session: SessionSummary) {
     const response = await fetch(`/api/live/sessions/${encodeURIComponent(session.id)}`, { method: 'DELETE', credentials: 'same-origin', redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(10_000), headers: { accept: 'application/json', 'x-jarvis-command': '1' } });
     const payload = await response.json().catch(() => null) as { deleted?: unknown; sessionId?: unknown } | null;
@@ -338,6 +380,7 @@ export function ProjectRooms({ ref, sessions, threadStatuses, selectedSessionId,
       </form> : selected ? <>
         <div className="project-title"><Folder size={24} /><h3>{selected.name}</h3><button className="secondary-button" type="button" disabled={busy} onClick={() => { setError(null); setDraft({ id: selected.id, name: selected.name, goal: selected.goal, instructions: selected.instructions ?? '', archived: selected.archived ?? false, repository: selected.repository, notes: selected.notes.join('\n') }); }}><Pencil size={14} /> Edit project</button></div>
         <button className="secondary-button" type="button" disabled={busy} onClick={() => void perform(async () => { await saveMetadata(selected.id, { name: selected.name, goal: selected.goal, repository: selected.repository, notes: selected.notes, instructions: selected.instructions ?? '', archived: !selected.archived }); })}>{selected.archived ? 'Restore project' : 'Archive project'}</button>
+        <button className="secondary-button project-delete-control" type="button" disabled={busy} onClick={event => { const element = event.currentTarget; void perform(() => inspectDeletion(selected, element)); }}>Delete project</button>
         {selected.archived ? <p role="status">Archived project — restore before sending new project messages.</p> : null}
         <section><h4>Standing instructions</h4><p className="project-goal">{selected.instructions || 'No standing instructions saved.'}</p><p className="muted small">Saved context is included as ordinary text in each new project message. Review the complete context at the composer.</p></section>
         <section ref={roster} tabIndex={-1} aria-label="Project threads"><h4>Lead and threads</h4>
@@ -388,7 +431,7 @@ export function ProjectRooms({ ref, sessions, threadStatuses, selectedSessionId,
         {filtered.map((room, index) => <div key={room.id} className="project-nav-group">{room.archived && !filtered[index - 1]?.archived ? <h3 className="section-heading">Archived projects</h3> : null}<div className="project-nav-row"><button type="button" className="sidebar-item project-nav" title={room.name} disabled={busy || !!draft} aria-current={selected?.id === room.id ? 'page' : undefined} aria-expanded={expanded === room.id} onClick={() => {
           if (selected?.id === room.id) { setExpanded(previous => previous === room.id ? null : room.id); return; }
           void perform(() => choose(room));
-        }}><Folder size={18} /><span>{room.name}</span>{expanded === room.id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button><button className="icon-button project-new-chat" type="button" aria-label={`New chat in ${room.name}`} title={`New chat in ${room.name}`} disabled={busy || !!draft || room.archived || creationBlocked(room.id)} onClick={() => void perform(() => createProjectChat(room))}><Plus size={15} /></button></div>
+        }}><Folder size={18} /><span>{room.name}</span>{expanded === room.id ? <ChevronDown size={14} /> : <ChevronRight size={14} />}</button><button className="icon-button project-delete-control" type="button" aria-label={`Delete project ${room.name}`} disabled={busy || !!draft} onClick={event => { const element = event.currentTarget; void perform(() => inspectDeletion(room, element)); }}><Trash2 size={15} /></button><button className="icon-button project-new-chat" type="button" aria-label={`New chat in ${room.name}`} title={`New chat in ${room.name}`} disabled={busy || !!draft || room.archived || creationBlocked(room.id)} onClick={() => void perform(() => createProjectChat(room))}><Plus size={15} /></button></div>
         {expanded === room.id ? <div className="project-chat-list">{room.sessionIds.length ? room.sessionIds.filter(id => !room.threads?.find(thread => thread.sessionId === id)?.archived).map(id => <button key={id} className="sidebar-item chat-item" type="button" title={`${threadTitle(room, id)}${threadStatuses ? ` · ${threadStatus(id)}` : ''}`} aria-description={threadStatuses ? threadStatus(id) : undefined} aria-current={id === selectedSessionId ? 'page' : undefined} disabled={busy || !!draft} onClick={() => void perform(async () => { await attach(id); callbacks.current.onNavigate?.(); })}><MessageSquare size={16} /><span>{room.leadSessionId === id ? 'Lead · ' : ''}{threadTitle(room, id)}</span></button>) : <p className="empty-copy">Start a chat in this project.</p>}
           {titleError ? <button className="text-button small" type="button" onClick={() => setTitleAttempt(value => value + 1)}>Retry chat titles</button> : null}
           <button className="text-button project-info-button" type="button" aria-expanded={open && !creatingRoom} onClick={event => showDetails(event.currentTarget)}>Project details <ChevronRight size={13} /></button>
@@ -398,6 +441,24 @@ export function ProjectRooms({ ref, sessions, threadStatuses, selectedSessionId,
       {error && !open ? <p role="alert" className="notice error">{error} <button className="text-button" type="button" disabled={busy} onClick={() => void perform(() => load(selected?.id))}>Reload projects</button></p> : null}
     </div>
     {projectTarget ? <div className="action-dialog-backdrop"><section className="action-dialog" role="dialog" aria-modal="true" aria-labelledby="add-chat-title"><h2 id="add-chat-title">Add chat to project</h2><p>{projectTarget.title}</p><label>Project<select value={targetRoomId} disabled={busy} onChange={event => setTargetRoomId(event.target.value)}>{rooms.map(room => <option key={room.id} value={room.id}>{room.name}</option>)}</select></label><div className="button-row"><button className="primary-button" type="button" disabled={busy || !targetRoomId} onClick={() => void perform(async () => { await linkToProject(targetRoomId, projectTarget.id, false); setProjectTarget(null); })}>Add to project</button><button className="secondary-button" type="button" disabled={busy} onClick={() => setProjectTarget(null)}>Cancel</button></div></section></div> : null}
+    {projectDelete ? createPortal(<div className="action-dialog-backdrop project-delete-backdrop"><section className="action-dialog project-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-project-title" onKeyDown={event => {
+      if (event.key === 'Escape' && !busy) { event.stopPropagation(); closeProjectDelete(); }
+      if (event.key === 'Tab') {
+        const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'));
+        const first = buttons[0], last = buttons.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+    }}><h2 id="delete-project-title">Delete project?</h2><p><strong>{projectDelete.name}</strong></p><p>{projectDelete.chats} linked chats · {projectDelete.artifacts ?? 'Unknown count of'} project-scoped artifacts</p>
+      <p>Delete project only keeps all chats and artifacts as standalone items. External chats are only unlinked.</p>
+      {!projectDelete.enabled ? <p role="status">{projectDelete.availabilityReason ?? 'Project deletion is unavailable: disabled on this server.'}</p> : null}
+      <button className="secondary-button" type="button" disabled>Delete project and its chats/artifacts</button><p className="muted small">{projectDelete.reason}</p>
+      {deleteUncertain ? <p role="status">Deletion response is uncertain. Read projects again; no automatic retry will be sent.</p> : null}
+      {error ? <p role="alert">{error}</p> : null}
+      <div className="button-row"><button ref={cancelDelete} className="secondary-button" type="button" disabled={busy} onClick={closeProjectDelete}>Cancel</button>
+      <button className="danger-button" type="button" disabled={busy || !projectDelete.enabled || deleteUncertain} onClick={() => void perform(deleteProject)}>Delete project only</button>
+      {deleteUncertain ? <button className="secondary-button" type="button" disabled={busy} onClick={() => void perform(() => readDeletion(projectDelete.roomId))}>Read projects again</button> : null}</div>
+    </section></div>, document.body) : null}
     {deleteTarget ? <div className="action-dialog-backdrop"><section className="action-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-chat-title"><h2 id="delete-chat-title">Delete this chat permanently?</h2><p><strong>{deleteTarget.title}</strong></p><p className="muted">This removes the chat history from Hermes and every Command project. This cannot be undone.</p><div className="button-row"><button className="danger-button" type="button" disabled={busy} onClick={() => void perform(() => deleteChat(deleteTarget))}>Delete permanently</button><button className="secondary-button" type="button" disabled={busy} onClick={() => setDeleteTarget(null)}>Cancel</button></div></section></div> : null}
     {contextTarget ? createPortal(panel, contextTarget) : panel}
   </>;

@@ -37,6 +37,7 @@ function config(root: string, artifactOverrides: Partial<AppConfig['artifacts']>
 async function makeApp(artifactOverrides: Partial<AppConfig['artifacts']> = {}) {
   const root = await mkdtemp(join(tmpdir(), 'jarvis-artifacts-test-'));
   roots.push(root);
+  await mkdir(join(root, 'audit'), { mode: 0o700 });
   const app = buildApp({
     config: config(root, artifactOverrides),
     verifyAccess: vi.fn(async assertion => {

@@ -1,9 +1,11 @@
 import { randomBytes } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, open, rename, unlink, type FileHandle } from 'node:fs/promises';
+import { KeyedSerialQueue } from './keyed-serial-queue';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { ProjectRoomsSchema, type ProjectRoom } from '@jarvis-command/contracts';
 
+const transactions = new KeyedSerialQueue();
 const MAX_BYTES = 1_048_576;
 export class RoomStorageError extends Error {
   readonly statusCode = 503;
@@ -17,9 +19,17 @@ export class ProjectRoomStore {
   #poisoned = false;
   constructor(readonly directory: string) {}
   list() { return this.#transaction(); }
+  async deletedIds() { let ids: string[] = []; await this.#transaction(undefined, undefined, value => { ids = value; }); return ids; }
+  remove(id: string, validate: (room: ProjectRoom) => Promise<void>) {
+    return this.#transaction(async rooms => {
+      const room = rooms.find(item => item.id === id);
+      if (room) await validate(room);
+      return rooms.filter(item => item.id !== id);
+    }, id);
+  }
   update(change: (rooms: ProjectRoom[]) => ProjectRoom[]) { return this.#transaction(change); }
-  #transaction(change?: (rooms: ProjectRoom[]) => ProjectRoom[]): Promise<ProjectRoom[]> {
-    const operation = this.#queue.then(async () => {
+  #transaction(change?: (rooms: ProjectRoom[]) => ProjectRoom[] | Promise<ProjectRoom[]>, deleting?: string, observe?: (ids: string[]) => void): Promise<ProjectRoom[]> {
+    const operation = this.#queue.then(() => transactions.run(this.directory, async () => {
       if (this.#poisoned) throw new RoomStorageError();
       let directory: FileHandle | undefined;
       let staging: string | undefined;
@@ -44,6 +54,7 @@ export class ProjectRoomStore {
         const root = `/proc/self/fd/${directory.fd}`;
         const path = join(root, 'project-rooms.json');
         let rooms: ProjectRoom[] = [];
+        let deletedRoomIds: string[] = [];
         try {
           const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
           try {
@@ -52,15 +63,27 @@ export class ProjectRoomStore {
             const bytes = Buffer.alloc(MAX_BYTES + 1);
             const { bytesRead } = await handle.read(bytes, 0, bytes.length, 0);
             if (bytesRead !== stat.size || bytesRead > MAX_BYTES) throw new RoomStorageError();
-            rooms = ProjectRoomsSchema.parse(JSON.parse(bytes.subarray(0, bytesRead).toString('utf8'))).rooms;
+            const state = ProjectRoomsSchema.parse(JSON.parse(bytes.subarray(0, bytesRead).toString('utf8')));
+            rooms = state.rooms; deletedRoomIds = state.deletedRoomIds ?? [];
             this.#seen = true;
           } finally { await handle.close(); }
         } catch (error) {
           if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT' && !this.#seen)) throw error;
         }
         await bound();
+        observe?.(deletedRoomIds);
         if (!change) return rooms;
-        const next = ProjectRoomsSchema.parse({ version: 1, rooms: change(rooms) });
+        const changed = await change(rooms);
+        if (deleting && !rooms.some(room => room.id === deleting)) return rooms;
+        if (deleting) {
+          // Retained private preimage; never delete it as temporary trash. Failure
+          // to durably snapshot prevents the metadata commit.
+          const snapshot = await open(join(root, `.project-rooms-snapshot-${deleting}-${randomBytes(16).toString('hex')}.json`), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
+          try { await snapshot.writeFile(JSON.stringify({ version: 1, rooms, deletedRoomIds })); await snapshot.sync(); } finally { await snapshot.close(); }
+          await directory.sync(); await bound();
+          deletedRoomIds = [...deletedRoomIds, deleting];
+        }
+        const next = ProjectRoomsSchema.parse({ version: 1, rooms: changed, ...(deletedRoomIds.length ? { deletedRoomIds } : {}) });
         const bytes = JSON.stringify(next);
         if (Buffer.byteLength(bytes) > MAX_BYTES) throw new RoomStorageError();
         staging = join(root, `.project-rooms-${randomBytes(16).toString('hex')}.tmp`);
@@ -80,7 +103,7 @@ export class ProjectRoomStore {
         if (staging) await unlink(staging).catch(() => undefined);
         await directory?.close();
       }
-    });
+    }));
     this.#queue = operation.catch(() => undefined);
     return operation;
   }

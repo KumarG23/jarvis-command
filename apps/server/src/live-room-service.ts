@@ -404,6 +404,25 @@ export function createLiveRoomService({
   };
 
   return Object.freeze({
+    async withProjectDeletion<T>(subject: string, projectId: string, sessionIds: string[], operation: () => Promise<T>): Promise<T> {
+      ledger.assertHealthy();
+      // Reserve synchronously before any await: send, compaction and session
+      // deletion all use the same admission set, across actors.
+      if (sessionIds.some(id => submittingSessions.has(id) || ledger.activeRunsForSession(id).length)) throw new LiveRoomConflictError('Stop active or admitting project runs before deleting this project');
+      sessionIds.forEach(id => submittingSessions.add(id));
+      try {
+        for (const id of sessionIds) {
+          const { session } = await client.getSession(id);
+          if (session.id !== id) throw new LiveRoomNotFoundError();
+        }
+        const audit = { actor: actorFingerprint(subject), sessionId: projectId, publicRunId: null, clientRequestId: null, upstreamRunId: null, requestId: null, requestFingerprint: null, status: null, choice: null };
+        // sessionId is the ledger's scope identifier here: exactly the room id.
+        await ledger.append({ ...audit, action: 'project.delete.requested', outcome: 'requested' });
+        const result = await operation();
+        await ledger.append({ ...audit, action: 'project.deleted', outcome: 'succeeded' });
+        return result;
+      } finally { sessionIds.forEach(id => submittingSessions.delete(id)); }
+    },
     /** Read-only observation: never discovers external runs or writes audit/notifications. */
     async getRosterStatus(subject: string, sessionId: string) {
       const record = ledger.latestRunForSession(actorFingerprint(subject), sessionId);

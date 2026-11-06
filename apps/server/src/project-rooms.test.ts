@@ -72,8 +72,9 @@ it('routes project attachment and deletion through the same per-session queue', 
     headers: { 'cf-access-jwt-assertion': 'valid', origin: 'https://command.example', 'x-jarvis-command': '1' },
   })).statusCode).toBe(200);
 
-  expect(queueRun.mock.calls.map(([key]) => key)).toEqual([id, id]);
-  expect(queueRun.mock.instances[0]).toBe(queueRun.mock.instances[1]);
+  const sessionCalls = queueRun.mock.calls.flatMap(([key], index) => key === id ? [index] : []);
+  expect(sessionCalls).toHaveLength(2);
+  expect(queueRun.mock.instances[sessionCalls[0]!]).toBe(queueRun.mock.instances[sessionCalls[1]!]);
   expect((await app.inject({ url: '/api/rooms', headers })).json().rooms[0]).toMatchObject({ sessionIds: [], lastSessionId: null });
   await app.close();
 });
