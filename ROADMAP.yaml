@@ -57,7 +57,7 @@ milestones:
     acceptance:
       - Every selectable model is advertised, authenticated and on the existing approved eligibility allowlist; other entries remain unavailable with a reason, with no paid fallback or credential exposure (§10 P10; §12 model-selection scenario).
 # Initial owner reopening; later addenda below extend the bounded queue. Original dispositions above stand. Authority: MASTER_PLAN §0.2 / https://github.com/KumarG23/jarvis-command/issues/20#issuecomment-6689706582
-# P9.5: Source candidate; compact-header repair #102, release/live acceptance and phone check pending. Evidence: §11 P9.5 / docs/verification/issue-94.md
+# P9.5: Source candidate; compact-header repair #102, release/live acceptance and phone check pending. Evidence: §11 P9.5 / https://github.com/KumarG23/jarvis-command/blob/c4223d16d917ba1ddeed51a35d8ea7b940dbf34b/docs/verification/issue-94.md
   - id: P9_5
     title: Threads entry point
     acceptance:
