@@ -11,6 +11,7 @@ import { ArtifactStore, versionType } from './artifact-store';
 import { dirname } from 'node:path';
 import { NotificationStore } from './notification-store';
 import { createRunNotifier } from './run-notifier';
+import { createPresence, createReplyNotifier, REPLY_EVIDENCE_SOURCE } from './reply-notifier';
 
 export type CompositionOverrides = Readonly<{
   hermes?: Readonly<{
@@ -70,6 +71,7 @@ export function createCommandServer(
     : undefined;
   const notifications = config.command ? new NotificationStore(dirname(config.command.auditLogPath)) : undefined;
   const push = notifications && config.push ? createPushService(config.push, notifications) : undefined;
+  const presence = createPresence();
   let ledger: AuditLedger | undefined;
   let liveRoom: ReturnType<typeof createLiveRoomService> | undefined;
   const app = buildApp({
@@ -78,6 +80,7 @@ export function createCommandServer(
     hermes,
     artifactStore,
     notifications,
+    presence,
     get liveRoom() { return liveRoom; },
     checkLiveRoom: async () => {
       if (!ledger || !client) throw new Error('Live Room unavailable');
@@ -91,9 +94,10 @@ export function createCommandServer(
     liveRoom = createLiveRoomService({
       client,
       ledger,
+      notify: notifications ? createRunNotifier(notifications) : undefined,
+      notifyReply: notifications ? createReplyNotifier({ store: notifications, push, enabled: config.push?.replies === true, source: REPLY_EVIDENCE_SOURCE, presence }) : undefined,
       reactions: new ReactionStore(dirname(config.command.auditLogPath)),
       reactionsEnabled: config.reactionsEnabled,
-      notify: notifications ? createRunNotifier(notifications, push) : undefined,
       resolveImages: artifactStore
         ? createArtifactImageResolver(artifactStore)
         : async () => { throw Object.assign(new Error('Artifact storage unavailable'), { statusCode: 503 }); },

@@ -10,6 +10,7 @@ import { AuditIntegrityError } from './audit-ledger';
 import { ArtifactConflictError, ArtifactDeletedError, ArtifactNotFoundError, ArtifactStorageError, ArtifactStore } from './artifact-store';
 import { RoomStorageError } from './project-room-store';
 import { NotificationNotFoundError, NotificationStorageError, type NotificationStore } from './notification-store';
+import type { Presence } from './reply-notifier';
 import { CommandProxyUnavailableError } from './command-client';
 import type { AppConfig } from './config';
 import type { HermesSnapshot } from './hermes-client';
@@ -28,6 +29,7 @@ type AppDependencies = Readonly<{
   liveRoom?: ReturnType<typeof createLiveRoomService> | undefined;
   artifactStore?: ArtifactStore | undefined;
   notifications?: NotificationStore | undefined;
+  presence?: Presence | undefined;
   checkLiveRoom?: () => Promise<void>;
   liveStreamLimits?: LiveStreamLimits;
   now?: () => Date;

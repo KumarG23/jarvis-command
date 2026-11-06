@@ -7,6 +7,7 @@ import {
   SessionMessagesPageSchema, SessionMutationResponseSchema,
 } from '@jarvis-command/contracts';
 import { emptyInbox } from './empty-inbox';
+import { handlePresence } from './presence-route';
 
 // Synthetic local APIs only. The IDs identify the existing issue-2 fixture;
 // the content below is fabricated test content, never a live history readback.
@@ -135,6 +136,7 @@ async function mockApis(page: Page, lifecycle?: 'running' | 'failed') {
   }
   const unexpected: string[] = [];
   await page.route('**/api/**', async route => {
+    if (handlePresence(route)) return;
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (request.method() !== 'GET' || !(path in responses)) {

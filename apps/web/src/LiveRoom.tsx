@@ -6,8 +6,15 @@ import { CopyResponse } from './TurnView';
 import type { Turn } from './useLiveTurn';
 import { projectTurns } from './timeline';
 import { HistoryReceipt } from './HistoryReceipt';
+import { useReplyPresence } from './useReplyPresence';
 
-export function LiveRoom({ session, onHistory, turns = [], renderTurn, onSaveResponse, threadProjectId, threadProjectSessionIds, onThreadLink }: Readonly<{ session: SessionSummary; onHistory: (sessionId: string, messages: SessionMessage[], complete: boolean) => void; turns?: Turn[]; renderTurn?: (turn: Turn) => ReactNode; onSaveResponse?: ((message: SessionMessage) => void) | undefined; threadProjectId?: string | null; threadProjectSessionIds?: readonly string[] | undefined; onThreadLink?: ((projectId: string, sessionId: string) => void) | undefined }>) {
+const FOCUS_NOTICE = {
+  missing: 'Exact reply unavailable: it is not in this chat’s saved history. Nothing else was highlighted.',
+  incomplete: 'Exact reply unavailable: it was not found within the history loaded so far. Load more history to look further; nothing else was highlighted.',
+  unavailable: 'Exact reply unavailable: it could not be located or displayed right now. Nothing else was highlighted.',
+} as const;
+
+export function LiveRoom({ session, onHistory, turns = [], renderTurn, onSaveResponse, threadProjectId, threadProjectSessionIds, onThreadLink, focusMessageId = null, onFocusSettled, reportPresence = false }: Readonly<{ focusMessageId?: string | null; onFocusSettled?: (() => void) | undefined; reportPresence?: boolean; session: SessionSummary; onHistory: (sessionId: string, messages: SessionMessage[], complete: boolean) => void; turns?: Turn[]; renderTurn?: (turn: Turn) => ReactNode; onSaveResponse?: ((message: SessionMessage) => void) | undefined; threadProjectId?: string | null; threadProjectSessionIds?: readonly string[] | undefined; onThreadLink?: ((projectId: string, sessionId: string) => void) | undefined }>) {
   const report = useRef(onHistory);
   report.current = onHistory;
   const [messages, setMessages] = useState<SessionMessage[]>([]);
@@ -18,6 +25,34 @@ export function LiveRoom({ session, onHistory, turns = [], renderTurn, onSaveRes
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [pagesLoaded, setPagesLoaded] = useState(0);
+
+  // Presence only for a session whose history actually loaded for this actor (so it is authorized)
+  // and only while this pane is mounted; the hook itself reports only while the page is visible and focused.
+  useReplyPresence(session.id, reportPresence && !loading && !error);
+
+  // Exact-reply focus: a durable message id from a server-revalidated target, matched only by id in
+  // this session's own history (never by text, recency or adjacency). Bounded by the existing page cap.
+  const [focus, setFocus] = useState<{ id: string; state: 'searching' | 'found' | keyof typeof FOCUS_NOTICE } | null>(null);
+  const focusRef = useRef<HTMLElement | null>(null);
+  const settled = useRef(onFocusSettled);
+  settled.current = onFocusSettled;
+  useEffect(() => { if (focusMessageId) setFocus({ id: focusMessageId, state: 'searching' }); }, [focusMessageId]);
+  useEffect(() => {
+    if (!focus || focus.state !== 'searching') return;
+    const finish = (state: 'found' | keyof typeof FOCUS_NOTICE) => { setFocus({ id: focus.id, state }); settled.current?.(); };
+    if (messages.some((message) => message.id === focus.id)) {
+      const element = focusRef.current;
+      if (!element) { finish('unavailable'); return; }
+      element.scrollIntoView?.({ block: 'center' });
+      element.focus({ preventScroll: true });
+      finish('found');
+    } else if (error) finish('unavailable');
+    else if (!loading && !hasMore) finish('missing');
+    else if (!loading && hasMore) {
+      if (pagesLoaded >= 10) finish('incomplete');
+      else { setLoading(true); setOffset(nextOffset); }
+    }
+  }, [focus, messages, loading, error, hasMore, pagesLoaded, nextOffset]);
 
   useEffect(() => { report.current(session.id, messages, !loading && !error && !hasMore); }, [session.id, messages, loading, error, hasMore]);
 
@@ -66,8 +101,9 @@ export function LiveRoom({ session, onHistory, turns = [], renderTurn, onSaveRes
     {loading ? <p role="status">Loading messages…</p> : null}
     {error ? <div className="history-feedback"><p role="alert">{error}</p><button type="button" className="primary-button" onClick={() => { setError(null); setLoading(true); setAttempt((value) => value + 1); }}>Retry history</button></div> : null}
     {!loading && !error && messages.length === 0 ? <p role="status">No saved messages in session history yet.</p> : null}
+    {focus && focus.state !== 'searching' && focus.state !== 'found' ? <div className="history-feedback" role="status"><p>{FOCUS_NOTICE[focus.state]}</p><button type="button" className="text-button" onClick={() => setFocus(null)}>Dismiss</button></div> : null}
     {liveAfter(-1)}
-    {messages.map((message, index) => <Fragment key={message.id}>{omittedEchoIds.has(message.id) || (message.role === 'assistant' && !message.content && !message.toolName) ? null : <article className="timeline-event history-message" data-message-id={message.id} aria-label={message.role === 'user' ? 'Your message' : message.role === 'assistant' ? 'Jarvis response' : undefined}>
+    {messages.map((message, index) => <Fragment key={message.id}>{omittedEchoIds.has(message.id) || (message.role === 'assistant' && !message.content && !message.toolName) ? null : <article ref={message.id === focus?.id ? (element) => { focusRef.current = element; } : undefined} tabIndex={message.id === focus?.id ? -1 : undefined} data-reply-focus={message.id === focus?.id && focus.state === 'found' ? 'true' : undefined} className="timeline-event history-message" data-message-id={message.id} aria-label={message.role === 'user' ? 'Your message' : message.role === 'assistant' ? 'Jarvis response' : undefined}>
       <div className={`event-icon ${message.role === 'user' ? 'violet' : 'cyan'}`}>
         {message.role === 'tool' ? <SquareTerminal size={17} /> : message.role === 'user' ? <MessageSquare size={17} /> : <Command size={25} />}
       </div>

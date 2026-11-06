@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { CommandBootstrapSchema } from '@jarvis-command/contracts';
 import { emptyInbox } from './empty-inbox';
+import { handlePresence } from './presence-route';
 
 // Synthetic local fixture only: never reaches Hermes or production.
 const first = 'jc_issue22_one', second = 'jc_issue22_two';
@@ -18,6 +19,7 @@ test('requested choices survive two chats and reload; stale inventory preserves 
   let options = [sol, luna], posts = 0, inventories = 0;
   const unexpected: string[] = [];
   await page.route('**/api/**', async route => {
+    if (handlePresence(route)) return;
     const req = route.request(), path = new URL(req.url()).pathname;
     if (path === '/api/live/runs' && req.method() === 'POST') {
       posts++;

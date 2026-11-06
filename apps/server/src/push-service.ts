@@ -6,9 +6,11 @@ import webpush from 'web-push';
 import type { PushCapability, PushSubscription } from '@jarvis-command/contracts';
 import type { NotificationStore } from './notification-store';
 
-export type PushConfig = Readonly<{ capability: PushCapability; vapid?: { subject: string; publicKey: string; privateKey: string } }>;
+export type PushConfig = Readonly<{ capability: PushCapability; vapid?: { subject: string; publicKey: string; privateKey: string }; replies?: boolean }>;
 export function pushConfig(environment: NodeJS.ProcessEnv): PushConfig {
-  if (environment.WEB_PUSH_MODE !== 'enabled') return { capability: { state: 'unavailable', reason: 'disabled' } };
+  // Disabled by default; the lead enables the single reply category separately from Web Push itself.
+  const replies = environment.REPLY_NOTIFICATIONS_MODE === 'enabled';
+  if (environment.WEB_PUSH_MODE !== 'enabled') return { capability: { state: 'unavailable', reason: 'disabled' }, replies };
   try {
     const publicKey = environment.WEB_PUSH_VAPID_PUBLIC_KEY ?? '';
     const privateKey = environment.WEB_PUSH_VAPID_PRIVATE_KEY ?? '';
@@ -18,8 +20,8 @@ export function pushConfig(environment: NodeJS.ProcessEnv): PushConfig {
     const key = createECDH('prime256v1');
     key.setPrivateKey(Buffer.from(privateKey, 'base64url'));
     if (key.getPublicKey().toString('base64url') !== publicKey) throw new Error();
-    return { capability: { state: 'available', publicKey }, vapid: { subject, publicKey, privateKey } };
-  } catch { return { capability: { state: 'unavailable', reason: 'configuration' } }; }
+    return { capability: { state: 'available', publicKey }, vapid: { subject, publicKey, privateKey }, replies };
+  } catch { return { capability: { state: 'unavailable', reason: 'configuration' }, replies }; }
 }
 
 // Exact HTTPS origins, restricted provider paths and token alphabet. No credentials/query/fragment,
@@ -75,29 +77,39 @@ export const restrictedPushTransport: PushTransport = async details => {
   });
 };
 
-export const privatePushPayload = (id: string) => JSON.stringify({ version: 1, id });
+// Version 2 is reply-only and carries the already-sanitized, bounded title/body inside the encrypted payload.
+export const replyPushPayload = (item: Readonly<{ id: string; title: string; body: string }>) => JSON.stringify({ version: 2, id: item.id, title: item.title, body: item.body });
 export function createPushService(config: PushConfig, store: NotificationStore, transport: PushTransport = restrictedPushTransport) {
+  async function send(actor: string, id: string, claim: () => Promise<Awaited<ReturnType<NotificationStore['claimReplyPush']>>>, payload: () => Promise<string>) {
+    if (config.capability.state !== 'available' || !config.vapid) return;
+    try {
+      const body = await payload();
+      const devices = await claim();
+      await Promise.all(devices.map(async device => {
+        let outcome: 'sent' | 'failed' | 'expired' | 'unknown' = 'unknown';
+        try {
+          if (!supportedPushEndpoint(device.subscription.endpoint)) throw new Error('Unsupported destination');
+          const details = webpush.generateRequestDetails(device.subscription as PushSubscription, body, {
+            vapidDetails: config.vapid!, TTL: 300, urgency: 'normal', contentEncoding: 'aes128gcm',
+          });
+          if (!Buffer.isBuffer(details.body) || details.body.length > 4096) throw new Error('Push too large');
+          const status = await transport({ endpoint: device.subscription.endpoint, headers: details.headers, body: details.body });
+          outcome = status >= 200 && status < 300 ? 'sent' : status === 404 || status === 410 ? 'expired' : 'failed';
+        } catch { /* ambiguous send stays unknown; never retry */ }
+        await store.finishPush(actor, id, device.id, outcome).catch(() => undefined);
+      }));
+    } catch { /* notification health cannot block audit/status/admission */ }
+  }
   return {
     config,
-    async deliver(actor: string, id: string) {
-      if (config.capability.state !== 'available' || !config.vapid) return;
-      try {
-        const devices = await store.claimPush(actor, id);
-        await Promise.all(devices.map(async device => {
-          let outcome: 'sent' | 'failed' | 'expired' | 'unknown' = 'unknown';
-          try {
-            if (!supportedPushEndpoint(device.subscription.endpoint)) throw new Error('Unsupported destination');
-            const details = webpush.generateRequestDetails(device.subscription as PushSubscription, privatePushPayload(id), {
-              vapidDetails: config.vapid, TTL: 300, urgency: 'normal', contentEncoding: 'aes128gcm',
-            });
-            if (!Buffer.isBuffer(details.body) || details.body.length > 4096) throw new Error('Push too large');
-            const status = await transport({ endpoint: device.subscription.endpoint, headers: details.headers, body: details.body });
-            outcome = status >= 200 && status < 300 ? 'sent' : status === 404 || status === 410 ? 'expired' : 'failed';
-          } catch { /* ambiguous send stays unknown; never retry */ }
-          await store.finishPush(actor, id, device.id, outcome).catch(() => undefined);
-        }));
-      } catch { /* notification health cannot block audit/status/admission */ }
-    },
+    // Single-category release: there is deliberately no run-completed/failed/approval/tool/reaction
+    // sender. WEB_PUSH_MODE alone never pushes; those events stay in-app history only.
+    /** Reply-only sender: refuses unless the reply category is enabled and the item is an assistant-reply. */
+    deliverReply: (actor: string, id: string) => config.replies ? send(actor, id, () => store.claimReplyPush(actor, id), async () => {
+      const item = await store.find(actor, id);
+      if (item?.category !== 'assistant-reply') throw new Error('Not a reply');
+      return replyPushPayload(item);
+    }) : Promise.resolve(),
   };
 }
 export type PushService = ReturnType<typeof createPushService>;

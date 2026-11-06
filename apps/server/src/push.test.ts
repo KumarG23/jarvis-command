@@ -11,19 +11,29 @@ import { buildApp } from './app';
 import { loadConfig } from './config';
 import type { createLiveRoomService } from './live-room-service';
 import { MAX_PUSH_RECEIPTS, NotificationStore } from './notification-store';
-import { createPushService, privatePushPayload, publicPushAddress, pushConfig, restrictedPushTransport, supportedPushEndpoint, type PushConfig, type PushRequest } from './push-service';
+import { createPushService, publicPushAddress, pushConfig, restrictedPushTransport, supportedPushEndpoint, type PushConfig, type PushRequest } from './push-service';
 import { createRunNotifier, notificationId } from './run-notifier';
+import { createReplyNotifier, replyNotificationId, type ReplyEvidenceSource } from './reply-notifier';
 
 const cleanups: Array<() => Promise<unknown>> = [];
 afterEach(async () => { vi.restoreAllMocks(); await Promise.all(cleanups.splice(0).map(fn => fn())); });
 const actor = createHash('sha256').update('alice').digest('hex');
 const other = createHash('sha256').update('bob').digest('hex');
 const keys = webpush.generateVAPIDKeys(); // ephemeral local fixture, never persisted/logged
-const config = pushConfig({ WEB_PUSH_MODE: 'enabled', WEB_PUSH_VAPID_PUBLIC_KEY: keys.publicKey, WEB_PUSH_VAPID_PRIVATE_KEY: keys.privateKey, WEB_PUSH_VAPID_SUBJECT: 'mailto:test@example.invalid' });
+const env = { WEB_PUSH_MODE: 'enabled', WEB_PUSH_VAPID_PUBLIC_KEY: keys.publicKey, WEB_PUSH_VAPID_PRIVATE_KEY: keys.privateKey, WEB_PUSH_VAPID_SUBJECT: 'mailto:test@example.invalid' };
+const config = pushConfig({ ...env, REPLY_NOTIFICATIONS_MODE: 'enabled' });
 const receiver = createECDH('prime256v1'); receiver.generateKeys();
 const auth = randomBytes(16).toString('base64url');
 const subscription = (token = 'SYNTHETIC') => ({ endpoint: `https://fcm.googleapis.com/fcm/send/${token}`, expirationTime: null, keys: { p256dh: receiver.getPublicKey().toString('base64url'), auth } });
 const event = (n = 1) => ({ actor, category: 'run-completed' as const, publicRunId: `jcr_${n.toString(16).padStart(32, '0')}`, sessionId: 'jc_' + 'a'.repeat(32), eventAt: new Date().toISOString() });
+// Reply-only release: the sole push category. Synthetic verified evidence per exact message number.
+const SESSION = 'jc_' + 'a'.repeat(32);
+const replyId = (n: number) => replyNotificationId(actor, SESSION, `assistant:${n}`);
+const evidenceFor: ReplyEvidenceSource = async run => ({ userMessageId: 'user:0', assistantMessageId: `assistant:${run.publicRunId.slice(-1)}`, message: { id: `assistant:${run.publicRunId.slice(-1)}`, sessionId: run.sessionId, role: 'assistant', content: 'SYNTHETIC answer' }, executed: { model: 'synthetic' } });
+const replyAt = (store: NotificationStore, push: ReturnType<typeof createPushService>, enabled = true) => {
+  const notifier = createReplyNotifier({ store, push, enabled, source: evidenceFor });
+  return (n = 1) => notifier({ actor, sessionId: SESSION, publicRunId: `jcr_${'0'.repeat(31)}${n}`, eventAt: new Date(Date.now() + 60_000).toISOString() });
+};
 async function storeFixture() {
   const directory = await mkdtemp(join(tmpdir(), 'jc-push-')); await chmod(directory, 0o700);
   cleanups.push(() => rm(directory, { recursive: true, force: true }));
@@ -48,13 +58,14 @@ async function routesFixture(push: PushConfig = config) {
 
 it('defaults disabled, tolerates absent/bad enabled configuration, and performs zero push effects', async () => {
   const h = await storeFixture();
-  const claim = vi.spyOn(h.store, 'claimPush'); const transport = vi.fn();
+  const claim = vi.spyOn(h.store, 'claimReplyPush'); const transport = vi.fn();
   expect(pushConfig({}).capability).toEqual({ state: 'unavailable', reason: 'disabled' });
   expect(pushConfig({ WEB_PUSH_MODE: 'enabled' }).capability).toEqual({ state: 'unavailable', reason: 'configuration' });
   expect(pushConfig({ WEB_PUSH_MODE: 'enabled', WEB_PUSH_VAPID_PUBLIC_KEY: keys.publicKey, WEB_PUSH_VAPID_PRIVATE_KEY: webpush.generateVAPIDKeys().privateKey, WEB_PUSH_VAPID_SUBJECT: 'mailto:test@example.invalid' }).capability.state).toBe('unavailable');
-  const notify = createRunNotifier(h.store, createPushService(pushConfig({}), h.store, transport));
+  const notify = createRunNotifier(h.store);
   expect(await notify(event())).toBe(true);
   expect((await h.store.read(actor)).items).toHaveLength(1);
+  expect(await replyAt(h.store, createPushService(pushConfig({}), h.store, transport), pushConfig({}).replies === true)()).toBe(false); // reply control off too
   expect(claim).not.toHaveBeenCalled(); expect(transport).not.toHaveBeenCalled();
   const r = await routesFixture(pushConfig({}));
   expect((await r.get('/api/notifications/push')).json().capability).toEqual({ state: 'unavailable', reason: 'disabled' });
@@ -91,61 +102,74 @@ it('uses authenticated actor identity, same-origin checks and strict private DTO
   expect(inboxBytes.actors[actor]).not.toHaveProperty('push');
 });
 
+it.each(['run-completed', 'run-failed', 'approval'] as const)('never pushes retired %s alerts on any configured path, with reply control enabled or disabled, while keeping in-app history', async category => {
+  for (const mode of [{ ...env, REPLY_NOTIFICATIONS_MODE: 'enabled' }, env]) {
+    const h = await storeFixture(); await h.store.registerDevice(actor, subscription());
+    const transport = vi.fn(async () => 201);
+    const push = createPushService(pushConfig(mode), h.store, transport);
+    const e = { ...event(), category, ...(category === 'approval' ? { key: 'req' } : {}) };
+    expect(await createRunNotifier(h.store)(e)).toBe(true);
+    // Every sender entry point, including a forged call with the run-state id, refuses.
+    expect('deliver' in push).toBe(false);
+    await push.deliverReply(actor, notificationId(e));
+    expect(transport).not.toHaveBeenCalled();
+    expect((await h.store.read(actor)).items.map(item => item.category)).toEqual([category]);
+    expect(JSON.parse(await readFile(join(h.directory, 'push-devices.json'), 'utf8')).actors[actor].push.receipts).toEqual([]);
+  }
+});
+
 it.each([201, 410, 404, 429, 500, 302, 'unknown'] as const)('claims before transport and never resends status %s across concurrent observations/restart', async outcome => {
   const h = await storeFixture(); await h.store.registerDevice(actor, subscription());
   const transport = vi.fn(async () => { if (outcome === 'unknown') throw new Error('SYNTHETIC lost ACK'); return outcome; });
-  const notify = createRunNotifier(h.store, createPushService(config, h.store, transport));
-  await Promise.all([notify(event()), notify(event()), notify(event())]);
+  const notify = replyAt(h.store, createPushService(config, h.store, transport));
+  await Promise.all([notify(), notify(), notify()]);
   const restart = new NotificationStore(h.directory);
-  await createRunNotifier(restart, createPushService(config, restart, transport))(event());
+  await replyAt(restart, createPushService(config, restart, transport))();
   expect(transport).toHaveBeenCalledTimes(1);
   const state = JSON.parse(await readFile(join(h.directory, 'push-devices.json'), 'utf8'));
-  expect(state.actors[actor].push.receipts).toEqual([{ id: notificationId(event()), deviceId: (await h.store.readPush(actor)).devices[0]?.id ?? state.actors[actor].push.receipts[0].deviceId, outcome: outcome === 'unknown' ? 'unknown' : outcome === 201 ? 'sent' : outcome === 410 || outcome === 404 ? 'expired' : 'failed' }]);
+  expect(state.actors[actor].push.receipts).toEqual([{ id: replyId(1), deviceId: (await h.store.readPush(actor)).devices[0]?.id ?? state.actors[actor].push.receipts[0].deviceId, outcome: outcome === 'unknown' ? 'unknown' : outcome === 201 ? 'sent' : outcome === 410 || outcome === 404 ? 'expired' : 'failed' }]);
   if (outcome === 410 || outcome === 404) expect((await restart.readPush(actor)).devices).toEqual([]);
 });
 
 it('keeps unknown claims after a crash or receipt-write fault, and isolates notification failure from notifier success', async () => {
   const h = await storeFixture(); await h.store.registerDevice(actor, subscription());
-  const e = event(); await h.store.record(actor, { ...e, id: notificationId(e) });
-  expect(await h.store.claimPush(actor, notificationId(e))).toHaveLength(1); // crash before transport
+  const noPush = createPushService(pushConfig({}), h.store, vi.fn());
+  await replyAt(h.store, noPush)(1); // item recorded, nothing sent
+  const item = (await h.store.read(actor)).items[0]!;
+  expect(await h.store.claimReplyPush(actor, item.id)).toHaveLength(1); // crash before transport
   const transport = vi.fn(async () => 201);
   const restart = new NotificationStore(h.directory);
-  await createPushService(config, restart, transport).deliver(actor, notificationId(e));
+  await createPushService(config, restart, transport).deliverReply(actor, item.id);
   expect(transport).not.toHaveBeenCalled();
-  await createPushService(config, restart, transport).deliver(other, notificationId(e));
+  await createPushService(config, restart, transport).deliverReply(other, item.id);
   expect(transport).not.toHaveBeenCalled();
   vi.spyOn(restart, 'finishPush').mockRejectedValue(new Error());
-  expect(await createRunNotifier(restart, createPushService(config, restart, transport))(event(2))).toBe(true);
+  expect(await replyAt(restart, createPushService(config, restart, transport))(2)).toBe(true);
   expect(transport).toHaveBeenCalledTimes(1);
-  await createPushService(config, new NotificationStore(h.directory), transport).deliver(actor, notificationId(event(2)));
+  await createPushService(config, new NotificationStore(h.directory), transport).deliverReply(actor, replyId(2));
   expect(transport).toHaveBeenCalledTimes(1);
-  vi.spyOn(restart, 'claimPush').mockRejectedValue(new Error());
-  expect(await createRunNotifier(restart, createPushService(config, restart, transport))(event(3))).toBe(true);
+  vi.spyOn(restart, 'claimReplyPush').mockRejectedValue(new Error());
+  expect(await replyAt(restart, createPushService(config, restart, transport))(3)).toBe(true);
 });
 
-it('respects expiry, category opt-out, revocation, read state, no registration backfill and finite device/receipt bounds', async () => {
+it('respects expiry, revocation, read state, no registration backfill and finite device/receipt bounds', async () => {
   const h = await storeFixture(); const transport = vi.fn(async () => 201);
-  const push = createPushService(config, h.store, transport); const notify = createRunNotifier(h.store, push);
-  await h.store.registerDevice(actor, subscription());
-  await h.store.setPreferences(actor, { categories: { 'run-completed': false, 'run-failed': true, approval: true } });
-  await notify(event()); expect(transport).not.toHaveBeenCalled();
-  await h.store.setPreferences(actor, { categories: { 'run-completed': true, 'run-failed': true, approval: true } });
-  await notify(event()); expect(transport).not.toHaveBeenCalled();
-  const device = (await h.store.readPush(actor)).devices[0]!;
-  await h.store.revokeDevice(actor, device.id); await notify(event(2)); expect(transport).not.toHaveBeenCalled();
+  const push = createPushService(config, h.store, transport); const notify = replyAt(h.store, push);
+  const device = (await h.store.registerDevice(actor, subscription()), (await h.store.readPush(actor)).devices[0]!);
+  await h.store.revokeDevice(actor, device.id); await notify(2); expect(transport).not.toHaveBeenCalled();
   h.clock.now = new Date(h.clock.now.getTime() + 1000);
-  await h.store.registerDevice(actor, subscription()); await notify(event(2)); expect(transport).not.toHaveBeenCalled();
-  h.clock.now = new Date(h.clock.now.getTime() + 31 * 86400_000); await notify(event(3)); expect(transport).not.toHaveBeenCalled();
+  await h.store.registerDevice(actor, subscription()); await notify(2); expect(transport).not.toHaveBeenCalled();
+  h.clock.now = new Date(h.clock.now.getTime() + 31 * 86400_000); await notify(3); expect(transport).not.toHaveBeenCalled();
   for (let i = 0; i < 8; i++) await h.store.registerDevice(actor, subscription(`fixture-${i}`));
   await expect(h.store.registerDevice(actor, subscription('over-bound'))).rejects.toThrow();
   const path = join(h.directory, 'push-devices.json');
   const state = JSON.parse(await readFile(path, 'utf8'));
   state.actors[actor].push.receipts = Array.from({ length: MAX_PUSH_RECEIPTS }, (_, n) => ({ id: `ntf_${n.toString(16).padStart(32, '0')}`, deviceId: device.id, outcome: 'unknown' }));
   await writeFile(path, JSON.stringify(state));
-  await notify(event(4)); expect(transport).not.toHaveBeenCalled();
+  await notify(4); expect(transport).not.toHaveBeenCalled();
   expect((await h.store.readPush(actor)).full).toBe(true);
   await h.store.markRead(actor, { all: true });
-  await push.deliver(actor, notificationId(event(4))); expect(transport).not.toHaveBeenCalled();
+  await push.deliverReply(actor, replyId(4)); expect(transport).not.toHaveBeenCalled();
 });
 
 it('allows only bounded exact push-service destinations and public DNS addresses', async () => {
@@ -164,14 +188,14 @@ it('allows only bounded exact push-service destinations and public DNS addresses
 it('proves local VAPID/encrypted transport → worker display/dedupe/restart → fixed private-safe click', async () => {
   const h = await storeFixture(); await h.store.registerDevice(actor, subscription());
   const captured: PushRequest[] = [];
-  await createRunNotifier(h.store, createPushService(config, h.store, async request => { captured.push(request); return 201; }))(event());
+  await replyAt(h.store, createPushService(config, h.store, async request => { captured.push(request); return 201; }))();
   expect(captured).toHaveLength(1);
   expect(captured[0]!.headers['Content-Encoding']).toBe('aes128gcm');
   expect(JSON.stringify(captured[0]!.headers)).toMatch(/vapid/i);
   const ece = createRequire(import.meta.url)('http_ece') as { decrypt: (body: Buffer, options: unknown) => Buffer };
   const decoded = ece.decrypt(captured[0]!.body, { version: 'aes128gcm', privateKey: receiver, authSecret: auth }).toString();
-  expect(decoded).toBe(privatePushPayload(notificationId(event())));
-  expect(decoded).not.toMatch(/session|run|prompt|answer|approval|actor|endpoint/);
+  expect(JSON.parse(decoded)).toEqual({ version: 2, id: replyId(1), title: 'Reply from synthetic', body: 'SYNTHETIC answer' });
+  expect(decoded).not.toMatch(/jc_|jcr_|run_|prompt|approval|actor|endpoint|alice/);
   const db = new IDBFactory();
   const source = await readFile(new URL('../../web/public/push-worker.js', import.meta.url), 'utf8');
   const shown = vi.fn(); const openWindow = vi.fn(); const postMessage = vi.fn(); const focus = vi.fn();
@@ -184,13 +208,13 @@ it('proves local VAPID/encrypted transport → worker display/dedupe/restart →
   await worker()('push', { data });
   await worker()('push', { data }); // new worker with same durable receipt DB
   expect(shown).toHaveBeenCalledTimes(1);
-  expect(shown).toHaveBeenCalledWith('Jarvis Command', expect.objectContaining({ body: 'An update is available. Sign in to Command to review it.', data: { id: notificationId(event()) }, tag: notificationId(event()), renotify: false }));
+  expect(shown).toHaveBeenCalledWith('Reply from synthetic', expect.objectContaining({ body: 'SYNTHETIC answer', data: { id: replyId(1) }, tag: replyId(1), renotify: false }));
   const close = vi.fn();
-  const notification = { close, data: { id: notificationId(event()), url: 'https://evil.invalid', sessionId: 'private' } };
+  const notification = { close, data: { id: replyId(1), url: 'https://evil.invalid', sessionId: 'private' } };
   await worker()('notificationclick', { notification, action: '' });
-  expect(openWindow).toHaveBeenCalledWith(`https://command.example/?notification=${notificationId(event())}`);
+  expect(openWindow).toHaveBeenCalledWith(`https://command.example/?notification=${replyId(1)}`);
   await worker([{ url: 'https://command.example/', postMessage, focus }])('notificationclick', { notification, action: '' });
-  expect(postMessage).toHaveBeenCalledWith({ type: 'command-notification', id: notificationId(event()) });
+  expect(postMessage).toHaveBeenCalledWith({ type: 'command-notification', id: replyId(1) });
   expect(focus).toHaveBeenCalledTimes(1); expect(openWindow).toHaveBeenCalledTimes(1);
   await worker()('notificationclick', { notification, action: 'approve' });
   await worker()('push', { data: { text: () => '{}', json: () => ({ version: 1, id: 'https://evil.invalid' }) } });
@@ -206,7 +230,7 @@ it('proves local VAPID/encrypted transport → worker display/dedupe/restart →
       tx.oncomplete = () => { connection.close(); resolve(); }; tx.onerror = () => reject(new Error());
     };
   });
-  const next = privatePushPayload(notificationId(event(2)));
+  const next = JSON.stringify({ version: 2, id: replyId(2), title: 'T', body: 'B' });
   await worker()('push', { data: { text: () => next, json: () => JSON.parse(next) } });
   expect(shown).toHaveBeenCalledTimes(1); // bounded receipts never evict/replay
 });
