@@ -157,7 +157,11 @@ export class NotificationStore {
   setPreferences(actor: string, preferences: NotificationPreferences): Promise<ActorView> {
     return this.#transaction(state => {
       const current = state.actors[actor] ?? this.#emptyActor();
-      state.actors[actor] = { ...current, preferences: NotificationPreferencesSchema.parse(preferences) };
+      const next = NotificationPreferencesSchema.parse(preferences);
+      // Reader bridge is read/preserve-only: input never writes the reply setting. An absent field
+      // stays absent and a stored one survives legacy edits; the later writer owns toggles.
+      const stored = current.preferences.showReplyText;
+      state.actors[actor] = { ...current, preferences: stored === undefined ? { categories: next.categories } : { categories: next.categories, showReplyText: stored } };
       return { result: view(state.actors[actor]), write: true };
     });
   }
@@ -178,7 +182,8 @@ export class NotificationStore {
   async claimPush(actor: string, id: string) {
     const current = await this.read(actor);
     const item = current.items.find(item => item.id === id);
-    if (!item || !current.preferences.categories[item.category]) return [];
+    // Run-state sender only: an assistant-reply item (or any non-run-state category) never passes.
+    if (!item || item.category === 'assistant-reply' || !current.preferences.categories[item.category]) return [];
     return this.#push.claimPush(actor, item);
   }
   finishPush(actor: string, id: string, deviceId: string, outcome: 'sent' | 'failed' | 'expired' | 'unknown') {
