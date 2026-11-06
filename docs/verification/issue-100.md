@@ -100,3 +100,20 @@ separate lead authorization for enablement and an owned disposable project.
 Independent lead review of the exact authorization/destructive/audit diff is
 required before merge. Sol owns merge, recoverable release/rollback and live
 acceptance; workers do not enable this feature or perform live deletions.
+
+## Factory binding repair (PR #107 first review)
+
+The original source froze bootstrap's lazy `liveRoom` getter while spreading
+route dependencies before `onReady`. The three existing production-factory
+regression files reproduced all five 503 failures from CI 42263113136.
+Live routes now receive the original dependency object unchanged and the
+resolved artifact store as a separate argument, preserving lazy lookup for all
+service dependencies. Factory tests and assertions were not modified for this
+repair. All five factory cases and five project-deletion cases pass together.
+
+Synced the accepted release base through #106 (`6bf2584`) by ordinary merge,
+retaining the original branch commits. No worker edits to inference/provider
+or plan files. Reuse the unchanged successful deletion/UI/browser evidence above;
+this server wiring repair adds no new browser or live-readback claim. Repository
+typecheck/lint and affected server build are checked for the repaired source.
+Hosted CI and independent exact-head review remain separate merge gates.

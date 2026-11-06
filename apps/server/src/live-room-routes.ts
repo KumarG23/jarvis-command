@@ -19,7 +19,6 @@ import type { NotificationStore } from './notification-store';
 export type LiveStreamLimits = Readonly<{ maxStreams?: number; lifetimeMs?: number; keepaliveMs?: number; maximumBytes?: number }>;
 
 type Dependencies = Readonly<{
-  artifactStore?: ArtifactStore | undefined;
   config: AppConfig;
   verifyAccess: (assertion: string | undefined) => Promise<{ subject: string }>;
   liveRoom?: ReturnType<typeof createLiveRoomService> | undefined;
@@ -77,7 +76,7 @@ async function* encodeEventStream(events: AsyncIterable<RunEvent>, controller: A
   }
 }
 
-export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Dependencies) {
+export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Dependencies, artifactStore?: ArtifactStore) {
   const rooms = dependencies.config.command ? new ProjectRoomStore(dirname(dependencies.config.command.auditLogPath)) : undefined;
   const sessionMutations = new KeyedSerialQueue();
   // Production initializes the lazy liveRoom getter in onReady, after routes
@@ -130,10 +129,10 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
       return { version: 1, rooms: await rooms.list() };
     });
     const deletionPreview = async (room: ProjectRoom) => {
-      const ids = await dependencies.artifactStore?.projectArtifactIds(room.id) ?? [];
-      return { roomId: room.id, name: room.name, chats: room.sessionIds.length, artifacts: dependencies.artifactStore ? ids.length : null,
+      const ids = await artifactStore?.projectArtifactIds(room.id) ?? [];
+      return { roomId: room.id, name: room.name, chats: room.sessionIds.length, artifacts: artifactStore ? ids.length : null,
         token: createHash('sha256').update(JSON.stringify({ room, ids })).digest('hex'),
-        enabled: dependencies.config.projectDeletionEnabled === true && !!dependencies.artifactStore,
+        enabled: dependencies.config.projectDeletionEnabled === true && !!artifactStore,
         availabilityReason: !dependencies.config.projectDeletionEnabled ? 'Project deletion is unavailable: disabled on this server.' : 'Project deletion is unavailable: artifact counts cannot be verified.', contentsAvailable: false as const,
         reason: 'Deleting contents is unavailable because safe recovery of chats and artifacts is not supported.' };
     };
@@ -152,7 +151,7 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
       const body = parse(ProjectDeleteRequestSchema, request.body);
       if (body.roomId !== roomId) throw Object.assign(Error('Project target differs'), { statusCode: 400 });
       if (!dependencies.config.projectDeletionEnabled) return reply.code(409).send({ error: 'Project deletion is disabled on this server.' });
-      if (!dependencies.artifactStore) return reply.code(409).send({ error: 'Project deletion is unavailable: artifact counts cannot be verified.' });
+      if (!artifactStore) return reply.code(409).send({ error: 'Project deletion is unavailable: artifact counts cannot be verified.' });
       const room = (await rooms!.list()).find(item => item.id === roomId);
       if (!room) {
         if (!(await rooms!.deletedIds()).includes(roomId)) throw Object.assign(Error('Project missing'), { statusCode: 404 });

@@ -188,7 +188,9 @@ export function buildApp(dependencies: AppDependencies) {
     return CommandBootstrapSchema.parse(payload);
   });
 
-  registerLiveRoomRoutes(app, { ...dependencies, artifactStore });
+  // Keep the original dependency object: production supplies liveRoom lazily
+  // after onReady. Spreading here would freeze that getter before startup.
+  registerLiveRoomRoutes(app, dependencies, artifactStore);
   registerArtifactRoutes(app, { ...dependencies, artifactStore });
   app.addHook('onReady', async () => {
     await artifactStore?.init();
