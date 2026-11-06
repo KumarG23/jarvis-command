@@ -1,3 +1,5 @@
+import { ReactionTargetSchema, ReactionMutationSchema, SessionMessagesPageSchema, SessionMutationResponseSchema, type ReactionTarget, type ReactionMutation } from '@jarvis-command/contracts';
+import { type ReactionStore, ReactionUnavailableError } from './reaction-store';
 import { ProjectRosterStatusSchema } from '@jarvis-command/contracts';
 import { createHash, randomBytes } from 'node:crypto';
 
@@ -67,6 +69,8 @@ type LiveRoomServiceOptions = Readonly<{
   notify?: RunNotifier | undefined;
   /** Reply-only notifier; verifies its own exact message binding and never sees run output. */
   notifyReply?: ReplyNotifier | undefined;
+  reactions?: ReactionStore | undefined;
+  reactionsEnabled?: boolean | undefined;
 }>;
 
 type AdmittedRunRecord = AuditRunRecord & Readonly<{ upstreamRunId: string }>;
@@ -97,6 +101,8 @@ export function createLiveRoomService({
   now = () => new Date(),
   notify,
   notifyReply,
+  reactions,
+  reactionsEnabled = false,
 }: LiveRoomServiceOptions) {
   const submissions = new Map<string, { fingerprint: string; operation: Promise<LiveRunSubmissionResponse> }>();
   const compactionSubmissions = new Map<string, { fingerprint: string; operation: Promise<ContextCompactionSubmissionResponse> }>();
@@ -168,6 +174,34 @@ export function createLiveRoomService({
     });
   };
 
+  const prepareReactionContext = async (request: LiveRunSubmissionRequest, actor: string, fingerprint: string, claimNew: boolean) => {
+    const note = await reactions?.forSend(actor, request.sessionId, request.clientRequestId, fingerprint, request.input.length, claimNew,
+      clientRequestId => ledger.findRunByClientRequest(actor, clientRequestId) !== null) ?? '';
+    const prepared = { ...request, input: request.input + note };
+    const requestFingerprint = sha256(canonicalJson({
+      inference: prepared.inference ? JSON.stringify(prepared.inference) : '',
+      images: prepared.images ? JSON.stringify(prepared.images) : '',
+      input: prepared.input,
+      sessionId: prepared.sessionId,
+    }));
+    return { prepared, requestFingerprint };
+  };
+
+  const reactionTarget = async (raw: ReactionTarget) => {
+    if (!reactionsEnabled || !reactions) throw new ReactionUnavailableError();
+    const target = ReactionTargetSchema.parse(raw);
+    await ledger.verifyStorage();
+    const { session } = SessionMutationResponseSchema.parse(await client.getSession(target.sessionId));
+    if (session.id !== target.sessionId || session.ownership !== 'command' || !/^jc_[a-f0-9]{32}$/.test(session.id)) throw new LiveRoomNotFoundError();
+    const page = SessionMessagesPageSchema.parse(await client.getMessages(target.sessionId, 100, target.offset));
+    if (page.sessionId !== target.sessionId || page.pagination.offset !== target.offset || page.pagination.limit !== 100
+      || page.pagination.returned !== page.messages.length || page.messages.some(m => m.sessionId !== target.sessionId)
+      || new Set(page.messages.map(m => m.id)).size !== page.messages.length) throw new LiveRoomNotFoundError();
+    const message = page.messages.find(m => m.id === target.messageId);
+    if (!message || (message.role !== 'user' && message.role !== 'assistant') || message.toolName !== null || message.displayKind !== null) throw new LiveRoomNotFoundError();
+    return { target, role: message.role as 'user' | 'assistant' };
+  };
+
   const submitRun = async (
     subject: string,
     rawRequest: LiveRunSubmissionRequest,
@@ -175,7 +209,7 @@ export function createLiveRoomService({
     const request = LiveRunSubmissionRequestSchema.parse(rawRequest);
     const actor = actorFingerprint(subject);
     const submissionKey = `${actor}\0${request.clientRequestId}`;
-    const requestFingerprint = sha256(canonicalJson({
+    const payloadFingerprint = sha256(canonicalJson({
       inference: request.inference ? JSON.stringify(request.inference) : '',
       images: request.images ? JSON.stringify(request.images) : '',
       input: request.input,
@@ -183,7 +217,7 @@ export function createLiveRoomService({
     }));
     const pending = submissions.get(submissionKey);
     if (pending) {
-      if (pending.fingerprint !== requestFingerprint) throw new LiveRoomConflictError();
+      if (pending.fingerprint !== payloadFingerprint) throw new LiveRoomConflictError();
       return pending.operation;
     }
 
@@ -192,6 +226,7 @@ export function createLiveRoomService({
     const operation = (async () => {
       const existing = ledger.findRunByClientRequest(actor, request.clientRequestId);
       if (existing) {
+        const { prepared, requestFingerprint } = await prepareReactionContext(request, actor, payloadFingerprint, false);
         if (
           existing.requestFingerprint !== requestFingerprint
           || existing.sessionId !== request.sessionId
@@ -203,7 +238,7 @@ export function createLiveRoomService({
           // Leave a one-hour margin inside Hermes's minimum 24-hour retention.
           if (age < 0 || age >= 23 * 60 * 60 * 1000) throw new LiveRoomConflictError();
           await ledger.verifyStorage();
-          return admitUpstreamRun(existing, request, true);
+          return admitUpstreamRun(existing, prepared, true);
         }
         const status = await projectStatus(existing, await client.getRun(existing.upstreamRunId));
         return LiveRunSubmissionResponseSchema.parse({
@@ -223,6 +258,7 @@ export function createLiveRoomService({
         }
       }
 
+      const { prepared, requestFingerprint } = await prepareReactionContext(request, actor, payloadFingerprint, reactionsEnabled);
       const publicRunId = createPublicRunId();
       if (!PUBLIC_RUN_ID.test(publicRunId)) throw new Error('Public run ID factory returned an invalid ID');
       const requested = await ledger.appendOnce(
@@ -252,10 +288,10 @@ export function createLiveRoomService({
         requestedAt: requested.timestamp,
         receipt: null,
       });
-      return admitUpstreamRun(pendingRecord, request, false);
+      return admitUpstreamRun(pendingRecord, prepared, false);
     })();
 
-    submissions.set(submissionKey, { fingerprint: requestFingerprint, operation });
+    submissions.set(submissionKey, { fingerprint: payloadFingerprint, operation });
     try {
       return await operation;
     } finally {
@@ -364,6 +400,7 @@ export function createLiveRoomService({
     if (submittingSessions.has(request.sessionId)) throw new LiveRoomConflictError();
     submittingSessions.add(request.sessionId);
     const operation = (async () => {
+      await reactions?.assertNoSendClaim(actor, request.clientRequestId);
       const existing = ledger.findRunByClientRequest(actor, request.clientRequestId);
       if (existing) {
         if (existing.requestFingerprint !== requestFingerprint || existing.sessionId !== request.sessionId) {
@@ -455,6 +492,17 @@ export function createLiveRoomService({
       void subject;
       ledger.assertHealthy();
       return client.getInferenceOptions();
+    },
+
+    async getReactions(subject: string, raw: ReactionTarget) {
+      const { target } = await reactionTarget(raw);
+      return reactions!.read(actorFingerprint(subject), target.sessionId, target.messageId);
+    },
+
+    async mutateReaction(subject: string, raw: ReactionMutation) {
+      const request = ReactionMutationSchema.parse(raw);
+      const { role } = await reactionTarget({ sessionId: request.sessionId, messageId: request.messageId, offset: request.offset });
+      return reactions!.mutate(actorFingerprint(subject), request, role);
     },
 
     async getMessages(

@@ -1,3 +1,4 @@
+import { ReactionStore } from './reaction-store';
 import { createPushService } from './push-service';
 import { AuditLedger } from './audit-ledger';
 import { createCommandProxyClient } from './command-client';
@@ -95,6 +96,8 @@ export function createCommandServer(
       ledger,
       notify: notifications ? createRunNotifier(notifications) : undefined,
       notifyReply: notifications ? createReplyNotifier({ store: notifications, push, enabled: config.push?.replies === true, source: REPLY_EVIDENCE_SOURCE, presence }) : undefined,
+      reactions: new ReactionStore(dirname(config.command.auditLogPath)),
+      reactionsEnabled: config.reactionsEnabled,
       resolveImages: artifactStore
         ? createArtifactImageResolver(artifactStore)
         : async () => { throw Object.assign(new Error('Artifact storage unavailable'), { statusCode: 503 }); },

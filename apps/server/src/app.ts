@@ -1,3 +1,4 @@
+import { ReactionStorageError, ReactionUnavailableError, ReactionConflictError, ReactionBoundsError } from './reaction-store';
 import { CommandBootstrapSchema, type CommandBootstrap } from '@jarvis-command/contracts';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
@@ -63,6 +64,10 @@ export function buildApp(dependencies: AppDependencies) {
       ? error.statusCode
       : undefined;
     request.log.error({ errorType: errorName }, 'request failed');
+    if (error instanceof ReactionUnavailableError) return reply.code(409).send({ error: 'reactions_unavailable' });
+    if (error instanceof ReactionConflictError) return reply.code(409).send({ error: 'reaction_conflict' });
+    if (error instanceof ReactionBoundsError) return reply.code(409).send({ error: 'reaction_limit_reached' });
+    if (error instanceof ReactionStorageError) return reply.code(503).send({ error: 'reaction_storage_unavailable' });
     if (error instanceof RoomStorageError) return reply.code(503).send({ error: 'room_storage_unavailable' });
     if (error instanceof NotificationStorageError) return reply.code(503).send({ error: 'notification_storage_unavailable' });
     if (error instanceof NotificationNotFoundError) return reply.code(404).send({ error: 'notification_not_found' });
