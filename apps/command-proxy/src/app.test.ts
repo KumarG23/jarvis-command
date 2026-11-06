@@ -16,6 +16,7 @@ const config: CommandProxyConfig = Object.freeze({
   hermesBaseUrl: 'http://127.0.0.1:8642',
   hermesApiKey: hermesKey,
   maxStreamSeconds: 1_800,
+  anthropicRoutesEnabled: false,
 });
 
 const apps: ReturnType<typeof buildCommandProxy>[] = [];
@@ -24,9 +25,13 @@ afterEach(async () => {
   await Promise.all(apps.splice(0).map((app) => app.close()));
 });
 
-function createApp(fetcher: typeof fetch, randomUUID = () => '12345678-90ab-cdef-1234-567890abcdef') {
+function createApp(
+  fetcher: typeof fetch,
+  randomUUID = () => '12345678-90ab-cdef-1234-567890abcdef',
+  configOverrides: Partial<CommandProxyConfig> = {},
+) {
   const app = buildCommandProxy({
-    config,
+    config: { ...config, ...configOverrides },
     fetcher,
     randomUUID,
     now: () => new Date('2026-09-04T14:00:00.000Z'),
@@ -82,6 +87,23 @@ function upstreamModelOptions(authenticated = true): UpstreamModelOptionsFixture
     ],
     api_key: 'must-not-cross-the-wire',
   };
+}
+
+const anthropicModels = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'];
+const anthropicOptions = [
+  { provider: 'anthropic', model: 'claude-opus-5-5', label: 'Claude Opus 5.5', reasoningEfforts: [] },
+  { provider: 'anthropic', model: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', reasoningEfforts: [] },
+  { provider: 'anthropic', model: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', reasoningEfforts: [] },
+];
+
+function upstreamModelOptionsWithAnthropic(authenticated = true): UpstreamModelOptionsFixture {
+  const fixture = upstreamModelOptions();
+  fixture.providers.push({
+    slug: 'anthropic',
+    authenticated,
+    models: [...anthropicModels, 'claude-opus-5-6'],
+  });
+  return fixture;
 }
 
 function catalogEntry(
@@ -504,6 +526,15 @@ describe('run creation and control', () => {
     ].map(([provider, model, label]) => ({ provider, model, label, reasoningEfforts: ['minimal', 'low', 'medium', 'high', 'xhigh'] })));
     expect(body.catalog).toEqual({
       entries: [
+        catalogEntry('anthropic', 'claude-haiku-5-5', {
+          advertised: false, authenticated: false, eligible: false, selectable: false, unavailableReason: 'not_advertised',
+        }),
+        catalogEntry('anthropic', 'claude-opus-5-5', {
+          advertised: false, authenticated: false, eligible: false, selectable: false, unavailableReason: 'not_advertised',
+        }),
+        catalogEntry('anthropic', 'claude-sonnet-5-5', {
+          advertised: false, authenticated: false, eligible: false, selectable: false, unavailableReason: 'not_advertised',
+        }),
         catalogEntry('openai-codex', 'gpt-5.6-luna'),
         catalogEntry('openai-codex', 'gpt-5.6-sol'),
         catalogEntry('openai-codex', 'gpt-5.6-terra'),
@@ -517,7 +548,7 @@ describe('run creation and control', () => {
         catalogEntry('xai-oauth', 'grok-4.7'),
       ],
       advertisedCount: 9,
-      returned: 9,
+      returned: 12,
       truncated: false,
     });
     expect(response.headers['cache-control']).toBe('no-store');
@@ -550,7 +581,7 @@ describe('run creation and control', () => {
       'xai-oauth:grok-4.7', 'xai-oauth:grok-4.6',
     ]);
     expect(body.catalog.advertisedCount).toBe(628);
-    expect(body.catalog.returned).toBe(628);
+    expect(body.catalog.returned).toBe(631);
     expect(body.catalog.truncated).toBe(false);
     const keys = body.catalog.entries.map((entry: { provider: string; model: string }) => `${entry.provider}\u0000${entry.model}`);
     expect(new Set(keys).size).toBe(keys.length);
@@ -636,13 +667,21 @@ describe('run creation and control', () => {
     const absentBody = absentResponse.json();
     expect(absentBody.options).toEqual([]);
     expect(absentBody.catalog.advertisedCount).toBe(0);
-    expect(absentBody.catalog.entries).toHaveLength(8);
-    expect(absentBody.catalog.entries.every((entry: Record<string, unknown>) => (
-      entry.advertised === false
-      && entry.eligible === true
-      && entry.selectable === false
-      && entry.unavailableReason === 'not_advertised'
-    ))).toBe(true);
+    expect(absentBody.catalog.entries).toHaveLength(11);
+    expect(absentBody.catalog.entries.filter((entry: { provider: string }) => entry.provider !== 'anthropic')
+      .every((entry: Record<string, unknown>) => (
+        entry.advertised === false
+        && entry.eligible === true
+        && entry.selectable === false
+        && entry.unavailableReason === 'not_advertised'
+      ))).toBe(true);
+    expect(absentBody.catalog.entries.filter((entry: { provider: string }) => entry.provider === 'anthropic')
+      .every((entry: Record<string, unknown>) => (
+        entry.advertised === false
+        && entry.eligible === false
+        && entry.selectable === false
+        && entry.unavailableReason === 'not_advertised'
+      ))).toBe(true);
 
     const unauthenticated = createApp(vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(upstreamModelOptions(false))));
     const unauthenticatedResponse = await unauthenticated.inject({ url: '/api/model/options', headers: authHeaders() });
@@ -775,6 +814,133 @@ describe('run creation and control', () => {
       require_model_lock: true,
       model_options: { reasoning: { enabled: true, effort: 'xhigh' } },
     });
+  });
+
+  it('keeps the three Claude entries honestly unavailable while the server flag is disabled', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(upstreamModelOptionsWithAnthropic()))
+      .mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'api_server')))
+      .mockResolvedValueOnce(jsonResponse(upstreamModelOptionsWithAnthropic()));
+    const app = createApp(fetcher);
+
+    const response = await app.inject({ url: '/api/model/options', headers: authHeaders() });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.options.some((option: { provider: string }) => option.provider === 'anthropic')).toBe(false);
+    expect(body.catalog.entries.filter((entry: { provider: string }) => entry.provider === 'anthropic')).toEqual(
+      ['claude-haiku-5-5', 'claude-opus-5-5', 'claude-opus-5-6', 'claude-sonnet-5-5'].map(model => catalogEntry('anthropic', model, {
+        eligible: false, selectable: false, unavailableReason: 'not_approved_allowlist',
+      })),
+    );
+
+    const submission = await app.inject({
+      method: 'POST', url: '/v1/runs',
+      headers: authHeaders({ 'content-type': 'application/json', 'idempotency-key': 'jc-anthropic-disabled' }),
+      payload: { sessionId: commandSessionId, input: 'Do not route.', inference: { provider: 'anthropic', model: 'claude-opus-5-5' } },
+    });
+    expect(submission.statusCode).toBe(409);
+    expect(submission.json()).toEqual({ error: 'inference_unavailable' });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(anthropicModels)('selects and locks the exact enabled Claude route %s without an effort override', async (model) => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(upstreamModelOptionsWithAnthropic()))
+      .mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'api_server')))
+      .mockResolvedValueOnce(jsonResponse(upstreamModelOptionsWithAnthropic()))
+      .mockResolvedValueOnce(jsonResponse({ run_id: runId, status: 'started', replayed: false }, 202));
+    const app = createApp(fetcher, undefined, { anthropicRoutesEnabled: true });
+
+    const response = await app.inject({ url: '/api/model/options', headers: authHeaders() });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.options.map((option: { provider: string, model: string }) => `${option.provider}:${option.model}`)).toEqual([
+      'openai-codex:gpt-6-astra', 'openai-codex:gpt-6-sol', 'openai-codex:gpt-6-luna',
+      'openai-codex:gpt-5.6-sol', 'openai-codex:gpt-5.6-terra', 'openai-codex:gpt-5.6-luna',
+      'xai-oauth:grok-4.7', 'xai-oauth:grok-4.6',
+      'anthropic:claude-opus-5-5', 'anthropic:claude-sonnet-5-5', 'anthropic:claude-haiku-5-5',
+    ]);
+    expect(body.options.slice(8)).toEqual(anthropicOptions);
+    const selectable = body.catalog.entries
+      .filter((entry: { provider: string, selectable: boolean }) => entry.provider === 'anthropic' && entry.selectable)
+      .map((entry: { model: string }) => entry.model)
+      .sort();
+    expect(selectable).toEqual([...anthropicModels].sort());
+    expect(body.catalog.entries.find((entry: { model: string }) => entry.model === 'claude-opus-5-6'))
+      .toMatchObject({ provider: 'anthropic', eligible: false, selectable: false, unavailableReason: 'not_approved_allowlist' });
+
+    const submission = await app.inject({
+      method: 'POST', url: '/v1/runs',
+      headers: authHeaders({ 'content-type': 'application/json', 'idempotency-key': `jc-anthropic-${model}` }),
+      payload: { sessionId: commandSessionId, input: 'Use the exact Claude route.', inference: { provider: 'anthropic', model } },
+    });
+    expect(submission.statusCode).toBe(202);
+    expect(JSON.parse(String(fetcher.mock.calls[3]![1]!.body))).toEqual({
+      session_id: commandSessionId,
+      input: 'Use the exact Claude route.',
+      provider: 'anthropic',
+      model,
+      require_model_lock: true,
+    });
+    expect(fetcher).toHaveBeenCalledTimes(4);
+  });
+
+  it('fails closed for forged, unadvertised, unauthenticated and extra-effort Claude selections', async () => {
+    const app = createApp(vi.fn<typeof fetch>(), undefined, { anthropicRoutesEnabled: true });
+    for (const inference of [
+      { provider: 'anthropic', model: 'claude-opus-5-6' },
+      { provider: 'anthropic', model: 'claude-opus-5-5', reasoningEffort: 'high' },
+      { provider: 'anthropic', model: 'gpt-6-sol' },
+    ]) {
+      const response = await app.inject({
+        method: 'POST', url: '/v1/runs',
+        headers: authHeaders({ 'content-type': 'application/json', 'idempotency-key': `jc-forged-${inference.model}` }),
+        payload: { sessionId: commandSessionId, input: 'Forged route.', inference },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({ error: 'invalid_request' });
+    }
+
+    const removed = vi.fn<typeof fetch>();
+    const removedFixture = upstreamModelOptionsWithAnthropic();
+    removedFixture.providers = removedFixture.providers.map(provider => provider.slug === 'anthropic'
+      ? { ...provider, models: ['claude-sonnet-5-5'] }
+      : provider);
+    removed
+      .mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'api_server')))
+      .mockResolvedValueOnce(jsonResponse(removedFixture));
+    const removedResponse = await createApp(removed, undefined, { anthropicRoutesEnabled: true }).inject({
+      method: 'POST', url: '/v1/runs',
+      headers: authHeaders({ 'content-type': 'application/json', 'idempotency-key': 'jc-anthropic-removed' }),
+      payload: { sessionId: commandSessionId, input: 'Removed route.', inference: { provider: 'anthropic', model: 'claude-opus-5-5' } },
+    });
+    expect(removedResponse.statusCode).toBe(409);
+    expect(removedResponse.json()).toEqual({ error: 'inference_unavailable' });
+
+    const unauthenticated = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'api_server')))
+      .mockResolvedValueOnce(jsonResponse(upstreamModelOptionsWithAnthropic(false)));
+    const unauthenticatedResponse = await createApp(unauthenticated, undefined, { anthropicRoutesEnabled: true }).inject({
+      method: 'POST', url: '/v1/runs',
+      headers: authHeaders({ 'content-type': 'application/json', 'idempotency-key': 'jc-anthropic-unauthenticated' }),
+      payload: { sessionId: commandSessionId, input: 'Unauthenticated route.', inference: { provider: 'anthropic', model: 'claude-haiku-5-5' } },
+    });
+    expect(unauthenticatedResponse.statusCode).toBe(409);
+    expect(unauthenticatedResponse.json()).toEqual({ error: 'inference_unavailable' });
+  });
+
+  it('does not fall back when fresh Claude inventory fails at admission', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'api_server')))
+      .mockResolvedValueOnce(jsonResponse({ error: 'private' }, 500));
+    const response = await createApp(fetcher, undefined, { anthropicRoutesEnabled: true }).inject({
+      method: 'POST', url: '/v1/runs',
+      headers: authHeaders({ 'content-type': 'application/json', 'idempotency-key': 'jc-anthropic-catalog-failure' }),
+      payload: { sessionId: commandSessionId, input: 'No fallback.', inference: { provider: 'anthropic', model: 'claude-sonnet-5-5' } },
+    });
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({ error: 'upstream_unavailable' });
+    expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
   it('fails closed when a curated model is no longer authenticated', async () => {

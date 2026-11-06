@@ -43,8 +43,16 @@ export function selectionProblem(selection: Selection, inventory: InferenceOptio
   if (!inventory) return 'Model choices unavailable. Retry choices or explicitly choose Inherit.';
   const option = inventory.options.find(option => option.provider === selection.provider && option.model === selection.model);
   if (!option) return 'Requested model unavailable. Choose another model or explicitly choose Inherit.';
+  if (selection.provider === 'anthropic') {
+    return option.provider === 'anthropic' ? null : 'Requested model unavailable. Choose another model or explicitly choose Inherit.';
+  }
+  if (option.provider === 'anthropic') return 'Requested effort unsupported by the current inventory. Choose an offered effort or explicitly choose Inherit.';
   if (!option.reasoningEfforts.includes(selection.reasoningEffort)) return 'Requested effort unsupported by the current inventory. Choose an offered effort or explicitly choose Inherit.';
   return null;
+}
+
+export function requestedEffortLabel(inference: InferenceOverride): string {
+  return inference.provider === 'anthropic' ? 'provider default' : inference.reasoningEffort;
 }
 
 export function routeDecision(receipt: NonNullable<LiveRunUsage['execution']>): 'Fallback used' | 'Route changed' | 'Exact route' | 'Route verification unavailable' {
