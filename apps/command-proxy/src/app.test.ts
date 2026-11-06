@@ -17,6 +17,7 @@ const config: CommandProxyConfig = Object.freeze({
   hermesApiKey: hermesKey,
   maxStreamSeconds: 1_800,
   anthropicRoutesEnabled: false,
+  openRouterFreeRoutesEnabled: false,
 });
 
 const apps: ReturnType<typeof buildCommandProxy>[] = [];
@@ -102,6 +103,19 @@ function upstreamModelOptionsWithAnthropic(authenticated = true): UpstreamModelO
     slug: 'anthropic',
     authenticated,
     models: [...anthropicModels, 'claude-opus-5-6'],
+  });
+  return fixture;
+}
+
+function upstreamModelOptionsWithOpenRouter(
+  models: string[] = ['z-ai/glm-4.5-air:free', 'thinkingmachines/inkling:free', 'meta-llama/llama-3.3-70b-instruct:free'],
+  authenticated = true,
+): UpstreamModelOptionsFixture {
+  const fixture = upstreamModelOptions();
+  fixture.providers.push({
+    slug: 'openrouter',
+    authenticated,
+    models: [...models, 'anthropic/claude-sonnet-4.5', 'vendor/model:free-paid', 'vendor/model:FREE'],
   });
   return fixture;
 }
@@ -697,33 +711,43 @@ describe('run creation and control', () => {
       ))).toBe(true);
   });
 
-  it('shows advertised OpenRouter entries as ineligible and refuses to submit them', async () => {
+  it('shows advertised OpenRouter entries as ineligible and refuses to submit them while the flag is disabled', async () => {
     const fixture = upstreamModelOptions();
     fixture.providers.push({
       slug: 'openrouter',
       authenticated: true,
       models: ['z-ai/glm-4.5-air:free', 'anthropic/claude-sonnet-4.5'],
     });
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(fixture));
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(fixture))
+      .mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'api_server')))
+      .mockResolvedValueOnce(jsonResponse(fixture));
     const app = createApp(fetcher);
     const response = await app.inject({ url: '/api/model/options', headers: authHeaders() });
     expect(response.statusCode).toBe(200);
-    const entries = response.json().catalog.entries.filter((entry: { provider: string }) => entry.provider === 'openrouter');
-    expect(entries).toEqual([
+    const body = response.json();
+    expect(body.options.some((option: { provider: string }) => option.provider === 'openrouter')).toBe(false);
+    expect(body.catalog.entries.filter((entry: { provider: string }) => entry.provider === 'openrouter')).toEqual([
       catalogEntry('openrouter', 'anthropic/claude-sonnet-4.5', { eligible: false, selectable: false, unavailableReason: 'not_approved_allowlist' }),
       catalogEntry('openrouter', 'z-ai/glm-4.5-air:free', { eligible: false, selectable: false, unavailableReason: 'not_approved_allowlist' }),
     ]);
 
-    for (const model of ['z-ai/glm-4.5-air:free', 'anthropic/claude-sonnet-4.5']) {
-      const submission = await app.inject({
-        method: 'POST', url: '/v1/runs',
-        headers: authHeaders({ 'content-type': 'application/json', 'idempotency-key': `jc-openrouter-${model.replaceAll('/', '-')}` }),
-        payload: { sessionId: commandSessionId, input: 'Use an unapproved route.', inference: { provider: 'openrouter', model, reasoningEffort: 'low' } },
-      });
-      expect(submission.statusCode).toBe(400);
-      expect(submission.json()).toEqual({ error: 'invalid_request' });
-    }
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    const free = await app.inject({
+      method: 'POST', url: '/v1/runs',
+      headers: authHeaders({ 'content-type': 'application/json', 'idempotency-key': 'jc-openrouter-free-disabled' }),
+      payload: { sessionId: commandSessionId, input: 'Use the zero-spend route.', inference: { provider: 'openrouter', model: 'z-ai/glm-4.5-air:free' } },
+    });
+    expect(free.statusCode).toBe(409);
+    expect(free.json()).toEqual({ error: 'inference_unavailable' });
+
+    const paid = await app.inject({
+      method: 'POST', url: '/v1/runs',
+      headers: authHeaders({ 'content-type': 'application/json', 'idempotency-key': 'jc-openrouter-paid' }),
+      payload: { sessionId: commandSessionId, input: 'Use an unapproved route.', inference: { provider: 'openrouter', model: 'anthropic/claude-sonnet-4.5' } },
+    });
+    expect(paid.statusCode).toBe(400);
+    expect(paid.json()).toEqual({ error: 'invalid_request' });
+    expect(fetcher).toHaveBeenCalledTimes(3);
   });
 
   it('re-reads inventory on each request and fails closed on refresh or protocol errors', async () => {
@@ -940,6 +964,145 @@ describe('run creation and control', () => {
     });
     expect(response.statusCode).toBe(503);
     expect(response.json()).toEqual({ error: 'upstream_unavailable' });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it('offers only the bounded sorted advertised free OpenRouter ids when the separate flag is enabled', async () => {
+    const freeModels = [
+      'z-ai/glm-4.5-air:free',
+      'meta-llama/llama-3.3-70b-instruct:free',
+      'thinkingmachines/inkling:free',
+    ];
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(upstreamModelOptionsWithOpenRouter(freeModels)))
+      .mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'api_server')))
+      .mockResolvedValueOnce(jsonResponse(upstreamModelOptionsWithOpenRouter(freeModels)))
+      .mockResolvedValueOnce(jsonResponse({ run_id: runId, status: 'started', replayed: false }, 202));
+    const app = createApp(fetcher, undefined, { openRouterFreeRoutesEnabled: true });
+
+    const response = await app.inject({ url: '/api/model/options', headers: authHeaders() });
+    expect(response.statusCode).toBe(200);
+    const body = response.json();
+    expect(body.options.slice(8)).toEqual([
+      { provider: 'openrouter', model: 'meta-llama/llama-3.3-70b-instruct:free', label: 'Free · meta-llama/llama-3.3-70b-instruct:free', reasoningEfforts: [] },
+      { provider: 'openrouter', model: 'thinkingmachines/inkling:free', label: 'Free · thinkingmachines/inkling:free', reasoningEfforts: [] },
+      { provider: 'openrouter', model: 'z-ai/glm-4.5-air:free', label: 'Free · z-ai/glm-4.5-air:free', reasoningEfforts: [] },
+    ]);
+    expect(body.catalog.entries.filter((entry: { provider: string }) => entry.provider === 'openrouter')).toEqual([
+      catalogEntry('openrouter', 'anthropic/claude-sonnet-4.5', { eligible: false, selectable: false, unavailableReason: 'not_approved_allowlist' }),
+      catalogEntry('openrouter', 'meta-llama/llama-3.3-70b-instruct:free'),
+      catalogEntry('openrouter', 'thinkingmachines/inkling:free'),
+      catalogEntry('openrouter', 'vendor/model:FREE', { eligible: false, selectable: false, unavailableReason: 'not_approved_allowlist' }),
+      catalogEntry('openrouter', 'vendor/model:free-paid', { eligible: false, selectable: false, unavailableReason: 'not_approved_allowlist' }),
+      catalogEntry('openrouter', 'z-ai/glm-4.5-air:free'),
+    ]);
+
+    const submission = await app.inject({
+      method: 'POST', url: '/v1/runs',
+      headers: authHeaders({ 'content-type': 'application/json', 'idempotency-key': 'jc-openrouter-free-enabled' }),
+      payload: { sessionId: commandSessionId, input: 'Use the zero-spend route.', inference: { provider: 'openrouter', model: 'z-ai/glm-4.5-air:free' } },
+    });
+    expect(submission.statusCode).toBe(202);
+    expect(JSON.parse(String(fetcher.mock.calls[3]![1]!.body))).toEqual({
+      session_id: commandSessionId,
+      input: 'Use the zero-spend route.',
+      provider: 'openrouter',
+      model: 'z-ai/glm-4.5-air:free',
+      require_model_lock: true,
+    });
+    expect(fetcher.mock.calls[2]![1]!.cache).toBe('no-store');
+    expect(fetcher).toHaveBeenCalledTimes(4);
+  });
+
+  it('dedupes and count-bounds the free list without exposing lookalikes or paid ids', async () => {
+    const freeModels = Array.from({ length: 30 }, (_, index) => `vendor/model-${String(index).padStart(2, '0')}:free`);
+    const fixture = upstreamModelOptionsWithOpenRouter([...freeModels, freeModels[0]!]);
+    const app = createApp(vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(fixture)), undefined, { openRouterFreeRoutesEnabled: true });
+
+    const body = (await app.inject({ url: '/api/model/options', headers: authHeaders() })).json();
+    const options = body.options.filter((option: { provider: string }) => option.provider === 'openrouter');
+    expect(options).toHaveLength(24);
+    expect(options.map((option: { model: string }) => option.model)).toEqual(freeModels.slice(0, 24));
+    expect(new Set(options.map((option: { model: string }) => option.model)).size).toBe(24);
+    const entries = body.catalog.entries.filter((entry: { provider: string, model: string }) => entry.provider === 'openrouter' && entry.model.endsWith(':free'));
+    expect(entries.filter((entry: { selectable: boolean, model: string }) => entry.selectable).map((entry: { model: string }) => entry.model))
+      .toEqual(freeModels.slice(0, 24));
+    expect(entries.filter((entry: { model: string }) => !freeModels.slice(0, 24).includes(entry.model))
+      .every((entry: { eligible: boolean, selectable: boolean, unavailableReason: string }) => (
+        entry.eligible === false && entry.selectable === false && entry.unavailableReason === 'not_approved_allowlist'
+      ))).toBe(true);
+    expect(body.catalog.entries.some((entry: { model: string, selectable: boolean }) => entry.model === 'vendor/model:FREE' && entry.selectable)).toBe(false);
+    expect(body.catalog.entries.some((entry: { model: string, selectable: boolean }) => entry.model === 'vendor/model:free-paid' && entry.selectable)).toBe(false);
+  });
+
+  it('keeps the OpenRouter free list honestly empty when the provider is unauthenticated', async () => {
+    const app = createApp(vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(upstreamModelOptionsWithOpenRouter(undefined, false))), undefined, { openRouterFreeRoutesEnabled: true });
+    const body = (await app.inject({ url: '/api/model/options', headers: authHeaders() })).json();
+    expect(body.options.some((option: { provider: string }) => option.provider === 'openrouter')).toBe(false);
+    expect(body.catalog.entries.filter((entry: { provider: string }) => entry.provider === 'openrouter')
+      .every((entry: { available?: boolean, selectable: boolean, unavailableReason: string }) => (
+        entry.selectable === false && entry.unavailableReason === 'provider_unauthenticated'
+      ))).toBe(true);
+  });
+
+  it('rejects paid, lookalike, removed, unadvertised and unauthorised OpenRouter selections without admission', async () => {
+    const app = createApp(vi.fn<typeof fetch>(), undefined, { openRouterFreeRoutesEnabled: true });
+    for (const inference of [
+      { provider: 'openrouter', model: 'anthropic/claude-sonnet-4.5' },
+      { provider: 'openrouter', model: 'z-ai/glm-4.5-air:free-paid' },
+      { provider: 'openrouter', model: 'vendor/model:paid:free' },
+      { provider: 'openrouter', model: 'z-ai/glm-4.5-air:FREE' },
+      { provider: 'openrouter', model: 'z-ai/glm-4.5-air:free', reasoningEffort: 'low' },
+      { provider: 'openai-codex', model: 'z-ai/glm-4.5-air:free', reasoningEffort: 'low' },
+    ]) {
+      const response = await app.inject({
+        method: 'POST', url: '/v1/runs',
+        headers: authHeaders({ 'content-type': 'application/json', 'idempotency-key': `jc-openrouter-forged-${inference.model.length}` }),
+        payload: { sessionId: commandSessionId, input: 'Forged route.', inference },
+      });
+      expect(response.statusCode).toBe(400);
+      expect(response.json()).toEqual({ error: 'invalid_request' });
+    }
+
+    const removedFixture = upstreamModelOptionsWithOpenRouter(['thinkingmachines/inkling:free']);
+    const removed = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'api_server')))
+      .mockResolvedValueOnce(jsonResponse(removedFixture));
+    const removedResponse = await createApp(removed, undefined, { openRouterFreeRoutesEnabled: true }).inject({
+      method: 'POST', url: '/v1/runs',
+      headers: authHeaders({ 'content-type': 'application/json', 'idempotency-key': 'jc-openrouter-removed' }),
+      payload: { sessionId: commandSessionId, input: 'Removed route.', inference: { provider: 'openrouter', model: 'z-ai/glm-4.5-air:free' } },
+    });
+    expect(removedResponse.statusCode).toBe(409);
+    expect(removedResponse.json()).toEqual({ error: 'inference_unavailable' });
+
+    const unauthenticated = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'api_server')))
+      .mockResolvedValueOnce(jsonResponse(upstreamModelOptionsWithOpenRouter(undefined, false)));
+    const unauthenticatedResponse = await createApp(unauthenticated, undefined, { openRouterFreeRoutesEnabled: true }).inject({
+      method: 'POST', url: '/v1/runs',
+      headers: authHeaders({ 'content-type': 'application/json', 'idempotency-key': 'jc-openrouter-unauthenticated' }),
+      payload: { sessionId: commandSessionId, input: 'Unauthenticated route.', inference: { provider: 'openrouter', model: 'z-ai/glm-4.5-air:free' } },
+    });
+    expect(unauthenticatedResponse.statusCode).toBe(409);
+    expect(unauthenticatedResponse.json()).toEqual({ error: 'inference_unavailable' });
+  });
+
+  it.each([
+    ['429', 429, 429, { error: 'busy' }],
+    ['server error', 500, 503, { error: 'upstream_unavailable' }],
+  ])('does not retry or fall back when fresh free inventory fails with %s at admission', async (_name, upstreamStatus, status, error) => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'api_server')))
+      .mockResolvedValueOnce(jsonResponse({ error: 'private' }, upstreamStatus));
+    const response = await createApp(fetcher, undefined, { openRouterFreeRoutesEnabled: true }).inject({
+      method: 'POST', url: '/v1/runs',
+      headers: authHeaders({ 'content-type': 'application/json', 'idempotency-key': 'jc-openrouter-catalog-failure' }),
+      payload: { sessionId: commandSessionId, input: 'No fallback.', inference: { provider: 'openrouter', model: 'z-ai/glm-4.5-air:free' } },
+    });
+    expect(response.statusCode).toBe(status);
+    expect(response.json()).toEqual(error);
+    expect(response.payload).not.toContain('private');
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 

@@ -21,6 +21,7 @@ describe('loadCommandProxyConfig', () => {
       hermesApiKey: valid.HERMES_API_KEY,
       maxStreamSeconds: 1_800,
       anthropicRoutesEnabled: false,
+      openRouterFreeRoutesEnabled: false,
     });
   });
 
@@ -33,6 +34,18 @@ describe('loadCommandProxyConfig', () => {
       expect(loadCommandProxyConfig({ ...valid, COMMAND_ANTHROPIC_ROUTES_ENABLED: value }).anthropicRoutesEnabled).toBe(false);
     }
     expect(() => loadCommandProxyConfig({ ...valid, COMMAND_ANTHROPIC_ROUTES_ENABLED: 'yes' })).toThrow();
+  });
+
+  it('keeps OpenRouter free routes separately disabled unless explicitly enabled', () => {
+    expect(loadCommandProxyConfig(valid).openRouterFreeRoutesEnabled).toBe(false);
+    expect(loadCommandProxyConfig({ ...valid, COMMAND_ANTHROPIC_ROUTES_ENABLED: 'true' }).openRouterFreeRoutesEnabled).toBe(false);
+    for (const value of ['1', 'true']) {
+      expect(loadCommandProxyConfig({ ...valid, COMMAND_OPENROUTER_FREE_ROUTES_ENABLED: value }).openRouterFreeRoutesEnabled).toBe(true);
+    }
+    for (const value of ['0', 'false']) {
+      expect(loadCommandProxyConfig({ ...valid, COMMAND_OPENROUTER_FREE_ROUTES_ENABLED: value }).openRouterFreeRoutesEnabled).toBe(false);
+    }
+    expect(() => loadCommandProxyConfig({ ...valid, COMMAND_OPENROUTER_FREE_ROUTES_ENABLED: 'yes' })).toThrow();
   });
 
   it.each([

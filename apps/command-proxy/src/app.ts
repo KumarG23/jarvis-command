@@ -5,6 +5,7 @@ import {
   ApprovalRequestIdSchema,
   InferenceOptionsResponseSchema,
   InferenceOverrideSchema,
+  isOpenRouterFreeModelId,
   MODEL_CATALOG_MAX_ENTRIES,
   OpaqueIdentifierSchema,
   SessionIdSchema,
@@ -50,6 +51,11 @@ const REASONING_EFFORTS = ['minimal', 'low', 'medium', 'high', 'xhigh'] as const
 const MAX_UPSTREAM_PROVIDERS = 200;
 const MAX_UPSTREAM_MODELS_PER_PROVIDER = 5_000;
 const MAX_CATALOG_BYTES = 262_144;
+// Bounded, deterministic free-route list. Advertisement/authentication still do not
+// grant eligibility: only exact lowercase `:free` ids inside this server-side bound
+// become selectable when the separate flag is enabled.
+const OPENROUTER_FREE_PROVIDER = 'openrouter';
+const MAX_OPENROUTER_FREE_OPTIONS = 24;
 const CURATED_INFERENCE_OPTIONS = [
   { provider: 'openai-codex', model: 'gpt-6-astra', label: 'Astra' },
   { provider: 'openai-codex', model: 'gpt-6-sol', label: 'Sol' },
@@ -76,6 +82,27 @@ function enabledCuratedInferenceOptions(config: CommandProxyConfig) {
   return config.anthropicRoutesEnabled
     ? KNOWN_CURATED_INFERENCE_OPTIONS
     : CURATED_INFERENCE_OPTIONS;
+}
+
+// Deduplicated by the canonical provider inventory, sorted by model id for a stable
+// read, and capped by count. Only an authenticated `openrouter` provider contributes.
+function openRouterFreeOptions(
+  providers: ReadonlyMap<string, ProviderInventory>,
+  config: CommandProxyConfig,
+): InferenceOption[] {
+  if (!config.openRouterFreeRoutesEnabled) return [];
+  const provider = providers.get(OPENROUTER_FREE_PROVIDER);
+  if (provider?.authenticated !== true) return [];
+  return [...provider.models]
+    .filter(isOpenRouterFreeModelId)
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+    .slice(0, MAX_OPENROUTER_FREE_OPTIONS)
+    .map(model => ({
+      provider: 'openrouter' as const,
+      model,
+      label: `Free · ${model}`,
+      reasoningEfforts: [],
+    }));
 }
 
 const UpstreamSessionSchema = z.object({
@@ -696,19 +723,21 @@ async function readInferenceOptions(
   fetcher: typeof fetch,
 ): Promise<InferenceOptionsResponse> {
   const upstream = UpstreamModelOptionsSchema.parse(await requestJson({
-    path: '/api/model/options', method: 'GET', config, fetcher,
+    path: '/api/model/options', method: 'GET', config, fetcher, cache: 'no-store',
   }));
   const providers = canonicalProviderInventory(upstream);
-  const options = enabledCuratedInferenceOptions(config).filter((candidate) => {
+  const curatedOptions = enabledCuratedInferenceOptions(config).filter((candidate) => {
     const provider = providers.get(candidate.provider);
     return provider?.authenticated === true && provider.models.has(candidate.model);
   }).map(option => option.provider === 'anthropic'
     ? { ...option, reasoningEfforts: [] }
     : { ...option, reasoningEfforts: [...REASONING_EFFORTS] });
+  const freeOptions = openRouterFreeOptions(providers, config);
+  const options = [...curatedOptions, ...freeOptions];
   return InferenceOptionsResponseSchema.parse({
     default: { provider: upstream.provider, model: upstream.model },
     options,
-    catalog: projectModelCatalog(providers, config),
+    catalog: projectModelCatalog(providers, config, freeOptions),
   });
 }
 
@@ -753,8 +782,12 @@ type CatalogCandidate = Readonly<{
 function projectModelCatalog(
   providers: ReadonlyMap<string, ProviderInventory>,
   config: CommandProxyConfig,
+  freeOptions: readonly InferenceOption[],
 ): ModelCatalog {
-  const eligibleKeys = new Set(enabledCuratedInferenceOptions(config).map(option => catalogKey(option.provider, option.model)));
+  const eligibleKeys = new Set([
+    ...enabledCuratedInferenceOptions(config).map(option => catalogKey(option.provider, option.model)),
+    ...freeOptions.map(option => catalogKey(option.provider, option.model)),
+  ]);
   const advertised = new Map<string, CatalogCandidate>();
   for (const [slug, provider] of providers) {
     for (const model of provider.models) {
@@ -827,9 +860,10 @@ function compareCatalogCandidates(a: CatalogCandidate, b: CatalogCandidate): num
 }
 
 function upstreamInference(inference: InferenceOverride) {
-  if (inference.provider === 'anthropic') {
-    // No verified Claude effort contract: omit the unsupported override and keep the
-    // exact provider/model lock. Provider-default effort stays unknown downstream.
+  if (inference.provider === 'anthropic' || inference.provider === 'openrouter') {
+    // No verified effort contract for these provider-default routes: omit the
+    // unsupported override and keep the exact provider/model lock. Effort stays
+    // unknown downstream rather than being guessed or translated from another family.
     return {
       provider: inference.provider,
       model: inference.model,
@@ -848,10 +882,11 @@ function upstreamInference(inference: InferenceOverride) {
 
 function supportsInference(option: InferenceOption, inference: InferenceOverride): boolean {
   if (option.provider !== inference.provider || option.model !== inference.model) return false;
-  if (inference.provider === 'anthropic') {
-    return option.provider === 'anthropic' && option.reasoningEfforts.length === 0;
-  }
-  return option.provider !== 'anthropic' && option.reasoningEfforts.includes(inference.reasoningEffort);
+  const effort = 'reasoningEffort' in inference ? inference.reasoningEffort : undefined;
+  // An empty effort list is the honest provider-default state; it never accepts an
+  // invented effort and fixed-effort routes never accept a missing one.
+  if (option.reasoningEfforts.length === 0) return effort === undefined;
+  return effort !== undefined && option.reasoningEfforts.includes(effort);
 }
 
 async function isWritableSession(
@@ -876,6 +911,7 @@ type RequestJsonOptions = Readonly<{
   method: 'GET' | 'POST' | 'DELETE';
   body?: Readonly<Record<string, unknown>>;
   headers?: Readonly<Record<string, string>>;
+  cache?: RequestCache;
   config: CommandProxyConfig;
   fetcher: typeof fetch;
 }>;
@@ -888,6 +924,7 @@ async function requestJson(options: RequestJsonOptions): Promise<unknown> {
       ...(options.method === 'POST' ? { 'content-type': 'application/json' } : {}),
       ...options.headers,
     },
+    ...(options.cache ? { cache: options.cache } : {}),
     ...(options.method === 'POST' ? { body: JSON.stringify(options.body ?? {}) } : {}),
     redirect: 'error',
     signal: AbortSignal.timeout(JSON_TIMEOUT_MS),

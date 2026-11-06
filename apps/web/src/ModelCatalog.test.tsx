@@ -41,7 +41,7 @@ it('groups the observed catalog by provider, explains each unavailable reason, a
   expect(within(catalog).getByText('Not advertised by Hermes')).toBeInTheDocument();
   expect(within(catalog).getByText('Provider not authenticated')).toBeInTheDocument();
   expect(within(catalog).getByText('Not selectable in Command')).toBeInTheDocument();
-  expect(within(catalog).getByText(/OpenRouter entries are discovery only/)).toBeInTheDocument();
+  expect(within(catalog).getByText(/Only advertised OpenRouter ids ending exactly in/)).toBeInTheDocument();
   expect(within(catalog).getAllByRole('button', { name: /^Use / })).toHaveLength(1);
   fireEvent.click(within(catalog).getByRole('button', { name: 'Use OpenAI Codex gpt-6-sol' }));
   await waitFor(() => expect(model()).toHaveValue('openai-codex:gpt-6-sol'));
@@ -89,6 +89,26 @@ it('offers the three enabled Claude entries through the existing catalog Use act
   expect(screen.getByRole('combobox', { name: 'Reasoning for this prompt' })).toHaveValue('');
   expect(screen.getByRole('combobox', { name: 'Reasoning for this prompt' })).toBeDisabled();
   expect(screen.getByText(/Claude Sonnet 5\.5 · provider default/)).toBeInTheDocument();
+});
+
+it('labels the selectable OpenRouter route Free and uses the existing catalog action', async () => {
+  const option: InferenceOption = {
+    provider: 'openrouter', model: 'z-ai/glm-4.5-air:free',
+    label: 'Free · z-ai/glm-4.5-air:free', reasoningEfforts: [],
+  };
+  const entries = [
+    entry('openrouter', option.model, { eligible: true, selectable: true, unavailableReason: null }),
+    entry('openrouter', 'vendor/paid-model'),
+  ];
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json(inventory(entries, [option]))));
+  render(<TurnComposer {...props()} />);
+  const catalog = await screen.findByRole('region', { name: 'Advertised model catalog' });
+  const group = within(catalog).getByRole('region', { name: 'OpenRouter advertised models' });
+  expect(within(group).getByText(`Free · ${option.model}`)).toBeInTheDocument();
+  expect(within(group).getByRole('button', { name: `Use OpenRouter ${option.model}` })).toBeInTheDocument();
+  fireEvent.click(within(group).getByRole('button', { name: `Use OpenRouter ${option.model}` }));
+  await waitFor(() => expect(model()).toHaveValue(`openrouter:${option.model}`));
+  expect(screen.getByRole('combobox', { name: 'Reasoning for this prompt' })).toBeDisabled();
 });
 
 it('preserves the existing picker when an older response has no catalog and when nothing is selectable', async () => {
