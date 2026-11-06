@@ -68,12 +68,12 @@ milestones:
     acceptance:
       - Only the three owner-authorized Anthropic routes become selectable with unchanged admission/model lock and truthful requested-versus-executed proof after lead establishes the documented proxy release path (§10 P10.4; §12 model-selection scenario).
 # Later owner addenda: MASTER_PLAN §0.2 records exact directives 6689850279 / 6689899077 / 6689916605. These are queued documentation, not implementation or worker live/destructive authority.
-# P10.5: Source in progress, #96 Luna via typed quota handoff after Deepseek proxy checks; WIP preserved; separate disabled-default flag and live proxy/route prerequisites deferred.
+# P10.5: Deferred after #115 exhausted its two authorized browser attempts. PR109 source and draft repair PR118 remain preserved/unmerged; candidate acceptance and live free-route proof unavailable. §11 P10.5 / #115 disposition 6693113166.
   - id: P10_5
     title: OpenRouter free routes
     acceptance:
       - Only authenticated advertised OpenRouter ids ending exactly in :free become eligible, with unchanged model lock/admission and honest route/error proof; paid/lookalike routes remain rejected (§10 P10.5).
-# P11: Source in progress, #97 Sol-dev on independent project identity; executed-model mark integration staged after #96. Prior visual evidence remains accepted history.
+# P11: Reader bridge PR116 is merged and its compatible rollback image was authenticated-readback verified; PR110 identity writer remains unmerged and executed-model marks pending. Phone check pending. §11 P11 / #97 readback 6693216005.
   - id: P11
     title: Visual identity
     acceptance:
@@ -83,7 +83,7 @@ milestones:
     title: Message reactions
     acceptance:
       - Durable audited user reactions enter the next explicit run as bounded deduplicated context; verified phase 2 markers require exact target binding; no reaction admits a run or approval (§10 P12).
-# P6.1: Reopened; after #94/#95/#96. Secret provisioning/enablement, live readback and physical Pixel acceptance remain separate lead/device steps.
+# P6.1: #99 Sonnet source in progress behind disabled controls. Exact final-message binding remains unsupported; production secret/enablement, live readback and physical Pixel acceptance are separate prerequisites. §11 P6.1.
   - id: P6_1
     title: Reply notifications
     acceptance:
