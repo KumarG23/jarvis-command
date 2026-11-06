@@ -588,3 +588,15 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 .project-identity-settings { min-width: 0; margin: 0 0 20px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
 .project-identity-settings legend { color: var(--text); font-size: 13px; }
 .project-identity-settings select { min-height: 44px; }
+
+/* Original family monograms, attributed only from executed receipt evidence. */
+.model-family-mark { --family-accent: var(--muted); display: inline-flex; align-items: center; gap: 7px; max-width: 100%; color: var(--family-accent); font-size: 12px; line-height: 1.5; }
+.model-family-mark[data-family="openai"] { --family-accent: var(--project-green); }
+.model-family-mark[data-family="claude"] { --family-accent: var(--project-amber); }
+.model-family-mark[data-family="gemini"] { --family-accent: var(--project-blue); }
+.model-family-mark[data-family="grok"] { --family-accent: var(--project-violet); }
+.model-family-glyph { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 25px; width: 25px; height: 25px; border: 1px solid currentColor; border-radius: 6px; background: var(--panel); font: 600 11px/1 Inter, sans-serif; }
+.model-family-label { min-width: 0; overflow-wrap: anywhere; }
+.event-label .model-family-label { font-weight: 400; }
+.event-icon.model-response-icon { color: var(--muted); }
+.execution-receipt > .model-family-mark { margin-bottom: 4px; }

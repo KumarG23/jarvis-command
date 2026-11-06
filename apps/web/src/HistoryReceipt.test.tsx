@@ -33,6 +33,10 @@ it('retains the authoritative session receipt after selecting history and remoun
     const receipt = await screen.findByRole('region', { name: 'Execution receipt' });
     expect(within(receipt).getByText(/25,262 tokens · 25,249 in \/ 13 out/)).toBeInTheDocument();
     expect(receipt).toHaveTextContent('gpt-6.1-sol · medium · OpenAI');
+    expect(receipt.querySelector('[data-family="openai"]')).not.toBeNull();
+    const answer = screen.getByRole('article', { name: 'Jarvis response' });
+    expect(answer).toHaveTextContent('Model family unknown');
+    expect(answer.querySelector('[data-family="openai"]')).toBeNull();
     expect(receipt).toHaveTextContent('0 reasoning · 0 cache read · 0 cache write');
     expect(receipt).toHaveTextContent('25,249 / 500,000');
     expect(receipt).not.toHaveTextContent('Exact route');

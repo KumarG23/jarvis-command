@@ -1,3 +1,4 @@
+import { ModelFamilyMark, boundMessageExecution } from './ModelFamilyMark';
 import { SessionMessagesPageSchema, type SessionMessage, type SessionSummary } from '@jarvis-command/contracts';
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Command, MessageSquare, SquareTerminal } from 'lucide-react';
@@ -68,11 +69,11 @@ export function LiveRoom({ session, onHistory, turns = [], renderTurn, onSaveRes
     {!loading && !error && messages.length === 0 ? <p role="status">No saved messages in session history yet.</p> : null}
     {liveAfter(-1)}
     {messages.map((message, index) => <Fragment key={message.id}>{omittedEchoIds.has(message.id) || (message.role === 'assistant' && !message.content && !message.toolName) ? null : <article className="timeline-event history-message" data-message-id={message.id} aria-label={message.role === 'user' ? 'Your message' : message.role === 'assistant' ? 'Jarvis response' : undefined}>
-      <div className={`event-icon ${message.role === 'user' ? 'violet' : 'cyan'}`}>
-        {message.role === 'tool' ? <SquareTerminal size={17} /> : message.role === 'user' ? <MessageSquare size={17} /> : <Command size={25} />}
+      <div className={`event-icon ${message.role === 'user' ? 'violet' : message.role === 'assistant' ? 'model-response-icon' : 'cyan'}`}>
+        {message.role === 'tool' ? <SquareTerminal size={17} /> : message.role === 'user' ? <MessageSquare size={17} /> : message.role === 'assistant' ? <ModelFamilyMark execution={boundMessageExecution(message, turns, messages, !loading && !error && !hasMore)} variant="icon" /> : <Command size={25} />}
       </div>
       <div className="event-body">
-        <div className="event-label"><span>{message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Jarvis' : message.role}</span><time>{message.timestamp ? new Date(message.timestamp).toLocaleString() : 'Time not reported'}</time></div>
+        <div className="event-label"><span>{message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Jarvis' : message.role}</span>{message.role === 'assistant' ? <ModelFamilyMark execution={boundMessageExecution(message, turns, messages, !loading && !error && !hasMore)} variant="label" /> : null}<time>{message.timestamp ? new Date(message.timestamp).toLocaleString() : 'Time not reported'}</time></div>
         {message.role === 'tool' ? <details className="saved-tool-disclosure"><summary>{message.toolName ?? 'Tool activity'}</summary><p>{message.content || 'No text was saved.'}</p></details> : <>{message.toolName ? <h2>{message.toolName}</h2> : null}{message.role === 'assistant' ? <MessageContent text={message.content || 'Assistant activity record — no text was saved.'} threadProjectId={threadProjectId} threadProjectSessionIds={threadProjectSessionIds} onThreadLink={onThreadLink} /> : <p>{message.content || 'No text was saved.'}</p>}</>}
         {message.role === 'assistant' && message.content ? <CopyResponse text={message.content} limited={false} onSave={onSaveResponse ? () => onSaveResponse(message) : undefined} /> : null}
       </div>
