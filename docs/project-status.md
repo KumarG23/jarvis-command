@@ -6,11 +6,13 @@ Checkable acceptance projection: [ROADMAP.yaml](../ROADMAP.yaml) maps the existi
 
 ## Live release
 
-Current source: `55d61b8db16a4798429dcf99a79fc8d377c1ef82` (PR #89).
-Healthy app: `sha256:5122fa63c3a2db2bf75d138187bd7c6939060bfc70874b805441e41ff05fc63a`.
-Retained rollback: `release-app-1793537664585597198` → verified `a26c2be4…`.
-Both proxies were unchanged. Source build digest reference: `f654354c…`; this is
-separate from the deployed app image pin above.
+Current application source: `5fb5d4c6b2f981bc6f155d63d8f10f80738b59e7` (PR #104).
+Healthy deployed app: `sha256:95611401477359d2bd8ece7be079fef1ecf3d679f148c60fb0304e9141c03ebf`.
+Retained rollback: `release-app-1793985659310670903` → verified `5122fa63…`.
+Separate pre-deploy build reference: `716cf046…`; deployment rebuilt the same revision.
+Proxies were unchanged. Their direct status is unavailable through the project tool
+after the Dell migration; authenticated bootstrap/model inventory/projects readback passes.
+[Release and live acceptance](https://github.com/KumarG23/jarvis-command/pull/104#issuecomment-6690969896).
 
 ## Milestones
 
@@ -30,6 +32,17 @@ new-family eligibility stays deferred. [Six approved routes and live route proof
 remain as recorded in the plan. No provider, credential, allowlist or spending
 change was made.
 
+P9.5 Threads entry point is **Done, live; phone check pending** (#94/#102, PR #104).
+Authenticated owned-project roster/attachment selection, focus return, retained draft
+and reload pass at eight desktop/mobile/short-height layouts, with zero new runs.
+The original selection was restored; candidate fixture and live evidence stay separate.
+
+The seven bounded November 6 owner reopenings are recorded by amendment PR #103.
+The other six remain open: #95 (Deepseek) and #100 (Sol-dev) prepare source behind
+disabled-default flags; #96 follows the same selector/proxy owner; #97/#98 and #99
+retain their plan dependencies. No provider call/enablement or live deletion occurred.
+Contents deletion requires supported recovery proof; otherwise it remains unavailable.
+
 ## Known limits
 
 Physical Android remains **phone check pending**; production push is disabled.
@@ -46,4 +59,5 @@ failure/rollback history remain in §11.
 
 The [Final Neal packet/review queue #20](https://github.com/KumarG23/jarvis-command/issues/20)
 contains deferred contracts, phone steps and the [P9/P10 addendum](https://github.com/KumarG23/jarvis-command/issues/20#issuecomment-6558299788).
-All reopened milestones are Done or Deferred; no further Command work is admitted.
+Only the seven expressly reopened slices in MASTER_PLAN §0.2 are admitted. The finish
+line applies when they are each Done or Deferred; no speculative backlog is created.
