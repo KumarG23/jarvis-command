@@ -24,7 +24,12 @@ export const ProjectThreadUpdateSchema = z.object({
   archived: z.boolean().optional(),
   designateLead: z.literal(true).optional(),
 }).strict().refine(value => Object.keys(value).length > 0);
+// Reader-only bridge for the future identity writer's version-one metadata.
+// Keep create/update strict: older UI writes must only preserve these fields.
+const identityToken = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/);
 export const ProjectRoomSchema = ProjectRoomCreateSchema.extend({
+  projectIcon: identityToken.optional(),
+  projectColor: identityToken.optional(),
   id: ProjectRoomIdSchema,
   sessionIds: z.array(SessionIdSchema).max(100),
   lastSessionId: SessionIdSchema.nullable(),

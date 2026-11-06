@@ -368,3 +368,35 @@ it('rejects project changes during roster reads instead of returning stale membe
   expect((await read).statusCode).toBe(409);
   await app.close();
 });
+
+it.each([
+  { projectIcon: 'orbit', projectColor: 'violet' },
+  { projectIcon: 'future-glyph', projectColor: 'future-accent' },
+])('reader bridge preserves writer identity through legacy edit/archive/restart and refuses identity writes: %j', async identity => {
+  const upstream = vi.fn(); const { root, make } = await fixture(upstream);
+  const id = `room_${'d'.repeat(32)}`, legacyId = `room_${'e'.repeat(32)}`;
+  const stored = { ...metadata, ...identity, id, sessionIds: [], lastSessionId: null };
+  const legacy = { ...metadata, id: legacyId, sessionIds: [], lastSessionId: null };
+  const path = join(root, 'project-rooms.json');
+  // Simulate rolling back onto a registry already saved by the identity writer.
+  await writeFile(path, JSON.stringify({ version: 1, rooms: [stored, legacy] }), { mode: 0o600 });
+  const app = make();
+  expect((await app.inject({ url: '/api/rooms', headers })).json().rooms).toEqual([stored, legacy]);
+  const before = await readFile(path);
+  for (const fields of [identity, { projectIcon: 'spark' }, { projectColor: 'amber' }, { projectIcon: 'x'.repeat(33) }, { projectColor: null }]) {
+    for (const url of ['/api/rooms', `/api/rooms/${id}`]) {
+      expect((await app.inject({ method: 'POST', url, headers, payload: { ...metadata, ...fields } })).statusCode).toBe(400);
+    }
+  }
+  expect(await readFile(path)).toEqual(before);
+  const edit = { ...metadata, name: 'SYNTHETIC renamed on rollback', instructions: 'Ordinary edit', archived: true };
+  expect((await app.inject({ method: 'POST', url: `/api/rooms/${id}`, headers, payload: edit })).json().room).toEqual({ ...stored, ...edit });
+  expect((await app.inject({ method: 'POST', url: `/api/rooms/${legacyId}`, headers, payload: edit })).json().room).toEqual({ ...legacy, ...edit });
+  await app.close(); const restarted = make();
+  expect((await restarted.inject({ url: '/api/rooms', headers })).json().rooms).toEqual([{ ...stored, ...edit }, { ...legacy, ...edit }]);
+  const restored = await restarted.inject({ method: 'POST', url: `/api/rooms/${id}`, headers, payload: { ...edit, archived: false } });
+  expect(restored.json().room).toEqual({ ...stored, ...edit, archived: false });
+  const persisted = JSON.parse(await readFile(path, 'utf8'));
+  expect(persisted).toEqual({ version: 1, rooms: [{ ...stored, ...edit, archived: false }, { ...legacy, ...edit }] });
+  expect(upstream).not.toHaveBeenCalled(); await restarted.close();
+});
