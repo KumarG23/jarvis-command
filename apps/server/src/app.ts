@@ -182,9 +182,11 @@ export function buildApp(dependencies: AppDependencies) {
         provider: snapshot.provider,
         gatewayState: snapshot.gatewayState,
         activeAgents: snapshot.activeAgents,
-        capabilities: dependencies.config.artifacts.enabled
-          ? [...new Set([...snapshot.capabilities, 'artifact_studio'])]
-          : snapshot.capabilities,
+        capabilities: [...new Set([
+          ...snapshot.capabilities.filter(capability => capability !== 'message_reactions'),
+          ...(dependencies.config.artifacts.enabled ? ['artifact_studio'] : []),
+          ...(liveRoomEnabled && dependencies.config.reactionsEnabled ? ['message_reactions'] : []),
+        ])],
         readinessChecks: snapshot.readinessChecks,
       },
       sessions: snapshot.sessions,

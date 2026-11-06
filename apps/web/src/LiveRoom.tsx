@@ -1,3 +1,5 @@
+import { MessageReactions } from './MessageReactions';
+import type { MessageReactionClient } from './useMessageReactions';
 import { SessionMessagesPageSchema, type SessionMessage, type SessionSummary } from '@jarvis-command/contracts';
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Command, MessageSquare, SquareTerminal } from 'lucide-react';
@@ -7,9 +9,10 @@ import type { Turn } from './useLiveTurn';
 import { projectTurns } from './timeline';
 import { HistoryReceipt } from './HistoryReceipt';
 
-export function LiveRoom({ session, onHistory, turns = [], renderTurn, onSaveResponse, threadProjectId, threadProjectSessionIds, onThreadLink }: Readonly<{ session: SessionSummary; onHistory: (sessionId: string, messages: SessionMessage[], complete: boolean) => void; turns?: Turn[]; renderTurn?: (turn: Turn) => ReactNode; onSaveResponse?: ((message: SessionMessage) => void) | undefined; threadProjectId?: string | null; threadProjectSessionIds?: readonly string[] | undefined; onThreadLink?: ((projectId: string, sessionId: string) => void) | undefined }>) {
+export function LiveRoom({ session, onHistory, reactions, reactionsAvailable = false, turns = [], renderTurn, onSaveResponse, threadProjectId, threadProjectSessionIds, onThreadLink }: Readonly<{ session: SessionSummary; reactions?: MessageReactionClient | undefined; reactionsAvailable?: boolean | undefined; onHistory: (sessionId: string, messages: SessionMessage[], complete: boolean) => void; turns?: Turn[]; renderTurn?: (turn: Turn) => ReactNode; onSaveResponse?: ((message: SessionMessage) => void) | undefined; threadProjectId?: string | null; threadProjectSessionIds?: readonly string[] | undefined; onThreadLink?: ((projectId: string, sessionId: string) => void) | undefined }>) {
   const report = useRef(onHistory);
   report.current = onHistory;
+  const messageOffsets = useRef(new Map<string, number>());
   const [messages, setMessages] = useState<SessionMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [offset, setOffset] = useState(0);
@@ -34,6 +37,7 @@ export function LiveRoom({ session, onHistory, turns = [], renderTurn, onSaveRes
         || page.pagination.returned !== page.messages.length || page.messages.length > 50
         || (page.pagination.hasMore && page.pagination.returned === 0)) throw new Error('history');
       if (!controller.signal.aborted) {
+        for (const message of page.messages) if (!messageOffsets.current.has(message.id)) messageOffsets.current.set(message.id, offset);
         setMessages((previous) => {
           const seen = new Set(previous.map((message) => message.id));
           return [...previous, ...page.messages.filter((message) => {
@@ -63,6 +67,7 @@ export function LiveRoom({ session, onHistory, turns = [], renderTurn, onSaveRes
   const liveAfter = (index: number) => projected.filter((item) => item.after === index).map(({ turn }) => <Fragment key={turn.intent.clientRequestId}>{renderTurn?.(turn)}</Fragment>);
   return <>
     {session.ownership === 'external' ? <p className="external-chat-notice">External chat · Read-only. Continuation is unavailable.</p> : null}
+    {!reactionsAvailable || !reactions || session.ownership !== 'command' ? <p className="reaction-note">Reactions unavailable {session.ownership === 'external' ? 'in read-only chats.' : 'on this server.'}</p> : null}
     {loading ? <p role="status">Loading messages…</p> : null}
     {error ? <div className="history-feedback"><p role="alert">{error}</p><button type="button" className="primary-button" onClick={() => { setError(null); setLoading(true); setAttempt((value) => value + 1); }}>Retry history</button></div> : null}
     {!loading && !error && messages.length === 0 ? <p role="status">No saved messages in session history yet.</p> : null}
@@ -74,6 +79,7 @@ export function LiveRoom({ session, onHistory, turns = [], renderTurn, onSaveRes
       <div className="event-body">
         <div className="event-label"><span>{message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Jarvis' : message.role}</span><time>{message.timestamp ? new Date(message.timestamp).toLocaleString() : 'Time not reported'}</time></div>
         {message.role === 'tool' ? <details className="saved-tool-disclosure"><summary>{message.toolName ?? 'Tool activity'}</summary><p>{message.content || 'No text was saved.'}</p></details> : <>{message.toolName ? <h2>{message.toolName}</h2> : null}{message.role === 'assistant' ? <MessageContent text={message.content || 'Assistant activity record — no text was saved.'} threadProjectId={threadProjectId} threadProjectSessionIds={threadProjectSessionIds} onThreadLink={onThreadLink} /> : <p>{message.content || 'No text was saved.'}</p>}</>}
+        {reactionsAvailable && reactions && session.ownership === 'command' && /^jc_[a-f0-9]{32}$/.test(session.id) && message.sessionId === session.id && (message.role === 'user' || message.role === 'assistant') && !message.toolName && !message.displayKind && messageOffsets.current.has(message.id) ? <MessageReactions key={`${session.id}:${message.id}`} client={reactions} target={{ sessionId: session.id, messageId: message.id, offset: messageOffsets.current.get(message.id)! }} /> : null}
         {message.role === 'assistant' && message.content ? <CopyResponse text={message.content} limited={false} onSave={onSaveResponse ? () => onSaveResponse(message) : undefined} /> : null}
       </div>
     </article>}{liveAfter(index)}</Fragment>)}
