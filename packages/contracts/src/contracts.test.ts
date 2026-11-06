@@ -178,6 +178,21 @@ describe('per-prompt inference contracts', () => {
     ]) expect(() => LiveRunSubmissionRequestSchema.parse({ ...request, inference })).toThrow();
   });
 
+  it('accepts only the three exact Claude routes with provider-default effort', () => {
+    for (const model of ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5']) {
+      expect(LiveRunSubmissionRequestSchema.parse({
+        ...request,
+        inference: { provider: 'anthropic', model },
+      }).inference).toEqual({ provider: 'anthropic', model });
+    }
+    for (const inference of [
+      { provider: 'anthropic', model: 'claude-opus-5-6' },
+      { provider: 'anthropic', model: 'claude-opus-5-5', reasoningEffort: 'high' },
+      { provider: 'anthropic', model: 'gpt-6-sol' },
+      { provider: 'openai-codex', model: 'claude-opus-5-5' },
+    ]) expect(() => LiveRunSubmissionRequestSchema.parse({ ...request, inference })).toThrow();
+  });
+
   it('projects a strict inventory without provider metadata', () => {
     const payload = {
       default: { provider: 'openai-codex', model: 'gpt-5.6-sol' },
@@ -188,6 +203,29 @@ describe('per-prompt inference contracts', () => {
     };
     expect(InferenceOptionsResponseSchema.parse(payload)).toEqual(payload);
     expect(() => InferenceOptionsResponseSchema.parse({ ...payload, apiKey: 'nope' })).toThrow();
+  });
+
+  it('accepts provider-default Claude options but not invented effort values', () => {
+    const payload = {
+      default: { provider: 'openai-codex', model: 'gpt-5.6-sol' },
+      options: [{
+        provider: 'anthropic', model: 'claude-haiku-5-5', label: 'Claude Haiku 5.5',
+        reasoningEfforts: [],
+      }],
+    };
+    expect(InferenceOptionsResponseSchema.parse(payload)).toEqual(payload);
+    expect(() => InferenceOptionsResponseSchema.parse({
+      ...payload,
+      options: [{ ...payload.options[0], reasoningEfforts: ['medium'] }],
+    })).toThrow();
+    expect(() => InferenceOptionsResponseSchema.parse({
+      ...payload,
+      options: [{ provider: 'openai-codex', model: 'gpt-6-sol', label: 'Sol', reasoningEfforts: [] }],
+    })).toThrow();
+    expect(() => InferenceOptionsResponseSchema.parse({
+      ...payload,
+      options: Array.from({ length: 12 }, () => payload.options[0]),
+    })).toThrow();
   });
 
   it('keeps an empty selection honest and catalog metadata strictly allowlisted', () => {

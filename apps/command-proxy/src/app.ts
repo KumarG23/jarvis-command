@@ -16,6 +16,7 @@ import {
   SessionMessagesPageSchema,
   SessionMutationResponseSchema,
   type LiveApproval,
+  type InferenceOption,
   type InferenceOptionsResponse,
   type InferenceOverride,
   type LiveRunState,
@@ -59,6 +60,23 @@ const CURATED_INFERENCE_OPTIONS = [
   { provider: 'xai-oauth', model: 'grok-4.7', label: 'Grok 4.7' },
   { provider: 'xai-oauth', model: 'grok-4.6', label: 'Grok 4.6' },
 ] as const;
+const ANTHROPIC_INFERENCE_OPTIONS = [
+  { provider: 'anthropic', model: 'claude-opus-5-5', label: 'Claude Opus 5.5' },
+  { provider: 'anthropic', model: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5' },
+  { provider: 'anthropic', model: 'claude-haiku-5-5', label: 'Claude Haiku 5.5' },
+] as const;
+const KNOWN_CURATED_INFERENCE_OPTIONS = [
+  ...CURATED_INFERENCE_OPTIONS,
+  ...ANTHROPIC_INFERENCE_OPTIONS,
+] as const;
+
+// The Anthropic entries are part of the known catalog at all times, but they are
+// eligible for selection only when the disabled-by-default server flag is enabled.
+function enabledCuratedInferenceOptions(config: CommandProxyConfig) {
+  return config.anthropicRoutesEnabled
+    ? KNOWN_CURATED_INFERENCE_OPTIONS
+    : CURATED_INFERENCE_OPTIONS;
+}
 
 const UpstreamSessionSchema = z.object({
   id: SessionIdSchema,
@@ -446,10 +464,9 @@ export function buildCommandProxy({
       const writable = await isWritableSession(parsed.data.sessionId, config, fetcher);
       if (!writable) return reply.code(403).send({ error: 'session_read_only' });
       if (parsed.data.inference) {
+        const inference = parsed.data.inference;
         const inventory = await readInferenceOptions(config, fetcher);
-        if (!inventory.options.some(option => option.provider === parsed.data.inference?.provider
-          && option.model === parsed.data.inference.model
-          && option.reasoningEfforts.includes(parsed.data.inference.reasoningEffort))) {
+        if (!inventory.options.some(option => supportsInference(option, inference))) {
           return reply.code(409).send({ error: 'inference_unavailable' });
         }
       }
@@ -682,14 +699,16 @@ async function readInferenceOptions(
     path: '/api/model/options', method: 'GET', config, fetcher,
   }));
   const providers = canonicalProviderInventory(upstream);
-  const options = CURATED_INFERENCE_OPTIONS.filter((candidate) => {
+  const options = enabledCuratedInferenceOptions(config).filter((candidate) => {
     const provider = providers.get(candidate.provider);
     return provider?.authenticated === true && provider.models.has(candidate.model);
-  }).map(option => ({ ...option, reasoningEfforts: [...REASONING_EFFORTS] }));
+  }).map(option => option.provider === 'anthropic'
+    ? { ...option, reasoningEfforts: [] }
+    : { ...option, reasoningEfforts: [...REASONING_EFFORTS] });
   return InferenceOptionsResponseSchema.parse({
     default: { provider: upstream.provider, model: upstream.model },
     options,
-    catalog: projectModelCatalog(providers),
+    catalog: projectModelCatalog(providers, config),
   });
 }
 
@@ -733,8 +752,9 @@ type CatalogCandidate = Readonly<{
 // provider/model) so repeat reads and truncation are stable across identical catalogs.
 function projectModelCatalog(
   providers: ReadonlyMap<string, ProviderInventory>,
+  config: CommandProxyConfig,
 ): ModelCatalog {
-  const curatedKeys = new Set(CURATED_INFERENCE_OPTIONS.map(option => catalogKey(option.provider, option.model)));
+  const eligibleKeys = new Set(enabledCuratedInferenceOptions(config).map(option => catalogKey(option.provider, option.model)));
   const advertised = new Map<string, CatalogCandidate>();
   for (const [slug, provider] of providers) {
     for (const model of provider.models) {
@@ -745,13 +765,13 @@ function projectModelCatalog(
         model,
         advertised: true,
         authenticated: provider.authenticated === true,
-        eligible: curatedKeys.has(key),
+        eligible: eligibleKeys.has(key),
       });
     }
   }
 
   const missingCurated: CatalogCandidate[] = [];
-  for (const option of CURATED_INFERENCE_OPTIONS) {
+  for (const option of KNOWN_CURATED_INFERENCE_OPTIONS) {
     const key = catalogKey(option.provider, option.model);
     if (advertised.has(key)) continue;
     const provider = providers.get(option.provider);
@@ -760,7 +780,7 @@ function projectModelCatalog(
       model: option.model,
       advertised: false,
       authenticated: provider?.authenticated === true,
-      eligible: true,
+      eligible: eligibleKeys.has(key),
     });
   }
 
@@ -807,6 +827,15 @@ function compareCatalogCandidates(a: CatalogCandidate, b: CatalogCandidate): num
 }
 
 function upstreamInference(inference: InferenceOverride) {
+  if (inference.provider === 'anthropic') {
+    // No verified Claude effort contract: omit the unsupported override and keep the
+    // exact provider/model lock. Provider-default effort stays unknown downstream.
+    return {
+      provider: inference.provider,
+      model: inference.model,
+      require_model_lock: true,
+    };
+  }
   return {
     provider: inference.provider,
     model: inference.model,
@@ -815,6 +844,14 @@ function upstreamInference(inference: InferenceOverride) {
       reasoning: { enabled: true, effort: inference.reasoningEffort },
     },
   };
+}
+
+function supportsInference(option: InferenceOption, inference: InferenceOverride): boolean {
+  if (option.provider !== inference.provider || option.model !== inference.model) return false;
+  if (inference.provider === 'anthropic') {
+    return option.provider === 'anthropic' && option.reasoningEfforts.length === 0;
+  }
+  return option.provider !== 'anthropic' && option.reasoningEfforts.includes(inference.reasoningEffort);
 }
 
 async function isWritableSession(

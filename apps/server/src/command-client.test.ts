@@ -215,6 +215,25 @@ describe('Command proxy client', () => {
     });
   });
 
+  it('forwards an exact Claude route without inventing an effort override', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({ runId, sessionId, status: 'queued', replayed: false }, 202));
+    const client = createCommandProxyClient({ baseUrl, commandProxyKey, fetcher });
+    await client.startRun({
+      sessionId, input: 'Use Sonnet.', idempotencyKey: `jc-v1-${'c'.repeat(64)}`,
+      inference: { provider: 'anthropic', model: 'claude-sonnet-5-5' },
+    });
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).toEqual({
+      sessionId, input: 'Use Sonnet.',
+      inference: { provider: 'anthropic', model: 'claude-sonnet-5-5' },
+    });
+
+    await expect(client.startRun({
+      sessionId, input: 'Forged effort.', idempotencyKey: `jc-v1-${'d'.repeat(64)}`,
+      inference: { provider: 'anthropic', model: 'claude-sonnet-5-5', reasoningEffort: 'high' } as never,
+    })).rejects.toEqual(new CommandProxyUnavailableError(400));
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it('projects session history and session mutations through exact routes', async () => {
     const session = {
       id: sessionId,
