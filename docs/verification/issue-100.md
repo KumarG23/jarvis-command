@@ -47,9 +47,9 @@ All writes and deletion proofs use disposable fixture stores.
 Snapshots are retained for lead-controlled recovery, not automatically restored
 or garbage-collected. A whole-store preimage includes other projects as of that
 instant; restoring it requires preserving subsequent unrelated changes. No live
-restore operation or new recovery coordinator is introduced here. An older
-binary that does not understand `deletedRoomIds` must not write this store after
-fixture/approved future enablement. With production deletion disabled this PR
+restore operation or new recovery coordinator is introduced here. After approved future enablement, rollback must understand both
+`deletedRoomIds` and the new project audit actions; older binaries reject these
+records and must not write the store. With production deletion disabled this PR
 creates no production tombstones or deletion audit events.
 
 ## Unsupported — deferred for Final Neal packet
