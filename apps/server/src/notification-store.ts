@@ -191,9 +191,10 @@ export class NotificationStore {
     return this.#transaction(state => {
       const current = state.actors[actor] ?? this.#emptyActor();
       const next = NotificationPreferencesSchema.parse(preferences);
-      // Reader bridge: a caller that omits the optional reply setting must not erase a stored one.
-      const showReplyText = next.showReplyText ?? current.preferences.showReplyText;
-      state.actors[actor] = { ...current, preferences: showReplyText === undefined ? next : { ...next, showReplyText } };
+      // Reader bridge is read/preserve-only: input never writes the reply setting. An absent field
+      // stays absent and a stored one survives legacy edits; the later writer owns toggles.
+      const stored = current.preferences.showReplyText;
+      state.actors[actor] = { ...current, preferences: stored === undefined ? { categories: next.categories } : { categories: next.categories, showReplyText: stored } };
       return { result: view(state.actors[actor]), write: true };
     });
   }
