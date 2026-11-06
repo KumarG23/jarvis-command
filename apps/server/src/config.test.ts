@@ -30,6 +30,7 @@ describe('loadConfig', () => {
     });
 
     expect(config).toEqual({
+      projectDeletionEnabled: false,
       push: { capability: { state: 'unavailable', reason: 'disabled' } },
       nodeEnv: 'production',
       host: '127.0.0.1',
@@ -219,4 +220,11 @@ describe('loadConfig', () => {
       maxArtifacts: 10_000,
     });
   });
+});
+
+it('keeps project deletion disabled unless explicitly configured', () => {
+  const environment = { NODE_ENV: 'test', HERMES_READ_PROXY_KEY: 'r'.repeat(32) };
+  expect(loadConfig(environment).projectDeletionEnabled).toBe(false);
+  expect(loadConfig({ ...environment, PROJECT_DELETION_MODE: 'enabled' }).projectDeletionEnabled).toBe(true);
+  expect(() => loadConfig({ ...environment, PROJECT_DELETION_MODE: 'true' })).toThrow();
 });

@@ -89,8 +89,16 @@ export function registerArtifactRoutes(app: FastifyInstance, dependencies: Depen
       rates.set(key, rate);
     });
 
+    // The project store is the authority for scopes. Tombstones atomically
+    // detach retained artifacts without rewriting content or coordinating stores.
+    routes.addHook('onSend', async (_request, reply, payload) => {
+      if (!rooms || reply.statusCode >= 400 || reply.getHeader('content-disposition') || typeof payload !== 'string' || !String(reply.getHeader('content-type')).includes('application/json')) return payload;
+      const deleted = new Set(await rooms.deletedIds());
+      return JSON.stringify(JSON.parse(payload), (key, value: unknown) => key === 'projectId' && typeof value === 'string' && deleted.has(value) ? null : value);
+    });
     routes.get('/api/artifacts', { exposeHeadRoute: false }, async (request) => {
       const query = ArtifactListQuerySchema.parse(request.query);
+      if (query.projectId && (await rooms?.deletedIds())?.includes(query.projectId)) return { artifacts: [] };
       const filters: { sessionId?: string; projectId?: string; type?: ArtifactType; search?: string; limit: number } = { limit: query.limit };
       if (query.sessionId !== undefined) filters.sessionId = query.sessionId;
       if (query.projectId !== undefined) filters.projectId = query.projectId;

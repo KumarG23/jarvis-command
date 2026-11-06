@@ -1,9 +1,9 @@
-import { projectSendSnapshot } from '@jarvis-command/contracts';
+import { projectSendSnapshot, type ProjectRoom } from '@jarvis-command/contracts';
 import { createProjectRosterReader } from './project-roster';
 import { Readable } from 'node:stream';
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { dirname } from 'node:path';
-import { ProjectRoomCreateSchema, ProjectRoomIdSchema, CommandSessionIdSchema, ProjectThreadUpdateSchema } from '@jarvis-command/contracts';
+import { ProjectRoomCreateSchema, ProjectRoomIdSchema, CommandSessionIdSchema, ProjectThreadUpdateSchema, ProjectDeleteRequestSchema } from '@jarvis-command/contracts';
 import { ProjectRoomStore, RoomStorageError } from './project-room-store';
 import { z } from 'zod';
 import { ContextCompactionSubmissionRequestSchema, LiveRoomSessionCreateRequestSchema, LiveRunSubmissionRequestSchema, LiveRoomSessionContinueRequestSchema, LiveRunApprovalRequestSchema, LiveRunSteerRequestSchema, RunEventSchema, type RunEvent } from '@jarvis-command/contracts';
@@ -12,6 +12,8 @@ import type { AppConfig } from './config';
 import type { createLiveRoomService } from './live-room-service';
 import { KeyedSerialQueue } from './keyed-serial-queue';
 import { registerNotificationRoutes } from './notification-routes';
+import { LiveRoomConflictError } from './live-room-service';
+import type { ArtifactStore } from './artifact-store';
 import type { NotificationStore } from './notification-store';
 
 export type LiveStreamLimits = Readonly<{ maxStreams?: number; lifetimeMs?: number; keepaliveMs?: number; maximumBytes?: number }>;
@@ -74,7 +76,7 @@ async function* encodeEventStream(events: AsyncIterable<RunEvent>, controller: A
   }
 }
 
-export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Dependencies) {
+export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Dependencies, artifactStore?: ArtifactStore) {
   const rooms = dependencies.config.command ? new ProjectRoomStore(dirname(dependencies.config.command.auditLogPath)) : undefined;
   const sessionMutations = new KeyedSerialQueue();
   // Production initializes the lazy liveRoom getter in onReady, after routes
@@ -125,6 +127,44 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
     routes.get('/api/rooms', { exposeHeadRoute: false }, async () => {
       if (!rooms) throw new RoomStorageError();
       return { version: 1, rooms: await rooms.list() };
+    });
+    const deletionPreview = async (room: ProjectRoom) => {
+      const ids = await artifactStore?.projectArtifactIds(room.id) ?? [];
+      return { roomId: room.id, name: room.name, chats: room.sessionIds.length, artifacts: artifactStore ? ids.length : null,
+        token: createHash('sha256').update(JSON.stringify({ room, ids })).digest('hex'),
+        enabled: dependencies.config.projectDeletionEnabled === true && !!artifactStore,
+        availabilityReason: !dependencies.config.projectDeletionEnabled ? 'Project deletion is unavailable: disabled on this server.' : 'Project deletion is unavailable: artifact counts cannot be verified.', contentsAvailable: false as const,
+        reason: 'Deleting contents is unavailable because safe recovery of chats and artifacts is not supported.' };
+    };
+    routes.get('/api/rooms/:roomId/deletion', { exposeHeadRoute: false }, async (request, reply) => {
+      const { roomId } = parse(z.object({ roomId: ProjectRoomIdSchema }).strict(), request.params);
+      const room = (await rooms!.list()).find(item => item.id === roomId);
+      if (!room) throw Object.assign(Error('Project missing'), { statusCode: 404 });
+      for (const id of room.sessionIds) {
+        const { session } = await dependencies.liveRoom!.getSession(subjects.get(request)!, id);
+        if (session.id !== id) throw new RoomStorageError();
+      }
+      return reply.header('cache-control', 'no-store').send(await deletionPreview(room));
+    });
+    routes.post('/api/rooms/:roomId/delete', { bodyLimit: 1024 }, async (request, reply) => {
+      const { roomId } = parse(z.object({ roomId: ProjectRoomIdSchema }).strict(), request.params);
+      const body = parse(ProjectDeleteRequestSchema, request.body);
+      if (body.roomId !== roomId) throw Object.assign(Error('Project target differs'), { statusCode: 400 });
+      if (!dependencies.config.projectDeletionEnabled) return reply.code(409).send({ error: 'Project deletion is disabled on this server.' });
+      if (!artifactStore) return reply.code(409).send({ error: 'Project deletion is unavailable: artifact counts cannot be verified.' });
+      const room = (await rooms!.list()).find(item => item.id === roomId);
+      if (!room) {
+        if (!(await rooms!.deletedIds()).includes(roomId)) throw Object.assign(Error('Project missing'), { statusCode: 404 });
+        return { deleted: true, roomId };
+      }
+      try { await dependencies.liveRoom!.withProjectDeletion(subjects.get(request)!, roomId, room.sessionIds, () => rooms!.remove(roomId, async fresh => {
+        if ((await deletionPreview(fresh)).token !== body.token) throw Object.assign(Error('Project changed. Review fresh counts before confirming again.'), { statusCode: 409 });
+      })); } catch (error) {
+        if (error instanceof LiveRoomConflictError) return reply.code(409).send({ error: 'Stop active or admitting project runs before deleting this project.' });
+        if (error instanceof Error && 'statusCode' in error && error.statusCode === 409) return reply.code(409).send({ error: 'Project changed. Close this confirmation and review fresh counts.' });
+        throw error;
+      }
+      return { deleted: true, roomId };
     });
     routes.get('/api/rooms/:roomId/roster', { exposeHeadRoute: false }, async (request, reply) => {
       const { roomId } = parse(z.object({ roomId: ProjectRoomIdSchema }).strict(), request.params);
@@ -194,10 +234,13 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
         if (!(await rooms.list()).some(room => room.id === roomId)) throw Object.assign(new Error('Room missing'), { statusCode: 404 });
         const { session } = await dependencies.liveRoom!.getSession(subjects.get(request)!, sessionId);
         if (session.id !== sessionId) throw new RoomStorageError();
-        const updated = await rooms.update(previous => previous.map(room => room.id !== roomId ? room : { ...room,
+        const updated = await rooms.update(previous => {
+          if (!previous.some(room => room.id === roomId)) throw Object.assign(Error('Project missing'), { statusCode: 404 });
+          return previous.map(room => room.id !== roomId ? room : { ...room,
           threads: room.threads?.some(thread => thread.sessionId === sessionId) ? room.threads : [...(room.threads ?? []), {
             sessionId, title: projectThreadTitle(session.title), createdAt: new Date().toISOString(), archived: false,
-          }], sessionIds: [...new Set([...room.sessionIds, sessionId])], lastSessionId: sessionId }));
+          }], sessionIds: [...new Set([...room.sessionIds, sessionId])], lastSessionId: sessionId });
+        });
         return { room: updated.find(room => room.id === roomId)!, session };
       });
     });

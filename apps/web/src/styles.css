@@ -569,3 +569,9 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 @media (min-width: 761px) {
   .has-project-threads .header-inference > summary { padding-block: 6px; }
 }
+
+.project-delete-control { min-width: 44px; min-height: 44px; flex-shrink: 0; }
+.project-nav-row .project-nav { min-width: 0; }
+.project-delete-backdrop { z-index: 1000; padding: 12px; }
+.project-delete-dialog { max-height: calc(100dvh - 24px); overflow-y: auto; overflow-wrap: anywhere; }
+.project-delete-dialog button { min-height: 44px; }

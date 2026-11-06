@@ -556,3 +556,51 @@ it.each(['Synthetic project', 'P'.repeat(80)])('creates three distinct upstream 
   expect(stored.notes).toEqual(['fixture.md']);
   expect(fetcher.mock.calls.filter(([url]) => url === '/api/live/sessions')).toHaveLength(3);
 });
+
+it.each([true, false])('confirms project counts, defaults focus to Cancel and writes nothing on cancel (enabled=%s)', async enabled => {
+  const writes: string[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (path: string, init?: RequestInit) => {
+    if (init?.method) writes.push(path);
+    if (path.endsWith('/deletion')) return Response.json({ roomId: room.id, name: room.name, chats: 2, artifacts: 3, token: 'a'.repeat(64), enabled, contentsAvailable: false, reason: 'Contents recovery unsupported' });
+    return Response.json({ version: 1, rooms: [room] });
+  }));
+  render(<ProjectRooms sessions={[]} onScope={vi.fn()} onSession={vi.fn()} />);
+  const opener = await screen.findByRole('button', { name: `Delete project ${room.name}` });
+  fireEvent.click(opener);
+  const dialog = await screen.findByRole('dialog', { name: 'Delete project?' });
+  expect(dialog).toHaveTextContent('2 linked chats · 3 project-scoped artifacts');
+  await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus());
+  expect(within(dialog).getByRole('button', { name: 'Delete project and its chats/artifacts' })).toBeDisabled();
+  if (!enabled) expect(within(dialog).getByRole('button', { name: 'Delete project only' })).toBeDisabled();
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+  expect(opener).toHaveFocus(); expect(writes).toEqual([]);
+});
+it.each([false, true])('reads authoritative projects after lost ACK, clears selected/pending state, and never resends (readback fails=%s)', async failRead => {
+  sessionStorage.setItem('jarvis-command:project-room:v1', room.id);
+  sessionStorage.setItem('jarvis-command:pending-project-attachments:v1', JSON.stringify({ [room.id]: session.id }));
+  let deleted = false, writes = 0;
+  const onScope = vi.fn(), onProjectScope = vi.fn();
+  vi.stubGlobal('fetch', vi.fn(async (path: string, init?: RequestInit) => {
+    if (path.endsWith('/deletion')) return Response.json({ roomId: room.id, name: room.name, chats: 0, artifacts: 0, token: 'a'.repeat(64), enabled: true, contentsAvailable: false, reason: 'Unsupported restore' });
+    if (init?.method) { writes++; deleted = true; throw Error('SYNTHETIC lost acknowledgement'); }
+    if (deleted && failRead) throw Error('SYNTHETIC readback unavailable');
+    return Response.json({ version: 1, rooms: deleted ? [] : [room] });
+  }));
+  render(<ProjectRooms sessions={[session] as never} onScope={onScope} onProjectScope={onProjectScope} onSession={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: `Delete project ${room.name}` }));
+  const dialog = await screen.findByRole('dialog', { name: 'Delete project?' });
+  fireEvent.click(within(dialog).getByRole('button', { name: 'Delete project only' }));
+  if (failRead) {
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Read projects again' })).toBeEnabled());
+    expect(within(dialog).getByRole('button', { name: 'Delete project only' })).toBeDisabled();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Read projects again' }));
+    await waitFor(() => expect(within(dialog).getByRole('button', { name: 'Read projects again' })).toBeEnabled());
+  } else {
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(onScope).toHaveBeenLastCalledWith(null); expect(onProjectScope).toHaveBeenLastCalledWith(null);
+    expect(sessionStorage.getItem('jarvis-command:project-room:v1')).toBe(null);
+    expect(JSON.parse(sessionStorage.getItem('jarvis-command:pending-project-attachments:v1')!)).toEqual({});
+    expect(screen.queryByRole('button', { name: /Finish adding chat/ })).not.toBeInTheDocument();
+  }
+  expect(writes).toBe(1);
+});
