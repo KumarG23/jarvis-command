@@ -73,7 +73,7 @@ milestones:
     title: OpenRouter free routes
     acceptance:
       - Only authenticated advertised OpenRouter ids ending exactly in :free become eligible, with unchanged model lock/admission and honest route/error proof; paid/lookalike routes remain rejected (§10 P10.5).
-# P11: PR110 identity source merged/released at 10fa3ee; deployed app 28f30500…, rollback release-app-1793994255383408242 restores reader 0a2881af…. #97 authenticated writer readback accepted (two metadata writes, GET/reload, three viewport sizes); model marks and phone check pending. No restart claimed. §11 P11 / #97 proof 6694001562.
+# P11: PR110 identity source and writer live-accepted; deployed app 28f30500…, rollback release-app-1793994255383408242 restores reader 0a2881af…. #119 service recreation retained peak/violet identity (desktop). Optional model marks Deferred after #97 exhausted two attempts; draft122 preserved, unmerged/unreleased; candidate mobile/V2 fixture unverified. Phone check pending. §11 P11 / #99 6694077728 / #97 disposition 6694582617.
   - id: P11
     title: Visual identity
     acceptance:
@@ -83,7 +83,7 @@ milestones:
     title: Message reactions
     acceptance:
       - Durable audited user reactions enter the next explicit run as bounded deduplicated context; verified phase 2 markers require exact target binding; no reaction admits a run or approval (§10 P12).
-# P6.1: PR119 reader repair reviewed and merged ef80628; app 1999ee…, rollback release-app-1793994675572931464 restores 28f30500…. Authenticated bridge readback pending. PR120 reviewed with scoped findings, unmerged/unreleased; exact binding Unsupported and production push disabled. Secret/enablement and physical Pixel steps remain separate. §11 P6.1 / PR119 review 6693868076 / #99 handoff 6694053467 / PR120 review 6693930634.
+# P6.1: PR119 merged/released ef80628, app 1999ee…, rollback release-app-1793994675572931464 restores 28f30500…. #99 two-attempt authenticated readback partial: desktop GET/recreation persistence; mobile/360px acceptance unverified. PR120 backend findings 1–2 accepted at 370e969; exact-target/presence UI finding remains open; writer unmerged/unreleased. Binding Unsupported; production push disabled. §11 P6.1 / #99 readback 6694077728 / PR120 review 6694582187.
   - id: P6_1
     title: Reply notifications
     acceptance:
