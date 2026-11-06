@@ -161,5 +161,8 @@ category preferences and audit facts are unchanged. A reply event is accepted on
 terminal audit time is not before the actor's first stored state and is within 24 h of
 observation; a first historical read or reload of an old run is refused (nothing is stored
 or settled, so the refusal is stable across restart). Time only bounds replay and never
-establishes a message/run binding. Exact-reply focus and presence wiring remain staged
-behind #97's `App.tsx` ownership; no exact-link delivery is claimed.
+establishes a message/run binding.
+
+### Exact-reply focus and presence (UI)
+
+A reply open (inbox or push link) carries the server-revalidated `NotificationTarget.messageId`; `LiveRoom` focuses and highlights only the history message with that exact id in the target session, paging through the existing bounded history (10 pages). Missing, foreign, stale, incomplete or failed lookups show an "Exact reply unavailable" notice and highlight nothing (never the latest or a same-text answer). Legacy run-state opens are unchanged, and only the newest open may navigate. `useReplyPresence` runs inside each mounted `LiveRoom` whose history loaded, only while the page is visible and focused (a hidden page sends nothing). This is source/candidate evidence; production still has no binding source, so no reply alert can exist, and nothing claims a phone was notified.

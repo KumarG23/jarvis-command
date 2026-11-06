@@ -14,16 +14,21 @@ export function useReplyPresence(sessionId: string | null, enabled = true) {
   useEffect(() => {
     if (!enabled || !sessionId) return;
     const visible = () => document.visibilityState === 'visible' && document.hasFocus();
-    const report = () => { void fetch('/api/notifications/presence', write({ sessionId, visible: visible() })).catch(() => undefined); };
+    let reported = false; // a hidden page never reports itself; it only clears a mark this page set
+    const send = (value: boolean) => { void fetch('/api/notifications/presence', write({ sessionId, visible: value })).catch(() => undefined); };
+    const report = () => {
+      const now = visible();
+      if (now) { reported = true; send(true); } else if (reported) { reported = false; send(false); }
+    };
     report();
-    const timer = window.setInterval(() => { if (visible()) report(); }, 10_000);
+    const timer = window.setInterval(report, 10_000);
     for (const name of ['focus', 'blur']) window.addEventListener(name, report);
     document.addEventListener('visibilitychange', report);
     return () => {
       window.clearInterval(timer);
       for (const name of ['focus', 'blur']) window.removeEventListener(name, report);
       document.removeEventListener('visibilitychange', report);
-      void fetch('/api/notifications/presence', write({ sessionId, visible: false })).catch(() => undefined);
+      if (reported) send(false);
     };
   }, [sessionId, enabled]);
 }

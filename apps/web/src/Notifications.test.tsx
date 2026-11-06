@@ -168,3 +168,20 @@ it('lists reply items under a Replies filter with the sanitized preview as plain
   expect(within(list).getByText('<b>x</b> preview')).toBeInTheDocument();
   expect(within(list).queryByText('Run finished')).not.toBeInTheDocument();
 });
+
+it('lets only the newest open navigate when opens resolve out of order', async () => {
+  const resolvers: Array<(response: Response) => void> = [];
+  const target = (messageId: string) => Response.json({ state: 'available', sessionId, publicRunId, messageId, clientRequestId: '00000000-0000-4000-8000-000000000001', runStatus: 'completed', approvalPending: false, session, inbox: inbox([]) });
+  server(inbox([]), { [`/api/notifications/${item(1, 'run-completed').id}/open`]: () => new Promise<Response>(resolve => { resolvers.push(resolve); }) });
+  let hook!: ReturnType<typeof useNotifications>;
+  function Probe() { hook = useNotifications(true, ''); return null; }
+  render(<Probe />);
+  await waitFor(() => expect(hook.inbox).not.toBeNull());
+  const first = hook.open(item(1, 'run-completed').id);
+  const second = hook.open(item(1, 'run-completed').id);
+  await waitFor(() => expect(resolvers).toHaveLength(2));
+  resolvers[1]!(target('assistant:newer'));
+  expect(await second).toMatchObject({ state: 'available', messageId: 'assistant:newer' });
+  resolvers[0]!(target('assistant:older'));
+  expect(await first).toBeNull(); // the late, older open never navigates
+});

@@ -75,7 +75,14 @@ export function useNotifications(enabled: boolean, refreshKey: string) {
     if (saved && JSON.stringify(saved.preferences) !== JSON.stringify(preferences)) { setError('Preferences were not saved as requested. Your edits are kept; try again.'); return false; }
     return saved !== null;
   };
-  const open = (id: string): Promise<NotificationTarget | null> => run(
+  // Opens can resolve out of order; only the newest request may navigate.
+  const openSequence = useRef(0);
+  const open = async (id: string): Promise<NotificationTarget | null> => {
+    const ticket = ++openSequence.current;
+    const target = await openRequest(id);
+    return ticket === openSequence.current ? target : null;
+  };
+  const openRequest = (id: string): Promise<NotificationTarget | null> => run(
     async c => NotificationTargetSchema.parse(await boundedJson(`/api/notifications/${id}/open`, write({}), c)),
     value => value.state === 'available' ? value.inbox : null,
     'This notification could not be opened. It may no longer exist.',
