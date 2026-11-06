@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { ProjectRoomsSchema, ProjectDeleteRequestSchema, ProjectRoomSchema, ProjectThreadUpdateSchema } from './project-rooms';
+import { ProjectRoomCreateSchema, ProjectRoomsSchema, ProjectDeleteRequestSchema, ProjectRoomSchema, ProjectThreadUpdateSchema } from './project-rooms';
 
 const id = 'jc_' + 'a'.repeat(32), other = 'jc_' + 'b'.repeat(32);
 const legacy = { id: 'room_' + 'c'.repeat(32), name: 'Fixture', goal: 'Preserve', instructions: 'Keep', repository: '/ref', notes: ['note'], sessionIds: [id], lastSessionId: id };
@@ -33,4 +33,26 @@ it('keeps tombstones distinct from live rooms and rejects unsupported deletion p
   const request = { roomId: legacy.id, token: 'a'.repeat(64), mode: 'project-only' };
   expect(ProjectDeleteRequestSchema.safeParse(request).success).toBe(true);
   expect(ProjectDeleteRequestSchema.safeParse({ ...request, mode: 'contents' }).success).toBe(false);
+});
+
+// Synthetic future-writer records; this bridge must read them without admitting writes.
+it.each([
+  { projectIcon: 'orbit', projectColor: 'violet' },
+  { projectIcon: 'auto' }, { projectColor: 'auto' },
+  { projectIcon: 'future-glyph', projectColor: 'future-accent' },
+  { projectIcon: 'g'.repeat(32), projectColor: 'c'.repeat(32) },
+])('reads and retains bounded optional identity metadata %j', fields => {
+  const room = { ...legacy, ...fields };
+  expect(ProjectRoomSchema.parse(room)).toEqual(room);
+  expect(ProjectRoomsSchema.parse({ version: 1, rooms: [room] }).rooms).toEqual([room]);
+  const metadata = { name: legacy.name, goal: legacy.goal, repository: legacy.repository, notes: legacy.notes };
+  expect(ProjectRoomCreateSchema.safeParse({ ...metadata, ...fields }).success).toBe(false);
+});
+it.each([
+  { projectIcon: 'g'.repeat(33) }, { projectColor: 'c'.repeat(33) },
+  { projectIcon: '' }, { projectColor: '#fff' }, { projectIcon: '../private' },
+  { projectIcon: null }, { projectColor: [] }, { projectIcon: { glyph: 'orbit' } },
+  { unexpectedIdentity: 'orbit' },
+])('rejects malformed or unrelated read metadata %j', fields => {
+  expect(ProjectRoomSchema.safeParse({ ...legacy, ...fields }).success).toBe(false);
 });

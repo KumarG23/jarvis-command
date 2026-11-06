@@ -106,3 +106,25 @@ it('serializes deletion against a second instance and preserves legacy records p
   expect(await new ProjectRoomStore(root).deletedIds()).toEqual([room.id]);
   expect((await new ProjectRoomStore(root).list()).map(item => item.id)).toEqual([`room_${'b'.repeat(32)}`]);
 });
+
+it('reader bridge preserves identity-bearing and legacy registry records plus tombstones across an ordinary edit/restart', async () => {
+  const { root, path, store } = await fixture();
+  const identityRoom = { ...room, id: `room_${'b'.repeat(32)}`, projectIcon: 'orbit', projectColor: 'violet' };
+  const deletedRoomIds = [`room_${'c'.repeat(32)}`];
+  await fs.writeFile(path, JSON.stringify({ version: 1, rooms: [room, identityRoom], deletedRoomIds }));
+  expect(await store.list()).toEqual([room, identityRoom]);
+  await store.update(rooms => rooms.map(item => item.id === room.id ? { ...item, name: 'Legacy edit' } : item));
+  const expected = { version: 1, rooms: [{ ...room, name: 'Legacy edit' }, identityRoom], deletedRoomIds };
+  expect(JSON.parse(await fs.readFile(path, 'utf8'))).toEqual(expected);
+  const restarted = new ProjectRoomStore(root);
+  expect(await restarted.list()).toEqual(expected.rooms);
+  expect(await restarted.deletedIds()).toEqual(deletedRoomIds);
+});
+it.each([{ projectIcon: 'x'.repeat(33) }, { projectColor: 'x'.repeat(33) }, { projectIcon: null }])('reader bridge refuses invalid identity metadata without altering registry bytes: %j', async fields => {
+  const { path, store } = await fixture();
+  await fs.writeFile(path, JSON.stringify({ version: 1, rooms: [{ ...room, ...fields }] }));
+  const before = await fs.readFile(path);
+  await expect(store.list()).rejects.toMatchObject({ statusCode: 503 });
+  await expect(store.update(rooms => rooms)).rejects.toMatchObject({ statusCode: 503 });
+  expect(await fs.readFile(path)).toEqual(before);
+});
