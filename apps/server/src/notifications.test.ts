@@ -440,21 +440,13 @@ describe('notification routes', () => {
     expect((await r.post('/api/notifications/reconcile', 'alice')).json()).toMatchObject({ checked: 1, unavailable: 1 });
   });
 
-  it('reader bridge: the preference route never writes or toggles the reply-text setting', async () => {
+  it('persists the reply-text setting only when supplied and preserves it across legacy edits', async () => {
     const r = await routeHarness();
     const categories = { 'run-completed': true, 'run-failed': true, approval: true };
-    for (const showReplyText of [true, false]) {
-      expect((await r.post('/api/notifications/preferences', 'alice', { categories, showReplyText })).json().preferences).toEqual({ categories });
-    }
-    const path = join(r.directory, 'notifications.json');
-    const state = JSON.parse(await readFile(path, 'utf8'));
-    const key = Object.keys(state.actors)[0]!;
-    expect(state.actors[key].preferences).toEqual({ categories });
-    state.actors[key].preferences.showReplyText = false; // as a later writer would have stored it
-    await writeFile(path, JSON.stringify(state), { mode: 0o600 });
-    const edited = await r.post('/api/notifications/preferences', 'alice', { categories: { ...categories, approval: false }, showReplyText: true });
-    expect(edited.json().preferences).toEqual({ categories: { ...categories, approval: false }, showReplyText: false });
-    expect(JSON.parse(await readFile(path, 'utf8')).actors[key].preferences.showReplyText).toBe(false);
+    expect((await r.post('/api/notifications/preferences', 'alice', { categories })).json().preferences).toEqual({ categories });
+    expect((await r.post('/api/notifications/preferences', 'alice', { categories, showReplyText: false })).json().preferences).toEqual({ categories, showReplyText: false });
+    const legacy = { categories: { ...categories, approval: false } };
+    expect((await r.post('/api/notifications/preferences', 'alice', legacy)).json().preferences).toEqual({ ...legacy, showReplyText: false });
   });
 
   it('saves preferences with authoritative readback and surfaces storage faults', async () => {
