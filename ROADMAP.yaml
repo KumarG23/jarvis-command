@@ -68,7 +68,7 @@ milestones:
     acceptance:
       - Only the three owner-authorized Anthropic routes become selectable with unchanged admission/model lock and truthful requested-versus-executed proof after lead establishes the documented proxy release path (§10 P10.4; §12 model-selection scenario).
 # Later owner addenda: MASTER_PLAN §0.2 records exact directives 6689850279 / 6689899077 / 6689916605. These are queued documentation, not implementation or worker live/destructive authority.
-# P10.5: Source in progress, #96 Deepseek after merged #106; separate disabled-default flag; live proxy/route prerequisites deferred.
+# P10.5: Source in progress, #96 Luna via typed quota handoff after Deepseek proxy checks; WIP preserved; separate disabled-default flag and live proxy/route prerequisites deferred.
   - id: P10_5
     title: OpenRouter free routes
     acceptance:
