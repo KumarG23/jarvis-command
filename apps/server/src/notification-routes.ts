@@ -9,12 +9,14 @@ import {
   NotificationReadRequestSchema,
   NotificationReconcileResponseSchema,
   NotificationTargetSchema,
+  SessionIdSchema,
   type NotificationInbox,
 } from '@jarvis-command/contracts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { createLiveRoomService } from './live-room-service';
 import { notificationId } from './run-notifier';
+import { REPLY_EVIDENCE_SOURCE, replyState, type Presence } from './reply-notifier';
 import { NotificationNotFoundError, NotificationStorageError, type ActorView, type NotificationStore } from './notification-store';
 
 const RECONCILE_LIMIT = 10;
@@ -36,7 +38,7 @@ const toInbox = (value: ActorView, push: PushConfig | undefined, devices: PushVi
   preferences: value.preferences,
   // First-use, 100-item retention, terminal replay boundary, 24h/50-terminal/10-active
   // recovery and unobserved transient approvals prevent a complete-delivery promise.
-  delivery: { inApp: 'incomplete', approvals: value.approvalsUnavailable ? 'unavailable' : 'available', push: push?.capability.state === 'available' && devices && !devices.full ? 'available' : 'unavailable', externalSurfaces: 'unavailable' },
+  delivery: { inApp: 'incomplete', approvals: value.approvalsUnavailable ? 'unavailable' : 'available', push: push?.capability.state === 'available' && devices && !devices.full ? 'available' : 'unavailable', externalSurfaces: 'unavailable', replies: replyState(push?.replies === true, REPLY_EVIDENCE_SOURCE) },
 });
 
 /**
@@ -49,6 +51,7 @@ export function registerNotificationRoutes(
   dependencies: Readonly<{
     store: NotificationStore | undefined;
     push?: PushConfig | undefined;
+    presence?: Presence | undefined;
     liveRoom: ReturnType<typeof createLiveRoomService>;
     subjects: WeakMap<FastifyRequest, string>;
   }>,
@@ -100,6 +103,14 @@ export function registerNotificationRoutes(
     });
   });
 
+  // Best-effort "this session is on screen" mark used only to skip a push. In memory, expires in
+  // seconds, per actor; absence or staleness never suppresses anything.
+  routes.post('/api/notifications/presence', { bodyLimit: 256 }, async (request, reply) => {
+    const body = parse(z.object({ sessionId: SessionIdSchema, visible: z.boolean() }).strict(), request.body);
+    dependencies.presence?.mark(actorOf(request), body.sessionId, body.visible);
+    return reply.code(204).send();
+  });
+
   routes.post('/api/notifications/read', { bodyLimit: 8192 }, async request => (
     await inbox(await store().markRead(actorOf(request), parse(NotificationReadRequestSchema, request.body)), actorOf(request))
   ));
@@ -135,6 +146,7 @@ export function registerNotificationRoutes(
       state: 'available',
       sessionId: item.sessionId,
       publicRunId: item.publicRunId,
+      ...(item.reply ? { messageId: item.reply.messageId } : {}),
       clientRequestId: identity.clientRequestId,
       runStatus: status.status,
       approvalPending: status.status === 'waiting_for_approval' && status.approval !== null,

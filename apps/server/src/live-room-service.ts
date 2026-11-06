@@ -45,6 +45,7 @@ import {
 
 import type { AuditDraft, AuditRunRecord, AuditLedger } from './audit-ledger';
 import type { RunNotifier } from './run-notifier';
+import type { ReplyNotifier } from './reply-notifier';
 import {
   type CommandProxyClient,
   type CommandRunEvent,
@@ -66,6 +67,8 @@ type LiveRoomServiceOptions = Readonly<{
   createPublicRunId?: () => string;
   now?: () => Date;
   notify?: RunNotifier | undefined;
+  /** Reply-only notifier; verifies its own exact message binding and never sees run output. */
+  notifyReply?: ReplyNotifier | undefined;
   reactions?: ReactionStore | undefined;
   reactionsEnabled?: boolean | undefined;
 }>;
@@ -97,6 +100,7 @@ export function createLiveRoomService({
   createPublicRunId = () => `jcr_${randomBytes(16).toString('hex')}`,
   now = () => new Date(),
   notify,
+  notifyReply,
   reactions,
   reactionsEnabled = false,
 }: LiveRoomServiceOptions) {
@@ -116,7 +120,11 @@ export function createLiveRoomService({
   // Notifications come only from observations of the actor's own admitted run: the record
   // is already actor/run/session bound. Context-compaction operations are not runs.
   const notifyStatus = async (record: AuditRunRecord, upstream: CommandRunStatus, terminalAt: string | null): Promise<void> => {
-    if (!notify || upstream.kind === 'context_compaction') return;
+    if (upstream.kind === 'context_compaction') return;
+    if (upstream.status === 'completed' && terminalAt) {
+      await notifyReply?.({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, eventAt: terminalAt });
+    }
+    if (!notify) return;
     const base = { actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId };
     if (upstream.status === 'completed' && terminalAt) await notify({ ...base, eventAt: terminalAt, category: 'run-completed' });
     else if (upstream.status === 'failed' && terminalAt) await notify({ ...base, eventAt: terminalAt, category: 'run-failed' });
@@ -659,12 +667,13 @@ export function createLiveRoomService({
             terminalEventStatus(event),
             event.type === 'run.completed' ? event.usage : null,
           );
-          if (notify && terminalAt && (event.type === 'run.completed' || event.type === 'run.failed')) {
+          if ((notify || notifyReply) && terminalAt && (event.type === 'run.completed' || event.type === 'run.failed')) {
             // Confirm this is a run, not a compaction operation, before announcing it. If this
             // cannot be confirmed now, the inbox reconcile re-checks it from the ledger.
             const confirmed = await client.getRun(record.upstreamRunId!).catch(() => null);
             if (confirmed && confirmed.runId === record.upstreamRunId && confirmed.sessionId === record.sessionId && confirmed.kind !== 'context_compaction') {
-              await notify({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, eventAt: terminalAt, category: event.type === 'run.completed' ? 'run-completed' : 'run-failed' });
+              if (event.type === 'run.completed') await notifyReply?.({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, eventAt: terminalAt });
+              await notify?.({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, eventAt: terminalAt, category: event.type === 'run.completed' ? 'run-completed' : 'run-failed' });
             }
           }
         }

@@ -133,3 +133,55 @@ it('does not claim an incomplete empty inbox is caught up and explains unavailab
   expect(screen.getByText(/Delivery is incomplete/)).toHaveTextContent('beyond bounded recovery may be missing');
   expect(screen.getByText(/New approval notifications are unavailable/)).toHaveTextContent('Review approvals in the chat');
 });
+
+it.each([
+  ['disabled', 'turned off on this server'],
+  ['unsupported', 'does not yet provide the exact final-message binding'],
+  ['available', 'on for new final replies only'],
+] as const)('states honestly that reply notifications are %s', async (replies, text) => {
+  const value = inbox([]);
+  server({ ...value, delivery: { ...value.delivery, replies } } as never);
+  render(<Harness onOpen={() => null} />);
+  expect(await screen.findByText(new RegExp(text))).toBeInTheDocument();
+});
+
+it('shows the single reply-text setting on by default and saves its off state with readback', async () => {
+  const sent: unknown[] = [];
+  server(inbox([]), { '/api/notifications/preferences': body => { sent.push(body); return Response.json(inbox([], body as never)); } });
+  render(<Harness onOpen={() => null} />);
+  const box = await screen.findByRole('checkbox', { name: 'Show reply text in notifications' });
+  expect(box).toBeChecked();
+  expect(screen.queryByRole('checkbox', { name: /assistant-reply|Replies/i })).not.toBeInTheDocument();
+  fireEvent.click(box);
+  fireEvent.click(screen.getByRole('button', { name: 'Save preferences' }));
+  expect(await screen.findByText('Preferences saved and confirmed.')).toBeInTheDocument();
+  expect(sent).toEqual([{ categories: prefs.categories, showReplyText: false }]);
+  expect(screen.getByRole('checkbox', { name: 'Show reply text in notifications' })).not.toBeChecked();
+});
+
+it('lists reply items under a Replies filter with the sanitized preview as plain text', async () => {
+  const reply = { ...item(7, 'assistant-reply'), title: 'Reply from m', body: '<b>x</b> preview', reply: { messageId: 'assistant:1', label: 'm' } };
+  server(inbox([reply, item(8, 'run-completed')] as never));
+  render(<Harness onOpen={() => null} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Replies' }));
+  const list = screen.getByRole('list', { name: 'Notifications' });
+  expect(within(list).getByText('<b>x</b> preview')).toBeInTheDocument();
+  expect(within(list).queryByText('Run finished')).not.toBeInTheDocument();
+});
+
+it('lets only the newest open navigate when opens resolve out of order', async () => {
+  const resolvers: Array<(response: Response) => void> = [];
+  const target = (messageId: string) => Response.json({ state: 'available', sessionId, publicRunId, messageId, clientRequestId: '00000000-0000-4000-8000-000000000001', runStatus: 'completed', approvalPending: false, session, inbox: inbox([]) });
+  server(inbox([]), { [`/api/notifications/${item(1, 'run-completed').id}/open`]: () => new Promise<Response>(resolve => { resolvers.push(resolve); }) });
+  let hook!: ReturnType<typeof useNotifications>;
+  function Probe() { hook = useNotifications(true, ''); return null; }
+  render(<Probe />);
+  await waitFor(() => expect(hook.inbox).not.toBeNull());
+  const first = hook.open(item(1, 'run-completed').id);
+  const second = hook.open(item(1, 'run-completed').id);
+  await waitFor(() => expect(resolvers).toHaveLength(2));
+  resolvers[1]!(target('assistant:newer'));
+  expect(await second).toMatchObject({ state: 'available', messageId: 'assistant:newer' });
+  resolvers[0]!(target('assistant:older'));
+  expect(await first).toBeNull(); // the late, older open never navigates
+});

@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { emptyInbox } from './empty-inbox';
+import { handlePresence } from './presence-route';
 
 const timestamp = '2026-10-28T12:00:00.000Z';
 const sid = 'jc_' + 'a'.repeat(32), pid = 'room_' + 'b'.repeat(32), aid = 'art_' + 'c'.repeat(32);
@@ -16,6 +17,7 @@ for (const width of [1280, 320, 360, 390, 430]) test(`SYNTHETIC project workspac
   const runId = 'jcr_' + 'e'.repeat(32);
   let creates = 0;
   await page.route('**/api/**', async route => {
+    if (handlePresence(route)) return;
     const req = route.request(), url = new URL(req.url()), path = url.pathname;
     const json = (body: unknown) => route.fulfill({ json: body });
     if (path === '/api/bootstrap') return json({ identity: { provider: 'development' }, command: { version: 'SYNTHETIC P4.5 fixture', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 16000, maxSteerCharacters: 4000 } }, hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse', 'artifact_studio'], readinessChecks: {} }, sessions: [] });
@@ -139,6 +141,7 @@ for (const change of ['archived', 'removed', 'stale', 'unavailable', 'unchanged'
   let reads = 0;
   const admissions: Record<string, unknown>[] = [];
   await page.route('**/api/**', async route => {
+    if (handlePresence(route)) return;
     const path = new URL(route.request().url()).pathname;
     const json = (body: unknown) => route.fulfill({ json: body });
     if (path === '/api/bootstrap') return json({ identity: { provider: 'development' }, command: { version: 'SYNTHETIC generation Retry', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 16000, maxSteerCharacters: 4000 } }, hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse', 'artifact_studio'], readinessChecks: {} }, sessions: [session] });

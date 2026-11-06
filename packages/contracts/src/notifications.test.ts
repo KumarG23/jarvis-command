@@ -17,3 +17,11 @@ it('accepts the optional reply-text preference but no reply category toggle', ()
   expect(NotificationPreferencesSchema.safeParse({ categories: { ...categories, 'assistant-reply': true } }).success).toBe(false);
   expect(NotificationPreferencesSchema.safeParse({ categories, showReplyText: 'no' }).success).toBe(false);
 });
+
+it('limits reply delivery state and the reply target message id', async () => {
+  const { NotificationInboxSchema, NotificationTargetSchema } = await import('./notifications');
+  const inbox = { version: 1, items: [], unreadCount: 0, preferences: { categories: { 'run-completed': true, 'run-failed': true, approval: true } }, delivery: { inApp: 'incomplete', push: 'unavailable', externalSurfaces: 'unavailable' } };
+  for (const replies of [undefined, 'disabled', 'unsupported', 'available']) expect(NotificationInboxSchema.safeParse({ ...inbox, delivery: { ...inbox.delivery, replies } }).success).toBe(true);
+  expect(NotificationInboxSchema.safeParse({ ...inbox, delivery: { ...inbox.delivery, replies: 'on' } }).success).toBe(false);
+  expect(NotificationTargetSchema.safeParse({ state: 'missing', messageId: 'm' }).success).toBe(false);
+});

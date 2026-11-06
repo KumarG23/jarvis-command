@@ -32,7 +32,7 @@ describe('loadConfig', () => {
     expect(config).toEqual({
       reactionsEnabled: false,
       projectDeletionEnabled: false,
-      push: { capability: { state: 'unavailable', reason: 'disabled' } },
+      push: { capability: { state: 'unavailable', reason: 'disabled' }, replies: false },
       nodeEnv: 'production',
       host: '127.0.0.1',
       port: 3000,

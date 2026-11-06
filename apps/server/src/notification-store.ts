@@ -16,6 +16,7 @@ import {
   type NotificationPreferences,
 } from '@jarvis-command/contracts';
 import { z } from 'zod';
+import { GENERIC_REPLY_BODY } from './reply-preview';
 
 const MAX_BYTES = 2_097_152;
 export const MAX_ITEMS = 100;
@@ -23,6 +24,7 @@ const MAX_SETTLED = 500;
 export const MAX_APPROVAL_RECEIPTS = 1024;
 const MAX_ACTORS = 32;
 const FILE = 'notifications.json';
+const REPLY_FRESHNESS_MS = 24 * 60 * 60 * 1000; // matches the push claim age limit
 
 export const DEFAULT_PREFERENCES: NotificationPreferences = Object.freeze({
   categories: Object.freeze({ 'run-completed': true, 'run-failed': true, approval: true }),
@@ -68,6 +70,9 @@ export type NotificationEvent = Readonly<{
   /** Stable terminal audit time; approvals use observation time and separate durable ID receipts. */
   eventAt: string;
 }>;
+export type ReplyRecord = Readonly<{
+  id: string; sessionId: string; publicRunId: string; eventAt: string; messageId: string; preview: string; label: string | null;
+}>;
 export type ActorView = Readonly<{ items: NotificationItem[]; preferences: NotificationPreferences; since: string; knownIds: ReadonlySet<string>; approvalsUnavailable: boolean }>;
 
 const TEXT: Record<NotificationCategory, { title: string; body: string }> = {
@@ -75,6 +80,17 @@ const TEXT: Record<NotificationCategory, { title: string; body: string }> = {
   'run-failed': { title: 'Run failed', body: 'A run you started did not finish. Open the chat for details.' },
   approval: { title: 'Approval needed', body: 'A run is waiting for your approval. Open the chat to review it.' },
 };
+
+function settle(current: ActorState, id: string, at: string) {
+  let settled = [...current.settled, { id, at }];
+  let horizon = current.horizon;
+  while (settled.length > MAX_SETTLED) {
+    const dropped = settled[0]!;
+    horizon = horizon === null || dropped.at > horizon ? dropped.at : horizon;
+    settled = settled.slice(1);
+  }
+  return { settled, horizon };
+}
 
 const view = (actor: ActorState): ActorView => ({
   items: [...actor.items].reverse(), preferences: actor.preferences, since: actor.since,
@@ -121,13 +137,7 @@ export class NotificationStore {
       const approvals = event.category === 'approval'
         ? { ...current.approvals, ids: [...current.approvals.ids, event.id] } : current.approvals;
       const at = this.now().toISOString();
-      let settled = [...current.settled, { id: event.id, at }];
-      let horizon = current.horizon;
-      while (settled.length > MAX_SETTLED) {
-        const dropped = settled[0]!;
-        horizon = horizon === null || dropped.at > horizon ? dropped.at : horizon;
-        settled = settled.slice(1);
-      }
+      const { settled, horizon } = settle(current, event.id, at);
       if (!current.preferences.categories[event.category]) {
         state.actors[actor] = { ...current, settled, horizon, approvals };
         return { result: 'suppressed' as const, write: true };
@@ -137,6 +147,38 @@ export class NotificationStore {
         sessionId: event.sessionId, publicRunId: event.publicRunId, ...TEXT[event.category], readAt: null,
       };
       state.actors[actor] = { ...current, settled, horizon, approvals, items: [...current.items, item].slice(-MAX_ITEMS) };
+      return { result: 'created' as const, write: true };
+    });
+  }
+
+  /**
+   * Records one assistant-reply item per exact final-message ID. Reply text is stored only when the
+   * actor's "Show reply text" setting is on (default); otherwise a generic notice. Never touches
+   * the run-state or approval receipts.
+   */
+  recordReply(actor: string, event: ReplyRecord): Promise<'created' | 'duplicate' | 'stale'> {
+    return this.#transaction(state => {
+      const current = state.actors[actor] ?? this.#emptyActor();
+      if (current.settled.some(entry => entry.id === event.id) || current.items.some(item => item.id === event.id)) return { result: 'duplicate' as const };
+      // Same bounded replay boundary as terminal events: a forgotten ID never reappears.
+      if (current.horizon !== null && event.eventAt <= current.horizon) return { result: 'duplicate' as const };
+      const at = this.now().toISOString();
+      // Freshness only bounds replay; it never establishes a message/run binding. The terminal audit
+      // time must be inside the 24 h push window and not before this actor's state existed, so a
+      // first historical read or a reload of an old run can never become a new alert (nothing is
+      // settled, so the refusal is stable across restart without a new persisted field).
+      if (event.eventAt < current.since || Date.parse(at) - Date.parse(event.eventAt) > REPLY_FRESHNESS_MS) {
+        if (!state.actors[actor]) { state.actors[actor] = current; return { result: 'stale' as const, write: true }; }
+        return { result: 'stale' as const };
+      }
+      const { settled, horizon } = settle(current, event.id, at);
+      const item: NotificationItem = {
+        id: event.id, category: 'assistant-reply', observedAt: at, sessionId: event.sessionId, publicRunId: event.publicRunId,
+        title: event.label ? `Reply from ${event.label}` : 'Jarvis replied',
+        body: current.preferences.showReplyText === false ? GENERIC_REPLY_BODY : event.preview,
+        readAt: null, reply: { messageId: event.messageId, label: event.label },
+      };
+      state.actors[actor] = { ...current, settled, horizon, items: [...current.items, item].slice(-MAX_ITEMS) };
       return { result: 'created' as const, write: true };
     });
   }
@@ -158,10 +200,10 @@ export class NotificationStore {
     return this.#transaction(state => {
       const current = state.actors[actor] ?? this.#emptyActor();
       const next = NotificationPreferencesSchema.parse(preferences);
-      // Reader bridge is read/preserve-only: input never writes the reply setting. An absent field
-      // stays absent and a stored one survives legacy edits; the later writer owns toggles.
-      const stored = current.preferences.showReplyText;
-      state.actors[actor] = { ...current, preferences: stored === undefined ? { categories: next.categories } : { categories: next.categories, showReplyText: stored } };
+      // Writer (#99 PR 2): the reply setting is written only when supplied; an edit that omits it
+      // (a legacy client) preserves the stored value and an absent field stays absent.
+      const showReplyText = next.showReplyText ?? current.preferences.showReplyText;
+      state.actors[actor] = { ...current, preferences: showReplyText === undefined ? { categories: next.categories } : { categories: next.categories, showReplyText } };
       return { result: view(state.actors[actor]), write: true };
     });
   }
@@ -179,12 +221,10 @@ export class NotificationStore {
     await this.#push.revokeDevice(actor, id);
     return this.read(actor);
   }
-  async claimPush(actor: string, id: string) {
-    const current = await this.read(actor);
-    const item = current.items.find(item => item.id === id);
-    // Run-state sender only: an assistant-reply item (or any non-run-state category) never passes.
-    if (!item || item.category === 'assistant-reply' || !current.preferences.categories[item.category]) return [];
-    return this.#push.claimPush(actor, item);
+  /** Reply-only claim: refuses every run-state/approval item. Run-state alerts never push (single-category release). */
+  async claimReplyPush(actor: string, id: string) {
+    const item = (await this.read(actor)).items.find(item => item.id === id);
+    return item?.category === 'assistant-reply' ? this.#push.claimPush(actor, item) : [];
   }
   finishPush(actor: string, id: string, deviceId: string, outcome: 'sent' | 'failed' | 'expired' | 'unknown') {
     return this.#push.finishPush(actor, id, deviceId, outcome);

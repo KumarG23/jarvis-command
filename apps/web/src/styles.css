@@ -600,3 +600,4 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 .reaction-options .reaction-chip { display: inline-flex; align-items: center; gap: 6px; }
 .reaction-note { color: var(--muted); font-size: 12px; line-height: 1.5; }
 .reaction-picker p { margin: 6px 0; }
+.history-message[data-reply-focus='true'] { outline: 2px solid var(--accent, #7dd3fc); outline-offset: 4px; border-radius: 10px; }
