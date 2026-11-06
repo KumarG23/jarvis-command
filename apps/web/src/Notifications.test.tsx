@@ -133,3 +133,38 @@ it('does not claim an incomplete empty inbox is caught up and explains unavailab
   expect(screen.getByText(/Delivery is incomplete/)).toHaveTextContent('beyond bounded recovery may be missing');
   expect(screen.getByText(/New approval notifications are unavailable/)).toHaveTextContent('Review approvals in the chat');
 });
+
+it.each([
+  ['disabled', 'turned off on this server'],
+  ['unsupported', 'does not yet provide the exact final-message binding'],
+  ['available', 'on for new final replies only'],
+] as const)('states honestly that reply notifications are %s', async (replies, text) => {
+  const value = inbox([]);
+  server({ ...value, delivery: { ...value.delivery, replies } } as never);
+  render(<Harness onOpen={() => null} />);
+  expect(await screen.findByText(new RegExp(text))).toBeInTheDocument();
+});
+
+it('shows the single reply-text setting on by default and saves its off state with readback', async () => {
+  const sent: unknown[] = [];
+  server(inbox([]), { '/api/notifications/preferences': body => { sent.push(body); return Response.json(inbox([], body as never)); } });
+  render(<Harness onOpen={() => null} />);
+  const box = await screen.findByRole('checkbox', { name: 'Show reply text in notifications' });
+  expect(box).toBeChecked();
+  expect(screen.queryByRole('checkbox', { name: /assistant-reply|Replies/i })).not.toBeInTheDocument();
+  fireEvent.click(box);
+  fireEvent.click(screen.getByRole('button', { name: 'Save preferences' }));
+  expect(await screen.findByText('Preferences saved and confirmed.')).toBeInTheDocument();
+  expect(sent).toEqual([{ categories: prefs.categories, showReplyText: false }]);
+  expect(screen.getByRole('checkbox', { name: 'Show reply text in notifications' })).not.toBeChecked();
+});
+
+it('lists reply items under a Replies filter with the sanitized preview as plain text', async () => {
+  const reply = { ...item(7, 'assistant-reply'), title: 'Reply from m', body: '<b>x</b> preview', reply: { messageId: 'assistant:1', label: 'm' } };
+  server(inbox([reply, item(8, 'run-completed')] as never));
+  render(<Harness onOpen={() => null} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Replies' }));
+  const list = screen.getByRole('list', { name: 'Notifications' });
+  expect(within(list).getByText('<b>x</b> preview')).toBeInTheDocument();
+  expect(within(list).queryByText('Run finished')).not.toBeInTheDocument();
+});

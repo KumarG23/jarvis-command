@@ -121,3 +121,33 @@ owned loopback command-proxy fixture. `PushSettings.test.tsx` covers explicit
 permission/device and reauthorization UI states. `e2e/notifications.spec.ts` covers
 desktop/320/360/390/430 px plus short height. No production credential or real
 push-send test is included.
+
+## Reply notifications (#99) — source only, disabled and unsupported
+
+One category, `assistant-reply`, for a verified final assistant message. Off unless
+`REPLY_NOTIFICATIONS_MODE=enabled` (independent of `WEB_PUSH_MODE`, which still gates
+actual push). Even when enabled it stays **unsupported**: no existing contract gives an
+exact run → message binding (accepted #9 Unsupported; `LiveRunStatus.historyBinding` is
+declared but never set by the proxy or BFF). The inbox reports `delivery.replies` as
+`disabled` / `unsupported` / `available` and the UI says so. Wiring a verified source is a
+single assignment of `REPLY_EVIDENCE_SOURCE` in `reply-notifier.ts`; it must return the exact
+session/user/assistant message ids, the persisted message read from that session, and the
+executed model (or null). Text is never taken from run output, the latest row, receipts,
+requested routes, timestamps or adjacency.
+
+Behavior: ID = hash(actor, session, message id); one item and one send per device per
+message across polls/SSE/retries/restart; unknown transport outcomes are never resent;
+preview is one sanitized line ≤120 characters; the single setting “Show reply text in
+notifications” (default on) otherwise yields a generic notice. Push payload version 2
+(encrypted, `id,title,body` only) is accepted solely by the updated worker; run-state
+payload version 1 is unchanged and the run-state sender refuses reply items (and vice
+versa). Visible-session suppression uses in-memory per-actor marks that expire in 20 s;
+stale/absent marks never suppress. `useReplyPresence` posts the marks but is not yet wired
+into `App.tsx` (owned by #97) — a one-line wiring requirement.
+
+Rollout order: PR #119 (reader-only bridge: optional item category/metadata and
+`showReplyText` readable and preserved) must be live before this writer is released.
+Rolling back to #119 keeps reply items and the setting intact. Production needs the
+lead-controlled VAPID/egress enablement, `REPLY_NOTIFICATIONS_MODE`, the upstream
+binding contract and physical Pixel checks (background/closed/tap/reconnect/reboot/focus
+and battery) — phone check pending.

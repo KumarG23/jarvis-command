@@ -55,6 +55,8 @@ export const NotificationInboxSchema = z.object({
     approvals: z.enum(['available', 'unavailable']).optional(),
     push: z.enum(['available', 'unavailable']),
     externalSurfaces: z.literal('unavailable'),
+    // Reply alerts: off by server control, unsupported without an exact final-message binding, or live.
+    replies: z.enum(['disabled', 'unsupported', 'available']).optional(),
   }).strict(),
 }).strict();
 
@@ -74,6 +76,8 @@ export const NotificationTargetSchema = z.discriminatedUnion('state', [
     state: z.literal('available'),
     sessionId: SessionIdSchema,
     publicRunId: z.string().regex(/^jcr_[a-f0-9]{32}$/),
+    // Exact reply to focus for an assistant-reply item; absent for run-state items.
+    messageId: OpaqueIdentifierSchema.optional(),
     clientRequestId: z.uuid(),
     runStatus: LiveRunStateSchema,
     approvalPending: z.boolean(),

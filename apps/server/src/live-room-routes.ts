@@ -15,6 +15,7 @@ import { registerNotificationRoutes } from './notification-routes';
 import { LiveRoomConflictError } from './live-room-service';
 import type { ArtifactStore } from './artifact-store';
 import type { NotificationStore } from './notification-store';
+import type { Presence } from './reply-notifier';
 
 export type LiveStreamLimits = Readonly<{ maxStreams?: number; lifetimeMs?: number; keepaliveMs?: number; maximumBytes?: number }>;
 
@@ -25,6 +26,7 @@ type Dependencies = Readonly<{
   checkLiveRoom?: () => Promise<void>;
   liveStreamLimits?: LiveStreamLimits;
   notifications?: NotificationStore | undefined;
+  presence?: Presence | undefined;
 }>;
 
 function projectThreadTitle(title: string) {
@@ -380,7 +382,7 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
       })(), { objectMode: false, highWaterMark: 16_384 });
       return reply.type('text/event-stream; charset=utf-8').header('x-accel-buffering', 'no').send(stream);
     });
-    registerNotificationRoutes(routes, { store: dependencies.notifications, push: dependencies.config.push, get liveRoom() { return dependencies.liveRoom!; }, subjects });
+    registerNotificationRoutes(routes, { store: dependencies.notifications, push: dependencies.config.push, presence: dependencies.presence, get liveRoom() { return dependencies.liveRoom!; }, subjects });
     routes.post('/api/live/sessions', async (request) => {
       const parsed = LiveRoomSessionCreateRequestSchema.safeParse(request.body);
       if (!parsed.success) throw Object.assign(new Error('Invalid request'), { statusCode: 400 });
