@@ -3,11 +3,15 @@ import { SessionIdSchema } from './contracts';
 export const ProjectRoomIdSchema = z.string().regex(/^room_[a-f0-9]{32}$/);
 export const CommandSessionIdSchema = z.string().regex(/^jc_[a-f0-9]{32}$/);
 const reference = z.string().max(512).refine(value => [...value].every(character => character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127));
+export const ProjectIconSchema = z.enum(['auto', 'tiles', 'orbit', 'peak', 'spark']);
+export const ProjectColorSchema = z.enum(['auto', 'green', 'blue', 'violet', 'amber']);
 export const ProjectRoomCreateSchema = z.object({
   name: z.string().trim().min(1).max(80),
   goal: z.string().trim().min(1).max(2000),
   instructions: z.string().max(4000).optional(),
   archived: z.boolean().optional(),
+  projectIcon: ProjectIconSchema.optional(),
+  projectColor: ProjectColorSchema.optional(),
   repository: reference,
   notes: z.array(reference.min(1)).max(12),
 }).strict();
@@ -24,8 +28,7 @@ export const ProjectThreadUpdateSchema = z.object({
   archived: z.boolean().optional(),
   designateLead: z.literal(true).optional(),
 }).strict().refine(value => Object.keys(value).length > 0);
-// Reader-only bridge for the future identity writer's version-one metadata.
-// Keep create/update strict: older UI writes must only preserve these fields.
+// Bounded future tokens can be retained/read without granting arbitrary write input.
 const identityToken = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/);
 export const ProjectRoomSchema = ProjectRoomCreateSchema.extend({
   projectIcon: identityToken.optional(),
