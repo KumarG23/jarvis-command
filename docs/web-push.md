@@ -151,3 +151,15 @@ Rolling back to #119 keeps reply items and the setting intact. Production needs 
 lead-controlled VAPID/egress enablement, `REPLY_NOTIFICATIONS_MODE`, the upstream
 binding contract and physical Pixel checks (background/closed/tap/reconnect/reboot/focus
 and battery) — phone check pending.
+
+### Single-category push policy and freshness (PR #120 repair)
+
+Reply is the only push category. The run-state sender is removed: run-completed, run-failed
+and approval items (and any tool/reaction event) stay in-app history only, whether or not
+`REPLY_NOTIFICATIONS_MODE` is on and regardless of `WEB_PUSH_MODE`. Existing in-app history,
+category preferences and audit facts are unchanged. A reply event is accepted only when its
+terminal audit time is not before the actor's first stored state and is within 24 h of
+observation; a first historical read or reload of an old run is refused (nothing is stored
+or settled, so the refusal is stable across restart). Time only bounds replay and never
+establishes a message/run binding. Exact-reply focus and presence wiring remain staged
+behind #97's `App.tsx` ownership; no exact-link delivery is claimed.

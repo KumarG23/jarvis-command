@@ -77,11 +77,10 @@ export const restrictedPushTransport: PushTransport = async details => {
   });
 };
 
-export const privatePushPayload = (id: string) => JSON.stringify({ version: 1, id });
 // Version 2 is reply-only and carries the already-sanitized, bounded title/body inside the encrypted payload.
 export const replyPushPayload = (item: Readonly<{ id: string; title: string; body: string }>) => JSON.stringify({ version: 2, id: item.id, title: item.title, body: item.body });
 export function createPushService(config: PushConfig, store: NotificationStore, transport: PushTransport = restrictedPushTransport) {
-  async function send(actor: string, id: string, claim: () => Promise<Awaited<ReturnType<NotificationStore['claimPush']>>>, payload: () => Promise<string>) {
+  async function send(actor: string, id: string, claim: () => Promise<Awaited<ReturnType<NotificationStore['claimReplyPush']>>>, payload: () => Promise<string>) {
     if (config.capability.state !== 'available' || !config.vapid) return;
     try {
       const body = await payload();
@@ -103,7 +102,8 @@ export function createPushService(config: PushConfig, store: NotificationStore, 
   }
   return {
     config,
-    deliver: (actor: string, id: string) => send(actor, id, () => store.claimPush(actor, id), async () => privatePushPayload(id)),
+    // Single-category release: there is deliberately no run-completed/failed/approval/tool/reaction
+    // sender. WEB_PUSH_MODE alone never pushes; those events stay in-app history only.
     /** Reply-only sender: refuses unless the reply category is enabled and the item is an assistant-reply. */
     deliverReply: (actor: string, id: string) => config.replies ? send(actor, id, () => store.claimReplyPush(actor, id), async () => {
       const item = await store.find(actor, id);

@@ -24,6 +24,7 @@ const MAX_SETTLED = 500;
 export const MAX_APPROVAL_RECEIPTS = 1024;
 const MAX_ACTORS = 32;
 const FILE = 'notifications.json';
+const REPLY_FRESHNESS_MS = 24 * 60 * 60 * 1000; // matches the push claim age limit
 
 export const DEFAULT_PREFERENCES: NotificationPreferences = Object.freeze({
   categories: Object.freeze({ 'run-completed': true, 'run-failed': true, approval: true }),
@@ -155,13 +156,21 @@ export class NotificationStore {
    * actor's "Show reply text" setting is on (default); otherwise a generic notice. Never touches
    * the run-state or approval receipts.
    */
-  recordReply(actor: string, event: ReplyRecord): Promise<'created' | 'duplicate'> {
+  recordReply(actor: string, event: ReplyRecord): Promise<'created' | 'duplicate' | 'stale'> {
     return this.#transaction(state => {
       const current = state.actors[actor] ?? this.#emptyActor();
       if (current.settled.some(entry => entry.id === event.id) || current.items.some(item => item.id === event.id)) return { result: 'duplicate' as const };
       // Same bounded replay boundary as terminal events: a forgotten ID never reappears.
       if (current.horizon !== null && event.eventAt <= current.horizon) return { result: 'duplicate' as const };
       const at = this.now().toISOString();
+      // Freshness only bounds replay; it never establishes a message/run binding. The terminal audit
+      // time must be inside the 24 h push window and not before this actor's state existed, so a
+      // first historical read or a reload of an old run can never become a new alert (nothing is
+      // settled, so the refusal is stable across restart without a new persisted field).
+      if (event.eventAt < current.since || Date.parse(at) - Date.parse(event.eventAt) > REPLY_FRESHNESS_MS) {
+        if (!state.actors[actor]) { state.actors[actor] = current; return { result: 'stale' as const, write: true }; }
+        return { result: 'stale' as const };
+      }
       const { settled, horizon } = settle(current, event.id, at);
       const item: NotificationItem = {
         id: event.id, category: 'assistant-reply', observedAt: at, sessionId: event.sessionId, publicRunId: event.publicRunId,
@@ -212,14 +221,7 @@ export class NotificationStore {
     await this.#push.revokeDevice(actor, id);
     return this.read(actor);
   }
-  async claimPush(actor: string, id: string) {
-    const current = await this.read(actor);
-    const item = current.items.find(item => item.id === id);
-    // Run-state sender only: an assistant-reply item (or any non-run-state category) never passes.
-    if (!item || item.category === 'assistant-reply' || !current.preferences.categories[item.category]) return [];
-    return this.#push.claimPush(actor, item);
-  }
-  /** Reply-only claim: refuses every run-state/approval item, mirroring claimPush's refusal of replies. */
+  /** Reply-only claim: refuses every run-state/approval item. Run-state alerts never push (single-category release). */
   async claimReplyPush(actor: string, id: string) {
     const item = (await this.read(actor)).items.find(item => item.id === id);
     return item?.category === 'assistant-reply' ? this.#push.claimPush(actor, item) : [];

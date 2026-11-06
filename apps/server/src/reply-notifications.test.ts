@@ -29,7 +29,8 @@ const auth = randomBytes(16).toString('base64url');
 const device = (token: string) => ({ endpoint: `https://fcm.googleapis.com/fcm/send/${token}`, expirationTime: null, keys: { p256dh: receiver.getPublicKey().toString('base64url'), auth } });
 const sessionId = `jc_${'a'.repeat(32)}`;
 const publicRunId = `jcr_${'b'.repeat(32)}`;
-const run: ReplyRun = { actor: alice, sessionId, publicRunId, eventAt: '2026-11-06T12:00:00.000Z' };
+// Fresh terminal time (the store refuses historical events); a small lead keeps it after the actor's first state.
+const run: ReplyRun = { actor: alice, sessionId, publicRunId, eventAt: new Date(Date.now() + 3_600_000).toISOString() };
 const evidence = (over: Partial<ReplyEvidence['message']> = {}, rest: Partial<ReplyEvidence> = {}): ReplyEvidence => ({
   userMessageId: 'user:1', assistantMessageId: 'assistant:1',
   message: { id: 'assistant:1', sessionId, role: 'assistant', content: 'The **answer** is [here](https://x.invalid/secret-token).', ...over },
@@ -144,7 +145,7 @@ describe('reply notifications', () => {
     const source = async () => evidence();
     await Promise.all([h.notifier(source)(run), h.notifier(source)(run), h.notifier(source)(run)]);
     await h.notifier(source, { from: h.open() })(run); // restart: a fresh store and notifier over the same private files
-    await h.notifier(source, { from: h.open() })({ ...run, publicRunId: `jcr_${'e'.repeat(32)}`, eventAt: '2026-11-06T12:05:00.000Z' });
+    await h.notifier(source, { from: h.open() })({ ...run, publicRunId: `jcr_${'e'.repeat(32)}`, eventAt: new Date(Date.now() + 3_700_000).toISOString() });
     expect(h.sent).toHaveLength(1);
     expect((await h.open().store.read(alice)).items).toHaveLength(1);
     // A different message is a different notification.
@@ -216,19 +217,17 @@ describe('reply notifications', () => {
     expect(presence.visible(alice, `jc_${'9'.repeat(32)}`)).toBe(true);
   });
 
-  it('keeps the two senders disjoint: run-state cannot send replies and replies cannot send run-state', async () => {
+  it('keeps the sender reply-only: run-state/approval items never push and reply items need the reply sender', async () => {
     const h = await fixture();
     await h.first.store.registerDevice(alice, device('one'));
     const presence = createPresence(() => 0); presence.mark(alice, sessionId, true); // record the reply without sending it
     await h.notifier(async () => evidence(), { presence })(run);
-    await h.first.push.deliver(alice, replyNotificationId(alice, sessionId, 'assistant:1'));
-    expect(h.sent).toEqual([]);
+    expect('deliver' in h.first.push).toBe(false); // no run-state sender exists
     const stateEvent = { actor: alice, sessionId, publicRunId, eventAt: run.eventAt, category: 'run-completed' as const };
     await createRunNotifier(h.first.store)(stateEvent); // no push service: record only
     await h.first.push.deliverReply(alice, notificationId(stateEvent));
     expect(h.sent).toEqual([]);
-    await h.first.push.deliver(alice, notificationId(stateEvent)); // the existing run-state sender is unchanged
-    expect(h.sent).toHaveLength(1);
+    expect(h.sent).toEqual([]); // retired run-state alerts stay in-app only
   });
 
   it('does nothing when Web Push is unavailable, but still records the in-app reply', async () => {
@@ -237,6 +236,43 @@ describe('reply notifications', () => {
     await h.notifier(async () => evidence(), { enabled: true })(run);
     expect(h.sent).toEqual([]);
     expect((await h.first.store.read(alice)).items).toHaveLength(1);
+  });
+});
+
+describe('historical reply refusal', () => {
+  const NOW = new Date('2026-11-06T19:30:00.000Z');
+  const store = async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'jc-reply-fresh-')); await chmod(directory, 0o700);
+    cleanup.push(() => rm(directory, { recursive: true, force: true }));
+    return { directory, open: () => new NotificationStore(directory, () => NOW) };
+  };
+  const record = (s: NotificationStore, eventAt: string, messageId = 'assistant:1') => s.recordReply(alice, { id: replyNotificationId(alice, sessionId, messageId), sessionId, publicRunId, eventAt, messageId, preview: 'SYNTHETIC', label: null });
+  it.each(['2020-01-01T00:00:00.000Z', '2026-11-05T19:29:59.000Z'])('never turns a historical terminal event (%s) into a new alert, across reload and restart', async eventAt => {
+    const h = await store();
+    const first = h.open(); await first.read(alice); // actor state exists since before the event
+    expect(await record(first, eventAt)).toBe('stale');
+    expect(await record(first, eventAt)).toBe('stale'); // terminal status reload
+    expect(await record(h.open(), eventAt)).toBe('stale'); // restart
+    expect((await h.open().read(alice)).items).toEqual([]);
+  });
+  it('refuses an event before this actor first had state, even inside the freshness window', async () => {
+    const h = await store();
+    await h.open().read(alice);
+    expect(await record(h.open(), '2026-11-06T19:00:00.000Z')).toBe('stale');
+  });
+  it('still records a fresh event once and dedupes it across reload and restart', async () => {
+    const h = await store();
+    await h.open().read(alice);
+    expect(await record(h.open(), '2026-11-06T19:30:00.000Z')).toBe('created');
+    expect(await record(h.open(), '2026-11-06T19:30:00.000Z')).toBe('duplicate');
+    expect((await h.open().read(alice)).items).toHaveLength(1);
+  });
+  it('sends no push for a historical event through the full notifier path', async () => {
+    const h = await fixture();
+    await h.first.store.registerDevice(alice, device('one'));
+    await h.notifier(async () => evidence())({ ...run, eventAt: '2020-01-01T00:00:00.000Z' });
+    expect(h.sent).toEqual([]);
+    expect((await h.first.store.read(alice)).items).toEqual([]);
   });
 });
 

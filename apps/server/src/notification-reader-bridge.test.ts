@@ -72,10 +72,10 @@ it('keeps a store without the optional setting byte-compatible: no field is inve
   expect(JSON.parse(await readFile(path, 'utf8')).actors[actor].preferences).toEqual({ categories });
 });
 
-it('never sends a reply item through the run-state push sender, even for a registered device', async () => {
+it('does not claim a stale reply item for a registered device', async () => {
   const { store } = await fixture();
   await store.registerDevice(actor, subscription);
-  expect(await store.claimPush(actor, replyItem.id)).toEqual([]);
+  expect(await store.claimReplyPush(actor, replyItem.id)).toHaveLength(0); // observed far outside the 24 h push window
   expect(await store.readPush(actor)).toMatchObject({ full: false });
 });
 

@@ -93,7 +93,7 @@ export function createCommandServer(
     liveRoom = createLiveRoomService({
       client,
       ledger,
-      notify: notifications ? createRunNotifier(notifications, push) : undefined,
+      notify: notifications ? createRunNotifier(notifications) : undefined,
       notifyReply: notifications ? createReplyNotifier({ store: notifications, push, enabled: config.push?.replies === true, source: REPLY_EVIDENCE_SOURCE, presence }) : undefined,
       resolveImages: artifactStore
         ? createArtifactImageResolver(artifactStore)
