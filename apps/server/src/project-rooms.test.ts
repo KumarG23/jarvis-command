@@ -368,3 +368,20 @@ it('rejects project changes during roster reads instead of returning stale membe
   expect((await read).statusCode).toBe(409);
   await app.close();
 });
+
+it('persists identity through metadata edits, restart, and retained deletion preview without upstream work', async () => {
+  const upstream = vi.fn(); const { make } = await fixture(upstream); const app = make();
+  const identity = { projectIcon: 'orbit', projectColor: 'violet' };
+  const room = (await app.inject({ method: 'POST', url: '/api/rooms', headers, payload: { ...metadata, ...identity } })).json().room;
+  expect(room).toMatchObject(identity);
+  const url = `/api/rooms/${room.id}`;
+  const preview = await app.inject({ url: `${url}/deletion`, headers });
+  expect(preview.statusCode).toBe(200); expect(preview.json().enabled).toBe(false);
+  for (const fields of [{ projectIcon: 'unbounded' }, { projectColor: '#fff' }, { projectIcon: null }]) {
+    expect((await app.inject({ method: 'POST', url, headers, payload: { ...metadata, ...fields } })).statusCode).toBe(400);
+  }
+  expect((await app.inject({ method: 'POST', url, headers, payload: { ...metadata, name: 'Renamed', archived: true } })).json().room).toMatchObject(identity);
+  await app.close(); const restarted = make();
+  expect((await restarted.inject({ url: '/api/rooms', headers })).json().rooms[0]).toMatchObject({ ...identity, name: 'Renamed', archived: true });
+  expect(upstream).not.toHaveBeenCalled(); await restarted.close();
+});

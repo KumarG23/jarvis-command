@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { ProjectRoomsSchema, ProjectDeleteRequestSchema, ProjectRoomSchema, ProjectThreadUpdateSchema } from './project-rooms';
+import { ProjectRoomCreateSchema, ProjectRoomsSchema, ProjectDeleteRequestSchema, ProjectRoomSchema, ProjectThreadUpdateSchema } from './project-rooms';
 
 const id = 'jc_' + 'a'.repeat(32), other = 'jc_' + 'b'.repeat(32);
 const legacy = { id: 'room_' + 'c'.repeat(32), name: 'Fixture', goal: 'Preserve', instructions: 'Keep', repository: '/ref', notes: ['note'], sessionIds: [id], lastSessionId: id };
@@ -33,4 +33,13 @@ it('keeps tombstones distinct from live rooms and rejects unsupported deletion p
   const request = { roomId: legacy.id, token: 'a'.repeat(64), mode: 'project-only' };
   expect(ProjectDeleteRequestSchema.safeParse(request).success).toBe(true);
   expect(ProjectDeleteRequestSchema.safeParse({ ...request, mode: 'contents' }).success).toBe(false);
+});
+
+it('accepts bounded identity choices for writes and unknown future tokens only on read', () => {
+  const metadata = { name: legacy.name, goal: legacy.goal, repository: legacy.repository, notes: legacy.notes };
+  expect(ProjectRoomCreateSchema.parse({ ...metadata, projectIcon: 'orbit', projectColor: 'violet' })).toMatchObject({ projectIcon: 'orbit', projectColor: 'violet' });
+  expect(ProjectRoomSchema.parse({ ...legacy, projectIcon: 'future', projectColor: 'future' })).toMatchObject({ projectIcon: 'future', projectColor: 'future' });
+  for (const fields of [{ projectIcon: 'future' }, { projectColor: '#fff' }, { projectIcon: '../private' }, { projectColor: 'x'.repeat(33) }, { projectIcon: null }]) {
+    expect(ProjectRoomCreateSchema.safeParse({ ...metadata, ...fields }).success).toBe(false);
+  }
 });
