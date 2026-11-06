@@ -32,17 +32,31 @@ const GrokInferenceSchema = z.object({
   model: z.enum(['grok-4.7', 'grok-4.6']),
   reasoningEffort: ReasoningEffortSchema,
 }).strict();
+// Claude routes are enabled only by an explicit command-proxy flag. Their installed
+// contract exposes no verified reasoning-effort override, so the override omits it
+// rather than inventing or translating a Codex/xAI effort value.
+const AnthropicInferenceSchema = z.object({
+  provider: z.literal('anthropic'),
+  model: z.enum(['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5']),
+}).strict();
 export const InferenceOverrideSchema = z.discriminatedUnion('provider', [
   OpenAiCodexInferenceSchema,
   GrokInferenceSchema,
+  AnthropicInferenceSchema,
 ]);
 const InferenceOptionFields = {
   label: NonBlankTextSchema(80),
   reasoningEfforts: z.array(ReasoningEffortSchema).min(1).max(5),
 };
+const ProviderDefaultEffortOptionFields = {
+  label: NonBlankTextSchema(80),
+  // Empty is the honest provider-default state: no supported effort is claimed.
+  reasoningEfforts: z.array(ReasoningEffortSchema).max(0),
+};
 export const InferenceOptionSchema = z.discriminatedUnion('provider', [
   OpenAiCodexInferenceSchema.omit({ reasoningEffort: true }).extend(InferenceOptionFields).strict(),
   GrokInferenceSchema.omit({ reasoningEffort: true }).extend(InferenceOptionFields).strict(),
+  AnthropicInferenceSchema.extend(ProviderDefaultEffortOptionFields).strict(),
 ]);
 
 // A sanitized, bounded view of the catalog Hermes advertises. Only these facts cross the
@@ -77,7 +91,7 @@ export const InferenceOptionsResponseSchema = z.object({
     model: NonBlankTextSchema(160),
   }).strict(),
   // Empty is an honest state: nothing curated is currently advertised and authenticated.
-  options: z.array(InferenceOptionSchema).max(8),
+  options: z.array(InferenceOptionSchema).max(11),
   catalog: ModelCatalogSchema.optional(),
 }).strict();
 export const LiveRunStateSchema = z.enum([

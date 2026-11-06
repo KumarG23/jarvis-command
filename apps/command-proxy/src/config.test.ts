@@ -20,7 +20,19 @@ describe('loadCommandProxyConfig', () => {
       hermesBaseUrl: valid.HERMES_API_BASE_URL,
       hermesApiKey: valid.HERMES_API_KEY,
       maxStreamSeconds: 1_800,
+      anthropicRoutesEnabled: false,
     });
+  });
+
+  it('enables Anthropic routes only from an explicit server-side flag', () => {
+    expect(loadCommandProxyConfig(valid).anthropicRoutesEnabled).toBe(false);
+    for (const value of ['1', 'true']) {
+      expect(loadCommandProxyConfig({ ...valid, COMMAND_ANTHROPIC_ROUTES_ENABLED: value }).anthropicRoutesEnabled).toBe(true);
+    }
+    for (const value of ['0', 'false']) {
+      expect(loadCommandProxyConfig({ ...valid, COMMAND_ANTHROPIC_ROUTES_ENABLED: value }).anthropicRoutesEnabled).toBe(false);
+    }
+    expect(() => loadCommandProxyConfig({ ...valid, COMMAND_ANTHROPIC_ROUTES_ENABLED: 'yes' })).toThrow();
   });
 
   it.each([

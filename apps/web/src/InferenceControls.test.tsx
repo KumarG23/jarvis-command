@@ -11,6 +11,14 @@ const inventory = {
     { provider: 'openai-codex', model: 'gpt-6-luna', label: 'Luna', reasoningEfforts: ['minimal', 'low', 'medium'] },
   ],
 };
+const anthropicInventory = {
+  default: { provider: 'openai-codex', model: 'gpt-6-sol' },
+  options: [
+    { provider: 'anthropic', model: 'claude-opus-5-5', label: 'Claude Opus 5.5', reasoningEfforts: [] },
+    { provider: 'anthropic', model: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', reasoningEfforts: [] },
+    { provider: 'anthropic', model: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', reasoningEfforts: [] },
+  ],
+};
 const model = () => screen.getByRole('combobox', { name: 'Model for this prompt' });
 const effort = () => screen.getByRole('combobox', { name: 'Reasoning for this prompt' });
 const props = () => ({ allowed: true, imageAttachmentsEnabled: false, sessionId: 'jc_one', projectId: null, max: 100, maxSteer: 100, turn: null, send: vi.fn<Parameters<typeof TurnComposer>[0]['send']>(() => false), retry: vi.fn(), resume: vi.fn(), steer: vi.fn(), recoveries: [], consumeRecovery: vi.fn() });
@@ -111,6 +119,62 @@ it('does not send after changing chats during a pending preflight, even when swi
   send(); view.rerender(<TurnComposer {...p} sessionId="jc_two" />); view.rerender(<TurnComposer {...p} />);
   await act(async () => resolve(Response.json(inventory)));
   expect(p.send).not.toHaveBeenCalled(); expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('Keep draft');
+});
+
+it('offers a Claude route with honest provider-default effort and sends no effort override', async () => {
+  const fetch = vi.fn(async () => Response.json(anthropicInventory)); vi.stubGlobal('fetch', fetch);
+  const p = props(); render(<TurnComposer {...p} />); await ready();
+  fireEvent.change(model(), { target: { value: 'anthropic:claude-opus-5-5' } });
+  expect(effort()).toHaveValue(''); expect(effort()).toBeDisabled();
+  expect(screen.getByRole('option', { name: 'Provider default' })).toBeInTheDocument();
+  expect(screen.getByText(/Claude Opus 5\.5 · provider default/)).toBeInTheDocument();
+  send();
+  await waitFor(() => expect(p.send).toHaveBeenCalledTimes(1));
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(p.send.mock.calls[0]?.[3]).toEqual({ provider: 'anthropic', model: 'claude-opus-5-5' });
+});
+
+it('persists a Claude choice and rejects an incompatible saved effort', async () => {
+  setup(); localStorage.setItem(inferencePreferenceKey('jc_one'), JSON.stringify({ provider: 'anthropic', model: 'claude-sonnet-5-5' }));
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json(anthropicInventory)));
+  const view = render(<TurnComposer {...props()} />); await ready();
+  expect(model()).toHaveValue('anthropic:claude-sonnet-5-5');
+  expect(effort()).toHaveValue('');
+  view.unmount();
+  localStorage.clear();
+  localStorage.setItem(inferencePreferenceKey('jc_one'), JSON.stringify({ provider: 'anthropic', model: 'claude-sonnet-5-5', reasoningEffort: 'high' }));
+  const p = props(); render(<TurnComposer {...p} />); await ready();
+  expect(model()).toHaveValue('invalid');
+  expect(screen.getByRole('option', { name: 'Stored selection unavailable' })).toBeInTheDocument();
+  send();
+  expect(p.send).not.toHaveBeenCalled();
+  fireEvent.change(model(), { target: { value: 'inherit' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  await waitFor(() => expect(p.send).toHaveBeenCalledTimes(1));
+  expect(p.send.mock.calls[0]?.[3]).toBeUndefined();
+});
+
+it('does not silently inherit when fresh Claude inventory fails before send', async () => {
+  const fetch = vi.fn(async () => Response.json(anthropicInventory)); vi.stubGlobal('fetch', fetch);
+  const p = props(); render(<TurnComposer {...p} />); await ready();
+  fireEvent.change(model(), { target: { value: 'anthropic:claude-haiku-5-5' } });
+  fetch.mockRejectedValueOnce(new Error('offline'));
+  send();
+  await screen.findByText('Model choices unavailable. Retry choices before sending this request, or explicitly choose Inherit.');
+  expect(p.send).not.toHaveBeenCalled();
+  expect(model()).toHaveValue('anthropic:claude-haiku-5-5');
+  expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('Keep draft');
+});
+
+it('shows a requested Claude route as provider default without inferring executed effort', () => {
+  const turn = {
+    intent: { sessionId: 'jc_one', input: null, clientRequestId: 'test', inference: { provider: 'anthropic', model: 'claude-sonnet-5-5' } },
+    publicRunId: 'test', phase: 'Run running', done: false, events: [], usage: null,
+  } as unknown as Turn;
+  render(<TurnView turn={turn} allowed={false} approve={vi.fn()} stop={vi.fn()} />);
+  fireEvent.click(screen.getByText('Activity / Usage'));
+  expect(screen.getByText('Requested route · claude-sonnet-5-5 · provider default')).toBeInTheDocument();
+  expect(screen.queryByText(/undefined/)).not.toBeInTheDocument();
 });
 
 it.each([

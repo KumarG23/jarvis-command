@@ -1,15 +1,15 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
-import type { ModelCatalog, ModelCatalogEntry } from '@jarvis-command/contracts';
+import type { InferenceOption, ModelCatalog, ModelCatalogEntry } from '@jarvis-command/contracts';
 import { ModelCatalogView } from './ModelCatalog';
 import { TurnComposer } from './TurnView';
 
-const sol = { provider: 'openai-codex' as const, model: 'gpt-6-sol' as const, label: 'Sol', reasoningEfforts: ['medium', 'xhigh'] as const };
+const sol: InferenceOption = { provider: 'openai-codex', model: 'gpt-6-sol', label: 'Sol', reasoningEfforts: ['medium', 'xhigh'] };
 const entry = (provider: string, model: string, overrides: Partial<ModelCatalogEntry> = {}): ModelCatalogEntry => ({
   provider, model, advertised: true, authenticated: true, eligible: false, selectable: false,
   unavailableReason: 'not_approved_allowlist', ...overrides,
 });
-const inventory = (entries: ModelCatalogEntry[], options: readonly (typeof sol)[] = []) => ({
+const inventory = (entries: ModelCatalogEntry[], options: readonly InferenceOption[] = []) => ({
   default: { provider: 'openai-codex', model: 'gpt-6-sol' },
   options,
   catalog: { entries, advertisedCount: entries.filter(item => item.advertised).length, returned: entries.length, truncated: false },
@@ -70,6 +70,25 @@ it('renders a contract-valid large catalog with both server and UI bounds stated
   expect(screen.getByText('210 catalog entries · 5,000 advertised · inventory truncated')).toBeInTheDocument();
   expect(screen.getByRole('status')).toHaveTextContent('Showing first 200 of 210 matching entries.');
   expect(screen.getAllByRole('listitem')).toHaveLength(200);
+});
+
+it('offers the three enabled Claude entries through the existing catalog Use action with provider-default effort', async () => {
+  const options: InferenceOption[] = [
+    { provider: 'anthropic', model: 'claude-opus-5-5', label: 'Claude Opus 5.5', reasoningEfforts: [] },
+    { provider: 'anthropic', model: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5', reasoningEfforts: [] },
+    { provider: 'anthropic', model: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', reasoningEfforts: [] },
+  ];
+  const entries = options.map(option => entry('anthropic', option.model, { eligible: true, selectable: true, unavailableReason: null }));
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json(inventory(entries, options))));
+  render(<TurnComposer {...props()} />);
+  const catalog = await screen.findByRole('region', { name: 'Advertised model catalog' });
+  const group = within(catalog).getByRole('region', { name: 'Anthropic advertised models' });
+  expect(within(group).getAllByRole('button', { name: /^Use Anthropic / })).toHaveLength(3);
+  fireEvent.click(within(group).getByRole('button', { name: 'Use Anthropic claude-sonnet-5-5' }));
+  await waitFor(() => expect(model()).toHaveValue('anthropic:claude-sonnet-5-5'));
+  expect(screen.getByRole('combobox', { name: 'Reasoning for this prompt' })).toHaveValue('');
+  expect(screen.getByRole('combobox', { name: 'Reasoning for this prompt' })).toBeDisabled();
+  expect(screen.getByText(/Claude Sonnet 5\.5 · provider default/)).toBeInTheDocument();
 });
 
 it('preserves the existing picker when an older response has no catalog and when nothing is selectable', async () => {

@@ -19,6 +19,8 @@ install this component or preserve its new image key through a release transacti
   `COMMAND_PROXY_KEY`, and the server-only `HERMES_API_KEY`; never reuse the read
   proxy/BFF key as the command key or use the upstream key as a BFF credential.
   `MAX_STREAM_SECONDS=1800` is explicit. All checked-in key values are placeholders.
+  `COMMAND_ANTHROPIC_ROUTES_ENABLED=false` is the disabled default; the three
+  bounded Claude routes stay advertised-only until an approved release enables it.
 - Port 8647 is a template choice, not installed or reserved. Parent read-only `ss`
   inspection on 2026-09-05 found 8642–8646 occupied and 8647 absent. Recheck before
   installation. Never select 8644: the wildcard webhook owns it. The application

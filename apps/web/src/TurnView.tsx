@@ -8,7 +8,7 @@ import { boundedJson, type DraftRecovery, type Turn } from './useLiveTurn';
 import { MessageContent } from './MessageContent';
 import { useComposerDrafts, type ComposerDrafts, type PendingChatImage } from './composerDrafts';
 import { useTextDraft } from './textDraft';
-import { routeDecision, selectionProblem, useInferencePreference } from './inferencePreference';
+import { requestedEffortLabel, routeDecision, selectionProblem, useInferencePreference } from './inferencePreference';
 import { ModelCatalogView, providerLabel } from './ModelCatalog';
 
 export function TurnView({ turn, allowed, approve, stop, onSaveResponse, threadProjectId, threadProjectSessionIds, onThreadLink }: Readonly<{ turn: Turn; allowed: boolean; approve: (run: Turn, choice: 'once' | 'deny') => void; stop: (run: Turn) => void; onSaveResponse?: ((text: string, runId: string | null) => void) | undefined; threadProjectId?: string | null | undefined; threadProjectSessionIds?: readonly string[] | undefined; onThreadLink?: ((projectId: string, sessionId: string) => void) | undefined }>) {
@@ -89,7 +89,7 @@ function RunInspector({ turn }: Readonly<{ turn: Turn }>) {
     <div id={panelId} className="run-inspector-body" role="region" aria-label="Run inspector">
       <h3>Usage</h3>
       {turn.usage ? <ExecutionReceipt usage={turn.usage} /> : <p>{turn.done ? 'Run usage unavailable' : 'Usage available when run finishes'}</p>}
-      {!execution && 'inference' in turn.intent && turn.intent.inference ? <p className="turn-route">Requested route · {turn.intent.inference.model} · {turn.intent.inference.reasoningEffort}</p> : null}
+      {!execution && 'inference' in turn.intent && turn.intent.inference ? <p className="turn-route">Requested route · {turn.intent.inference.model} · {requestedEffortLabel(turn.intent.inference)}</p> : null}
       <div className="inspector-heading"><h3>Run receipt</h3><button className="secondary-button copy-receipt" type="button" onClick={() => { void copy(); }}><Copy size={14} /> Copy receipt</button></div>
       <span className="copy-status" role="status">{copyMessage}</span>
       <dl className="inspector-facts">
@@ -304,7 +304,9 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
   const preference = useInferencePreference(sessionId, memory.preferences);
   const selection = preference.selection;
   const selectedModel = typeof selection === 'string' ? selection : `${selection.provider}:${selection.model}`;
-  const reasoningEffort = typeof selection === 'string' ? undefined : selection.reasoningEffort;
+  const reasoningEffort = typeof selection === 'string' || selection.provider === 'anthropic' ? undefined : selection.reasoningEffort;
+  const effortLabel = typeof selection === 'string' ? undefined
+    : selection.provider === 'anthropic' ? 'provider default' : selection.reasoningEffort;
   const [inventoryRetry, setInventoryRetry] = useState(0);
   const [inventoryBusy, setInventoryBusy] = useState(false);
   const [preflighting, setPreflighting] = useState(false);
@@ -374,6 +376,10 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
     if (value === 'inherit') { preference.select('inherit'); return; }
     const option = inferenceOptions?.options.find(option => `${option.provider}:${option.model}` === value);
     if (!option) return;
+    if (option.provider === 'anthropic') {
+      preference.select({ provider: option.provider, model: option.model });
+      return;
+    }
     const effort = reasoningEffort && option.reasoningEfforts.includes(reasoningEffort) ? reasoningEffort
       : option.reasoningEfforts.includes('medium') ? 'medium' : option.reasoningEfforts[0]!;
     preference.select({ provider: option.provider, model: option.model, reasoningEffort: effort } as InferenceOverride);
@@ -484,7 +490,7 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
   const inferencePicker = (<details ref={picker} className={`inference-control${inferenceTarget ? ' header-inference' : ''}`} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }} onKeyDown={event => {
         if (event.key === 'Escape') { event.stopPropagation(); if (picker.current) picker.current.open = false; picker.current?.querySelector('summary')?.focus(); }
       }}>
-        <summary title={`Requested · ${selection === 'inherit' ? 'Inherit' : selection === 'invalid' ? 'Selection unavailable' : `${selectedOption?.label ?? selection.model} · ${reasoningEffort}`}`}><span className="requested-label">Requested · </span><span className="requested-choice">{selection === 'inherit' ? 'Inherit' : selection === 'invalid' ? 'Selection unavailable' : `${selectedOption?.label ?? selection.model} · ${reasoningEffort}`}</span></summary>
+        <summary title={`Requested · ${selection === 'inherit' ? 'Inherit' : selection === 'invalid' ? 'Selection unavailable' : `${selectedOption?.label ?? selection.model} · ${effortLabel}`}`}><span className="requested-label">Requested · </span><span className="requested-choice">{selection === 'inherit' ? 'Inherit' : selection === 'invalid' ? 'Selection unavailable' : `${selectedOption?.label ?? selection.model} · ${effortLabel}`}</span></summary>
         <div className="inference-fields">
           <p className="route-explanation">Requested for the next message. Executed route is reported only in a run’s Activity / Usage receipt; a latest-session receipt does not identify a selected answer.</p>
           <label>Model<select aria-label="Model for this prompt" value={selectedModel} disabled={busy || preflighting || inventoryBusy} onChange={(event) => chooseModel(event.target.value)}>
@@ -493,14 +499,18 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
             {typeof selection !== 'string' && !selectedOption ? <option value={selectedModel} disabled>{selection.model} (unavailable)</option> : null}
             {inferenceOptions?.options.map(option => <option key={`${option.provider}:${option.model}`} value={`${option.provider}:${option.model}`}>{option.label}</option>)}
           </select></label>
-          <label>Reasoning<select aria-label="Reasoning for this prompt" value={reasoningEffort ?? ''} disabled={busy || preflighting || !selectedOption} onChange={(event) => {
-            if (typeof selection !== 'string' && selectedOption?.reasoningEfforts.includes(event.target.value as ReasoningEffort)) {
+          <label>Reasoning<select aria-label="Reasoning for this prompt" value={reasoningEffort ?? ''} disabled={busy || preflighting || !selectedOption || selectedOption.provider === 'anthropic' || (typeof selection !== 'string' && selection.provider === 'anthropic')} onChange={(event) => {
+            if (typeof selection !== 'string' && selection.provider !== 'anthropic' && selectedOption?.provider !== 'anthropic' && selectedOption?.reasoningEfforts.includes(event.target.value as ReasoningEffort)) {
               preference.select({ ...selection, reasoningEffort: event.target.value as ReasoningEffort }); setPreflightError('');
             }
           }}>
-            {!reasoningEffort ? <option value="">Session default (not guaranteed)</option> : null}
-            {reasoningEffort && !selectedOption?.reasoningEfforts.includes(reasoningEffort) ? <option value={reasoningEffort} disabled>{reasoningEffort} (unsupported)</option> : null}
-            {(selectedOption?.reasoningEfforts ?? []).map(effort => <option key={effort} value={effort}>{effort}</option>)}
+            {selectedOption?.provider === 'anthropic' || (typeof selection !== 'string' && selection.provider === 'anthropic')
+              ? <option value="">Provider default</option>
+              : <>
+                {!reasoningEffort ? <option value="">Session default (not guaranteed)</option> : null}
+                {reasoningEffort && !selectedOption?.reasoningEfforts.includes(reasoningEffort) ? <option value={reasoningEffort} disabled>{reasoningEffort} (unsupported)</option> : null}
+                {(selectedOption?.reasoningEfforts ?? []).map(effort => <option key={effort} value={effort}>{effort}</option>)}
+              </>}
           </select></label>
           <p>Preflight request for this chat, saved only in this browser. Offered efforts are requests; execution is confirmed only by the current run receipt. Inherit uses session routing without a guaranteed effort.</p>
           {inferenceOptions?.catalog ? <ModelCatalogView catalog={inferenceOptions.catalog} options={inferenceOptions.options} disabled={busy || preflighting || inventoryBusy} onSelect={chooseModel} /> : null}
