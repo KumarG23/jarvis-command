@@ -1,3 +1,4 @@
+import { ReactionStore } from './reaction-store';
 import { createPushService } from './push-service';
 import { AuditLedger } from './audit-ledger';
 import { createCommandProxyClient } from './command-client';
@@ -90,6 +91,8 @@ export function createCommandServer(
     liveRoom = createLiveRoomService({
       client,
       ledger,
+      reactions: new ReactionStore(dirname(config.command.auditLogPath)),
+      reactionsEnabled: config.reactionsEnabled,
       notify: notifications ? createRunNotifier(notifications, push) : undefined,
       resolveImages: artifactStore
         ? createArtifactImageResolver(artifactStore)

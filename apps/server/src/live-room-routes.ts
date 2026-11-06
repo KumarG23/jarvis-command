@@ -1,3 +1,4 @@
+import { ReactionTargetSchema, ReactionMutationSchema } from '@jarvis-command/contracts';
 import { projectSendSnapshot, type ProjectRoom } from '@jarvis-command/contracts';
 import { createProjectRosterReader } from './project-roster';
 import { Readable } from 'node:stream';
@@ -284,6 +285,10 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
       const { sessionId, clientRequestId } = parse(LiveRunSubmissionRequestSchema.pick({ sessionId: true, clientRequestId: true }), request.params);
       return dependencies.liveRoom!.lookupRunRequest(subjects.get(request)!, sessionId, clientRequestId);
     });
+    routes.post('/api/live/reactions/read', { bodyLimit: 1024 }, async (request) =>
+      dependencies.liveRoom!.getReactions(subjects.get(request)!, parse(ReactionTargetSchema, request.body)));
+    routes.post('/api/live/reactions/mutate', { bodyLimit: 1024 }, async (request) =>
+      dependencies.liveRoom!.mutateReaction(subjects.get(request)!, parse(ReactionMutationSchema, request.body)));
     routes.post('/api/live/runs', async (request) => dependencies.liveRoom!.submitRun(
       subjects.get(request)!, parse(LiveRunSubmissionRequestSchema, request.body),
     ));
