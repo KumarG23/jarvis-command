@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { ProjectRoomSchema, ProjectThreadUpdateSchema } from './project-rooms';
+import { ProjectRoomsSchema, ProjectDeleteRequestSchema, ProjectRoomSchema, ProjectThreadUpdateSchema } from './project-rooms';
 
 const id = 'jc_' + 'a'.repeat(32), other = 'jc_' + 'b'.repeat(32);
 const legacy = { id: 'room_' + 'c'.repeat(32), name: 'Fixture', goal: 'Preserve', instructions: 'Keep', repository: '/ref', notes: ['note'], sessionIds: [id], lastSessionId: id };
@@ -25,4 +25,12 @@ it('bounds narrow updates and rejects ids, timestamps, unknown fields and empty 
     expect(ProjectThreadUpdateSchema.safeParse(body).success).toBe(false);
   }
   expect(ProjectThreadUpdateSchema.parse({ title: '  New title  ' })).toEqual({ title: 'New title' });
+});
+
+it('keeps tombstones distinct from live rooms and rejects unsupported deletion payloads', () => {
+  expect(ProjectRoomsSchema.safeParse({ version: 1, rooms: [legacy], deletedRoomIds: [legacy.id] }).success).toBe(false);
+  expect(ProjectRoomsSchema.safeParse({ version: 1, rooms: [], deletedRoomIds: [legacy.id, legacy.id] }).success).toBe(false);
+  const request = { roomId: legacy.id, token: 'a'.repeat(64), mode: 'project-only' };
+  expect(ProjectDeleteRequestSchema.safeParse(request).success).toBe(true);
+  expect(ProjectDeleteRequestSchema.safeParse({ ...request, mode: 'contents' }).success).toBe(false);
 });

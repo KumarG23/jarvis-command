@@ -19,6 +19,8 @@ const PUBLIC_RUN_ID = /^jcr_[a-f0-9]{32}$/;
 const UPSTREAM_RUN_ID = /^run_[a-f0-9]{32}$/;
 
 const AuditActionSchema = z.enum([
+  'project.delete.requested',
+  'project.deleted',
   'session.created',
   'session.continued',
   'session.delete.requested',

@@ -143,6 +143,13 @@ export class ArtifactStore {
     await this.#ready;
   }
 
+  public async projectArtifactIds(projectId: string): Promise<string[]> {
+    await this.init();
+    const entries = await readdir(this.#artifactsRoot, { withFileTypes: true });
+    const rows = await Promise.all(entries.filter(entry => entry.isDirectory() && ArtifactIdSchema.safeParse(entry.name).success).map(entry => this.readMetadata(entry.name)));
+    return rows.filter(row => row.projectId === projectId).map(row => row.id).sort();
+  }
+
   public async list(filters: Readonly<{ sessionId?: string; projectId?: string; type?: ArtifactType; search?: string; limit: number }>): Promise<ArtifactSummary[]> {
     await this.init();
     const ids = (await readdir(this.#artifactsRoot, { withFileTypes: true }).catch((error: NodeJS.ErrnoException) => {
