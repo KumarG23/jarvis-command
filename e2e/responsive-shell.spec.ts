@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { handlePresence } from './presence-route';
 
 // Owned local fixtures only. Every API is intercepted; no Hermes or inference.
 const sessionId = 'jc_' + 'e'.repeat(32);
@@ -10,6 +11,7 @@ test('requested picker, unavailable panels, drawer Back and readable responsive 
   test.setTimeout(90000);
   const unexpected: string[] = [];
   await page.route('**/api/**', route => {
+    if (handlePresence(route)) return;
     const req = route.request(), url = new URL(req.url()), path = url.pathname;
     if (req.method() !== 'GET') { unexpected.push(req.method() + ' ' + path); return route.abort(); }
     if (path.endsWith('/messages')) {
