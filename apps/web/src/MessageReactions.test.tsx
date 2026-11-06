@@ -73,7 +73,7 @@ it('keeps delayed A reads out of session B and bounds concurrent requests withou
   f.fetcher.mockImplementationOnce(() => gate.read('A', () => Response.json({})));
   const view = render(<Harness />); fireEvent.click(screen.getByRole('button', { name: 'Reactions' }));
   view.rerender(<Harness id={otherSession.id} />);
-  expect(screen.getByRole('button', { name: 'Reactions' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Reactions' })).toBeEnabled();
   expect(screen.queryByRole('button', { name: 'Remove Thumbs up reaction' })).toBeNull();
   await act(async () => gate.resolve('A', Response.json({ sessionId: session.id, messageId: target.messageId, emojis: ['👍'] })));
   expect(f.fetcher).toHaveBeenCalledTimes(1); expect(screen.queryByRole('button', { name: 'Remove Thumbs up reaction' })).toBeNull();
@@ -120,4 +120,64 @@ it('exposes controls only on eligible durable exact A/B rows, keeps repeated tex
   expect(JSON.parse(f.fetcher.mock.calls.find(([url]) => url.includes('/reactions/'))![1]!.body as string)).toEqual({ sessionId: session.id, messageId: 'stored:A', offset: 0 });
   view.rerender(<History available={false} />); expect(screen.queryByRole('button', { name: 'Reactions' })).toBeNull(); expect(screen.getByText('Reactions unavailable on this server.')).toBeVisible();
   view.rerender(<History external />); await screen.findByText('Reactions unavailable in read-only chats.'); expect(screen.queryByRole('button', { name: 'Reactions' })).toBeNull();
+});
+
+it('uses the loaded page offset for durable B while leaving transient turn output without controls', async () => {
+  const f = fixture(); const first = Array.from({ length: 50 }, (_, index) => ({ ...messages[0]!, id: `first:${index}` }));
+  f.fetcher.mockImplementation(async (url, init) => {
+    if (url.includes('/messages?')) {
+      const offset = Number(new URL(url, 'http://fixture').searchParams.get('offset'));
+      return Response.json({ sessionId: session.id, messages: offset ? messages : first, pagination: { limit: 50, offset, returned: offset ? 2 : 50, hasMore: !offset } });
+    }
+    if (url.endsWith('/read')) { const body = JSON.parse(init?.body as string); return Response.json({ sessionId: body.sessionId, messageId: body.messageId, emojis: [] }); }
+    return Response.json({});
+  });
+  function Paged() {
+    const client = useMessageReactions();
+    return <LiveRoom session={session} reactions={client} reactionsAvailable onHistory={() => {}} />;
+  }
+  const view = render(<Paged />); fireEvent.click(await screen.findByRole('button', { name: 'Load more messages' }));
+  await waitFor(() => expect(document.querySelector('[data-message-id="stored:B"]')).not.toBeNull());
+  fireEvent.click(within(document.querySelector('[data-message-id="stored:B"]') as HTMLElement).getByRole('button', { name: 'Reactions' }));
+  await screen.findByRole('button', { name: 'Thumbs up' });
+  const reads = f.fetcher.mock.calls.filter(([url]) => url.endsWith('/read'));
+  expect(reads).toHaveLength(1); expect(JSON.parse(reads[0]![1]!.body as string)).toEqual({ ...target, messageId: 'stored:B', offset: 50 });
+  view.unmount();
+  const { TurnView } = await import('./TurnView');
+  render(<TurnView turn={{ intent: { sessionId: session.id, clientRequestId: 'synthetic-transient', input: 'Unconfirmed input' }, publicRunId: null, phase: 'Working', done: false, output: 'Transient answer', outputLimited: false, historyMatched: false, identityVerified: true, approval: null, events: [] }} allowed={false} approve={vi.fn()} stop={vi.fn()} />);
+  expect(screen.queryByRole('button', { name: 'Reactions' })).toBeNull();
+});
+
+it('the shell capability wires saved-message controls without changing draft, presence or admitting any work', async () => {
+  const { App } = await import('./App');
+  sessionStorage.setItem('jarvis-command:selected-session:v1', session.id);
+  vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+  const f = fixture(); const calls: string[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    calls.push(`${init?.method ?? 'GET'} ${url}`);
+    if (url.startsWith('/api/live/reactions/')) return f.fetcher(url, init);
+    if (url === '/api/notifications/presence') return new Response(null, { status: 204 });
+    if (init?.method && init.method !== 'GET') throw Error(`Unexpected write ${url}`);
+    if (url === '/api/rooms') return Response.json({ version: 1, rooms: [] });
+    if (url === '/api/notifications') return Response.json({ version: 1, items: [], unreadCount: 0, preferences: { categories: { 'run-completed': true, 'run-failed': true, approval: true } }, delivery: { inApp: 'available', push: 'unavailable', externalSurfaces: 'unavailable' } });
+    if (url.includes('/messages?')) return Response.json({ sessionId: session.id, messages, pagination: { limit: 50, offset: 0, returned: 2, hasMore: false } });
+    if (url.endsWith('/context')) return Response.json({ sessionId: session.id, state: 'unavailable', receipt: null, updatedAt: null });
+    if (url === '/api/live/model-options') return Response.json({ default: { provider: 'openai-codex', model: 'gpt-6-sol' }, options: [] });
+    if (url === '/api/live/session-controls') return Response.json({ sessionForkPreservesSource: false, sessionCompactionRuns: false });
+    if (url === `/api/live/sessions/${session.id}`) return Response.json({ session });
+    throw Error(`Unexpected read ${url}`);
+  }));
+  render(<App loadBootstrap={async () => ({ identity: { provider: 'development' }, command: { version: 'SYNTHETIC', environment: 'test', generatedAt: session.lastActive, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 16000, maxSteerCharacters: 4000 } }, hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse', 'message_reactions'], readinessChecks: {} }, sessions: [session] })} />);
+  await screen.findAllByRole('button', { name: 'Reactions' });
+  await waitFor(() => expect(calls).toContain('POST /api/notifications/presence'));
+  const presence = calls.filter(call => call === 'POST /api/notifications/presence').length;
+  const composer = screen.getByRole('textbox', { name: 'Message Jarvis' }); fireEvent.change(composer, { target: { value: 'SYNTHETIC unsent draft' } });
+  const a = within(document.querySelector('[data-message-id="stored:A"]') as HTMLElement);
+  fireEvent.click(a.getByRole('button', { name: 'Reactions' }));
+  await waitFor(() => expect(a.getByRole('button', { name: 'Heart' })).toBeEnabled());
+  fireEvent.click(a.getByRole('button', { name: 'Heart' }));
+  await waitFor(() => expect(a.getByRole('button', { name: 'Heart' })).toHaveAttribute('aria-pressed', 'true'));
+  expect(composer).toHaveValue('SYNTHETIC unsent draft');
+  expect(calls.filter(call => call === 'POST /api/notifications/presence')).toHaveLength(presence);
+  expect(calls.filter(call => call.startsWith('POST ') && !call.startsWith('POST /api/live/reactions/') && call !== 'POST /api/notifications/presence')).toEqual([]);
 });
