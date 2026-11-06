@@ -18,7 +18,7 @@ async function request(path: string, body?: unknown) {
   if (!response.ok) throw Error('Project operation could not be confirmed. Reload projects before retrying; the change may already have been saved.');
   return response.json() as Promise<unknown>;
 }
-export type ProjectRoomsHandle = { readback: (room: ProjectRoom) => void; openDetails: (opener?: HTMLElement) => void; closeDetails: () => void; focusSearch: () => void; selectChat: (session: SessionSummary) => boolean; openLinkedChat: (room: ProjectRoom, session: SessionSummary) => boolean; adoptSession: (session: SessionSummary) => Promise<void> };
+export type ProjectRoomsHandle = { readback: (room: ProjectRoom) => void; openDetails: (opener?: HTMLElement) => void; openThreads: (opener: HTMLElement) => void; focusDetails: () => void; closeDetails: () => void; focusSearch: () => void; selectChat: (session: SessionSummary) => boolean; openLinkedChat: (room: ProjectRoom, session: SessionSummary) => boolean; adoptSession: (session: SessionSummary) => Promise<void> };
 type Props = Readonly<{
   ref?: Ref<ProjectRoomsHandle>;
   sessions: SessionSummary[];
@@ -41,6 +41,8 @@ export function ProjectRooms({ ref, sessions, threadStatuses, selectedSessionId,
   const [selected, setSelected] = useState<ProjectRoom | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const [threadsRequest, setThreadsRequest] = useState(0);
+  const roster = useRef<HTMLElement | null>(null);
   const [creatingRoom, setCreatingRoom] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -90,14 +92,23 @@ export function ProjectRooms({ ref, sessions, threadStatuses, selectedSessionId,
   const roomCreation = useRef({ name: '', goal: '', instructions: '', repository: '', notes: '' });
   useEffect(() => { onProjectChange?.(busy ? null : selected); }, [selected, busy, onProjectChange]);
   useEffect(() => { callbacks.current.onOpenChange?.(open); if (open) closeButton.current?.focus(); }, [open]);
+  function focusDetails() {
+    if (threadsRequest && roster.current) {
+      roster.current.scrollIntoView({ block: 'start' });
+      roster.current.focus({ preventScroll: true });
+    } else closeButton.current?.focus();
+  }
+  useEffect(() => { if (open && threadsRequest) focusDetails(); }, [open, threadsRequest]);
   function closeDrawer() {
     setOpen(false); opener.current?.focus();
     if (opener.current && !opener.current.getClientRects().length) callbacks.current.onNavigate?.();
   }
-  function showDetails(element?: HTMLElement, create = false) { opener.current = element ?? null; setCreatingRoom(create); setOpen(true); }
+  function showDetails(element?: HTMLElement, create = false) { setThreadsRequest(0); opener.current = element ?? null; setCreatingRoom(create); setOpen(true); }
   useImperativeHandle(ref, () => ({
     readback: room => { if (selected?.id === room.id) { callbacks.current.onScope(room.name); setSelected(room); setRooms(previous => previous.map(item => item.id === room.id ? room : item)); } },
+    focusDetails,
     openDetails: element => showDetails(element),
+    openThreads: element => { opener.current = element; setCreatingRoom(false); setOpen(true); setThreadsRequest(value => value + 1); },
     closeDetails: closeDrawer,
     focusSearch: () => search.current?.focus(),
     selectChat: session => { if (draft || working.current) return false; void perform(() => chooseChat(session)); return true; },
@@ -329,7 +340,7 @@ export function ProjectRooms({ ref, sessions, threadStatuses, selectedSessionId,
         <button className="secondary-button" type="button" disabled={busy} onClick={() => void perform(async () => { await saveMetadata(selected.id, { name: selected.name, goal: selected.goal, repository: selected.repository, notes: selected.notes, instructions: selected.instructions ?? '', archived: !selected.archived }); })}>{selected.archived ? 'Restore project' : 'Archive project'}</button>
         {selected.archived ? <p role="status">Archived project — restore before sending new project messages.</p> : null}
         <section><h4>Standing instructions</h4><p className="project-goal">{selected.instructions || 'No standing instructions saved.'}</p><p className="muted small">Saved context is included as ordinary text in each new project message. Review the complete context at the composer.</p></section>
-        <section aria-label="Project threads"><h4>Lead and threads</h4>
+        <section ref={roster} tabIndex={-1} aria-label="Project threads"><h4>Lead and threads</h4>
           <p className="muted small">Titles and archive are saved for this project. Archiving keeps the same Hermes chat. Tracked dates show when Command added thread metadata.</p>
           {selected.leadSessionId ? <button className="secondary-button" type="button" disabled={busy} onClick={() => void perform(async () => { await attach(selected.leadSessionId!); closeDrawer(); callbacks.current.onNavigate?.(); })}>Open lead: {threadTitle(selected, selected.leadSessionId)}</button> : <p>No lead designated. Choose a writable Command chat below.</p>}
           {[false, true].map(archived => <div key={String(archived)}>
