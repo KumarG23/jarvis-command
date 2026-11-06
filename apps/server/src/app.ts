@@ -163,6 +163,12 @@ export function buildApp(dependencies: AppDependencies) {
     if (liveRoomEnabled) {
       try { await dependencies.checkLiveRoom?.(); } catch { liveRoomEnabled = false; }
     }
+    const capabilities = [...new Set([
+      ...snapshot.capabilities.filter(capability => capability !== 'message_reactions'),
+      ...(dependencies.config.artifacts.enabled ? ['artifact_studio'] : []),
+    ])];
+    // An optional UI capability must not overflow the existing bootstrap contract.
+    if (liveRoomEnabled && dependencies.config.reactionsEnabled && capabilities.length < 100) capabilities.push('message_reactions');
     const payload: CommandBootstrap = {
       identity: { provider: verifiedIdentity.provider },
       command: {
@@ -184,9 +190,7 @@ export function buildApp(dependencies: AppDependencies) {
         provider: snapshot.provider,
         gatewayState: snapshot.gatewayState,
         activeAgents: snapshot.activeAgents,
-        capabilities: dependencies.config.artifacts.enabled
-          ? [...new Set([...snapshot.capabilities, 'artifact_studio'])]
-          : snapshot.capabilities,
+        capabilities,
         readinessChecks: snapshot.readinessChecks,
       },
       sessions: snapshot.sessions,

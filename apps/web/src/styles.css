@@ -589,4 +589,21 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 .project-identity-settings legend { color: var(--text); font-size: 13px; }
 .project-identity-settings select { min-height: 44px; }
 
+/* Saved-message feedback stays in the scrollable transcript, above the composer. */
+.message-reactions { margin-top: 8px; font-size: 12px; }
+.reaction-chips, .reaction-options, .reaction-picker-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.reaction-chip { min-width: 44px; min-height: 44px; padding: 6px 9px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
+.reaction-chip[aria-pressed="true"] { border-color: var(--cyan); background: #193029; }
+.reaction-chip:disabled { opacity: .6; cursor: default; }
+.reaction-picker { display: flex; flex-direction: column; margin-top: 6px; padding: 6px; max-height: min(260px, 45dvh); overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+.reaction-picker-heading { flex: 0 0 auto; justify-content: space-between; }
+.reaction-picker-content { min-height: 44px; overflow-y: auto; }
+.reaction-options .reaction-chip { display: inline-flex; align-items: center; gap: 6px; }
+.reaction-note { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.reaction-picker p { margin: 6px 0; }
 .history-message[data-reply-focus='true'] { outline: 2px solid var(--accent, #7dd3fc); outline-offset: 4px; border-radius: 10px; }
+
+@media (max-height: 500px) {
+  .command-main:has(.reaction-picker) .composer-wrap { max-height: 26dvh; flex-shrink: 1; overflow-y: auto; padding-block: 4px; }
+  .command-main:has(.reaction-picker) .timeline { padding-block: 4px; }
+}
