@@ -56,3 +56,14 @@ milestones:
     title: Model catalog
     acceptance:
       - Every selectable model is advertised, authenticated and on the existing approved eligibility allowlist; other entries remain unavailable with a reason, with no paid fallback or credential exposure (§10 P10; §12 model-selection scenario).
+# Owner reopened only these two slices; original dispositions above stand. Authority: MASTER_PLAN §0.2 / https://github.com/KumarG23/jarvis-command/issues/20#issuecomment-6689706582
+# P9.5: Source built/tested; lead release/live acceptance and phone check pending. Evidence: §11 P9.5 / docs/verification/issue-94.md
+  - id: P9_5
+    title: Threads entry point
+    acceptance:
+      - A persistent top-right project-chat Threads control opens the existing truthful roster and preserves attach/split, validated links, per-chat drafts and owned-run recovery at desktop, 320–430 px and short keyboard viewports (§10 P9.5; §12 mobile/recovery scenarios).
+# P10.4: Reopened; engineering follows accepted #94 amendment. Exact owner route authorization and proxy release boundary remain in MASTER_PLAN §0.2 / §10 P10.4.
+  - id: P10_4
+    title: Anthropic routes in the selector
+    acceptance:
+      - Only the three owner-authorized Anthropic routes become selectable with unchanged admission/model lock and truthful requested-versus-executed proof after lead establishes the documented proxy release path (§10 P10.4; §12 model-selection scenario).
