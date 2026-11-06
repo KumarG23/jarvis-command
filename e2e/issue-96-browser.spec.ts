@@ -1,15 +1,31 @@
-import { expect, test } from '@playwright/test';
+import { expect, test as base } from '@playwright/test';
 import { CommandBootstrapSchema } from '@jarvis-command/contracts';
 import { emptyInbox } from './empty-inbox';
 
-test('SYNTHETIC OpenRouter free selector stays honest at desktop, 360px and short keyboard height', async ({ playwright }) => {
+// Use the same owned-context lifecycle as the accepted #97 wrapper fixture.
+const test = base.extend({
+  browser: async ({ playwright }, use) => {
+    const endpoint = process.env.STUDIO_BROWSER_CDP_ENDPOINT;
+    if (!endpoint) throw Error('Run through the Studio browser QA wrapper');
+    const browser = await playwright.chromium.connectOverCDP(endpoint);
+    await use(browser);
+    // The shared browser stays running; the runner disconnects on exit.
+  },
+});
+
+test('SYNTHETIC OpenRouter free selector stays honest at desktop, 360px and short keyboard height', async ({ page, context }, info) => {
   test.setTimeout(90_000);
-  const endpoint = process.env.STUDIO_BROWSER_CDP_ENDPOINT;
-  if (!endpoint) throw Error('Run through the Studio browser QA wrapper');
-  const browser = await playwright.chromium.connectOverCDP(endpoint);
-  const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, serviceWorkers: 'block' });
+  const diagnostics: unknown[] = [];
+  const requests: string[] = [];
+  const errors: string[] = [];
   try {
-    const page = await context.newPage();
+    await page.setViewportSize({ width: 1280, height: 720 });
+    page.on('pageerror', error => errors.push(error.message));
+    page.on('console', message => { if (message.type() === 'error') diagnostics.push({ console: message.text() }); });
+    page.on('response', response => {
+      const path = new URL(response.url()).pathname;
+      if (path.startsWith('/api/')) diagnostics.push({ path, status: response.status() });
+    });
     const sessionId = `jc_${'9'.repeat(32)}`;
     const runId = `jcr_${'8'.repeat(32)}`;
     const timestamp = '2026-11-06T18:00:00.000Z';
@@ -25,7 +41,6 @@ test('SYNTHETIC OpenRouter free selector stays honest at desktop, 360px and shor
     const freeEntry = { provider: free.provider, model: free.model, advertised: true, authenticated: true, eligible: true, selectable: true, unavailableReason: null };
     const catalog = { entries: [freeEntry, paid], advertisedCount: 2, returned: 2, truncated: false };
     const unexpected: string[] = [];
-    const requests: string[] = [];
     let inventoryReads = 0;
     const posts: Record<string, unknown>[] = [];
     await page.route('**/api/**', async route => {
@@ -60,8 +75,12 @@ test('SYNTHETIC OpenRouter free selector stays honest at desktop, 360px and shor
       if (!(path in responses)) { unexpected.push(path); return route.abort(); }
       return json(responses[path]);
     });
-    await page.goto('http://127.0.0.1:3197/');
-    await expect.poll(() => requests).toContain('GET /api/bootstrap');
+    const bootstrapResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/bootstrap');
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 10_000 });
+    const response = await bootstrapResponse;
+    expect(response.status()).toBe(200);
+    expect(CommandBootstrapSchema.safeParse(await response.json()).success).toBe(true);
+    await expect(page.getByText('Development preview · SYNTHETIC issue-96 fixture', { exact: true })).toBeVisible();
     const chat = page.getByRole('button', { name: session.title, exact: true });
     if (!(await chat.isVisible())) await page.getByRole('button', { name: 'Open chat navigation' }).click();
     await chat.click();
@@ -89,12 +108,15 @@ test('SYNTHETIC OpenRouter free selector stays honest at desktop, 360px and shor
     await expect(page.getByText('Model choices unavailable. Retry choices before sending this request, or explicitly choose Inherit.')).toBeVisible();
     await expect(draft).toHaveValue('SYNTHETIC issue-96 draft');
     expect(posts).toHaveLength(0);
+    // Send is outside the picker and dismisses it; retry is inside the picker.
+    await picker.click();
     await page.getByRole('button', { name: 'Retry model choices', exact: true }).click();
     await expect.poll(() => inventoryReads).toBeGreaterThanOrEqual(3);
     await page.getByRole('button', { name: 'Send message', exact: true }).click();
     await expect.poll(() => posts).toHaveLength(1);
     await expect(draft).toHaveValue('');
 
+    await picker.click();
     for (const [width, height] of [[1280, 720], [360, 740], [360, 360]] as const) {
       await page.setViewportSize({ width, height });
       await expect(catalogRegion).toBeVisible();
@@ -109,8 +131,12 @@ test('SYNTHETIC OpenRouter free selector stays honest at desktop, 360px and shor
       await picker.click();
     }
     expect(unexpected).toEqual([]);
+    expect(errors).toEqual([]);
   } finally {
+    await info.attach('synthetic-network-diagnostic', { body: JSON.stringify({ diagnostics, requests, errors }), contentType: 'application/json' });
+    console.log('SYNTHETIC network diagnostic', JSON.stringify({ diagnostics, requests, errors }));
     await context.close();
-    // The shared browser belongs to Studio; never close it from this test.
+    expect(context.pages()).toHaveLength(0);
+    console.log('SYNTHETIC owned context closed');
   }
 });

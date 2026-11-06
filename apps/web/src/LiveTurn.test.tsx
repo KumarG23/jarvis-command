@@ -262,7 +262,9 @@ it('creates an artifact with Jarvis only from the exact successful terminal run'
   });
   expect(saveBody.sourceRequestId).toMatch(/^gen_[a-f0-9]{32}$/);
   await screen.findByText('Response saved as artifact.');
-  expect(sessionStorage.getItem(appStorageKey('jarvis-command:artifact-generation:v1'))).toBeNull();
+  // The saved message does not guarantee App's persistence effect has run.
+  // Observe generation storage cleanup separately.
+  await waitFor(() => expect(sessionStorage.getItem(appStorageKey('jarvis-command:artifact-generation:v1'))).toBeNull());
 });
 
 it('recovers a pending Jarvis artifact generation after reload and saves the matching completed run', async () => {
