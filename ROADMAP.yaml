@@ -73,7 +73,7 @@ milestones:
     title: OpenRouter free routes
     acceptance:
       - Only authenticated advertised OpenRouter ids ending exactly in :free become eligible, with unchanged model lock/admission and honest route/error proof; paid/lookalike routes remain rejected (§10 P10.5).
-# P11: Reader bridge PR116 is merged and its compatible rollback image was authenticated-readback verified; PR110 identity writer remains unmerged and executed-model marks pending. Phone check pending. §11 P11 / #97 readback 6693216005.
+# P11: PR110 identity source merged/released at 10fa3ee; actual deployed app 28f30500…, rollback release-app-1793994255383408242 restores compatible reader 0a2881af…. Latest #97 writer readback remains in progress; model marks and phone check pending. §11 P11 / review 6693817583 / #97 handoff 6693855810.
   - id: P11
     title: Visual identity
     acceptance:
@@ -83,7 +83,7 @@ milestones:
     title: Message reactions
     acceptance:
       - Durable audited user reactions enter the next explicit run as bounded deduplicated context; verified phase 2 markers require exact target binding; no reaction admits a run or approval (§10 P12).
-# P6.1: #99 Sonnet source in progress behind disabled controls. Exact final-message binding remains unsupported; production secret/enablement, live readback and physical Pixel acceptance are separate prerequisites. §11 P6.1.
+# P6.1: PR119 repaired reader reviewed at 114d092, but current combined-base gate/merge/release/readback remain pending. PR120 disabled writer remains unreviewed/unmerged/unreleased; exact binding Unsupported; secret/enablement and physical Pixel steps remain separate. §11 P6.1 / PR119 review 6693868076 / #99 capability 6693511377.
   - id: P6_1
     title: Reply notifications
     acceptance:
