@@ -369,10 +369,27 @@ it('rejects project changes during roster reads instead of returning stale membe
   await app.close();
 });
 
+it('persists identity through metadata edits, restart, and retained deletion preview without upstream work', async () => {
+  const upstream = vi.fn(); const { make } = await fixture(upstream); const app = make();
+  const identity = { projectIcon: 'orbit', projectColor: 'violet' };
+  const room = (await app.inject({ method: 'POST', url: '/api/rooms', headers, payload: { ...metadata, ...identity } })).json().room;
+  expect(room).toMatchObject(identity);
+  const url = `/api/rooms/${room.id}`;
+  const preview = await app.inject({ url: `${url}/deletion`, headers });
+  expect(preview.statusCode).toBe(200); expect(preview.json().enabled).toBe(false);
+  for (const fields of [{ projectIcon: 'unbounded' }, { projectColor: '#fff' }, { projectIcon: null }]) {
+    expect((await app.inject({ method: 'POST', url, headers, payload: { ...metadata, ...fields } })).statusCode).toBe(400);
+  }
+  expect((await app.inject({ method: 'POST', url, headers, payload: { ...metadata, name: 'Renamed', archived: true } })).json().room).toMatchObject(identity);
+  await app.close(); const restarted = make();
+  expect((await restarted.inject({ url: '/api/rooms', headers })).json().rooms[0]).toMatchObject({ ...identity, name: 'Renamed', archived: true });
+  expect(upstream).not.toHaveBeenCalled(); await restarted.close();
+});
+
 it.each([
   { projectIcon: 'orbit', projectColor: 'violet' },
   { projectIcon: 'future-glyph', projectColor: 'future-accent' },
-])('reader bridge preserves writer identity through legacy edit/archive/restart and refuses identity writes: %j', async identity => {
+])('preserves bridge identity through legacy edit/archive/restart and bounds identity writes: %j', async identity => {
   const upstream = vi.fn(); const { root, make } = await fixture(upstream);
   const id = `room_${'d'.repeat(32)}`, legacyId = `room_${'e'.repeat(32)}`;
   const stored = { ...metadata, ...identity, id, sessionIds: [], lastSessionId: null };
@@ -383,7 +400,7 @@ it.each([
   const app = make();
   expect((await app.inject({ url: '/api/rooms', headers })).json().rooms).toEqual([stored, legacy]);
   const before = await readFile(path);
-  for (const fields of [identity, { projectIcon: 'spark' }, { projectColor: 'amber' }, { projectIcon: 'x'.repeat(33) }, { projectColor: null }]) {
+  for (const fields of [{ projectIcon: 'future-glyph' }, { projectColor: 'future-accent' }, { projectIcon: 'x'.repeat(33) }, { projectColor: null }]) {
     for (const url of ['/api/rooms', `/api/rooms/${id}`]) {
       expect((await app.inject({ method: 'POST', url, headers, payload: { ...metadata, ...fields } })).statusCode).toBe(400);
     }
@@ -398,5 +415,14 @@ it.each([
   expect(restored.json().room).toEqual({ ...stored, ...edit, archived: false });
   const persisted = JSON.parse(await readFile(path, 'utf8'));
   expect(persisted).toEqual({ version: 1, rooms: [{ ...stored, ...edit, archived: false }, { ...legacy, ...edit }] });
+  // These choices were refused by the reader-only bridge. Both writer routes
+  // now accept known enum values while the invalid-write/unchanged-byte checks above stand.
+  for (const fields of [{ projectIcon: 'orbit', projectColor: 'violet' }, { projectIcon: 'spark' }, { projectColor: 'amber' }]) {
+    for (const url of ['/api/rooms', `/api/rooms/${id}`]) {
+      const response = await restarted.inject({ method: 'POST', url, headers, payload: { ...metadata, ...fields } });
+      expect(response.statusCode).toBe(200);
+      expect(response.json().room).toMatchObject(fields);
+    }
+  }
   expect(upstream).not.toHaveBeenCalled(); await restarted.close();
 });

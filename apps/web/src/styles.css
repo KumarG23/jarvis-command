@@ -575,3 +575,16 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 .project-delete-backdrop { z-index: 1000; padding: 12px; }
 .project-delete-dialog { max-height: calc(100dvh - 24px); overflow-y: auto; overflow-wrap: anywhere; }
 .project-delete-dialog button { min-height: 44px; }
+
+/* P11: bounded project accents; labels remain the primary identity cue. */
+:root { --project-green: #70d6a5; --project-blue: #8bbcf5; --project-violet: #c4a5f5; --project-amber: #e6ba66; }
+.project-identity { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 24px; width: 24px; height: 24px; border: 1px solid currentColor; border-radius: 6px; font-size: 18px; line-height: 1; color: var(--project-green); background: var(--panel); vertical-align: middle; }
+.project-identity::before { content: attr(data-glyph); }
+.project-identity[data-color="blue"] { color: var(--project-blue); }
+.project-identity[data-color="violet"] { color: var(--project-violet); }
+.project-identity[data-color="amber"] { color: var(--project-amber); }
+.room-breadcrumb > span .project-identity { margin-right: 7px; }
+.project-roster-heading { display: flex; align-items: center; gap: 8px; }
+.project-identity-settings { min-width: 0; margin: 0 0 20px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.project-identity-settings legend { color: var(--text); font-size: 13px; }
+.project-identity-settings select { min-height: 44px; }
