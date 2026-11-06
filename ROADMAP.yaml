@@ -62,7 +62,7 @@ milestones:
     title: Threads entry point
     acceptance:
       - A persistent top-right project-chat Threads control opens the existing truthful roster and preserves attach/split, validated links, per-chat drafts and owned-run recovery at desktop, 320–430 px and short keyboard viewports (§10 P9.5; §12 mobile/recovery scenarios).
-# P10.4: Source reviewed/gate-merged #106 at 6bf2584; app release pending. Proxy enablement/live route proof deferred; disabled default; MASTER_PLAN §11.
+# P10.4: Source reviewed/gate-merged #106 at 6bf2584; app deployed at 518b400, authenticated readback pending. Proxy enablement/live route proof deferred; disabled default; MASTER_PLAN §11.
   - id: P10_4
     title: Anthropic routes in the selector
     acceptance:
@@ -88,7 +88,7 @@ milestones:
     title: Reply notifications
     acceptance:
       - One sanitized assistant-reply push per durable final message, opt-out reply preview and authorized deep link; no run-state alerts, replay duplicates or external-session notifications (§10 P6.1).
-# P9.6: Source reviewed/gate-merged #107 at 518b400 after factory-binding repair; app release/readback pending. Disabled default; contents recovery unsupported/deferred; no live deletion.
+# P9.6: Source reviewed/gate-merged #107 and app deployed at 518b400 after factory-binding repair; authenticated readback pending. Disabled default; contents recovery unsupported/deferred; no live deletion.
   - id: P9_6
     title: Delete projects
     acceptance:
