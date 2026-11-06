@@ -93,3 +93,16 @@ milestones:
     title: Delete projects
     acceptance:
       - Confirm exact project/counts with delete-only default, optional owned contents deletion, external unlink-only, active-run refusal and snapshot/audit; preserve scope/recovery/restart consistency (§10 P9.6).
+# P13/P14/P14.1: awaiting the #114 canonical plan amendment; not implemented. Exact dispositions/evidence remain in §11.
+  - id: P13
+    title: Thread status, unread and per-thread model choice
+    acceptance:
+      - Existing Threads/project/chat surfaces use one accessible verified StatusIcon; per-actor last-read syncs without admission; exact per-thread routing is offered only when supported and eligible, otherwise unavailable (§10 P13; §12 state, authorization and model-selection scenarios).
+  - id: P14
+    title: Studio crew view, read-only
+    acceptance:
+      - Top-level Studio shows only an authoritative bounded sanitized projection, summary before redacted activity detail, with stale/unavailable truth; no shell, PTY, tmux, credentials or runtime control (§10 P14; §12 authorization and unavailable-state scenarios).
+  - id: P14_1
+    title: Studio steering, lead and planner only
+    acceptance:
+      - Confirmed audited bounded text directives use a proven existing owner-input intake, with observed Sent/Seen/Acted states and no extra wakeups, duplicate sends, invented endpoint or new authority (§10 P14.1; §12 authorization and recovery scenarios).
