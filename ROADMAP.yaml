@@ -78,7 +78,7 @@ milestones:
     title: Visual identity
     acceptance:
       - Restrained AA semantic accents and deterministic project icons use existing optional metadata; model-family marks use verified executed identity only, with desktop/360 px evidence (§10 P11).
-# P12: PR124 backend merged and present in deployed app 95a6823f…; REACTIONS_MODE disabled, reaction UI not in release, no live reaction proof. Phase1 UI/live and phone pending; phase2 staged, exact binding Unsupported. §11 P12 / release 6696144548.
+# P12: PR124 backend deployed in healthy app95a6823f… disabled; PR127 UI reviewed7576619/gate-merged7d96c78, final candidate2/2 six cases and readable picker images accepted. UI release/authenticated live proof pending, no live mutations; phase2 exact binding Unsupported, phone pending. §11 P12 / review6696938526 / packet6696991304.
   - id: P12
     title: Message reactions
     acceptance:
@@ -93,7 +93,7 @@ milestones:
     title: Delete projects
     acceptance:
       - Confirm exact project/counts with delete-only default, optional owned contents deletion, external unlink-only, active-run refusal and snapshot/audit; preserve scope/recovery/restart consistency (§10 P9.6).
-# P13/P14/P14.1: admitted by the plan amendment; staged, not implemented. Exact dispositions/evidence remain in §11.
+# P13: #111 source-admitted/ready for next work window at accepted7d96c78; no implementation or new worker yet. P14/#112 and P14.1/#113 remain staged in order. Exact dispositions/evidence remain in §11.
   - id: P13
     title: Thread status, unread and per-thread model choice
     acceptance:
