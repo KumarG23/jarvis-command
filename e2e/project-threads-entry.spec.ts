@@ -17,7 +17,7 @@ const timestamp = '2026-10-31T20:00:00.000Z';
 const sessions = ['a', 'b', 'c'].map((letter, i) => ({ id: `jc_${letter.repeat(32)}`, title: `SYNTHETIC Pane ${i}`, source: 'api_server', ownership: i === 2 ? 'external' : 'command', model: null, lastActive: timestamp, messageCount: 0, toolCallCount: 0, pinned: false }));
 const project = { id: `room_${'d'.repeat(32)}`, name: 'SYNTHETIC pane link', goal: 'SYNTHETIC read-only link proof', instructions: '', repository: '', notes: [], archived: false, sessionIds: sessions.map(session => session.id), lastSessionId: sessions[0]!.id, leadSessionId: sessions[0]!.id, threads: sessions.map((session, i) => ({ sessionId: session.id, title: session.title, archived: i === 1, createdAt: timestamp })) };
 
-for (const [width, height] of [[1280, 720], [320, 740], [360, 740], [390, 740], [430, 740], [320, 360], [430, 360]] as const) {
+for (const [width, height] of [[1280, 720], [1280, 360], [320, 740], [360, 740], [390, 740], [430, 740], [320, 360], [430, 360]] as const) {
   test.describe(`${width}x${height}`, () => {
   const device = devices[width === 1280 ? 'Desktop Chrome' : 'Pixel 7'];
   test.use({ isMobile: device.isMobile, hasTouch: device.hasTouch, userAgent: device.userAgent, deviceScaleFactor: device.deviceScaleFactor });
