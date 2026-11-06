@@ -55,8 +55,17 @@ it('preserves reply items, metadata and the reply preference across read-marking
   expect(saved.items[0]).toEqual({ ...replyItem, readAt: expect.any(String) });
   const restarted = await new NotificationStore(directory).read(actor);
   expect(restarted.items.map(item => item.category).sort()).toEqual(['assistant-reply', 'run-completed']);
+  // Bridge is preserve-only: an attempted toggle neither changes nor clears the stored value.
   await store.setPreferences(actor, { categories, showReplyText: true });
-  expect((await new NotificationStore(directory).read(actor)).preferences.showReplyText).toBe(true);
+  expect((await new NotificationStore(directory).read(actor)).preferences.showReplyText).toBe(false);
+});
+
+it.each([true, false])('never introduces the reply setting into a store that lacks it (input %s), by store or by route', async value => {
+  const { path, store } = await fixture([], { categories });
+  const before = JSON.parse(await readFile(path, 'utf8')).actors[actor].preferences;
+  await store.setPreferences(actor, { categories, showReplyText: value });
+  expect(JSON.parse(await readFile(path, 'utf8')).actors[actor].preferences).toEqual(before);
+  expect(before).toEqual({ categories });
 });
 
 it('keeps a store without the optional setting byte-compatible: no field is invented', async () => {
