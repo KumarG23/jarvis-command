@@ -159,7 +159,7 @@ export function NotificationsPane({ state, onOpen }: Readonly<{
         {preferences ? <fieldset className="notification-preferences">
           <legend className="visually-hidden">Record these events</legend>
           {(Object.keys(CATEGORY_LABELS) as NotificationCategory[]).map(category => <label key={category} className="notification-preference">
-            <input type="checkbox" checked={preferences.categories[category]} onChange={event => { setSaved(false); setDraft({ categories: { ...preferences.categories, [category]: event.target.checked } }); }} />
+            <input type="checkbox" checked={preferences.categories[category]} onChange={event => { setSaved(false); setDraft({ ...preferences, categories: { ...preferences.categories, [category]: event.target.checked } }); }} />
             <span>{CATEGORY_LABELS[category]}</span>
           </label>)}
         </fieldset> : null}
