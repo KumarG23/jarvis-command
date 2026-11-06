@@ -182,7 +182,7 @@ async function assertLayout(page: Page, testInfo: TestInfo, phase: string, lifec
   await page.evaluate(() => document.fonts.ready);
   const selectors = {
     header: '.command-header', title: '[aria-label="Selected session"]', project: '[aria-label="Selected project"]',
-    actions: '.header-actions', composer: '.composer-wrap', input: 'textarea[aria-label="Message Jarvis"]',
+    route: '.requested-route-slot summary', actions: '.header-actions', composer: '.composer-wrap', input: 'textarea[aria-label="Message Jarvis"]',
     ...(lifecycle ? { feedback: '.session-lifecycle-feedback' } : {}),
   };
   const geometry: Record<string, { x: number; y: number; width: number; height: number }> = {};
@@ -214,6 +214,18 @@ async function assertLayout(page: Page, testInfo: TestInfo, phase: string, lifec
       expect(intersects, `${name} intersects ${control}`).toBe(false);
     }
   }
+  const threads = page.getByRole('button', { name: 'Threads', exact: true });
+  const threadsBox = await box(threads);
+  expect(threadsBox.width, 'Threads touch width').toBeGreaterThanOrEqual(44);
+  expect(threadsBox.height, 'Threads touch height').toBeGreaterThanOrEqual(44);
+  expect(geometry.route.width, 'requested route touch width').toBeGreaterThanOrEqual(44);
+  expect(geometry.route.height, 'requested route touch height').toBeGreaterThanOrEqual(44);
+  for (const name of ['title', 'project', 'control:Threads']) {
+    const rect = geometry[name], route = geometry.route;
+    expect(rect.x < route.x + route.width && rect.x + rect.width > route.x
+      && rect.y < route.y + route.height && rect.y + rect.height > route.y,
+    `${name} intersects requested route`).toBe(false);
+  }
   // Feedback must wrap visibly rather than being clipped or reduced to a hidden status.
   if (lifecycle) {
     const feedback = page.locator('.session-lifecycle-feedback');
@@ -221,10 +233,11 @@ async function assertLayout(page: Page, testInfo: TestInfo, phase: string, lifec
   }
   expect(overflow, 'horizontal overflow').toBeLessThanOrEqual(1);
   // Trial clicks validate hit targets without invoking consequential operations.
-  const reachable = ['Open project details', 'Open Artifact Studio'];
+  const reachable = ['Threads', 'Open project details', 'Open Artifact Studio'];
   if (lifecycle !== 'running') reachable.push('Compact context', 'Fork chat');
   for (const name of reachable) await page.getByRole('button', { name, exact: true }).click({ trial: true });
   await page.locator('.health-button').click({ trial: true });
+  await page.locator('.requested-route-slot summary').click({ trial: true });
 }
 
 for (const viewport of [{ width: 320, height: 640 }, { width: 360, height: 360 }, { width: 360, height: 740 }, { width: 390, height: 844 }, { width: 430, height: 740 }, { width: 1280, height: 720 }]) {
