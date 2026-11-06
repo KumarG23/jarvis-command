@@ -181,3 +181,30 @@ it('the shell capability wires saved-message controls without changing draft, pr
   expect(calls.filter(call => call === 'POST /api/notifications/presence')).toHaveLength(presence);
   expect(calls.filter(call => call.startsWith('POST ') && !call.startsWith('POST /api/live/reactions/') && call !== 'POST /api/notifications/presence')).toEqual([]);
 });
+
+it('anchors an explicitly opened picker inside the conversation before its first choice can be hit', async () => {
+  fixture();
+  let anchored = false;
+  const rect = (top: number, height: number) => ({ x: 0, y: top, top, left: 0, right: 300, bottom: top + height, width: 300, height, toJSON: () => ({}) });
+  const scrolling = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'scrollIntoView');
+  const hitTest = Object.getOwnPropertyDescriptor(document, 'elementFromPoint');
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: function (this: HTMLElement) { if (this.classList.contains('reaction-picker')) anchored = true; } });
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+    if (this.classList.contains('timeline')) return rect(100, 120) as DOMRect;
+    const top = anchored ? 104 : -200;
+    if (this.classList.contains('reaction-picker')) return rect(top, 112) as DOMRect;
+    return rect(top + 44, 44) as DOMRect;
+  });
+  Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: (_x: number, y: number) => y >= 100 && y <= 220 ? screen.getByRole('button', { name: 'Thumbs up' }) : null });
+  try {
+    render(<section className="timeline"><Harness /></section>); await open();
+    const picker = screen.getByRole('group', { name: 'Choose reaction' }).getBoundingClientRect();
+    const choice = screen.getByRole('button', { name: 'Thumbs up' }); const box = choice.getBoundingClientRect();
+    expect(box.top).toBeGreaterThanOrEqual(Math.max(100, picker.top));
+    expect(box.bottom).toBeLessThanOrEqual(Math.min(220, picker.bottom));
+    expect(document.elementFromPoint(100, box.top + box.height / 2)).toBe(choice);
+  } finally {
+    if (scrolling) Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', scrolling); else Reflect.deleteProperty(HTMLElement.prototype, 'scrollIntoView');
+    if (hitTest) Object.defineProperty(document, 'elementFromPoint', hitTest); else Reflect.deleteProperty(document, 'elementFromPoint');
+  }
+});

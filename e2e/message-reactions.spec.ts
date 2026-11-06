@@ -1,4 +1,4 @@
-import { expect, test as base } from '@playwright/test';
+import { expect, test as base, type Locator } from '@playwright/test';
 import { ReactionMutationSchema, ReactionTargetSchema } from '@jarvis-command/contracts';
 import { emptyInbox } from './empty-inbox';
 import { handlePresence } from './presence-route';
@@ -12,6 +12,31 @@ const test = base.extend({
     await use(browser); // The connection ends on process exit; leave Chrome and discovery tabs running.
   },
 });
+// evaluate() never invokes Playwright's implicit scroll. Check the clipped conversation
+// and picker scrollport as well as the screen, then verify the actual pointer hit.
+async function assertReachable(action: Locator) {
+  const result = await action.evaluate(element => {
+    const box = element.getBoundingClientRect();
+    const conversation = element.closest('.timeline')!.getBoundingClientRect();
+    const panel = element.closest('.reaction-picker')!.getBoundingClientRect();
+    const port = element.closest('.reaction-picker-content')?.getBoundingClientRect() ?? panel;
+    const top = Math.max(0, conversation.top, panel.top, port.top);
+    const bottom = Math.min(innerHeight, conversation.bottom, panel.bottom, port.bottom);
+    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+    return { visible: box.top >= top - 1 && box.bottom <= bottom + 1, hit: !!hit && element.contains(hit), height: box.height };
+  });
+  expect(result.visible, 'action must fit both conversation and picker scrollport vertically').toBe(true);
+  expect(result.hit, 'visible action must receive a hit without implicit scrolling').toBe(true);
+  expect(result.height).toBeGreaterThanOrEqual(44);
+}
+async function revealInsidePicker(action: Locator) {
+  await action.evaluate(element => {
+    const port = element.closest<HTMLElement>('.reaction-picker-content');
+    if (port) port.scrollTop += element.getBoundingClientRect().top - port.getBoundingClientRect().top;
+  });
+  await assertReachable(action);
+}
+async function clickInsidePicker(action: Locator) { await revealInsidePicker(action); await action.click(); }
 const timestamp = '2026-11-06T12:00:00Z';
 const session = { id: `jc_${'a'.repeat(32)}`, title: 'SYNTHETIC reaction chat', source: 'jarvis-command', ownership: 'command', model: null, lastActive: timestamp, messageCount: 2, toolCallCount: 0, pinned: false };
 for (const [width, height] of [[1280, 720], [360, 740], [360, 360]] as const) for (const enabled of [true, false]) {
@@ -63,17 +88,27 @@ for (const [width, height] of [[1280, 720], [360, 740], [360, 360]] as const) fo
       await trigger.click();
       const picker = a.getByRole('group', { name: 'Choose reaction' });
       await expect(picker.getByRole('button', { name: 'Heart', exact: true })).toBeEnabled();
+      await assertReachable(picker.getByRole('button', { name: 'Close reactions' }));
+      await assertReachable(picker.getByRole('button', { name: 'Thumbs up', exact: true }));
+      await assertReachable(picker.getByRole('button', { name: 'Thumbs down', exact: true }));
+      // All seven choices must be reachable by deliberate internal scrolling, even at keyboard height.
+      for (const label of ['Thumbs up', 'Thumbs down', 'Heart', 'Celebrate', 'Smile', 'Confused', 'Eyes']) {
+        await revealInsidePicker(picker.getByRole('button', { name: label, exact: true }));
+      }
+      await picker.locator('.reaction-picker-content').evaluate(element => { element.scrollTop = 0; });
+      await assertReachable(picker.getByRole('button', { name: 'Thumbs up', exact: true }));
+      await assertReachable(picker.getByRole('button', { name: 'Close reactions' }));
       for (const action of await picker.getByRole('button').all()) {
         const box = await action.boundingBox(); expect(box!.height).toBeGreaterThanOrEqual(44);
         expect(box!.x).toBeGreaterThanOrEqual(0); expect(box!.x + box!.width).toBeLessThanOrEqual(width);
       }
       await page.screenshot({ path: info.outputPath(`SYNTHETIC-picker-${width}x${height}.png`) });
-      await picker.getByRole('button', { name: 'Heart', exact: true }).click();
+      await clickInsidePicker(picker.getByRole('button', { name: 'Heart', exact: true }));
       await expect(picker.getByRole('alert')).toContainText('Save unconfirmed');
       expect(writes).toHaveLength(1);
       await expect(picker.getByRole('button', { name: 'Thumbs up', exact: true })).toBeDisabled();
-      await picker.getByRole('button', { name: 'Check saved reactions' }).click();
-      await picker.getByRole('button', { name: 'Retry same reaction intent' }).click();
+      await clickInsidePicker(picker.getByRole('button', { name: 'Check saved reactions' }));
+      await clickInsidePicker(picker.getByRole('button', { name: 'Retry same reaction intent' }));
       await expect(picker.getByRole('button', { name: 'Heart', exact: true })).toBeEnabled();
       expect(writes).toHaveLength(2); expect(writes[1]).toEqual(writes[0]);
       await expect(b.getByRole('button', { name: 'Remove Heart reaction' })).toHaveCount(0);
@@ -81,7 +116,7 @@ for (const [width, height] of [[1280, 720], [360, 740], [360, 360]] as const) fo
       await page.keyboard.press('Escape'); await expect(trigger).toBeFocused();
       await expect(picker).toHaveCount(0); await expect(composer).toHaveValue('SYNTHETIC unsent draft');
       await trigger.click(); await expect(picker.getByRole('button', { name: 'Heart', exact: true })).toHaveAttribute('aria-pressed', 'true');
-      await picker.getByRole('button', { name: 'Heart', exact: true }).click();
+      await clickInsidePicker(picker.getByRole('button', { name: 'Heart', exact: true }));
       await expect(picker.getByRole('button', { name: 'Heart', exact: true })).toHaveAttribute('aria-pressed', 'false');
       expect(writes).toHaveLength(3); expect(writes[2]!.action).toBe('remove'); expect(writes[2]!.clientRequestId).not.toBe(writes[0]!.clientRequestId);
     } else {

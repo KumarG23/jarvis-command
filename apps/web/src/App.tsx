@@ -319,7 +319,8 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     if (typeof ResizeObserver === 'undefined' || !conversationContent.current) return;
     const observer = new ResizeObserver(() => {
       const element = conversationScroll.current;
-      if (element && followLatest.current) element.scrollTop = element.scrollHeight;
+      // A message picker is an explicit reading target; resume ordinary tail follow once closed.
+      if (element && followLatest.current && !element.querySelector('.reaction-picker')) element.scrollTop = element.scrollHeight;
     });
     observer.observe(conversationContent.current);
     return () => observer.disconnect();
