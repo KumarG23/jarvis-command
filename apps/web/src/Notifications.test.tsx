@@ -100,6 +100,19 @@ it('keeps edited preferences on save failure and requires matching readback', as
   expect(screen.getByRole('checkbox', { name: 'Run failed' })).not.toBeChecked();
 });
 
+it('reads a stored reply item and round-trips the optional reply-text preference unchanged', async () => {
+  const reply = { ...item(9, 'assistant-reply'), title: 'Jarvis replied', body: 'SYNTHETIC preview', reply: { messageId: 'assistant:exact', label: null } };
+  const stored = { categories: { 'run-completed': true, 'run-failed': true, approval: true }, showReplyText: false };
+  const sent: unknown[] = [];
+  server(inbox([reply] as never, stored as never), { '/api/notifications/preferences': body => { sent.push(body); return Response.json(inbox([reply] as never, body as never)); } });
+  render(<Harness onOpen={() => null} />);
+  expect(await screen.findByText('SYNTHETIC preview')).toBeInTheDocument();
+  fireEvent.click(await screen.findByRole('checkbox', { name: 'Run failed' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save preferences' }));
+  expect(await screen.findByText('Preferences saved and confirmed.')).toBeInTheDocument();
+  expect(sent).toEqual([{ categories: { ...stored.categories, 'run-failed': false }, showReplyText: false }]);
+});
+
 it('shows a recoverable error when notification storage is unavailable', async () => {
   let fail = true;
   server(inbox([item(1, 'run-completed')]), { '/api/notifications': () => fail ? Response.json({ error: 'notification_storage_unavailable' }, { status: 503 }) : Response.json(inbox([item(1, 'run-completed')])) });
