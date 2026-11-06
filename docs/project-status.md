@@ -37,11 +37,11 @@ Authenticated owned-project roster/attachment selection, focus return, retained 
 and reload pass at eight desktop/mobile/short-height layouts, with zero new runs.
 The original selection was restored; candidate fixture and live evidence stay separate.
 
-The seven bounded November 6 owner reopenings are recorded by amendment PR #103.
-The other six remain open: #95 (Deepseek) and #100 (Sol-dev) prepare source behind
-disabled-default flags; #96 follows the same selector/proxy owner; #97/#98 and #99
-retain their plan dependencies. No provider call/enablement or live deletion occurred.
-Contents deletion requires supported recovery proof; otherwise it remains unavailable.
+Owner-approved reopenings are enumerated in MASTER_PLAN §0.2; the later P13/P14/P14.1
+addition is recorded by plan amendment PR #117. Current dispositions, including Deferred
+P10.5 routes and optional P11 model marks plus P6.1 reader/backend progress, are in §11. No provider call/enablement
+or live deletion occurred. Contents deletion requires supported recovery proof; otherwise
+it remains unavailable.
 
 ## Known limits
 
@@ -59,5 +59,5 @@ failure/rollback history remain in §11.
 
 The [Final Neal packet/review queue #20](https://github.com/KumarG23/jarvis-command/issues/20)
 contains deferred contracts, phone steps and the [P9/P10 addendum](https://github.com/KumarG23/jarvis-command/issues/20#issuecomment-6558299788).
-Only the seven expressly reopened slices in MASTER_PLAN §0.2 are admitted. The finish
-line applies when they are each Done or Deferred; no speculative backlog is created.
+Only slices expressly recorded in MASTER_PLAN §0.2 are admitted. The finish line applies
+when all recorded plan states are Done or Deferred; no speculative backlog is created.
