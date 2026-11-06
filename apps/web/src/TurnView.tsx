@@ -1,7 +1,8 @@
+import { ModelFamilyMark, verifiedTurnExecution } from './ModelFamilyMark';
 import { composeProjectInput, projectContext, readProjectForSend, readProjectRoster, rosterContext, rosterFacts } from './projectInput';
 import { projectSendSnapshot, type ProjectRoster, type ProjectRoom } from '@jarvis-command/contracts';
 import { createPortal } from 'react-dom';
-import { ArrowUp, ChevronRight, Command, Copy, FilePlus2, ImagePlus, X } from 'lucide-react';
+import { ArrowUp, ChevronRight, Copy, FilePlus2, ImagePlus, X } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ArtifactMutationResponseSchema, InferenceOptionsResponseSchema, type InferenceOptionsResponse, type InferenceOverride, type LiveRunSubmissionRequest, type ReasoningEffort, type RunEvent } from '@jarvis-command/contracts';
 import { boundedJson, type DraftRecovery, type Turn } from './useLiveTurn';
@@ -18,7 +19,7 @@ export function TurnView({ turn, allowed, approve, stop, onSaveResponse, threadP
     <RunInspector key={JSON.stringify([turn.intent.sessionId, turn.intent.clientRequestId])} turn={turn} />
     {turn.intent.input === null ? <><p>Original message unavailable after reload; no message was retransmitted.</p>{turn.projectId ? <p>Original project: {turn.projectId}. Saved context may have changed since admission; recovery does not resend it.</p> : null}<p>Recovery target · Session: {turn.intent.sessionId} · Request: {turn.intent.clientRequestId} · Run: {turn.publicRunId ?? 'Unknown — admission unconfirmed'}</p></> : !turn.userHistoryMatched ? <article className="timeline-event live-message" aria-label="Your message"><div className="event-icon violet" aria-hidden="true">You</div><div className="event-body"><div className="event-label">You</div><p className="turn-input">{turn.intent.input}</p></div></article> : null}
     {turn.output && turn.intent.input === null && !turn.historyBinding ? <details className="recovered-run-output"><summary>Recovered run output — canonical message link unavailable</summary><MessageContent className="turn-output" text={turn.output} threadProjectId={threadProjectId} threadProjectSessionIds={threadProjectSessionIds} onThreadLink={onThreadLink} /></details> : null}
-    {turn.output && !turn.historyMatched && (turn.intent.input !== null || turn.historyBinding) ? <article className="timeline-event live-message" aria-label="Jarvis response"><div className="event-icon cyan" aria-hidden="true"><Command size={21} /></div><div className="event-body"><div className="event-label">Jarvis</div><MessageContent className="turn-output" text={turn.output} threadProjectId={threadProjectId} threadProjectSessionIds={threadProjectSessionIds} onThreadLink={onThreadLink} /><CopyResponse key={JSON.stringify([turn.intent.sessionId, turn.intent.clientRequestId])} text={turn.output} limited={turn.outputLimited} onSave={onSaveResponse ? () => onSaveResponse(turn.output!, turn.publicRunId ?? null) : undefined} /></div></article> : null}
+    {turn.output && !turn.historyMatched && (turn.intent.input !== null || turn.historyBinding) ? <article className="timeline-event live-message" aria-label="Jarvis response"><div className="event-icon model-response-icon"><ModelFamilyMark execution={verifiedTurnExecution(turn)} variant="icon" /></div><div className="event-body"><div className="event-label"><span>Jarvis</span><ModelFamilyMark execution={verifiedTurnExecution(turn)} variant="label" /></div><MessageContent className="turn-output" text={turn.output} threadProjectId={threadProjectId} threadProjectSessionIds={threadProjectSessionIds} onThreadLink={onThreadLink} /><CopyResponse key={JSON.stringify([turn.intent.sessionId, turn.intent.clientRequestId])} text={turn.output} limited={turn.outputLimited} onSave={onSaveResponse ? () => onSaveResponse(turn.output!, turn.publicRunId ?? null) : undefined} /></div></article> : null}
     {turn.outputLimited ? <p role="status">Output preview limited. Full output may be available in session history.</p> : null}
     {turn.controlMessage ? <p role="status">{turn.done && /steer/i.test(turn.controlMessage)
       ? turn.terminalPendingSteer ? 'Run ended — unconsumed guidance was returned for draft recovery.' : 'Run ended — steer consumption was not reported.'
@@ -88,7 +89,7 @@ function RunInspector({ turn }: Readonly<{ turn: Turn }>) {
     </summary>
     <div id={panelId} className="run-inspector-body" role="region" aria-label="Run inspector">
       <h3>Usage</h3>
-      {turn.usage ? <ExecutionReceipt usage={turn.usage} /> : <p>{turn.done ? 'Run usage unavailable' : 'Usage available when run finishes'}</p>}
+      {turn.usage ? <ExecutionReceipt usage={turn.usage} executionVerified={!!verifiedTurnExecution(turn)} /> : <p>{turn.done ? 'Run usage unavailable' : 'Usage available when run finishes'}</p>}
       {!execution && 'inference' in turn.intent && turn.intent.inference ? <p className="turn-route">Requested route · {turn.intent.inference.model} · {requestedEffortLabel(turn.intent.inference)}</p> : null}
       <div className="inspector-heading"><h3>Run receipt</h3><button className="secondary-button copy-receipt" type="button" onClick={() => { void copy(); }}><Copy size={14} /> Copy receipt</button></div>
       <span className="copy-status" role="status">{copyMessage}</span>
@@ -158,13 +159,14 @@ function routeLabel(route: { provider: string | null; model: string | null; reas
   return <>{route.model ? modelLabel(route.model) : <Unknown label="Model" />} · {route.reasoningEffort ?? <Unknown label="Effort" />} · {route.provider ? providerLabel(route.provider) : <Unknown label="Provider" />}</>;
 }
 
-export function ExecutionReceipt({ usage }: Readonly<{ usage: NonNullable<Turn['usage']> }>) {
+export function ExecutionReceipt({ usage, executionVerified = true }: Readonly<{ usage: NonNullable<Turn['usage']>; executionVerified?: boolean }>) {
   const receipt = usage.execution;
   const context = usage.context;
   const contextPercent = context ? Math.min(100, (context.usedTokens / context.limitTokens) * 100) : null;
   const decision = receipt ? routeDecision(receipt) : null;
   const changed = decision === 'Fallback used' || decision === 'Route changed';
   return <section className={`execution-receipt${changed ? ' warning' : ''}`} aria-label="Execution receipt">
+    <ModelFamilyMark execution={executionVerified ? receipt : null} />
     {receipt ? <p className="receipt-title">Executed · {routeLabel(receipt.executed)}</p> : <p className="receipt-title">Executed route unavailable</p>}
     <p>Run spend · {formatInteger(usage.totalTokens)} tokens · {formatInteger(usage.inputTokens)} in / {formatInteger(usage.outputTokens)} out
       {usage.outputTokensPerSecond == null ? <> · Throughput <Unknown label="Throughput" /></> : ` · ${usage.outputTokensPerSecond.toFixed(1)} tok/s`}</p>
