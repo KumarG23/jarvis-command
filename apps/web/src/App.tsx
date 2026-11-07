@@ -5,7 +5,7 @@ import { ThreadConversation } from './ThreadConversation';
 import { PushLink } from './PushLink';
 import { composeProjectInput, projectContext, readProjectForSend, readProjectThreadTarget } from './projectInput';
 import { ArtifactListResponseSchema, SessionMutationResponseSchema, ArtifactTypeSchema, CommandBootstrapSchema, type NotificationTarget, type ProjectRoom, type ArtifactType, type CommandBootstrap, type SessionSummary } from '@jarvis-command/contracts';
-import { Command, ShieldCheck, Menu, X, Settings2, PanelRight, ChevronRight, MessageSquare, Files, Users, MessagesSquare, Bell } from 'lucide-react';
+import { Command, ShieldCheck, Menu, X, Settings2, PanelRight, ChevronRight, MessageSquare, Files, Users, MessagesSquare, Bell, Clapperboard } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import './styles.css';
@@ -274,6 +274,11 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
   const live = threads.get(selectedSession?.id);
   const secondSession = sessions.find(session => session.id === secondSessionId) ?? null;
   const [navigationOpen, setNavigationOpen] = useState(false);
+  // Studio is a top-level destination of its own, not project Threads and not a chat pane.
+  // This slice is unavailable by design: it reads and writes no Studio data.
+  const [studioOpen, setStudioOpen] = useState(false);
+  const studioEntry = useRef(crypto.randomUUID()), studioVisible = useRef(false), studioDismissed = useRef(false), studioReturnFocus = useRef(false);
+  const studioRegion = useRef<HTMLElement | null>(null), studioNav = useRef<HTMLButtonElement | null>(null);
   const [draftAuthorizedSession, setDraftAuthorizedSession] = useState<string | null>(null);
   const [pane, setPane] = useState<'project' | 'runtime' | 'settings' | 'artifacts' | 'agents' | 'collaboration' | 'notifications' | null>(null);
   const [artifactPaneFullScreen, setArtifactPaneFullScreen] = useState(false);
@@ -426,6 +431,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     setSecondSessionId(id);
   }
   function selectSession(session: SessionSummary | null) {
+    leaveStudio();
     invalidateRetainedNavigation();
     invalidateThreadNavigation(selectionRef.current.projectId, session?.id ?? null);
     selectionRef.current = { ...selectionRef.current, sessionId: session?.id ?? null };
@@ -435,6 +441,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     setSelectedSession(session);
   }
   function selectProjectId(id: string | null) {
+    leaveStudio();
     invalidateRetainedNavigation();
     invalidateThreadNavigation(id, selectionRef.current.sessionId);
     selectionRef.current = { ...selectionRef.current, projectId: id };
@@ -526,19 +533,68 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     if (window.history.state?.commandNavigation === navigationEntry.current) window.history.back();
     navigationVisible.current = false; setNavigationOpen(false); if (restoreFocus) menu.current?.focus();
   }
+  function openStudio(element?: HTMLElement | null) {
+    if (studioVisible.current) { if (navigationOpen) closeNavigation(); return; }
+    if (element) studioNav.current = element as HTMLButtonElement;
+    studioDismissed.current = false;
+    setPane(null); projects.current?.closeDetails(); setArtifactPaneFullScreen(false);
+    if (window.history.state?.commandNavigation === navigationEntry.current) {
+      // The open drawer entry becomes the Studio entry, so one Back returns to chat.
+      navigationVisible.current = false; setNavigationOpen(false);
+      window.history.replaceState({ commandStudio: studioEntry.current }, '');
+    } else {
+      window.history.pushState({ ...window.history.state, commandStudio: studioEntry.current }, '');
+    }
+    studioVisible.current = true; setStudioOpen(true);
+  }
+  function closeStudio() {
+    if (!studioVisible.current) return;
+    studioReturnFocus.current = true;
+    studioVisible.current = false; setStudioOpen(false);
+    if (window.history.state?.commandStudio === studioEntry.current) window.history.back();
+  }
+  // Programmatic navigation away from Studio (a chat, project or panel was chosen) never
+  // steals focus back to the Studio entry.
+  function leaveStudio() {
+    if (!studioVisible.current) return;
+    studioDismissed.current = true;
+    studioVisible.current = false; setStudioOpen(false);
+    if (window.history.state?.commandStudio === studioEntry.current) window.history.back();
+  }
   useEffect(() => {
     const back = () => {
       const open = window.history.state?.commandNavigation === navigationEntry.current;
       const wasOpen = navigationVisible.current; navigationVisible.current = open; setNavigationOpen(open);
       if (wasOpen && !open) menu.current?.focus();
+      const studio = window.history.state?.commandStudio === studioEntry.current;
+      if (studio && studioDismissed.current) {
+        studioDismissed.current = false;
+        const rest = { ...(window.history.state as Record<string, unknown> | null) };
+        delete rest.commandStudio;
+        window.history.replaceState(rest, '');
+        studioVisible.current = false; setStudioOpen(false);
+        return;
+      }
+      if (!studio) studioDismissed.current = false;
+      const wasStudio = studioVisible.current;
+      if (wasStudio && !studio) studioReturnFocus.current = true;
+      studioVisible.current = studio; setStudioOpen(studio);
     };
     window.addEventListener('popstate', back);
     return () => window.removeEventListener('popstate', back);
   }, []);
+  useEffect(() => {
+    if (studioOpen) { studioRegion.current?.focus(); return; }
+    if (!studioReturnFocus.current) return;
+    studioReturnFocus.current = false;
+    const phone = typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 760px)').matches;
+    if (phone) menu.current?.focus(); else studioNav.current?.focus();
+  }, [studioOpen]);
   function setProjectScope(name: string | null) {
     setProjectName(name);
   }
   function openPanel(kind: 'runtime' | 'settings' | 'artifacts' | 'agents' | 'collaboration' | 'notifications', element: HTMLElement) {
+    leaveStudio();
     if (kind !== 'artifacts') setSaveActive(false);
     projects.current?.closeDetails(); panelOpener.current = element; setPane(kind); if (navigationOpen) closeNavigation(false);
   }
@@ -712,7 +768,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
       }
     }}>
       <div className="sidebar-brand"><Command size={29} /><strong>Jarvis Command</strong><button className="icon-button close-navigation" type="button" aria-label="Close chat navigation" onClick={() => closeNavigation()}><X size={20} /></button></div>
-      {liveEnabled ? <ProjectRooms ref={projects} onResolvedSessions={mergeResolvedSessions} threadStatuses={threadStatuses} sessions={sessions} selectedSessionId={selectedSession?.id} onScope={setProjectScope} onProjectScope={selectProjectId} onProjectChange={setProject} artifactsEnabled={artifactStudioEnabled} onOpenArtifacts={() => { projects.current?.closeDetails(); setPane('artifacts'); }} onSession={selectSession} onDeleted={sessionId => {
+      {liveEnabled ? <ProjectRooms ref={projects} onResolvedSessions={mergeResolvedSessions} threadStatuses={threadStatuses} sessions={sessions} selectedSessionId={selectedSession?.id} onScope={setProjectScope} onProjectScope={selectProjectId} onProjectChange={setProject} artifactsEnabled={artifactStudioEnabled} onOpenArtifacts={() => { leaveStudio(); projects.current?.closeDetails(); setPane('artifacts'); }} onSession={selectSession} onDeleted={sessionId => {
         setSessions(previous => previous.filter(session => session.id !== sessionId));
         if (selectedSession?.id === sessionId) { selectSession(null); setProjectScope(null); selectProjectId(null); }
       }} contextTarget={contextTarget}
@@ -722,12 +778,13 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
         {threads.all.filter(item => item.turn).map(item => <button type="button" className="sidebar-item" aria-label={`Supervise ${sessions.find(session => session.id === item.turn!.intent.sessionId)?.title ?? item.turn!.intent.sessionId}`} key={item.turn!.intent.sessionId} onClick={() => { void openRetainedThread(item.turn!.intent.sessionId, item.turn!.projectId); }}><span>{sessions.find(session => session.id === item.turn!.intent.sessionId)?.title ?? 'Retained thread'}<small>{item.turn!.phase} · latest Command run; stored history separate{item.turn!.statusObservedAt ? ` · checked ${new Date(item.turn!.statusObservedAt).toLocaleTimeString()}` : ' · status observation unavailable'}</small></span></button>)}
       </div>
       <div className="capability-navigation" aria-label="Capabilities">
+        <button ref={studioNav} className="sidebar-item" type="button" aria-current={studioOpen ? 'page' : undefined} onClick={event => openStudio(event.currentTarget)}><Clapperboard size={18} /><span>Studio crew<small>Unavailable</small></span></button>
         {([{ key: 'agents', label: 'Agents', Icon: Users }, { key: 'collaboration', label: 'Collaboration rooms', Icon: MessagesSquare }, { key: 'notifications', label: 'Notifications', Icon: Bell }] as const).map(({ key, label, Icon }) => <button key={key} className="sidebar-item" type="button" aria-expanded={pane === key} onClick={event => openPanel(key, event.currentTarget)}><Icon size={18} /><span>{label}<small>{key === 'notifications' && liveEnabled ? (notifications.inbox ? (notifications.inbox.unreadCount ? `${notifications.inbox.unreadCount} unread` : 'Inbox') : 'Inbox') : 'Unavailable'}</small></span></button>)}
       </div>
       <footer className="sidebar-footer"><button className="sidebar-item" type="button" onClick={event => openPanel('settings', event.currentTarget)}><Settings2 size={18} /><span>Settings</span></button><div className="account-row"><span className="operator-avatar">NS</span><span>My account<small>{bootstrap.identity.provider === 'development' ? 'Development preview' : 'Personal workspace'}</small></span></div></footer>
     </aside>
     <div className={`conversation-panes${secondSession ? ' is-split' : ''}`}>
-    <main className="command-main">
+    <main className="command-main" hidden={studioOpen}>
       <PushLink enabled={liveEnabled} state={notifications} onOpen={openNotificationTarget} />
       <header className={`command-header${projectId ? ' has-project-threads' : ''}`}><button ref={menu} className="icon-button menu-button" type="button" aria-label="Open chat navigation" aria-expanded={navigationOpen} onClick={openNavigation}><Menu size={21} />{notifications.inbox?.unreadCount ? <span className="notification-dot" aria-hidden="true" /> : null}</button>
         <div className="room-breadcrumb">{projectName ? <><span aria-label="Selected project">{project?.id === projectId ? <ProjectIdentity project={project} /> : null}{projectName}</span><ChevronRight size={14} /></> : null}<strong aria-label="Selected session">{selectedSession?.title ?? (projectName ? 'New conversation' : 'Jarvis Command')}</strong></div>
@@ -748,7 +805,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
       {!hermesOnline ? <p className="notice error" role="status">{health}. {bootstrap.hermes.state === 'offline' ? 'Check the connection before sending.' : 'Some capabilities may be unavailable.'}</p> : null}
       {activeElsewhere ? <div className="active-run-notice" role="status">Jarvis is working in another chat. <button className="text-button" type="button" onClick={() => { if (activeElsewhere?.turn) void openRetainedThread(activeElsewhere.turn.intent.sessionId, activeElsewhere.turn.projectId); }}>View active chat</button></div> : null}
       <section ref={conversationScroll} className="timeline" aria-label="Conversation" onScroll={event => { const element = event.currentTarget; followLatest.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}><div ref={conversationContent} className="conversation-content">
-        {liveEnabled && selectedSession && threads.ready(selectedSession.id) ? <LiveRoom key={`${selectedSession.id}:${live.refresh?.sessionId === selectedSession.id ? live.refresh.revision : ''}`} session={selectedSession} reactions={reactions} reactionsAvailable={bootstrap.hermes.capabilities.includes('message_reactions') && !project?.archived} reactionsUnavailableReason={project?.archived ? 'Reactions unavailable in archived projects.' : undefined} threadProjectId={project && project.id === projectId && !project.archived ? projectId : null} threadProjectSessionIds={project && project.id === projectId && !project.archived ? project.sessionIds : undefined} onThreadLink={openThreadLink} focusMessageId={replyFocus?.sessionId === selectedSession.id ? replyFocus.messageId : null} onFocusSettled={() => setReplyFocus(null)} reportPresence={!!notifications.inbox} onHistory={(sessionId, messages, complete) => { live.history(sessionId, messages, complete); setDraftAuthorizedSession(complete ? sessionId : null); }}
+        {liveEnabled && selectedSession && threads.ready(selectedSession.id) ? <LiveRoom key={`${selectedSession.id}:${live.refresh?.sessionId === selectedSession.id ? live.refresh.revision : ''}`} session={selectedSession} reactions={reactions} reactionsAvailable={bootstrap.hermes.capabilities.includes('message_reactions') && !project?.archived} reactionsUnavailableReason={project?.archived ? 'Reactions unavailable in archived projects.' : undefined} threadProjectId={project && project.id === projectId && !project.archived ? projectId : null} threadProjectSessionIds={project && project.id === projectId && !project.archived ? project.sessionIds : undefined} onThreadLink={openThreadLink} focusMessageId={replyFocus?.sessionId === selectedSession.id ? replyFocus.messageId : null} onFocusSettled={() => setReplyFocus(null)} reportPresence={!!notifications.inbox && !studioOpen} onHistory={(sessionId, messages, complete) => { live.history(sessionId, messages, complete); setDraftAuthorizedSession(complete ? sessionId : null); }}
           turns={[...live.completedTurns, ...(live.turn ? [live.turn] : [])]} onSaveResponse={artifactStudioEnabled ? message => saveResponseArtifact(message.content, null) : undefined}
           renderTurn={turn => <TurnView turn={turn} threadProjectId={project && project.id === projectId && !project.archived ? projectId : null} threadProjectSessionIds={project && project.id === projectId && !project.archived ? project.sessionIds : undefined} onThreadLink={openThreadLink} allowed={writeAllowed && turn.intent === live.turn?.intent} approve={live.approve} stop={live.stop} onSaveResponse={artifactStudioEnabled ? (text, runId) => saveResponseArtifact(text, runId, turn.projectId ?? projectId) : undefined} />} /> : <div className="welcome"><Command size={39} strokeWidth={1.5} /><p className="eyebrow">YOUR SPACE TO THINK & BUILD</p><h1>{projectName ? `Let’s work on ${projectName}.` : 'What are we working on?'}</h1><p>Start a conversation with Jarvis. Keep related work together in projects.</p><button className="secondary-button welcome-action" type="button" onClick={() => { if (window.matchMedia('(max-width: 760px)').matches) openNavigation(); else projects.current?.focusSearch(); }}>Choose a chat or start a new one <ChevronRight size={17} /></button></div>}
         {!selectedSession ? threads.all.filter(item => item.turn?.intent.input === null).map(item => <TurnView key={item.turn!.intent.sessionId} turn={item.turn!} allowed={false} approve={item.approve} stop={item.stop} />) : null}
@@ -763,7 +820,23 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
         {liveEnabled ? <TurnComposer retainedDrafts={live.composerDrafts} inferenceTarget={inferenceTarget} draftsAuthorized={draftAuthorizedSession !== null && draftAuthorizedSession === selectedSession?.id} blocked={!!live.recoveryError || !live.historyReady(selectedSession?.id) || live.historyBacklogFull} allowed={!!writeAllowed} imageAttachmentsEnabled={artifactStudioEnabled} sessionId={selectedSession?.id} projectId={projectId} project={project} onProjectReadback={room => { setProject(room); projects.current?.readback(room); }} max={bootstrap.command.liveRoom.maxInputCharacters} maxSteer={bootstrap.command.liveRoom.maxSteerCharacters} turn={live.turn} send={(session, input, max, inference, images) => live.send(session, input, max, inference, images, undefined, projectId)} retry={live.retry} resume={live.resume} steer={live.steer} recoveries={live.recoveries} consumeRecovery={live.consumeRecovery} /> : <p className="composer-feedback">Messaging is unavailable in this read-only connection.</p>}
       </footer>
     </main>
-    {secondSession && threads.ready(secondSession.id) ? <ThreadConversation reactions={reactions} reportPresence={!!notifications.inbox && splitVisible} session={secondSession} live={threads.get(secondSession.id)} project={project && project.id === projectId && project.sessionIds.includes(secondSession.id) && !project.archived ? project : null} bootstrap={bootstrap} onClose={() => selectSecondPane(null)} onFocus={() => { if (project) projects.current?.openLinkedChat(project, secondSession); }} onProjectReadback={room => { setProject(room); projects.current?.readback(room); }} onThreadLink={(id, sessionId) => { void openThreadLink(id, sessionId, 'second'); }} onSave={(text, runId) => { selectSession(secondSession); saveResponseArtifact(text, runId, projectId, secondSession.id); }} /> : null}
+    {studioOpen ? <section ref={studioRegion} tabIndex={-1} className="command-main studio-destination" aria-labelledby="studio-crew-title" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); closeStudio(); } }}>
+      <header className="command-header studio-header">
+        <button className="icon-button menu-button" type="button" aria-label="Open chat navigation" aria-expanded={navigationOpen} onClick={openNavigation}><Menu size={21} /></button>
+        <div className="room-breadcrumb"><strong>Studio crew</strong></div>
+        <button className="secondary-button studio-return" type="button" aria-label="Return to chat" onClick={closeStudio}>Back to chat</button>
+      </header>
+      <div className="timeline studio-scroll"><div className="conversation-content">
+        <div className="welcome unavailable-capability studio-unavailable">
+          <Clapperboard size={39} strokeWidth={1.5} aria-hidden="true" />
+          <p className="eyebrow">UNAVAILABLE</p>
+          <h1 id="studio-crew-title">Studio crew</h1>
+          <p>Live team status is not connected in this build. No crew members, tasks or activity are available to show here.</p>
+          <p className="studio-note">This page reads and changes nothing. Your chats, projects and any running replies stay as you left them.</p>
+        </div>
+      </div></div>
+    </section> : null}
+    {secondSession && threads.ready(secondSession.id) ? <ThreadConversation hidden={studioOpen} reactions={reactions} reportPresence={!!notifications.inbox && splitVisible && !studioOpen} session={secondSession} live={threads.get(secondSession.id)} project={project && project.id === projectId && project.sessionIds.includes(secondSession.id) && !project.archived ? project : null} bootstrap={bootstrap} onClose={() => selectSecondPane(null)} onFocus={() => { if (project) projects.current?.openLinkedChat(project, secondSession); }} onProjectReadback={room => { setProject(room); projects.current?.readback(room); }} onThreadLink={(id, sessionId) => { void openThreadLink(id, sessionId, 'second'); }} onSave={(text, runId) => { selectSession(secondSession); saveResponseArtifact(text, runId, projectId, secondSession.id); }} /> : null}
     </div>
     <ContextPane open={pane !== null} fullScreen={pane === 'artifacts' && artifactPaneFullScreen}>
       <div ref={setContextTarget} hidden={pane !== 'project'} />
