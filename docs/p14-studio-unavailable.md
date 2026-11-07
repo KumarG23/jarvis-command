@@ -22,22 +22,32 @@ crew data and Phase 2 remain **Unsupported — Deferred** (see
   as visibly focused to reply-presence.
 - Escape, phone Back and the visible return control restore the same chat and
   draft; focus returns to the Studio entry (desktop) or the navigation opener
-  (phone).
+  (phone). Closing Studio's phone drawer with Close, Escape, the scrim or Back
+  returns focus to Studio's own visible opener (never the hidden chat opener)
+  and leaves Studio open.
 
 ## Evidence states
 
-- **Source:** implementation commit `1caa2055e291ef54f9c3208e9313e1d833a51de5`.
-- **Focused tests:** `apps/web/src/StudioDestination.test.tsx` (4 tests) covers
+- **Source:** repaired implementation commit
+  `c7dc9cffbf9f66bfc840c312dc7a8c2fe511a821`, on the accepted base merge
+  `8cee0265eb4c9a08dd79286b3645646b1b850b80` (PR #131). The ordinary merge
+  preserves its docs and all P12/P13 dispositions.
+- **Focused tests:** `apps/web/src/StudioDestination.test.tsx` (5 tests) covers
   the global destination, zero Studio requests/actions, draft/selection and
-  in-memory image retention, project independence, focus/Escape/Back, and the
-  presence clear. Full web suite `36 files / 538 tests` passed at the same
-  source; web typecheck, changed-file lint and web build passed.
+  in-memory image retention, project independence, focus/Escape/Back, visible
+  Studio drawer-opener focus for Close/Escape/scrim/Back without dismissing
+  Studio, and the presence clear. Full web suite `36 files / 539 tests` passed
+  at the same source; web typecheck, changed-file lint and web build passed.
 - **Browser candidate (fixture only):** synthetic Playwright spec run through
   the existing Studio source wrapper, task `command#issue-132`, connected to
-  the already-configured browser. Attempt 1 of 2 passed all three viewports
-  (1280×720, 360×740, 360×360): global entry, unavailable text, focus and hit
-  reach, no clipping/overlap, retained owned-chat draft, Escape and return,
-  and zero Studio requests/mutations. Sanitized screenshots were inspected.
+  the already-configured browser. The final corrected run passed all three
+  viewports (1280×720, 360×740, 360×360): global entry, unavailable text, focus
+  and hit reach, no clipping/overlap, retained owned-chat draft, Escape and
+  return, zero Studio requests/mutations, and phone drawer dismissal focus for
+  Close, Escape, scrim and Back. One earlier probe run failed only because the
+  synthetic scrim click targeted the drawer-covered centre; the corrected spec
+  clicks the exposed strip. That used 1 of 2 permitted failed attempts.
+  Sanitized screenshots were inspected.
 - **Authenticated production readback:** not performed and not claimed. The
   browser run used isolated synthetic routes, not a live session, and does not
   prove deployment, Access, or live server behavior.
