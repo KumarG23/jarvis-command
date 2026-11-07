@@ -93,7 +93,7 @@ milestones:
     title: Delete projects
     acceptance:
       - Confirm exact project/counts with delete-only default, optional owned contents deletion, external unlink-only, active-run refusal and snapshot/audit; preserve scope/recovery/restart consistency (§10 P9.6).
-# P13: #111 source-admitted/ready for next work window at accepted7d96c78; no implementation or new worker yet. P14/#112 and P14.1/#113 remain staged in order. Exact dispositions/evidence remain in §11.
+# P13: #111 / draft130 source-only prior-run overlay repair prepared; lead re-review pending. Candidate visual acceptance Deferred after two spent attempts; unreleased, routing Deferred, phone pending. #112 then #113 stay staged. Exact evidence/disposition: §11 P13.
   - id: P13
     title: Thread status, unread and per-thread model choice
     acceptance:

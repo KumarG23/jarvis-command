@@ -1,5 +1,5 @@
 import { StatusIcon } from './StatusIcon';
-import { threadStatus, summarizeThreads, withVerifiedTurns } from './threadStatus';
+import { threadStatus, summarizeThreads } from './threadStatus';
 import { useThreadStates } from './useThreadStates';
 import { useMessageReactions } from './useMessageReactions';
 import { ProjectIdentity } from './ProjectIdentity';
@@ -275,7 +275,9 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
   }, []);
   const threads = useThreadTurns(sessions.map(session => session.id), [selectedSession?.id ?? '', ...(splitVisible && secondSessionId ? [secondSessionId] : [])]);
   const threadState = useThreadStates(sessions.map(session => session.id), bootstrap.command.liveRoom.enabled);
-  const statusStates = withVerifiedTurns(threadState.states, threads.all.flatMap(item => item.turn ? [item.turn] : []));
+  // Retained cards supervise exact runs, but the thread-state contract cannot
+  // identify its latest run. Session/arrival time cannot authorize an overlay.
+  const statusStates = threadState.states;
   const live = threads.get(selectedSession?.id);
   const secondSession = sessions.find(session => session.id === secondSessionId) ?? null;
   const [navigationOpen, setNavigationOpen] = useState(false);
@@ -724,7 +726,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
         onOpenChange={open => { setPane(previous => open ? 'project' : previous === 'project' ? null : previous); if (open && navigationOpen) closeNavigation(); }} onNavigate={() => { if (navigationOpen || (typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 760px)').matches)) closeNavigation(); }} /> : <div className="sidebar-scroll"><p className="empty-copy">Live chat is unavailable.</p>{sessions.map(session => <div key={session.id} className="sidebar-item"><MessageSquare size={17} /><span>{session.title}</span></div>)}</div>}
       <div className="thread-status-list" aria-label="Thread supervision">
         {navigationOpen && retainedFeedback ? <p role="status" className="notice">{retainedFeedback}</p> : null}
-        {threads.all.filter(item => item.turn).map(item => <button type="button" className="sidebar-item" aria-label={`Supervise ${sessions.find(session => session.id === item.turn!.intent.sessionId)?.title ?? item.turn!.intent.sessionId}`} key={item.turn!.intent.sessionId} onClick={() => { void openRetainedThread(item.turn!.intent.sessionId, item.turn!.projectId); }}><span>{sessions.find(session => session.id === item.turn!.intent.sessionId)?.title ?? 'Retained thread'}<StatusIcon state={threadStatus(statusStates[item.turn!.intent.sessionId], threadState.clock)} /><small>{item.turn!.phase} · latest Command run; stored history separate{item.turn!.statusObservedAt ? ` · checked ${new Date(item.turn!.statusObservedAt).toLocaleTimeString()}` : ' · status observation unavailable'}</small></span></button>)}
+        {threads.all.filter(item => item.turn).map(item => <button type="button" className="sidebar-item" aria-label={`Supervise ${sessions.find(session => session.id === item.turn!.intent.sessionId)?.title ?? item.turn!.intent.sessionId}`} key={item.turn!.intent.sessionId} onClick={() => { void openRetainedThread(item.turn!.intent.sessionId, item.turn!.projectId); }}><span>{sessions.find(session => session.id === item.turn!.intent.sessionId)?.title ?? 'Retained thread'}<StatusIcon state={threadStatus(statusStates[item.turn!.intent.sessionId], threadState.clock)} /><small>{item.turn!.phase} · retained Command run; session status separate{item.turn!.statusObservedAt ? ` · checked ${new Date(item.turn!.statusObservedAt).toLocaleTimeString()}` : ' · status observation unavailable'}</small></span></button>)}
       </div>
       <div className="capability-navigation" aria-label="Capabilities">
         {([{ key: 'agents', label: 'Agents', Icon: Users }, { key: 'collaboration', label: 'Collaboration rooms', Icon: MessagesSquare }, { key: 'notifications', label: 'Notifications', Icon: Bell }] as const).map(({ key, label, Icon }) => <button key={key} className="sidebar-item" type="button" aria-expanded={pane === key} onClick={event => openPanel(key, event.currentTarget)}><Icon size={18} /><span>{label}<small>{key === 'notifications' && liveEnabled ? (notifications.inbox ? (notifications.inbox.unreadCount ? `${notifications.inbox.unreadCount} unread` : 'Inbox') : 'Inbox') : 'Unavailable'}</small></span></button>)}

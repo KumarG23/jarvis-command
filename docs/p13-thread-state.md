@@ -4,8 +4,16 @@ Shared labelled status is derived from fresh actor-bound Command run observation
 and canonical saved-message/read identities. No observed Command run means Unknown.
 Queued/running means Working; waiting approval, failed or interrupted needs attention;
 verified terminal completion/cancellation permits Idle only when unread is known false.
-Unread is independent of completion. Observations expire after 60 seconds. Retained
-supervisors expose typed verified facts; reconnect text does not alter lifecycle.
+Unread is independent of completion. Observations expire after 60 seconds.
+Shared status uses only the bounded server snapshot. Retained supervisors still
+supervise their exact admitted run, but cannot prove it is the session's latest run.
+Their overlay is removed: delayed prior terminal/approval responses, local verification
+and newer arrival times cannot replace the latest server state. Same-run overlays
+are also omitted until an authoritative latest-run identity can be matched; no new
+identity contract or historical message/run join is invented. Reconnect text does
+not alter lifecycle. Retained cards label their own run separately from session status.
+Shared summaries can lag until the existing bounded snapshot refresh, then expire
+to Unknown if observations are stale.
 
 The existing narrow authenticated session routes now include GET `thread-state` and
 POST `read`. POST accepts only a canonical message id and zero-based position and
@@ -50,7 +58,11 @@ association is invented here. Existing model selection remains available separat
 Focused source tests cover every status, staleness, urgency/recency, response ordering,
 latest-marker visibility/focus, exact pagination, actor separation/denial, restart,
 bounds, cross-device stale clears and new output during clear, and zero run admission.
-Relevant typechecks, scoped lint, web/server builds are recorded in the PR.
+Prior successful 181 web/52 server checks and builds are retained as source evidence.
+The source-only review repair adds an App-level red/green regression: a prior run A's
+delayed completion/approval cannot overwrite another device's newer run B Working,
+nor revive stale/missing state or erase independent unread output. Relevant changed
+checks are recorded separately in the PR; lead re-review is pending.
 
 Candidate browser acceptance is **deferred after two failed attempts**, both through
 the Studio source wrapper in this issue's own worktree and task-owned synthetic
@@ -60,8 +72,9 @@ all three viewports stopped there. There are no candidate acceptance images to i
 no proven viewport/hit reach, and no browser smoke-test claim. The corrected fixture
 is retained but not run a third time. Preview teardown reported local presence proxy
 connection refusal; that is not authenticated BFF/live evidence. Original tabs/storage
-and Chrome were retained. The lead must split or defer residual visual acceptance;
-this source assignment does not grant another browser attempt or release authority.
+and Chrome were retained. The lead split the assignment into this source-only
+identity repair and Deferred visual acceptance. Both attempts remain spent; this repair grants no additional
+browser run or release authority.
 
 Unreleased. Authenticated readback belongs to Sol after recoverable release. Physical
 Android remains **phone check pending**. On phone, check status labels/urgency,

@@ -24,26 +24,6 @@ export function summarizeThreads(ids: readonly string[], states: Readonly<Record
 }
 export const delegatedRouteUnavailable = 'Delegated thread model defaults unavailable: Hermes must expose an exact authorized thread-to-session route binding with approved model lock and attributable execution receipt. Use this chat’s existing next-run model selector; requested settings are not executed-route evidence.';
 
-// Typed, identity-verified retained supervisor facts can be newer than a roster poll.
-// Transport text is deliberately never parsed into lifecycle state.
-export function withVerifiedTurns(states: Readonly<Record<string, ThreadState>>, turns: readonly {
-  intent: { sessionId: string }; identityVerified: boolean; statusObservedAt?: string | undefined;
-  verifiedStatus?: string | undefined;
-}[]): Record<string, ThreadState> {
-  const result = { ...states };
-  for (const turn of turns) {
-    const old = result[turn.intent.sessionId];
-    if (old && !turn.identityVerified) { result[turn.intent.sessionId] = { ...old, runStatus: 'unknown', runObservedAt: null }; continue; }
-    if (old && turn.identityVerified && turn.statusObservedAt
-      && Date.parse(turn.statusObservedAt) > Date.parse(old.runObservedAt ?? '1970-01-01T00:00:00Z')) {
-      const status = turn.verifiedStatus === 'waiting_for_approval' ? 'waiting-approval' : turn.verifiedStatus;
-      const runStatus = ['running', 'queued', 'waiting-approval', 'completed', 'failed', 'cancelled', 'interrupted'].includes(status ?? '') ? status as ThreadState['runStatus'] : 'unknown';
-      result[turn.intent.sessionId] = { ...old, runStatus, runObservedAt: turn.statusObservedAt };
-    }
-  }
-  return result;
-}
-
 // Responses can arrive in reverse order, even with identical millisecond timestamps.
 // Canonical positions and read identities preserve both a newer tail and a newer clear.
 export function mergeThreadState(old: ThreadState | undefined, next: ThreadState): ThreadState {

@@ -61,7 +61,6 @@ export type Turn = {
   projectId?: string;
   intent: TurnIntent; publicRunId: string | null; phase: string; output: string; outputLimited: boolean;
   events: RunEvent[]; approval: LiveRunStatus['approval']; done: boolean; historyMatched: boolean;
-  verifiedStatus?: LiveRunStatus['status'] | undefined;
   identityVerified: boolean; controlBusy?: boolean; controlMessage?: string;
   historyBaseline?: string[]; userHistoryMatched?: boolean;
   terminalPendingSteer?: boolean;
@@ -225,7 +224,7 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
         const newerApproval = approvalRevision !== revisionAtStart || current.current!.approval !== approvalAtStart;
         // A status snapshot has no stream cursor: applying it during a healthy
         // stream can rewind output or double-count later deltas. Terminal wins.
-        update({ identityVerified: true, verifiedStatus: !done && newerApproval ? current.current!.verifiedStatus : status.status, statusObservedAt: new Date().toISOString(), historyBinding: done ? status.historyBinding : undefined,
+        update({ identityVerified: true, statusObservedAt: new Date().toISOString(), historyBinding: done ? status.historyBinding : undefined,
           phase: !done && newerApproval ? current.current!.phase : `Run ${status.status}`,
           ...(status.output === null || (!done && (keepStream || (!statusOnly && !!current.current!.output))) ? {} : outputPreview(status.output)),
           approval: done ? null : preserveApproval || newerApproval ? current.current!.approval : status.approval,
@@ -290,14 +289,13 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
         const activePhase = current.current!.phase === 'Run queued' && !current.current!.done
           && !current.current!.approval && current.current!.compaction?.state !== 'running'
           && ['message.delta', 'tool.started', 'tool.completed', 'subagent.start', 'subagent.complete'].includes(event.type)
-          ? { phase: 'Run running', verifiedStatus: 'running' as const, statusObservedAt: new Date().toISOString() } : {};
+          ? { phase: 'Run running' } : {};
         if (event.type === 'message.delta') {
           previewBytes += new TextEncoder().encode(event.delta).length;
           if (previewBytes > 131072) { limited = true; update({ outputLimited: true }); throw new Error('preview'); }
           update({ ...activePhase, output: current.current!.output + event.delta });
         }
         else if (event.type.startsWith('run.') && event.type !== 'run.steered') {
-          update({ verifiedStatus: event.type === 'run.completed' ? 'completed' : event.type === 'run.failed' ? 'failed' : event.type === 'run.cancelled' ? 'cancelled' : 'interrupted', statusObservedAt: new Date().toISOString() });
           terminalObserved = true; recover();
         } else if (
           event.type === 'context.compaction.started'
@@ -316,11 +314,11 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
             events: [...current.current!.events, event],
           });
         } else if (event.type === 'approval.request') {
-          approvalRevision++; update({ phase: 'Awaiting approval', verifiedStatus: 'waiting_for_approval', statusObservedAt: new Date().toISOString(), approval: event.approval });
+          approvalRevision++; update({ phase: 'Awaiting approval', approval: event.approval });
         } else if (event.type === 'approval.responded') {
           approvalRevision++;
           update({
-            ...(current.current!.approval?.requestId === event.requestId ? { approval: null, phase: 'Approval acknowledged — awaiting run status', verifiedStatus: undefined, statusObservedAt: new Date().toISOString() } : {}),
+            ...(current.current!.approval?.requestId === event.requestId ? { approval: null, phase: 'Approval acknowledged — awaiting run status' } : {}),
             events: [...current.current!.events, event],
           });
         } else update({ ...activePhase, events: [...current.current!.events, event] });
@@ -348,7 +346,7 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
       }, controller));
       if (accepted.sessionId !== intent.sessionId || accepted.clientRequestId !== intent.clientRequestId) throw new Error('binding');
       if (cancelled || !alive.current || current.current?.intent !== intent) return;
-      update({ identityVerified: true, verifiedStatus: accepted.status, statusObservedAt: new Date().toISOString(), publicRunId: accepted.publicRunId, phase: `Run ${accepted.status}` });
+      update({ identityVerified: true, statusObservedAt: new Date().toISOString(), publicRunId: accepted.publicRunId, phase: `Run ${accepted.status}` });
       const bound = { ...(current.current.projectId ? { projectId: current.current.projectId } : {}), sessionId: intent.sessionId, clientRequestId: intent.clientRequestId, publicRunId: accepted.publicRunId };
       try { writeStored(bound, stored.current); stored.current = bound; }
       catch { setRecoveryError('Reload recovery degraded — keep this tab open. In-memory supervision continues.'); }
