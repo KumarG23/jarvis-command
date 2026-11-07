@@ -107,6 +107,21 @@ for (const [width, height] of [[1280, 720], [360, 740], [360, 360]] as const) {
     expect(layout.overflow, 'no horizontal overflow').toBeLessThanOrEqual(0);
     await page.screenshot({ path: info.outputPath(`SYNTHETIC-studio-${width}x${height}.png`) });
 
+    // Phone drawer dismissal returns focus to Studio's own visible opener, not the hidden chat opener.
+    if (width <= 760) {
+      const studioOpener = studio.getByRole('button', { name: 'Open chat navigation' });
+      for (const dismiss of ['close', 'escape', 'scrim', 'back'] as const) {
+        await studioOpener.click();
+        if (dismiss === 'close') await page.getByRole('button', { name: 'Close chat navigation' }).click();
+        if (dismiss === 'escape') await page.keyboard.press('Escape');
+        // The drawer covers the scrim centre; click the exposed strip beside it.
+        if (dismiss === 'scrim') await page.locator('.navigation-scrim').click({ position: { x: width - 20, y: Math.floor(height / 2) } });
+        if (dismiss === 'back') await page.goBack();
+        await expect(studio, `Studio stays open after drawer ${dismiss}`).toBeVisible();
+        await expect(studioOpener, `drawer ${dismiss} returns focus to Studio's visible opener`).toBeFocused();
+      }
+    }
+
     // Escape returns to the same chat with the draft retained.
     await page.keyboard.press('Escape');
     await expect(studio).toHaveCount(0);

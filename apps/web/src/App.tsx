@@ -278,7 +278,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
   // This slice is unavailable by design: it reads and writes no Studio data.
   const [studioOpen, setStudioOpen] = useState(false);
   const studioEntry = useRef(crypto.randomUUID()), studioVisible = useRef(false), studioDismissed = useRef(false), studioReturnFocus = useRef(false);
-  const studioRegion = useRef<HTMLElement | null>(null), studioNav = useRef<HTMLButtonElement | null>(null);
+  const studioRegion = useRef<HTMLElement | null>(null), studioNav = useRef<HTMLButtonElement | null>(null), studioMenu = useRef<HTMLButtonElement | null>(null);
   const [draftAuthorizedSession, setDraftAuthorizedSession] = useState<string | null>(null);
   const [pane, setPane] = useState<'project' | 'runtime' | 'settings' | 'artifacts' | 'agents' | 'collaboration' | 'notifications' | null>(null);
   const [artifactPaneFullScreen, setArtifactPaneFullScreen] = useState(false);
@@ -529,9 +529,14 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
       navigationVisible.current = true; setNavigationOpen(true);
     }
   }
+  // The drawer opener must be the visibly rendered one: Studio keeps the chat mounted
+  // but hidden, so focusing menu.current there would move focus into hidden content.
+  function navigationOpener() {
+    return studioVisible.current ? studioMenu.current : menu.current;
+  }
   function closeNavigation(restoreFocus = true) {
     if (window.history.state?.commandNavigation === navigationEntry.current) window.history.back();
-    navigationVisible.current = false; setNavigationOpen(false); if (restoreFocus) menu.current?.focus();
+    navigationVisible.current = false; setNavigationOpen(false); if (restoreFocus) navigationOpener()?.focus();
   }
   function openStudio(element?: HTMLElement | null) {
     if (studioVisible.current) { if (navigationOpen) closeNavigation(); return; }
@@ -565,7 +570,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     const back = () => {
       const open = window.history.state?.commandNavigation === navigationEntry.current;
       const wasOpen = navigationVisible.current; navigationVisible.current = open; setNavigationOpen(open);
-      if (wasOpen && !open) menu.current?.focus();
+      if (wasOpen && !open) navigationOpener()?.focus();
       const studio = window.history.state?.commandStudio === studioEntry.current;
       if (studio && studioDismissed.current) {
         studioDismissed.current = false;
@@ -822,7 +827,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     </main>
     {studioOpen ? <section ref={studioRegion} tabIndex={-1} className="command-main studio-destination" aria-labelledby="studio-crew-title" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); closeStudio(); } }}>
       <header className="command-header studio-header">
-        <button className="icon-button menu-button" type="button" aria-label="Open chat navigation" aria-expanded={navigationOpen} onClick={openNavigation}><Menu size={21} /></button>
+        <button ref={studioMenu} className="icon-button menu-button" type="button" aria-label="Open chat navigation" aria-expanded={navigationOpen} onClick={openNavigation}><Menu size={21} /></button>
         <div className="room-breadcrumb"><strong>Studio crew</strong></div>
         <button className="secondary-button studio-return" type="button" aria-label="Return to chat" onClick={closeStudio}>Back to chat</button>
       </header>

@@ -151,6 +151,40 @@ describe('Studio unavailable destination', () => {
     expect(studioButton()).toHaveFocus();
   });
 
+  it('returns drawer focus to the visible Studio opener for Close, Escape, scrim and Back without dismissing Studio', async () => {
+    fixture();
+    // Keep jsdom history deterministic; the Back popstate is dispatched explicitly below.
+    vi.spyOn(window.history, 'back').mockImplementation(() => undefined);
+    await openShell();
+    fireEvent.click(studioButton());
+    const studioState = window.history.state;
+    // The chat's opener is hidden from the accessibility tree; only Studio's is exposed.
+    const visibleOpener = () => screen.getAllByRole('button', { name: 'Open chat navigation' })
+      .find(element => !element.closest('[hidden]')) as HTMLElement;
+    const studio = () => screen.getByRole('region', { name: 'Studio crew' });
+
+    fireEvent.click(visibleOpener());
+    fireEvent.click(screen.getByRole('button', { name: 'Close chat navigation' }));
+    expect(visibleOpener()).toHaveFocus();
+    expect(studio()).toBeInTheDocument();
+
+    fireEvent.click(visibleOpener());
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Close chat navigation' }), { key: 'Escape' });
+    expect(visibleOpener()).toHaveFocus();
+    expect(studio()).toBeInTheDocument();
+
+    fireEvent.click(visibleOpener());
+    fireEvent.click(screen.getByRole('button', { name: 'Close navigation' }));
+    expect(visibleOpener()).toHaveFocus();
+    expect(studio()).toBeInTheDocument();
+
+    fireEvent.click(visibleOpener());
+    window.history.replaceState(studioState, '');
+    fireEvent(window, new PopStateEvent('popstate'));
+    expect(studio()).toBeInTheDocument();
+    expect(visibleOpener()).toHaveFocus();
+  });
+
   it('never reports the hidden chat as visibly focused to reply-presence', async () => {
     const calls = fixture();
     vi.spyOn(document, 'hasFocus').mockReturnValue(true);
