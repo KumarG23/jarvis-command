@@ -98,7 +98,7 @@ milestones:
     title: Thread status, unread and per-thread model choice
     acceptance:
       - Existing Threads/project/chat surfaces use one accessible verified StatusIcon; per-actor last-read syncs without admission; exact per-thread routing is offered only when supported and eligible, otherwise unavailable (§10 P13; §12 state, authorization and model-selection scenarios).
-# P14: Phase 0 source/freshness discovery complete; no supported per-agent Studio projection or Dell-to-Command relay exists. Phase 1 staged/unimplemented and disabled/unavailable pending exporter/schema/relay/auth/freshness prerequisites; Phase 2 unavailable unless safe projected events are proven; #113 staged. Evidence: docs/p14-studio-capability.md and §11 P14 / packet6707370003.
+# P14: Phase 0 source/freshness discovery complete; PR #133 accepted unavailable-view source at 6ebfc6ea3c5185a72a8665f48028a8ba2372c4d7 but remains unmerged/unreleased while mandatory CI 42379671575 is failed on the artifact-cleanup observation. #134 synchronizes the exact-null proof and records one-save/run/session/request/source assertions; no merge, deploy, authenticated readback or physical-phone claim. No supported per-agent Studio projection or Dell-to-Command relay exists. Phase 1 staged/unimplemented and disabled/unavailable pending exporter/schema/relay/auth/freshness prerequisites; Phase 2 unavailable unless safe projected events are proven; #113 staged. Evidence: docs/p14-studio-capability.md and §11 P14 / packet6707370003.
   - id: P14
     title: Studio crew view, read-only
     acceptance:
