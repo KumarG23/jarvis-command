@@ -78,7 +78,7 @@ milestones:
     title: Visual identity
     acceptance:
       - Restrained AA semantic accents and deterministic project icons use existing optional metadata; model-family marks use verified executed identity only, with desktop/360 px evidence (§10 P11).
-# P12: PR124 backend deployed in healthy app95a6823f… disabled; PR127 UI reviewed7576619/gate-merged7d96c78, final candidate2/2 six cases and readable picker images accepted. UI release/authenticated live proof pending, no live mutations; phase2 exact binding Unsupported, phone pending. §11 P12 / review6696938526 / packet6696991304.
+# P12: PR124 backend + PR127 UI (7d96c78) released disabled in healthy app c0863e9b…, rollback release-app-1794053680217289497. Authenticated bootstrap readback: message_reactions capability absent, 3 GETs, zero reaction/non-GET requests. Disabled-state UI at 1280×720/360×740/360×360 NOT verified live (2/2 wrapped attempts used; proof session unidentified) — PARTIAL. Phase1 enablement Deferred, phase2 exact binding Unsupported, phone pending. §11 P12 / review6696938526 / packet6696991304.
   - id: P12
     title: Message reactions
     acceptance:
