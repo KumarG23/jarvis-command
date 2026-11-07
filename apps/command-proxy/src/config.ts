@@ -11,6 +11,11 @@ const EnvironmentSchema = z.object({
   // advertised-only while this is absent or false.
   COMMAND_ANTHROPIC_ROUTES_ENABLED: z.enum(['true', 'false', '1', '0']).default('false')
     .transform(value => value === 'true' || value === '1'),
+  // Separate disabled default for OpenRouter zero-spend routes. The bounded set of
+  // advertised/authenticated ids ending exactly in `:free` stays unavailable until
+  // an approved release enables this flag.
+  COMMAND_OPENROUTER_FREE_ROUTES_ENABLED: z.enum(['true', 'false', '1', '0']).default('false')
+    .transform(value => value === 'true' || value === '1'),
 });
 
 export type CommandProxyConfig = Readonly<{
@@ -21,6 +26,7 @@ export type CommandProxyConfig = Readonly<{
   hermesApiKey: string;
   maxStreamSeconds: number;
   anthropicRoutesEnabled: boolean;
+  openRouterFreeRoutesEnabled: boolean;
 }>;
 
 export function loadCommandProxyConfig(environment: NodeJS.ProcessEnv): CommandProxyConfig {
@@ -47,5 +53,6 @@ export function loadCommandProxyConfig(environment: NodeJS.ProcessEnv): CommandP
     hermesApiKey: parsed.HERMES_API_KEY,
     maxStreamSeconds: parsed.MAX_STREAM_SECONDS,
     anthropicRoutesEnabled: parsed.COMMAND_ANTHROPIC_ROUTES_ENABLED,
+    openRouterFreeRoutesEnabled: parsed.COMMAND_OPENROUTER_FREE_ROUTES_ENABLED,
   });
 }
