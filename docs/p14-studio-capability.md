@@ -18,11 +18,15 @@ and the matching source checkout at the same commit. Citations are repository-re
   per-agent crew projection, and it is not reachable from Command.
 - Command's existing read-proxy is Hermes-only with three fixed GET routes. It has no Studio
   route, no Studio upstream configuration and no Studio-to-Command relay.
-- There is no safe per-agent projection of role, branch/worktree, verified task lifecycle or
-  per-agent cooldown. The host assignment does hold an owner profile and an absolute worktree
-  path, but that is host state, not a safe projection. Requested/configured model and effort
-  are stored; an optional resolved model may be proven with explicit provenance, while effort
-  remains requested-only and no executed-effort field exists.
+- There is no safe **current per-agent projection** of role, branch/worktree, verified task
+  lifecycle or per-agent cooldown. Studio analytics does persist sanitized per-run lifecycle
+  telemetry (role, `started_at`, running/final status, finish/exit) in
+  `tools/usage_analytics.py:1534-1554,1560-1571`, with `reconcile_running` at `:1624-1666`;
+  those are run records with their own freshness and log-age limitations, not proof of current
+  semantic progress or a last CLI event. The host assignment does hold an owner profile and an
+  absolute worktree path, but that is host state, not a safe projection. Requested/configured
+  model and effort are stored; an optional resolved model may be proven with explicit
+  provenance, while effort remains requested-only and no executed-effort field exists.
 - Phase 1 must therefore remain **staged/unimplemented and disabled/unavailable**. Phase 2
   activity detail is **unavailable** because no safe projected-event stream or redactor exists.
 
@@ -39,8 +43,9 @@ This is an honest unavailable state under MASTER_PLAN §0.3, not a failed Comman
 | Branch / worktree | Branch is deterministic from project and issue (`tools/team.py:77-79`); assignment stores the absolute worktree path (`tools/team.py:2288-2290`); worktree inspection exists (`tools/team.py:1851-1881`). | Written at dispatch; worktree state is read from git on demand. | Host-assignment state, supported on the Studio host but absent from any safe projection. The absolute path must not be sent to Command. |
 | Process liveness (tmux session) | `active()` lists matching session names only (`tools/team.py:1743-1753`); it ignores command return codes. The dashboard's `sessions()` separately returns `None` on observation failure (`dashboard/current.py:145-167`). | Liveness observation at read time; not a task event. | Process presence only. A session name does not prove progress, turn activity, Working state or last event. Unknown when observation fails; never fabricate idle. |
 | Issue display state (blocked/running/ready/unverified/open) | GitHub labels plus live-session membership (`dashboard/current.py:267-276`). | Derived per snapshot from label and presence observations. | Display classification only: blocked from a label, running from session presence, ready from a label, otherwise unverified/open. This is not authoritative task lifecycle or per-agent progress. |
-| Verified task lifecycle / progress / per-agent Working-Idle | No authoritative per-agent lifecycle, progress or idle record exists. Logs and file mtimes are incidental. | Absent. | **Not reported.** Do not turn tmux presence, issue labels or a snapshot into verified Working/Idle or progress. |
-| Last event time | No dedicated per-agent last-event field exists. File mtimes and CLI log lines are incidental, not an authoritative event contract. | Incidental filesystem/log metadata. | **Not reported.** Do not present a log mtime, snapshot time or tmux presence as an agent's last event. |
+| Per-run lifecycle telemetry (existing) | `record_start` persists `role`, `started_at` and `status = 'running'` (`tools/usage_analytics.py:1534-1554`); `record_finish` persists finish/exit status (`tools/usage_analytics.py:1560-1571`); `reconcile_running` can finalize a vanished process as interrupted from a terminal envelope/log age (`tools/usage_analytics.py:1624-1666`). | Sanitized analytics rows, not a live per-agent stream. Freshness is the last recorded run state or reconciliation, with known process/log-age limitations. | Source-supported per-run role/start/status/finish/exit. Not a safe current per-agent projection, not semantic progress and not a last CLI event. |
+| Safe current per-agent progress / Working-Idle / last CLI event | No supported current per-agent projection or progress contract exists. Per-run analytics rows are lifecycle observations, not current semantic state. | Absent as a safe projection. | **Not reported.** Do not turn a run row, tmux presence, issue label or snapshot into verified current Working/Idle, progress or last event. |
+| Last event time | Per-run finish/exit telemetry exists, but there is no per-agent last CLI event field. File mtimes and CLI log lines are incidental. | Incidental filesystem/log metadata plus run rows; not an event stream. | **Not reported.** Do not present a run status, log mtime, snapshot time or tmux presence as an agent's last event. |
 | Quota / cooldown | Pool-scope markers and status: `record_provider_quota` (`tools/team.py:828-851`), `provider_quota_status` (`tools/team.py:871-950`), `quota_status_all` (`tools/team.py:950-958`); capacity/route/availability markers (`tools/team.py:706-757,1005-1058`). | Recorded provider limit or observation, with reset provenance. | Supported at **pool** granularity, not per agent. A quota file can name the last issue/run that hit it, but that is not a live per-agent cooldown. |
 | Pause / work window | `paused.json` with typed kind and resume time (`tools/team.py:1558,1573`); `work_schedule.status(...)` (`tools/team.py:3572`). | Local marker and schedule module. | Supported. These are already surfaced honestly by the dashboard as dispatch/schedule state. |
 
@@ -110,8 +115,9 @@ would need a new narrow relay path; no such path exists in accessible source or 
 |---|---|
 | Authoritative source for profile, requested model/effort, issue, host assignment branch/worktree, process presence, issue-label display state, pool quota | **Supported on the Studio host** (raw sources above); host assignment is not a safe projection. |
 | Authoritative per-agent role including QA | **Not reported.** Lead/planner/worker can be derived; QA is a task category only. |
-| Authoritative per-agent task lifecycle / verified Working-Idle progress | **Not reported.** Tmux presence and issue labels are observations, not task events. |
-| Authoritative last event per agent | **Not reported.** No event record. |
+| Per-run lifecycle telemetry | **Source-supported** in the analytics store (role, `started_at`, running/final status, finish/exit); not a safe current per-agent projection and not semantic progress. |
+| Authoritative current per-agent progress / verified Working-Idle | **Not reported.** Run rows, tmux presence and issue labels are observations, not current semantic task progress. |
+| Authoritative last CLI event per agent | **Not reported.** Per-run finish/exit data is not a last-event stream. |
 | Authoritative per-agent cooldown/quota | **Partially supported** at pool level; not per agent. |
 | Executed route evidence in a crew view | **Partially supported only as an optional resolved model with provenance; effort is requested-only.** The existing dashboard does not expose it, and there is no executed-effort field. |
 | A sanitized, bounded, schema-validated read-only projection already served by Studio | **Partially supported in source, not contract-ready.** Sanitized and bounded, but no strict schema, no auth contract, Vael-centric and not per-agent. |
@@ -133,11 +139,14 @@ changes that Command workers must not perform:
    issue-label display state as separate observational fields, pool quota state, and
    `observed_at`. Do not add or claim an executed-effort field. Absent fields must be
    `null`/`not reported`.
-2. **Authoritative lifecycle source if Working/Idle/progress is shown.** Tmux presence is only
-   process liveness, and issue labels are only display classification. Before Phase 1 shows
-   per-agent Working/Idle, progress, elapsed work or a last event, Studio must expose an
-   authoritative lifecycle/task event source with timestamps. Without it those fields must be
-   `not reported`/unknown, never inferred from tmux or labels.
+2. **Lifecycle freshness and semantics if Working/Idle/progress is shown.** Existing per-run
+   analytics telemetry is a possible source (`tools/usage_analytics.py:1534-1554,1560-1571`;
+   `reconcile_running:1624-1666`), but it is not current semantic progress or a last CLI
+   event. Tmux presence is only process liveness, and issue labels are only display
+   classification. Before Phase 1 shows per-agent Working/Idle, progress, elapsed work or a
+   last event, Studio must either prove a safe current projection from those run records with
+   explicit freshness/limitations, or expose an authoritative task event source. Without one
+   those fields must be `not reported`/unknown, never inferred from run rows, tmux or labels.
 3. **Strict contract and bounds.** A versioned JSON schema (shared Zod or equivalent) with
    strict unknown-field rejection, enum allowlists, ISO-8601 UTC timestamps, a maximum agent
    count, a hard payload size (recommend ≤ 64 KiB), a per-read timeout, and explicit
@@ -173,8 +182,9 @@ changes that Command workers must not perform:
 > from checked-in source. Command's read-proxy is Hermes-only. To deliver P14, Studio needs a
 > versioned, sanitized, per-agent exporter (role, requested model/effort, optional resolved
 > model with provenance, issue/PR, branch, process presence kept separate from verified
-> progress, pool quota, `observed_at`; absent fields `not reported`), an authoritative
-> lifecycle source for any Working/Idle/progress field, a strict bounded schema, a new GET-only
+> progress, pool quota, `observed_at`; absent fields `not reported`). Existing per-run
+> lifecycle telemetry is source-supported, but a safe current lifecycle/progress contract for
+> any Working/Idle/progress field is still required, plus a strict bounded schema, a new GET-only
 > route on the read-proxy with a separate credential, and a dedicated Studio-to-Command relay
 > plus egress allowance. Command must stay disabled/unavailable until those exist; Phase 2
 > redacted activity detail is unavailable unless a safe projected-event schema and
@@ -187,8 +197,8 @@ changes that Command workers must not perform:
   reported a current observation time; `team.py --project command status` returned its
   documented paused/schedule/lead/running/disabled/unqualified/quota keys. Its `running` list
   is tmux session presence, not verified progress. No private values are recorded here.
-- **Unreachable / not supported:** per-agent crew projection, Dell-to-Command Studio relay,
-  Command route, strict schema, auth contract and redacted event stream.
+- **Unreachable / not supported:** safe current per-agent projection/progress, Dell-to-Command
+  Studio relay, Command route, strict schema, auth contract and redacted event stream.
 - **Not attempted:** no browser QA, no fixture, no inference, no Studio/Dell/Hermes/service or
   proxy action, no new endpoint or credential. Candidate, authenticated and phone evidence do
   not apply; physical phone remains pending for any later accepted UI slice.
