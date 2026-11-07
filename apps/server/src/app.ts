@@ -1,3 +1,5 @@
+import { ThreadReadStorageError } from './thread-read-store';
+import { ThreadObservationUnavailableError } from './thread-state';
 import { ReactionStorageError, ReactionUnavailableError, ReactionConflictError, ReactionBoundsError } from './reaction-store';
 import { CommandBootstrapSchema, type CommandBootstrap } from '@jarvis-command/contracts';
 import fastifyStatic from '@fastify/static';
@@ -64,6 +66,7 @@ export function buildApp(dependencies: AppDependencies) {
       ? error.statusCode
       : undefined;
     request.log.error({ errorType: errorName }, 'request failed');
+    if (error instanceof ThreadReadStorageError || error instanceof ThreadObservationUnavailableError) return reply.code(503).send({ error: 'thread_state_unavailable' });
     if (error instanceof ReactionUnavailableError) return reply.code(409).send({ error: 'reactions_unavailable' });
     if (error instanceof ReactionConflictError) return reply.code(409).send({ error: 'reaction_conflict' });
     if (error instanceof ReactionBoundsError) return reply.code(409).send({ error: 'reaction_limit_reached' });

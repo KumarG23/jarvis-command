@@ -471,7 +471,7 @@ export function createLiveRoomService({
     /** Read-only observation: never discovers external runs or writes audit/notifications. */
     async getRosterStatus(subject: string, sessionId: string) {
       const record = ledger.latestRunForSession(actorFingerprint(subject), sessionId);
-      if (!record) return { status: 'idle' as const, runUpdatedAt: null };
+      if (!record) return { status: 'unknown' as const, runUpdatedAt: null };
       if (!record.upstreamRunId) return { status: 'unknown' as const, runUpdatedAt: null };
       const upstream = await client.getRun(record.upstreamRunId);
       if (upstream.runId !== record.upstreamRunId || upstream.sessionId !== sessionId) throw new LiveRoomNotFoundError();

@@ -1,3 +1,6 @@
+import { ThreadReadRequestSchema } from '@jarvis-command/contracts';
+import { ThreadReadStore } from './thread-read-store';
+import { createThreadState } from './thread-state';
 import { ReactionTargetSchema, ReactionMutationSchema } from '@jarvis-command/contracts';
 import { projectSendSnapshot, type ProjectRoom } from '@jarvis-command/contracts';
 import { createProjectRosterReader } from './project-roster';
@@ -84,6 +87,7 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
   const sessionMutations = new KeyedSerialQueue();
   // Production initializes the lazy liveRoom getter in onReady, after routes
   // register. Bind on first use, retaining one shared projection gate thereafter.
+  let threadState: ReturnType<typeof createThreadState> | undefined;
   let readRoster: ReturnType<typeof createProjectRosterReader> | undefined;
   app.register(async (routes) => {
     const subjects = new WeakMap<FastifyRequest, string>();
@@ -274,6 +278,18 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
         }));
         return { room: updated.find(item => item.id === roomId)! };
       });
+    });
+    const threadReader = () => {
+      if (!threadState) threadState = createThreadState(dependencies.liveRoom!, new ThreadReadStore(dirname(dependencies.config.command!.auditLogPath)));
+      return threadState;
+    };
+    routes.get('/api/live/sessions/:sessionId/thread-state', { exposeHeadRoute: false }, async (request, reply) => {
+      const { sessionId } = parse(z.object({ sessionId: CommandSessionIdSchema }).strict(), request.params);
+      return reply.header('cache-control', 'no-store').send(await threadReader().read(subjects.get(request)!, sessionId));
+    });
+    routes.post('/api/live/sessions/:sessionId/read', { bodyLimit: 1024 }, async (request, reply) => {
+      const { sessionId } = parse(z.object({ sessionId: CommandSessionIdSchema }).strict(), request.params);
+      return reply.header('cache-control', 'no-store').send(await threadReader().read(subjects.get(request)!, sessionId, parse(ThreadReadRequestSchema, request.body)));
     });
     routes.get('/api/sessions/:sessionId/messages', { exposeHeadRoute: false }, async (request) => {
       const { sessionId } = parse(z.object({ sessionId: sessionIdSchema }).strict(), request.params);

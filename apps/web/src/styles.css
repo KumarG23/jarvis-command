@@ -607,3 +607,24 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
   .command-main:has(.reaction-picker) .composer-wrap { max-height: 26dvh; flex-shrink: 1; overflow-y: auto; padding-block: 4px; }
   .command-main:has(.reaction-picker) .timeline { padding-block: 4px; }
 }
+
+/* P13: every semantic color has a persistent icon and text label. */
+.thread-state { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; line-height: 1.5; flex-shrink: 0; }
+.thread-state svg { flex-shrink: 0; }
+.thread-state-idle { color: #c4a2ff; }
+.thread-state-unread { color: #80bbff; }
+.thread-state-needs-you { color: #ff959f; }
+.thread-state-unknown { color: #b5bbc8; }
+.thread-state-working { color: #ffe38a; }
+.thread-state-working svg { animation: thread-working 4s linear infinite; }
+@keyframes thread-working { 0%,100% { color: #ffe38a; } 20% { color: #9ae8af; } 40% { color: #fff; } 60% { color: #ffb7e1; } 80% { color: #ffbf8b; } }
+@media (prefers-reduced-motion: reduce) { .thread-state-working svg { animation: none; color: #ffe38a; } }
+.latest-message-view { display: block; height: 2px; width: 100%; }
+.chat-item > span:has(.thread-state) { display: flex; flex-direction: column; min-width: 0; align-items: flex-start; }
+.room-breadcrumb .thread-state { margin-left: 6px; }
+.header-thread-states { display: flex; gap: 16px; flex-basis: 100%; grid-column: 1 / -1; grid-row: 3; min-width: 0; flex-wrap: wrap; color: var(--muted); font-size: 11px; }
+.header-thread-states > span { display: inline-flex; align-items: center; gap: 6px; }
+@media (max-height: 480px) {
+  .command-main:has(.header-thread-states) .composer-wrap { max-height: 35dvh; flex-shrink: 1; overflow-y: auto; padding-block: 4px; }
+  .command-main:has(.header-thread-states) .timeline { padding-block: 4px; }
+}

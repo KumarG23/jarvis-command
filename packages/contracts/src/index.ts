@@ -89,3 +89,4 @@ export type {
 export * from './push';
 export * from './project-roster';
 export * from './reactions';
+export * from './thread-state';
