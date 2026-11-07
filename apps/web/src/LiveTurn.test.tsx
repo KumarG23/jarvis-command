@@ -252,6 +252,7 @@ it('creates an artifact with Jarvis only from the exact successful terminal run'
   act(() => Source.instances[0]!.emit('run.completed', { output: generated, pendingSteer: null, usage: null }));
   await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url === '/api/artifacts/text')).toBe(true));
   const saveBody = JSON.parse(String(fetchMock.mock.calls.find(([url]) => url === '/api/artifacts/text')![1]!.body));
+  expect(fetchMock.mock.calls.filter(([url]) => url === '/api/artifacts/text')).toHaveLength(1);
   expect(saveBody).toMatchObject({
     title: 'Generated module',
     type: 'code',
@@ -262,7 +263,9 @@ it('creates an artifact with Jarvis only from the exact successful terminal run'
   });
   expect(saveBody.sourceRequestId).toMatch(/^gen_[a-f0-9]{32}$/);
   await screen.findByText('Response saved as artifact.');
-  expect(sessionStorage.getItem(appStorageKey('jarvis-command:artifact-generation:v1'))).toBeNull();
+  // Saved status precedes App's parent-state update and its persistence effect.
+  // Observe the exact recovery cleanup invariant after that effect settles.
+  await waitFor(() => expect(sessionStorage.getItem(appStorageKey('jarvis-command:artifact-generation:v1'))).toBeNull());
 });
 
 it('recovers a pending Jarvis artifact generation after reload and saves the matching completed run', async () => {
