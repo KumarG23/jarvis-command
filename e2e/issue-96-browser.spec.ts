@@ -24,16 +24,23 @@ const sizes = [
   { name: 'short360x360', width: 360, height: 360, mobile: true },
 ] as const;
 
-// Needed control must be inside the viewport and be the topmost element at its centre (so no clipping ancestor or overlay hides it).
+// Full-rectangle reach: the control's whole box must be inside the viewport and every clipping ancestor, and its centre must
+// hit the control (no overlay). `extent` measures the current state without scrolling; `reachable` first performs the user's
+// own scroll (scrollIntoViewIfNeeded) and then requires the complete control to be in view.
+const extent = (control: Locator) => control.evaluate(element => {
+  const box = element.getBoundingClientRect();
+  let top = 0, bottom = innerHeight, left = 0, right = innerWidth;
+  for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+    const style = getComputedStyle(parent), rect = parent.getBoundingClientRect();
+    if (/(auto|scroll|hidden|clip)/.test(style.overflowY)) { top = Math.max(top, rect.top + parent.clientTop); bottom = Math.min(bottom, rect.top + parent.clientTop + parent.clientHeight); }
+    if (/(auto|scroll|hidden|clip)/.test(style.overflowX)) { left = Math.max(left, rect.left + parent.clientLeft); right = Math.min(right, rect.left + parent.clientLeft + parent.clientWidth); }
+  }
+  const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+  return { sized: box.width > 0 && box.height > 0, fullyVisible: box.top >= top - 0.5 && box.bottom <= bottom + 0.5 && box.left >= left - 0.5 && box.right <= right + 0.5, receivesHit: !!hit && element.contains(hit), box: [box.left, box.top, box.right, box.bottom].map(Math.round), clip: [left, top, right, bottom].map(Math.round) };
+});
 async function reachable(control: Locator, label: string) {
   await control.scrollIntoViewIfNeeded();
-  const verdict = await control.evaluate(element => {
-    const box = element.getBoundingClientRect(), x = box.left + box.width / 2, y = box.top + box.height / 2;
-    if (box.width <= 0 || box.height <= 0 || x < 0 || y < 0 || x > innerWidth || y > innerHeight) return 'outside viewport';
-    const top = document.elementFromPoint(x, y);
-    return top && (top === element || element.contains(top)) ? 'ok' : `covered by ${top?.tagName ?? 'nothing'}`;
-  });
-  expect(verdict, `${label} reachable`).toBe('ok');
+  expect(await extent(control), `${label} fully reachable (full rectangle, clipping ancestors, hit)`).toMatchObject({ sized: true, fullyVisible: true, receivesHit: true });
 }
 
 for (const size of sizes) {
@@ -163,7 +170,22 @@ for (const size of sizes) {
         await expect(page.getByText('Model choices unavailable. Retry choices before sending this request, or explicitly choose Inherit.')).toBeVisible();
         await expect(draft).toHaveValue('SYNTHETIC issue-96 draft');
         expect(runAdmissions(), 'zero run admissions after the inventory 429').toBe(0);
-        await page.screenshot({ path: info.outputPath(`issue-96-${size.name}-2-error-draft-retained.png`) });
+        // Natural state (nothing scrolled), then the user's own scroll must bring the WHOLE input and Send into view after the 429.
+        const natural = { draft: await extent(draft), send: await extent(send) };
+        diagnostics.push({ naturalAfter429: natural });
+        await page.screenshot({ path: info.outputPath(`issue-96-${size.name}-2a-error-natural.png`) });
+        await reachable(draft, 'draft input after 429');
+        await expect(draft).toHaveValue('SYNTHETIC issue-96 draft');
+        await page.screenshot({ path: info.outputPath(`issue-96-${size.name}-2b-error-draft-scrolled.png`) });
+        await reachable(send, 'Send after 429');
+        await page.screenshot({ path: info.outputPath(`issue-96-${size.name}-2c-error-send-scrolled.png`) });
+        // Scroll the composer footer to its end: Send stays fully reachable and the composer's own bottom edge is no longer clipped.
+        await page.locator('.composer-wrap').evaluate(footer => { footer.scrollTop = footer.scrollHeight; });
+        await reachable(send, 'Send at composer end after 429');
+        const composerEnd = await extent(page.locator('.turn-composer'));
+        expect(composerEnd.box[3], 'composer bottom edge within its clipping bounds after scrolling to the end').toBeLessThanOrEqual(composerEnd.clip[3] + 0.5);
+        await page.screenshot({ path: info.outputPath(`issue-96-${size.name}-2d-error-composer-end.png`) });
+        expect(runAdmissions(), 'scrolling admits no run').toBe(0);
 
         // Send is outside the picker and dismisses it; Retry is inside the picker, so reopen it explicitly.
         await reachable(picker, 'model picker (reopen)');

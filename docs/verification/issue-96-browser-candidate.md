@@ -137,3 +137,30 @@ Phone check pending; no authenticated readback, live inference or route proof.
   `issue-96-<case>-{1-catalog,2-error-draft-retained,3-retry,4-sent}.png` inspected for 360x360 (error, retry) and
   360x740 (sent): Retry sits inside the internally scrolling picker; the 360x360 composer Send button is partly
   below the fold but its centre is in the viewport and hit-tested. Original tabs/storage untouched, Chrome left running.
+
+## Re-review 6747686821 repair: full-bound reach at 360x360 (2026-11-09)
+
+Status: **offline synthetic candidate only; phone check pending; no live route or authenticated proof.** This
+**corrects the "centre in viewport" reachability claim and the "partly below the fold" note above**: the earlier
+helper checked only the control's centre and accepted a Send button whose bottom was clipped.
+
+- **Diagnosis (no production change needed):** at 360x360 the P13 rule `@media (max-height: 480px)
+  .command-main:has(.header-thread-states) .composer-wrap { max-height: 35dvh; overflow-y: auto }`
+  (`apps/web/src/styles.css`) caps the composer footer at 126px; after the inventory 429 the preflight notice grows the
+  composer to 202px. In the natural (unscrolled) state Send's box is `[295,325,339,369]` against clip bottom 360, so it
+  is clipped by 9px, and the draft input `[21,306,290,369]` likewise. The footer is an existing scroll container, so no
+  TurnView/styles change was made. Desktop and 360x740 are fully visible without scrolling.
+- **Fixture:** `reachable` now requires the full rectangle inside the viewport and every clipping ancestor
+  (`overflow` auto/scroll/hidden/clip) plus a centre hit, after the user's own `scrollIntoViewIfNeeded`; `extent`
+  measures without scrolling. After the 429 the spec records the natural state, then requires the whole draft input and
+  Send to be reachable, scrolls the composer footer to its end, requires Send reachable and the composer's bottom edge
+  inside its clip, and asserts scrolling admits no run. The natural-state geometry is recorded in the diagnostic
+  attachment (`naturalAfter429`), so the clipping stays visible rather than hidden.
+- **Run (wrapper, task `command#issue-115`, new synthetic contexts):** run 8 on this head: **3 passed, exit 0**,
+  each with 1 run admission, 3 presence requests, escaped `[]`, unexpected `[]`, context closed with zero pages.
+  Captures inspected: `issue-96-short360x360-2a-error-natural.png` (clipped, honest), `-2b-error-draft-scrolled`,
+  `-2c-error-send-scrolled`, `-2d-error-composer-end` (full Send, composer bottom edge and retained draft visible).
+  Retry state: the picker panel scrolls internally and Retry is fully reachable; Send is reachable after the retry once
+  the picker closes (Send itself dismisses the picker).
+- **Request categories:** "zero POSTs" means zero `POST /api/live/runs` admissions; foreground-presence POSTs
+  (`/api/notifications/presence`, 3 per case) are counted separately.
