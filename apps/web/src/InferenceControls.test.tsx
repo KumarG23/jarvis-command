@@ -19,6 +19,12 @@ const anthropicInventory = {
     { provider: 'anthropic', model: 'claude-haiku-5-5', label: 'Claude Haiku 5.5', reasoningEfforts: [] },
   ],
 };
+const openRouterInventory = {
+  default: { provider: 'openai-codex', model: 'gpt-6-sol' },
+  options: [
+    { provider: 'openrouter', model: 'z-ai/glm-4.5-air:free', label: 'Free · z-ai/glm-4.5-air:free', reasoningEfforts: [] },
+  ],
+};
 const model = () => screen.getByRole('combobox', { name: 'Model for this prompt' });
 const effort = () => screen.getByRole('combobox', { name: 'Reasoning for this prompt' });
 const props = () => ({ allowed: true, imageAttachmentsEnabled: false, sessionId: 'jc_one', projectId: null, max: 100, maxSteer: 100, turn: null, send: vi.fn<Parameters<typeof TurnComposer>[0]['send']>(() => false), retry: vi.fn(), resume: vi.fn(), steer: vi.fn(), recoveries: [], consumeRecovery: vi.fn() });
@@ -132,6 +138,19 @@ it('offers a Claude route with honest provider-default effort and sends no effor
   await waitFor(() => expect(p.send).toHaveBeenCalledTimes(1));
   expect(fetch).toHaveBeenCalledTimes(2);
   expect(p.send.mock.calls[0]?.[3]).toEqual({ provider: 'anthropic', model: 'claude-opus-5-5' });
+});
+
+it('offers an OpenRouter free route with provider-default effort and sends no effort override', async () => {
+  const fetch = vi.fn(async () => Response.json(openRouterInventory)); vi.stubGlobal('fetch', fetch);
+  const p = props(); render(<TurnComposer {...p} />); await ready();
+  fireEvent.change(model(), { target: { value: 'openrouter:z-ai/glm-4.5-air:free' } });
+  expect(effort()).toHaveValue(''); expect(effort()).toBeDisabled();
+  expect(screen.getByRole('option', { name: 'Provider default' })).toBeInTheDocument();
+  expect(screen.getByText(/Free · z-ai\/glm-4\.5-air:free · provider default/)).toBeInTheDocument();
+  send();
+  await waitFor(() => expect(p.send).toHaveBeenCalledTimes(1));
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(p.send.mock.calls[0]?.[3]).toEqual({ provider: 'openrouter', model: 'z-ai/glm-4.5-air:free' });
 });
 
 it('persists a Claude choice and rejects an incompatible saved effort', async () => {

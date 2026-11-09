@@ -304,9 +304,9 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
   const preference = useInferencePreference(sessionId, memory.preferences);
   const selection = preference.selection;
   const selectedModel = typeof selection === 'string' ? selection : `${selection.provider}:${selection.model}`;
-  const reasoningEffort = typeof selection === 'string' || selection.provider === 'anthropic' ? undefined : selection.reasoningEffort;
+  const reasoningEffort = typeof selection === 'string' || !('reasoningEffort' in selection) ? undefined : selection.reasoningEffort;
   const effortLabel = typeof selection === 'string' ? undefined
-    : selection.provider === 'anthropic' ? 'provider default' : selection.reasoningEffort;
+    : 'reasoningEffort' in selection ? selection.reasoningEffort : 'provider default';
   const [inventoryRetry, setInventoryRetry] = useState(0);
   const [inventoryBusy, setInventoryBusy] = useState(false);
   const [preflighting, setPreflighting] = useState(false);
@@ -370,14 +370,16 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
   };
   const busy = blocked || !draftsAuthorized || (!!turn && !turn.done);
   const selectedOption = inferenceOptions?.options.find(option => `${option.provider}:${option.model}` === selectedModel);
+  const providerDefaultEffort = (typeof selection !== 'string' && !('reasoningEffort' in selection))
+    || selectedOption?.reasoningEfforts.length === 0;
   const problem = selectionProblem(selection, inferenceOptions);
   const chooseModel = (value: string) => {
     setPreflightError('');
     if (value === 'inherit') { preference.select('inherit'); return; }
     const option = inferenceOptions?.options.find(option => `${option.provider}:${option.model}` === value);
     if (!option) return;
-    if (option.provider === 'anthropic') {
-      preference.select({ provider: option.provider, model: option.model });
+    if (option.provider === 'anthropic' || option.provider === 'openrouter') {
+      preference.select({ provider: option.provider, model: option.model } as InferenceOverride);
       return;
     }
     const effort = reasoningEffort && option.reasoningEfforts.includes(reasoningEffort) ? reasoningEffort
@@ -499,12 +501,12 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
             {typeof selection !== 'string' && !selectedOption ? <option value={selectedModel} disabled>{selection.model} (unavailable)</option> : null}
             {inferenceOptions?.options.map(option => <option key={`${option.provider}:${option.model}`} value={`${option.provider}:${option.model}`}>{option.label}</option>)}
           </select></label>
-          <label>Reasoning<select aria-label="Reasoning for this prompt" value={reasoningEffort ?? ''} disabled={busy || preflighting || !selectedOption || selectedOption.provider === 'anthropic' || (typeof selection !== 'string' && selection.provider === 'anthropic')} onChange={(event) => {
-            if (typeof selection !== 'string' && selection.provider !== 'anthropic' && selectedOption?.provider !== 'anthropic' && selectedOption?.reasoningEfforts.includes(event.target.value as ReasoningEffort)) {
+          <label>Reasoning<select aria-label="Reasoning for this prompt" value={reasoningEffort ?? ''} disabled={busy || preflighting || !selectedOption || providerDefaultEffort} onChange={(event) => {
+            if (typeof selection !== 'string' && 'reasoningEffort' in selection && !providerDefaultEffort && selectedOption?.reasoningEfforts.includes(event.target.value as ReasoningEffort)) {
               preference.select({ ...selection, reasoningEffort: event.target.value as ReasoningEffort }); setPreflightError('');
             }
           }}>
-            {selectedOption?.provider === 'anthropic' || (typeof selection !== 'string' && selection.provider === 'anthropic')
+            {providerDefaultEffort
               ? <option value="">Provider default</option>
               : <>
                 {!reasoningEffort ? <option value="">Session default (not guaranteed)</option> : null}

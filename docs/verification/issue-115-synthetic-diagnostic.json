@@ -1,0 +1,63 @@
+{
+  "diagnostics": [
+    {
+      "path": "/api/bootstrap",
+      "status": 200
+    },
+    {
+      "path": "/api/rooms",
+      "status": 200
+    },
+    {
+      "path": "/api/notifications",
+      "status": 200
+    },
+    {
+      "path": "/api/notifications",
+      "status": 200
+    },
+    {
+      "path": "/api/live/sessions/jc_99999999999999999999999999999999/context",
+      "status": 200
+    },
+    {
+      "path": "/api/live/session-controls",
+      "status": 200
+    },
+    {
+      "path": "/api/sessions/jc_99999999999999999999999999999999/messages",
+      "status": 200
+    },
+    {
+      "path": "/api/live/model-options",
+      "status": 200
+    },
+    {
+      "path": "/api/live/model-options",
+      "status": 429
+    },
+    {
+      "console": "Failed to load resource: the server responded with a status of 429 (Too Many Requests)"
+    }
+  ],
+  "requests": [
+    "GET /api/bootstrap",
+    "GET /api/rooms",
+    "GET /api/notifications",
+    "GET /api/notifications",
+    "GET /api/live/sessions/jc_99999999999999999999999999999999/context",
+    "GET /api/live/session-controls",
+    "GET /api/sessions/jc_99999999999999999999999999999999/messages",
+    "GET /api/live/model-options",
+    "GET /api/live/model-options"
+  ],
+  "errors": [],
+  "bootstrapResponseSchemaValid": true,
+  "mountedCommandVerified": true,
+  "inventory429DraftRetained": true,
+  "syntheticPosts": 0,
+  "ownedContextClosed": true,
+  "runnerExit": 1,
+  "failedAt": "Retry model choices inside dismissed picker",
+  "fullAcceptance": false
+}

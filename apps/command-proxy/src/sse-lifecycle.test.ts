@@ -12,6 +12,7 @@ const config: CommandProxyConfig = {
   hermesApiKey: 'hermes-api-key-that-is-long-enough-12345678',
   maxStreamSeconds: 1800,
   anthropicRoutesEnabled: false,
+  openRouterFreeRoutesEnabled: false,
 };
 const encode = (text: string) => new TextEncoder().encode(text);
 async function until(check: () => boolean, milliseconds = 500) {

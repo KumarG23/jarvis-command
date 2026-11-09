@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   CommandBootstrapSchema,
   InferenceOptionsResponseSchema,
+  isOpenRouterFreeModelId,
   LiveRunSubmissionRequestSchema,
+  MAX_INFERENCE_OPTIONS,
   MODEL_CATALOG_MAX_ENTRIES,
   ModelCatalogSchema,
   SessionSummarySchema,
@@ -193,6 +195,66 @@ describe('per-prompt inference contracts', () => {
     ]) expect(() => LiveRunSubmissionRequestSchema.parse({ ...request, inference })).toThrow();
   });
 
+  it('accepts only the exact lowercase OpenRouter :free suffix with provider-default effort', () => {
+    for (const model of ['z-ai/glm-4.5-air:free', 'thinkingmachines/inkling:free', 'a:free']) {
+      expect(isOpenRouterFreeModelId(model)).toBe(true);
+      expect(LiveRunSubmissionRequestSchema.parse({
+        ...request,
+        inference: { provider: 'openrouter', model },
+      }).inference).toEqual({ provider: 'openrouter', model });
+    }
+    for (const model of [
+      'z-ai/glm-4.5-air', 'z-ai/glm-4.5-air:free-paid', 'vendor/model:paid:free', 'x:free:y',
+      'vendor/model:FREE', 'vendor/model:Free', 'Vendor/model:free', 'vendor//model:free',
+      'vendor/model/:free', ':free', 'vendor/model:free ', `vendor/${'a'.repeat(154)}:free`,
+    ]) {
+      expect(isOpenRouterFreeModelId(model)).toBe(false);
+      expect(() => LiveRunSubmissionRequestSchema.parse({
+        ...request,
+        inference: { provider: 'openrouter', model },
+      })).toThrow();
+    }
+    expect(() => LiveRunSubmissionRequestSchema.parse({
+      ...request,
+      inference: { provider: 'openrouter', model: 'z-ai/glm-4.5-air:free', reasoningEffort: 'low' },
+    })).toThrow();
+    expect(() => LiveRunSubmissionRequestSchema.parse({
+      ...request,
+      inference: { provider: 'openai-codex', model: 'z-ai/glm-4.5-air:free', reasoningEffort: 'low' },
+    })).toThrow();
+  });
+
+  it('accepts bounded provider-default OpenRouter options and rejects invented effort', () => {
+    const option = {
+      provider: 'openrouter', model: 'z-ai/glm-4.5-air:free',
+      label: 'Free · z-ai/glm-4.5-air:free', reasoningEfforts: [],
+    };
+    const payload = { default: { provider: 'openai-codex', model: 'gpt-5.6-sol' }, options: [option] };
+    expect(InferenceOptionsResponseSchema.parse(payload)).toEqual(payload);
+    expect(() => InferenceOptionsResponseSchema.parse({
+      ...payload,
+      options: [{ ...option, reasoningEfforts: ['low'] }],
+    })).toThrow();
+    expect(() => InferenceOptionsResponseSchema.parse({
+      ...payload,
+      options: [{ ...option, model: 'z-ai/glm-4.5-air' }],
+    })).toThrow();
+    expect(() => InferenceOptionsResponseSchema.parse({
+      ...payload,
+      options: Array.from({ length: MAX_INFERENCE_OPTIONS + 1 }, () => option),
+    })).toThrow();
+    expect(InferenceOptionsResponseSchema.parse({
+      ...payload,
+      options: Array.from({ length: MAX_INFERENCE_OPTIONS }, () => option),
+    }).options).toHaveLength(MAX_INFERENCE_OPTIONS);
+    const maxModel = `vendor/${'a'.repeat(148)}:free`;
+    expect(maxModel).toHaveLength(160);
+    expect(InferenceOptionsResponseSchema.parse({
+      ...payload,
+      options: [{ ...option, model: maxModel, label: `Free · ${maxModel}` }],
+    }).options[0]?.model).toBe(maxModel);
+  });
+
   it('projects a strict inventory without provider metadata', () => {
     const payload = {
       default: { provider: 'openai-codex', model: 'gpt-5.6-sol' },
@@ -224,7 +286,7 @@ describe('per-prompt inference contracts', () => {
     })).toThrow();
     expect(() => InferenceOptionsResponseSchema.parse({
       ...payload,
-      options: Array.from({ length: 12 }, () => payload.options[0]),
+      options: Array.from({ length: MAX_INFERENCE_OPTIONS + 1 }, () => payload.options[0]),
     })).toThrow();
   });
 
