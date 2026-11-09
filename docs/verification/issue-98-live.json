@@ -20,12 +20,16 @@
   "task": "command#issue-98",
   "ownIssueWorktree": true,
   "existingAuthenticatedContext": true,
-  "onlyNewTaskPages": true,
-  "ownPageClosed": true,
-  "originalTabCountAndUrlsUnchanged": true,
-  "localStorageKeysUnchanged": true,
-  "chromeLeftRunning": true,
-  "coordinatesOmitted": true
+  "coordinatesOmitted": true,
+  "finalAcceptedInvocation": {
+   "newTaskPageOnly": true,
+   "ownPageClosed": true,
+   "otherPagesUrlHashesUnchangedBetweenStartAndEndOfThisRun": true,
+   "localStorageKeysUnchanged": true,
+   "chromeRunningAtEnd": true
+  },
+  "wholePassPreservationUnproven": "Earlier preliminary invocations ran before the final run, so the final run's start/end URL comparison cannot prove preservation of the original tab across the whole pass. No retained before-first-invocation vs after-cleanup identity record exists. Whole-pass original-tab preservation and exact cleanup ownership are UNKNOWN.",
+  "heuristicCleanupLimitation": "One cleanup invocation looped over ALL pages of the existing context and closed exactly one by an age (<900s) and history-length (>1) heuristic. That is not task ownership; the closed page was probably this task's own leftover page but that is not proven. A metadata-only inspection invocation read history length, visibility, focus, age, a saved-hint presence flag and viewport size from ALL pages, including the original tab; it made no navigation or write. Future cleanup must use a retained exact task target identity; unknown ownership is left open and reported, never selected by age, history, title or order."
  },
  "identity": {
   "sessionSha256": "7918b130a537e2fa2d52d0b26649dbf0f68141f235b1b25fee8359301c9f9564",
@@ -141,7 +145,85 @@
   "presencePostsForwarded": 2,
   "readPostsForwarded": 0,
   "otherForwardedMutations": 0,
-  "preparatoryRuns": "an earlier stale-shell run, a read-only asset diagnosis and a first accepted-path run forwarded only GETs plus 1 exact-owned presence POST; same guard, zero reaction attempts. A script-defect crash left one task-owned page open; it was identified by age/history and closed, original tab untouched."
+  "preparatoryRuns": [
+   {
+    "n": 1,
+    "what": "final-run script before a path fix",
+    "browserContact": "none; the script exited reading a private file before connecting",
+    "traffic": "none"
+   },
+   {
+    "n": 2,
+    "what": "stale-asset run (loaded the older precached shell; saved chat not recovered; note never rendered)",
+    "attemptedForwardedStatus200": {
+     "GET /api/health": 1,
+     "GET /api/bootstrap": 3,
+     "GET /api/rooms": 2,
+     "GET /api/notifications": 4,
+     "GET /api/live/sessions/{owned}": 1
+    },
+    "blocked": "none recorded",
+    "postsAttempted": 0,
+    "pageClose": "unknown: that version did not record closure",
+    "note": "the guard's own start/end URL hashes matched"
+   },
+   {
+    "n": 3,
+    "what": "read-only asset diagnosis, first version (script defect in its route handler)",
+    "traffic": "unknown; the handler threw on its first request, probably before any forwarding, but nothing was recorded",
+    "pageClose": "unknown; the page was left open or abandoned"
+   },
+   {
+    "n": 4,
+    "what": "read-only asset diagnosis, fixed (GETs to health and bootstrap only allowed; everything else aborted)",
+    "forwardedGet": {
+     "/api/health": 1,
+     "/api/bootstrap": 3
+    },
+    "blocked": "unknown; aborted requests were not counted",
+    "postsAttempted": "unknown, none allowed by the handler",
+    "pageClose": "closed by the script, not verified"
+   },
+   {
+    "n": 5,
+    "what": "all-pages metadata inspection (no network)",
+    "traffic": "none issued by the script",
+    "readsAllPages": true
+   },
+   {
+    "n": 6,
+    "what": "age/history heuristic cleanup (no network)",
+    "traffic": "none issued by the script",
+    "closedPages": 1,
+    "ownershipProven": false
+   },
+   {
+    "n": 7,
+    "what": "accepted-path run that failed on inline-style injection (blocked by page CSP) before captures",
+    "attempted": {
+     "GET /api/health": 1,
+     "GET /api/bootstrap": 2,
+     "GET /api/rooms": 1,
+     "GET /api/notifications": 3,
+     "GET /api/live/sessions/{owned}": 2,
+     "GET /api/live/sessions/{owned}/context": 2,
+     "GET /api/live/sessions/{owned}/thread-state": 1,
+     "GET /api/sessions/{owned}/messages": 1,
+     "GET /api/live/session-controls": 1,
+     "GET /api/live/model-options": 1,
+     "GET /api/artifacts": 1,
+     "POST /api/notifications/presence": 1
+    },
+    "blocked": {
+     "GET /api/artifacts": 1
+    },
+    "forwarded": "all other attempted calls; the one presence POST returned 204",
+    "reactionAttempts": 0,
+    "readPosts": 0,
+    "ownPageClosed": true
+   }
+  ],
+  "preparatoryRunsNote": "Recovered only from outputs this worker's native session retained; server audit totals are unknown and nothing is inferred as zero where no record exists."
  },
  "limits": {
   "candidateFixturesRerun": false,
@@ -153,6 +235,7 @@
   "phase2Binding": "Unsupported; no historical or latest-session join",
   "physicalPhone": "phone check pending",
   "wholeP12Complete": false,
-  "pr149": "still pending at this write; its receipt is preserved, not rewritten"
+  "pr149": "still pending at this write; its receipt is preserved, not rewritten",
+  "wholePassOriginalTabPreservation": "unknown (see wrapper.wholePassPreservationUnproven)"
  }
 }
