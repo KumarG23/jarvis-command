@@ -1,3 +1,4 @@
+import type * as RoutingWriteState from './routing-write-state';
 import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,6 +12,8 @@ import { ReactionStore } from './reaction-store';
 import { ProjectRoomStore } from './project-room-store';
 import { buildApp } from './app';
 import { loadConfig } from './config';
+// Retain PR151 writer-contract coverage under a synthetic source-stage mock only.
+vi.mock('./routing-write-state', async importOriginal => ({ ...await importOriginal<typeof RoutingWriteState>(), ROUTING_WRITES_AVAILABLE: true, requireRoutingWrites: () => {} }));
 const sessionId = 'jc_' + 'a'.repeat(32), projectId = 'room_' + 'b'.repeat(32);
 const a: InferenceOverride = { provider: 'openai-codex', model: 'gpt-6-luna', reasoningEffort: 'low' };
 const b: InferenceOverride = { ...a, model: 'gpt-6-sol' };

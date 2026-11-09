@@ -1,3 +1,4 @@
+import { ROUTING_WRITES_AVAILABLE, requireRoutingWrites } from './routing-write-state';
 import { InferenceOptionsResponseSchema, InferenceOverrideSchema, RoutingDefaultSetSchema, RoutingDefaultTargetSchema, SessionMutationResponseSchema, type FrozenRouting, type InferenceOverride, type LiveRunSubmissionRequest, type ProjectRoom } from '@jarvis-command/contracts';
 import type { ProjectRoomStore } from './project-room-store';
 import type { AuditLedger } from './audit-ledger';
@@ -38,20 +39,22 @@ export function createRoutingDefaults(ledger: AuditLedger, client: CommandProxyC
     async read(actor: string, raw: unknown) {
       const target = RoutingDefaultTargetSchema.parse(raw);
       await ledger.verifyStorage(); await targetScope(target);
-      return ledger.routingDefault(actor, target);
+      return { ...ledger.routingDefault(actor, target), writesAvailable: ROUTING_WRITES_AVAILABLE };
     },
     async set(actor: string, raw: unknown) {
       const request = RoutingDefaultSetSchema.parse(raw);
       await ledger.verifyStorage(); await targetScope(request.target);
+      if (!ledger.defaultRequest(actor, request.clientRequestId)) requireRoutingWrites();
       // Replays never reapply an old preference, but still require current access.
       if (request.selection && !ledger.defaultRequest(actor, request.clientRequestId)) await eligible(request.selection);
       if (!rooms) throw new RoutingUnavailableError();
       return rooms.readLocked(async snapshot => {
         await targetScope(request.target, snapshot);
-        return ledger.setRoutingDefault(actor, request);
+        return { ...await ledger.setRoutingDefault(actor, request), writesAvailable: ROUTING_WRITES_AVAILABLE };
       });
     },
     async resolve(actor: string, request: LiveRunSubmissionRequest, envelopeFingerprint: string): Promise<FrozenRouting> {
+      requireRoutingWrites();
       if (!request.routing) throw new RoutingUnavailableError();
       await scope(request.sessionId, request.routing.projectId);
       const thread = ledger.routingDefault(actor, { scope: 'thread', sessionId: request.sessionId, projectId: request.routing.projectId });

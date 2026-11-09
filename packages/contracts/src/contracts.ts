@@ -226,6 +226,7 @@ export const RoutingDefaultSetSchema = z.object({
 export const RoutingDefaultResponseSchema = z.object({
   target: RoutingDefaultTargetSchema, revision: z.number().int().nonnegative().max(4096),
   selection: InferenceOverrideSchema.nullable(), replayed: z.boolean(),
+  writesAvailable: z.boolean().default(false),
 }).strict();
 export const FrozenRoutingSchema = z.object({
   envelopeFingerprint: z.string().regex(/^[a-f0-9]{64}$/), inference: InferenceOverrideSchema,

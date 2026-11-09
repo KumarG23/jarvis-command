@@ -1,3 +1,4 @@
+import { RoutingWritesUnavailableError } from './routing-write-state';
 import { RoutingUnavailableError } from './routing-defaults';
 import { ThreadReadStorageError } from './thread-read-store';
 import { ThreadObservationUnavailableError } from './thread-state';
@@ -59,6 +60,7 @@ export function buildApp(dependencies: AppDependencies) {
     : undefined);
 
   app.setErrorHandler((error, request, reply) => {
+    if (error instanceof RoutingWritesUnavailableError) return reply.code(503).send({ error: 'routing_writes_unavailable', message: error.message });
     if (error instanceof RoutingUnavailableError) return reply.code(503).send({ error: 'routing_unavailable', message: error.message });
     const errorName = error instanceof Error ? error.name : 'UnknownError';
     const candidateStatusCode = typeof error === 'object'

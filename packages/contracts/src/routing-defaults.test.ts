@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { LiveRunSubmissionRequestSchema, RoutingDefaultSetSchema, RoutingDefaultTargetSchema, FrozenRoutingSchema } from './contracts';
+import { LiveRunSubmissionRequestSchema, RoutingDefaultSetSchema, RoutingDefaultTargetSchema, FrozenRoutingSchema, RoutingDefaultResponseSchema } from './contracts';
 const sessionId = 'jc_' + 'a'.repeat(32), projectId = 'room_' + 'b'.repeat(32);
 const inference = { provider: 'openai-codex', model: 'gpt-6-luna', reasoningEffort: 'low' };
 const request = { sessionId, input: 'SYNTHETIC', clientRequestId: 'c17cb7d5-99cf-4a06-a24b-d5d5417e7a7e' };
@@ -20,4 +20,11 @@ it('supports nullable clear, explicit global thread and project scope; freezes r
   const frozen = { envelopeFingerprint: 'a'.repeat(64), inference, source: 'thread', projectId, threadRevision: 1, projectRevision: 0 };
   expect(FrozenRoutingSchema.parse(frozen)).toEqual(frozen);
   expect(FrozenRoutingSchema.safeParse({ ...frozen, executed: inference }).success).toBe(false);
+});
+
+it('missing write availability fails closed while preserving saved readback', () => {
+  const response = { target, revision: 1, selection: inference, replayed: false };
+  expect(RoutingDefaultResponseSchema.parse(response).writesAvailable).toBe(false);
+  expect(RoutingDefaultResponseSchema.parse({ ...response, writesAvailable: true }).writesAvailable).toBe(true);
+  expect(RoutingDefaultResponseSchema.safeParse({ ...response, writesAvailable: 'true' }).success).toBe(false);
 });

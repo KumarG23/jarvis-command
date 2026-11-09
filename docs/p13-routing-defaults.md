@@ -2,7 +2,10 @@
 
 Backend source and synthetic proof only. No selector UI, release, browser/live
 readback, actual provider execution or phone acceptance is supplied by this slice.
-Luna #144 retains its separate acceptance, evidence and status ownership.
+Prior #144 acceptance/evidence remains preserved. Current #152
+[compatible-reader bridge and release sequence](p13-compatible-reader-bridge.md)
+disables NEW default/frozen-admission writes in source while retaining read/recovery.
+The writer behavior described below requires a later reviewed source activation.
 
 ## Narrow protected operations
 
@@ -34,7 +37,9 @@ bootstrap position, browser hint or preference saved elsewhere.
 These examples are synthetic and do not authorize execution or provider enablement.
 A null selection clears the preference and increments its revision. Revision0/null
 means no previous preference. Responses are strict `{target, revision, selection,
-replayed}` and no-store; reads return requested configuration, not current eligibility
+replayed, writesAvailable}` and no-store; missing `writesAvailable` means false.
+Availability comes from the source write guard, not a Hermes capability; reads
+return requested configuration, not current eligibility
 or executed evidence. Read is a POST to carry a bounded typed target, like the existing
 reaction read; it writes no preference, marker, project, message or run.
 
