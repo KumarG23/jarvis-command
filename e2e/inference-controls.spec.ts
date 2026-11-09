@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test';
+import { test } from './candidate-test';
+import { expect } from '@playwright/test';
 import { CommandBootstrapSchema } from '@jarvis-command/contracts';
 import { emptyInbox } from './empty-inbox';
 import { handlePresence } from './presence-route';
@@ -41,7 +42,11 @@ test('requested choices survive two chats and reload; stale inventory preserves 
   const model = page.getByRole('combobox', { name: 'Model for this prompt' });
   const effort = page.getByRole('combobox', { name: 'Reasoning for this prompt' });
   const draft = page.getByRole('textbox', { name: 'Message Jarvis', exact: true });
-  const expand = async () => { await page.locator('.inference-control').evaluate(el => { (el as HTMLDetailsElement).open = true; }); };
+  const expand = async () => {
+    const picker = page.locator('.inference-control');
+    if (!await picker.evaluate(el => (el as HTMLDetailsElement).open)) await picker.locator('summary').click();
+    await expect(model).toBeVisible();
+  };
   await page.goto('/'); await page.getByRole('button', { name: sessions[0]!.title, exact: true }).click(); await expand();
   await model.selectOption(`${sol.provider}:${sol.model}`); await effort.selectOption('xhigh');
   await page.getByRole('button', { name: sessions[1]!.title, exact: true }).click(); await expand(); await expect(model).toHaveValue('inherit');
@@ -55,8 +60,14 @@ test('requested choices survive two chats and reload; stale inventory preserves 
   options = [sol]; await draft.fill('SYNTHETIC draft retained'); await page.getByRole('button', { name: 'Send message', exact: true }).click();
   await expect(page.getByText('Requested model unavailable. Choose another model or explicitly choose Inherit.', { exact: true })).toBeVisible();
   expect(posts).toBe(0); await expect(draft).toHaveValue('SYNTHETIC draft retained');
-  options = [sol, luna]; await expand(); await page.getByRole('button', { name: 'Retry model choices' }).click();
+  options = [sol, luna]; await expand();
+  const panel = await page.locator('.header-inference > .inference-fields').boundingBox();
+  const main = await page.locator('.command-main').boundingBox();
+  expect(panel!.x, 'requested choices must stay in the conversation, clear of the sidebar').toBeGreaterThanOrEqual(main!.x);
+  await page.getByRole('button', { name: 'Retry model choices' }).click();
   await expect(model.locator('option')).toHaveCount(3);
+  // Inventory retry replaces its focused button; reopen through the real control.
+  await expand();
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: width === 1280 ? 720 : 844 });
     await expect(model).toBeInViewport(); await expect(effort).toBeInViewport(); await expect(draft).toBeInViewport();

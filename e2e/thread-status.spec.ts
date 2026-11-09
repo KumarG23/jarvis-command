@@ -109,6 +109,8 @@ for (const [width, height] of [[1280, 720], [1280, 360], ...[320, 360, 390, 430]
   await expect.poll(() => reads.length).toBe(1);
   await expect(page.locator('.header-thread-states').getByLabel('Idle', { exact: true })).toBeVisible();
   await expect(page.locator('.header-thread-states').getByLabel('Needs you', { exact: true })).toBeVisible();
+  for (const label of ['Idle', 'Needs you']) await reachable(page.locator('.header-thread-states').getByLabel(label, { exact: true }));
+  expect((await page.locator('.command-header').boundingBox())!.height, 'compact status header').toBeLessThanOrEqual(width < 761 ? 120 : 100);
   await expect(composer).toHaveValue('SYNTHETIC retained draft');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   const send = page.getByRole('button', { name: 'Send message', exact: true });

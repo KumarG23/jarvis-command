@@ -57,11 +57,50 @@ truncated titles and wrapping status text; no run/transport behavior changed.
 
 Named captures per case: SYNTHETIC-header-WxH.png, SYNTHETIC-roster-WxH.png,
 SYNTHETIC-roster-tail-WxH.png and SYNTHETIC-chat-list-WxH.png, beneath
-`test-results/thread-status/final-accepted/`. Inspected capture names/hashes and
+`test-results/thread-status/feedback-final/`. Inspected capture names/hashes and
 fixture/build source hashes are in [the candidate receipt](verification/issue-111-candidate.json).
 Short-height surfaces use deliberate internal scrolling; a single capture does not
 claim all rows fit simultaneously. Focused merge tests retain the delayed A/B repair
 and Studio interactions; unchanged accepted backend/read/reaction tests are reused.
+
+## PR feedback repair (November 9)
+
+Hosted validate [42635904835](https://github.com/KumarG23/jarvis-command/actions/runs/42635904835)
+failed at 469f788: legacy fixtures rejected the new GET, retained-run expectations
+claimed unverified session activity, and the added status strip inflated project
+headers to 141 px mobile / 119.5 px desktop. That run remains failed; local checks
+below do not certify a new hosted run.
+
+The shared synthetic read seam serves only explicitly listed canonical fixture
+session IDs and a query-free GET thread-state. It returns schema-valid Unknown
+with no history/read assertion. POST read/run and all other requests retain each
+fixture's existing guards; no global API swallow or fallback. Legacy no-run and
+retained-card expectations now assert Unknown, separate retained status and exact
+read-only navigation. No runtime status/auth/read implementation changed.
+
+Project status text shares the desktop identity row. Mobile uses the old spare
+header padding for its labelled strip; the health button follows the new top edge.
+The unchanged compact limits remain 120 px mobile / 100 px desktop; the project
+matrix measures 119 / 99 px. Unscoped chat status follows the original flex controls,
+keeping the requested-route picker clear of the sidebar. The existing click and
+non-overlap regressions caught both layout defects before repair. The inventory
+retry fixture reopens the picker through its real control after focused-button
+replacement; short-height Send deliberately centers in its scrolling footer with
+the original strict viewport assertion. No force-click or relaxed bounds.
+
+Current focused checks: 34 affected web cases (including delayed A/B), one server
+roster/bootstrap case, 46 affected browser fixture cases, and ten P13 status/read
+cases pass. The 18-case project/history compact matrix and ten sidebar keyboard/reach cases pass under the original
+limits. Web typecheck, scoped lint and build pass; accepted unchanged gates are
+reused. All 40 final P13 captures plus desktop/mobile requested-picker captures
+were inspected.
+
+Affected synthetic suites use fresh contexts through the same issue-111 wrapper
+when locally admitted; CI retains its ordinary isolated browser. Their previews
+now share the fail-closed, no-proxy candidate server. Named final captures and
+focused outcomes are recorded in the candidate receipt. Earlier unchanged
+backend/store/reaction gates are reused. Full workspace/hosted CI certification,
+authenticated live readback and phone acceptance are not claimed.
 
 ## Smallest routing prerequisite for lead admission
 

@@ -648,3 +648,16 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
   .studio-header .studio-return { grid-column: 3; }
   .studio-unavailable { margin-top: clamp(16px, 6vh, 60px); }
 }
+
+/* Keep status text in the existing desktop identity row. Mobile retains a
+   labelled status strip, using the header's spare padding rather than chat space. */
+@media (min-width: 761px) {
+  .command-header:not(.has-project-threads):has(.header-thread-states) { padding-block: 3px; row-gap: 4px; }
+  .command-header:not(.has-project-threads) .header-thread-states { order: 1; }
+  .has-project-threads .room-breadcrumb { align-self: start; padding-bottom: 20px; }
+  .has-project-threads .header-thread-states { grid-column: 1; grid-row: 1; align-self: end; gap: 12px; flex-wrap: nowrap; }
+}
+@media (max-width: 760px) {
+  .command-header:has(.header-thread-states) { padding-block: 0; gap: 5px 6px; }
+  .command-header:has(.header-thread-states) .health-button { top: 0; }
+}

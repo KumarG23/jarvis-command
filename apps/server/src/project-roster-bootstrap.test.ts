@@ -60,7 +60,7 @@ it('binds the roster after real factory onReady, retaining one projection gate a
     expect({ status: first.statusCode, body: first.json() }).toMatchObject({ status: 200, body: { total: 6, omitted: 2, partial: true } });
     const roster = ProjectRosterSchema.parse(first.json());
     expect(roster.items).toHaveLength(4);
-    expect(roster.items.every(item => item.status === 'idle' && !item.messagesUnavailable && item.messagesTruncated && item.messages.every(message => message.text.length === 240 && message.truncated))).toBe(true);
+    expect(roster.items.every(item => item.status === 'unknown' && !item.messagesUnavailable && item.messagesTruncated && item.messages.every(message => message.text.length === 240 && message.truncated))).toBe(true);
     expect(first.headers['cache-control']).toBe('no-store');
 
     holdSessions = true;
