@@ -1,10 +1,9 @@
-import type * as RoutingWriteState from './routing-write-state';
 import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { afterEach, expect, it, vi } from 'vitest';
-import type { InferenceOptionsResponse, InferenceOverride, ProjectRoom, RoutingDefaultSet, RoutingDefaultTarget } from '@jarvis-command/contracts';
+import { RoutingDefaultResponseSchema, type InferenceOptionsResponse, type InferenceOverride, type ProjectRoom, type RoutingDefaultSet, type RoutingDefaultTarget } from '@jarvis-command/contracts';
 import { AuditLedger } from './audit-ledger';
 import { createLiveRoomService } from './live-room-service';
 import type { CommandProxyClient } from './command-client';
@@ -12,8 +11,6 @@ import { ReactionStore } from './reaction-store';
 import { ProjectRoomStore } from './project-room-store';
 import { buildApp } from './app';
 import { loadConfig } from './config';
-// Retain PR151 writer-contract coverage under a synthetic source-stage mock only.
-vi.mock('./routing-write-state', async importOriginal => ({ ...await importOriginal<typeof RoutingWriteState>(), ROUTING_WRITES_AVAILABLE: true, requireRoutingWrites: () => {} }));
 const sessionId = 'jc_' + 'a'.repeat(32), projectId = 'room_' + 'b'.repeat(32);
 const a: InferenceOverride = { provider: 'openai-codex', model: 'gpt-6-luna', reasoningEffort: 'low' };
 const b: InferenceOverride = { ...a, model: 'gpt-6-sol' };
@@ -52,16 +49,19 @@ const request = () => ({ sessionId, clientRequestId: randomUUID(), input: 'SYNTH
 
 it('persists actor/scope isolated preferences, CAS revisions, replay and clear without sessions/runs or metadata changes', async () => {
   const f = await fixture(), id = randomUUID(), metadata = await readFile(join(f.directory, 'project-rooms.json'));
-  expect(await f.set(a, thread, 0, id)).toMatchObject({ revision: 1, selection: a, replayed: false });
+  expect(RoutingDefaultResponseSchema.parse(await f.service.readRoutingDefault('alice', thread))).toMatchObject({ revision: 0, selection: null, writesAvailable: true });
+  expect(await f.set(a, thread, 0, id)).toMatchObject({ revision: 1, selection: a, replayed: false, writesAvailable: true });
   expect(await f.set(a, thread, 0, id)).toMatchObject({ revision: 1, replayed: true });
   await expect(f.set(b, thread, 0, id)).rejects.toMatchObject({ statusCode: 409 });
   await expect(f.set(b)).rejects.toMatchObject({ statusCode: 409 });
   expect(await f.service.readRoutingDefault('bob', thread)).toMatchObject({ revision: 0, selection: null });
   expect(await f.service.readRoutingDefault('alice', project)).toMatchObject({ revision: 0, selection: null });
   await f.restart(); expect(await f.service.readRoutingDefault('alice', thread)).toMatchObject({ revision: 1, selection: a });
-  expect(await f.set(null, thread, 1)).toMatchObject({ revision: 2, selection: null });
+  expect(await f.set(null, thread, 1)).toMatchObject({ revision: 2, selection: null, writesAvailable: true });
   expect(await f.set(a, thread, 0, id)).toMatchObject({ revision: 1, replayed: true });
   expect(await f.service.readRoutingDefault('alice', thread)).toMatchObject({ revision: 2, selection: null });
+  await f.restart();
+  expect(RoutingDefaultResponseSchema.parse(await f.service.readRoutingDefault('alice', thread))).toMatchObject({ revision: 2, selection: null, writesAvailable: true });
   expect(f.startRun).not.toHaveBeenCalled(); expect(await readFile(join(f.directory, 'project-rooms.json'))).toEqual(metadata);
 });
 it('serializes competing revisions and rejects UUID reuse across targets and run admission', async () => {
@@ -70,6 +70,24 @@ it('serializes competing revisions and rejects UUID reuse across targets and run
   const id = randomUUID(); await f.set(a, project, 0, id);
   await expect(f.set(a, thread, 1, id)).rejects.toMatchObject({ statusCode: 409 });
   await expect(f.service.submitRun('alice', { ...request(), clientRequestId: id })).rejects.toMatchObject({ statusCode: 409 });
+  expect(f.startRun).not.toHaveBeenCalled();
+});
+it('keeps different owned threads, projects and actors isolated after writer restart', async () => {
+  const f = await fixture(), otherSessionId = 'jc_' + 'd'.repeat(32), otherProjectId = 'room_' + 'e'.repeat(32);
+  const owned = (await f.getSession()).session;
+  f.getSession.mockImplementation(async (id: string) => ({ session: { ...owned, id } }));
+  await f.rooms.update(rooms => [...rooms, { ...f.room, id: otherProjectId, sessionIds: [otherSessionId], lastSessionId: otherSessionId }]);
+  const otherThread: RoutingDefaultTarget = { scope: 'thread', sessionId: otherSessionId, projectId: otherProjectId };
+  const otherProject: RoutingDefaultTarget = { scope: 'project', projectId: otherProjectId };
+  await f.set(a); await f.set(b, project);
+  await f.set(b, otherThread); await f.set(a, otherProject);
+  await f.set(command, thread, 0, randomUUID(), 'bob');
+  await f.restart();
+  for (const [subject, target, selection] of [['alice', thread, a], ['alice', project, b], ['alice', otherThread, b], ['alice', otherProject, a], ['bob', thread, command]] as const) {
+    expect(await f.service.readRoutingDefault(subject, target)).toMatchObject({ revision: 1, selection, writesAvailable: true });
+  }
+  expect(await f.service.readRoutingDefault('bob', otherThread)).toMatchObject({ revision: 0, selection: null });
+  expect(await f.service.readRoutingDefault('bob', project)).toMatchObject({ revision: 0, selection: null });
   expect(f.startRun).not.toHaveBeenCalled();
 });
 it.each(['external', 'id-mismatch', 'missing', 'archived-room', 'archived-thread', 'wrong-project', 'unavailable-store'])('denies %s target without any preference or run append', async mode => {
@@ -134,12 +152,19 @@ it('lost ACK + restart reuses frozen choice, UUID, reaction-free fingerprint and
   });
   const req = { ...request(), images: [{ artifactId: 'art_' + 'e'.repeat(32), version: 1 }] };
   await expect(f.service.submitRun('alice', req)).rejects.toThrow('ACK lost');
+  const frozen = f.ledger.findRunByClientRequest(actor, req.clientRequestId)!;
   await f.set(b, thread, 1); await f.restart();
-  expect((await f.service.submitRun('alice', req)).replayed).toBe(true);
+  expect(await f.service.submitRun('alice', req)).toMatchObject({ publicRunId: frozen.publicRunId, clientRequestId: req.clientRequestId, replayed: true });
   expect(executions).toBe(1); expect(f.startRun.mock.calls[0]![0]).toEqual(f.startRun.mock.calls[1]![0]);
   expect(f.resolveImages).toHaveBeenCalledTimes(2);
   await expect(f.service.submitRun('alice', { ...req, input: 'changed' })).rejects.toMatchObject({ statusCode: 409 });
   await expect(f.service.submitRun('bob', req)).rejects.toThrow(); // active session; cannot recover Alice's admission
+  const before = await readFile(f.path);
+  await f.restart(); f.getInferenceOptions.mockRejectedValue(Error('SYNTHETIC inventory unavailable'));
+  expect(await f.service.submitRun('alice', req)).toMatchObject({ publicRunId: frozen.publicRunId, clientRequestId: req.clientRequestId, replayed: true });
+  expect(f.startRun).toHaveBeenCalledTimes(2); expect(executions).toBe(1);
+  expect(await readFile(f.path)).toEqual(before);
+  expect((await readFile(f.path, 'utf8'))).not.toContain(req.input);
 });
 it('refuses frozen pending route removal after restart instead of re-resolving edited defaults', async () => {
   const f = await fixture(); await f.set(a); f.startRun.mockRejectedValueOnce(Error('ACK lost'));
@@ -171,8 +196,13 @@ it('BFF read/set enforce existing JWT/origin/JSON guards and strict bodies with 
   expect((await post(payload, { ...headers, origin: 'https://other.invalid' })).statusCode).toBe(403);
   expect((await post({ ...payload, extra: true })).statusCode).toBe(400);
   expect((await post({ ...payload, expectedRevision: -1 })).statusCode).toBe(400);
-  expect((await post(payload)).json()).toMatchObject({ revision: 1, selection: a });
-  const read = await post(thread, headers, '/api/live/routing-defaults/read'); expect(read.statusCode).toBe(200); expect(read.headers['cache-control']).toBe('no-store'); expect(read.json()).toMatchObject({ revision: 1 });
+  const set = await post(payload); expect(set.statusCode).toBe(200);
+  expect(RoutingDefaultResponseSchema.parse(set.json())).toMatchObject({ revision: 1, selection: a, writesAvailable: true });
+  const read = await post(thread, headers, '/api/live/routing-defaults/read'); expect(read.statusCode).toBe(200); expect(read.headers['cache-control']).toBe('no-store'); expect(RoutingDefaultResponseSchema.parse(read.json())).toMatchObject({ revision: 1, selection: a, writesAvailable: true });
+  const clear = await post({ ...payload, selection: null, expectedRevision: 1, clientRequestId: randomUUID() });
+  expect(clear.statusCode).toBe(200); expect(RoutingDefaultResponseSchema.parse(clear.json())).toMatchObject({ revision: 2, selection: null, writesAvailable: true });
+  const bytes = await readFile(f.path, 'utf8');
+  for (const credential of [headers['cf-access-jwt-assertion'], 'r'.repeat(32), 'c'.repeat(32)]) expect(bytes).not.toContain(credential);
   expect(f.startRun).not.toHaveBeenCalled();
 });
 
