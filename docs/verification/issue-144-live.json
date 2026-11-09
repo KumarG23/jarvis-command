@@ -1,42 +1,56 @@
 {
   "issue": 144,
-  "kind": "post-repair authenticated owned-session readback; separate from candidate fixtures",
+  "kind": "post-recovery authenticated actual-chat readback; separate from candidate fixtures",
   "recordedAt": "2026-11-09",
   "sourceAndRelease": {
-    "source": "698d6328455fef7069b61e50a89001db394234c3",
-    "hostedValidate": "42653292447",
-    "merge": "dcc3a28bddc9e93be13519dbb3c6c074c7e32493",
-    "buildReference": "sha256:d5da7c5bb10b2a445793fd26bc48892c48afe10043a0eb306b4c3b9fa5e01543",
-    "deployedPin": "sha256:26c03f64ad513fa90d22c20c22edf7c87a2577b5071983a809f5b8b87b09f829",
-    "rollback": "release-app-1794241762657504542",
-    "authority": "Sol lead release record; worker did not merge, deploy, publish or operate services",
-    "authenticatedHealthGet": 200
+    "repair145": {
+      "source": "698d6328455fef7069b61e50a89001db394234c3",
+      "merge": "dcc3a28bddc9e93be13519dbb3c6c074c7e32493",
+      "buildReference": "sha256:d5da7c5bb10b2a445793fd26bc48892c48afe10043a0eb306b4c3b9fa5e01543",
+      "priorDeployedPin": "sha256:26c03f64ad513fa90d22c20c22edf7c87a2577b5071983a809f5b8b87b09f829",
+      "rollback": "release-app-1794241762657504542"
+    },
+    "recovery148": {
+      "source": "3dffd95347aa45f0c37ad434042a0eeb19c9f05c",
+      "review": "https://github.com/KumarG23/jarvis-command/pull/148#issuecomment-6747588999",
+      "hostedValidate": "42669232962",
+      "merge": "26cb4db1b48a3e459fea0b2132839673c3d2134e"
+    },
+    "currentAppRelease": {
+      "buildReference": "sha256:f85ccfa1ab4bd522ad254c6b11f1aa314b089707781a52be93c3ad4908944159",
+      "deployedPin": "sha256:cbb0e9e44d46e152a30d4fc5ee31691903d1542eec9374db274f90aab04ed2fa",
+      "rollback": "release-app-1794247473897753628",
+      "rollbackRestores": "sha256:26c03f64ad513fa90d22c20c22edf7c87a2577b5071983a809f5b8b87b09f829",
+      "healthAuthority": "Sol lead release record; healthy/running/active; worker did not merge, deploy, publish or operate services",
+      "attestation": "https://github.com/KumarG23/jarvis-command/issues/20#issuecomment-6747658908",
+      "authenticatedHealthGet": 200
+    },
+    "currentSourceCommit": "26cb4db1b48a3e459fea0b2132839673c3d2134e"
   },
   "wrapper": {
     "tool": "tools/browser_qa.py",
+    "sourceRevision": "301bdfb0ce82c8dbffb16b5babd8d93209febac4",
     "task": "command#issue-144",
     "ownIssueWorktree": true,
     "existingAuthenticatedContext": true,
     "onlyNewTaskPages": true,
     "originalTabsAndStoragePreserved": true,
     "chromeLeftRunning": true,
-    "privateCoordinatesOmitted": true,
-    "rawIdentityAndHistoryOmitted": true
+    "configuredCoordinatesAndProfileOmitted": true,
+    "taskPageHintRestored": true,
+    "originalDraftRestored": true
   },
   "ownedIdentity": {
     "sessionSha256": "7918b130a537e2fa2d52d0b26649dbf0f68141f235b1b25fee8359301c9f9564",
-    "priorCanonicalOwnershipProof": true,
-    "currentSupportedOwnershipGet": 200,
-    "exactIdMatchedPrivately": true,
+    "receiptIdentityMatchedPrivately": true,
+    "exactSupportedOwnershipGet": 200,
     "ownership": "command",
+    "identityVerifiedBeforeHistory": true,
     "noSubstituteSelected": true
   },
-  "postRepairObservation": {
-    "threadStateGet": 200,
-    "messagesGet": 200,
+  "canonicalBeforeAndAfter": {
     "historyComplete": true,
-    "unreadBeforeAnyNewUiView": true,
-    "canonicalMessages": [
+    "records": [
       {
         "idSha256": "addc598ce00e88510319ba722f2911447e8d4f5edb6af0f596310e9e659e4759",
         "position": 0,
@@ -56,57 +70,213 @@
         "eligibleChatReadTarget": false
       }
     ],
+    "positionsPreserved": true,
     "latestEligible": {
       "idSha256": "605db792be11b2f3a82bbc503ad81f3b4d389ec1dcfbe1aebd7bb5f6f720ae52",
       "position": 1
+    }
+  },
+  "beforeActualView": {
+    "threadStateGet": 200,
+    "unread": true,
+    "latestAssistantPosition": 1,
+    "durableLastReadCategory": "excluded system setup",
+    "durableLastReadPosition": 2,
+    "unreadLabelVisible": true
+  },
+  "actualAssistantView": {
+    "nativeVisible": true,
+    "nativeFocused": true,
+    "messageMatched": true,
+    "positiveMarker": true,
+    "fullyClippedInFinalPage": true,
+    "hitTestPassed": true,
+    "postCount": 1,
+    "postPosition": 1,
+    "postMessageIdSha256": "605db792be11b2f3a82bbc503ad81f3b4d389ec1dcfbe1aebd7bb5f6f720ae52",
+    "postResponse": 200,
+    "postLatestAndLastReadAgree": true,
+    "postUnread": false,
+    "persistedGet": {
+      "status": 200,
+      "latestExact": true,
+      "lastReadExact": true,
+      "unread": false
     },
-    "durableLastReadBeforeAndAfterStaleAttempt": {
-      "idSha256": "04d0644f3345ae5a1aa85f0d3871b98d7691ba8b4ce9a3f7a43f6aea7b7245ad",
-      "position": 2
+    "reloadGet": {
+      "status": 200,
+      "latestExact": true,
+      "lastReadExact": true,
+      "unread": false
     },
-    "staleExcludedSetupPost": {
+    "independentTaskPageGet": {
+      "status": 200,
+      "latestExact": true,
+      "lastReadExact": true,
+      "unread": false
+    }
+  },
+  "staleExcludedSetupAfterClear": {
+    "position": 2,
+    "attempts": 1,
+    "responseStatus": "not retained by harness assertion",
+    "retryPerformed": false,
+    "currentMarkerAfterwardReobserved": {
+      "status": 200,
+      "messageIdSha256": "605db792be11b2f3a82bbc503ad81f3b4d389ec1dcfbe1aebd7bb5f6f720ae52",
+      "position": 1,
+      "unread": false
+    },
+    "historicalPreclearStaleRequest": {
       "status": 409,
       "markerUnchanged": true,
-      "unreadRemained": true
+      "source": "preserved API-only #147 receipt"
     },
-    "assistantViewReadPost": "not attempted: exact session absent from authenticated bootstrap",
-    "bootstrap": {
-      "status": 200,
-      "exactOwnedSessionListed": false
+    "limitation": "current post-clear stale response status is not claimed; harness incorrectly expected the 409 error body to echo lastRead, and no repeat was made"
+  },
+  "viewports": [
+    {
+      "status": "Idle",
+      "statusLabelVisible": true,
+      "latestHistoryReached": true,
+      "unsentDraftRetained": true,
+      "inputVisible": true,
+      "sendReachHit": true,
+      "modelPickerOpened": true,
+      "pickerEscapeFocusRestored": true,
+      "studioUnavailableVisible": true,
+      "studioEscapeReturnedToChat": true,
+      "studioEscapeFocusRestored": true,
+      "studioBackReturnedToChat": true,
+      "studioBackFocusRestored": true,
+      "name": "desktop-1280x720",
+      "captures": [
+        {
+          "name": "desktop-1280x720.png",
+          "sha256": "852b2a9ea081bdb8671d9a390718438a8f2f72643dab90bfc1b1d49cde14b70d"
+        },
+        {
+          "name": "desktop-1280x720-studio.png",
+          "sha256": "5c570e09842bbbc67d76b9ce6a15ac6c40de8bc9d1bea9a98059bfe92606f733"
+        }
+      ]
     },
-    "absenceCause": "unknown; no inference made"
-  },
-  "uiAcceptance": {
-    "assistantView": "blocked by bootstrap omission",
-    "readbackReload": "not reached",
-    "independentPageReadback": "not reached",
-    "statusLabels": "not verified",
-    "draftNavigationAndInput": "not verified",
-    "viewportChecks": [],
-    "captures": [],
-    "captureInspection": "none; exact owned session was not selectable",
-    "phone": "phone check pending"
-  },
+    {
+      "status": "Idle",
+      "statusLabelVisible": true,
+      "latestHistoryReached": true,
+      "unsentDraftRetained": true,
+      "inputVisible": true,
+      "sendReachHit": true,
+      "modelPickerOpened": true,
+      "pickerEscapeFocusRestored": true,
+      "studioUnavailableVisible": true,
+      "studioEscapeReturnedToChat": true,
+      "studioEscapeFocusRestored": true,
+      "studioBackReturnedToChat": true,
+      "studioBackFocusRestored": true,
+      "name": "mobile-360x740",
+      "captures": [
+        {
+          "name": "mobile-360x740.png",
+          "sha256": "fb3143752a0d7ff03928b6e2c44404e9d1a3cd45b97771e253259fc808b1f799"
+        },
+        {
+          "name": "mobile-360x740-studio.png",
+          "sha256": "74df7460d1ccc33339eeb6014fc4eb6c8864926f57ea37087402c58f190e9ca7"
+        }
+      ]
+    },
+    {
+      "status": "Idle",
+      "statusLabelVisible": true,
+      "unsentDraftRetained": true,
+      "inputVisible": true,
+      "sendReachHit": true,
+      "modelPickerOpened": true,
+      "pickerEscapeFocusRestored": true,
+      "studioUnavailableVisible": true,
+      "studioEscapeReturnedToChat": true,
+      "studioEscapeFocusRestored": true,
+      "studioBackReturnedToChat": true,
+      "studioBackFocusRestored": true,
+      "name": "short-360x360",
+      "latestHistoryReachedAfterNativeScroll": true,
+      "captures": [
+        {
+          "name": "short-360x360.png",
+          "sha256": "efd866929b776df183cca5897cbb7e8d494108c82e84af478c10695864e4dc2e"
+        },
+        {
+          "name": "short-360x360-studio.png",
+          "sha256": "e41e9132be095fe706d4e0164db2d164e4f7d9db5e1dc8ef6416902d82e89823"
+        }
+      ]
+    }
+  ],
   "apiMethodCounts": {
-    "wrappedTaskInvocations": 3,
-    "getRequests": 20,
-    "postRequests": 1,
-    "deleteRequests": 0,
-    "taskFirewallBlockedApiRequests": 6,
-    "assistantReadPosts": 0,
-    "rejectedStaleReadPosts": 1,
+    "wrappedTaskInvocations": 5,
+    "invocationCounts": {
+      "assistant-view-read-attempt": "GET42 POST3",
+      "corrected-state-ui-probe": "GET42 POST0",
+      "viewport-probe": "GET41 POST0",
+      "short-height-reach-probe": "GET41 POST0",
+      "final-focused-recheck": "GET41 POST0"
+    },
+    "DELETE": 0,
+    "other": 0,
+    "forwardedAssistantReadPosts": 1,
+    "postClearStaleReadAttempts": 1,
+    "notificationsReconciliationPostsBlockedBeforeEgress": 1,
     "presencePostAttempts": 0,
-    "runAdmissionPostAttempts": 0
+    "runAdmissionPostAttempts": 0,
+    "externalAttempts": 0,
+    "wrapperAttemptedGET": 207,
+    "wrapperAttemptedPOST": 3,
+    "wrapperDeniedApiAttemptsByInvocation": [
+      23,
+      18,
+      18,
+      18,
+      18
+    ],
+    "wrapperDeniedApiAttemptsTotal": 95,
+    "forwardedBackendRequests": {
+      "GET": 113,
+      "POST": 2
+    },
+    "blockedBeforeEgressRequests": {
+      "GET": 94,
+      "POST": 1
+    },
+    "forwardedReadPostAttempts": {
+      "successfulAssistantRead": 1,
+      "postClearStaleSetupAttemptStatusUnknown": 1
+    },
+    "forwardedRunAdmissionPosts": 0,
+    "forwardedPresencePosts": 0,
+    "forwardedOtherMutationPosts": 0
   },
   "limits": {
     "candidateFixturesRerun": false,
     "fullSuiteRerun": false,
     "newInferenceOrMessage": false,
     "newSession": false,
-    "historicalRunMessageJoinInferred": false,
-    "projectOrStudioMutation": false,
+    "projectMutation": false,
     "serviceProxyOrProviderOperation": false,
     "authAccessCredentialOrNetworkChange": false,
-    "wholeP13Complete": false
-  }
+    "requestedOrExecutedRouteProof": false,
+    "physicalPhoneCheck": "pending",
+    "wholeP13Complete": false,
+    "wholeP14Complete": false
+  },
+  "p14Current": {
+    "consumer142": "app-released with production source=null",
+    "shell146": "app-released with production source=null",
+    "connectedToLiveStudio": false,
+    "crewDataAcceptance": false,
+    "dashboardCutoverUnresolved": "https://github.com/KumarG23/jarvis-command/issues/20#issuecomment-6743791366",
+    "approvedTransportUnresolved": "https://github.com/KumarG23/jarvis-command/issues/20#issuecomment-6745632752"
+  },
+  "preservation": "Previous API-only #144 receipt is preserved byte-for-byte in issue-144-api-only.json; original #111 receipt unchanged."
 }
