@@ -1,3 +1,5 @@
+import { useSavedRouting } from './savedRouting';
+import { SavedRoutingControls } from './SavedRoutingControls';
 import { composeProjectInput, projectContext, readProjectForSend, readProjectRoster, rosterContext, rosterFacts } from './projectInput';
 import { projectSendSnapshot, type ProjectRoster, type ProjectRoom } from '@jarvis-command/contracts';
 import { createPortal } from 'react-dom';
@@ -89,6 +91,7 @@ function RunInspector({ turn }: Readonly<{ turn: Turn }>) {
     <div id={panelId} className="run-inspector-body" role="region" aria-label="Run inspector">
       <h3>Usage</h3>
       {turn.usage ? <ExecutionReceipt usage={turn.usage} /> : <p>{turn.done ? 'Run usage unavailable' : 'Usage available when run finishes'}</p>}
+      {!execution && 'routing' in turn.intent && turn.intent.routing ? <p className="turn-route">Requested routing · Saved defaults with any explicit prompt override. Resolved/executed route requires this run’s receipt.</p> : null}
       {!execution && 'inference' in turn.intent && turn.intent.inference ? <p className="turn-route">Requested route · {turn.intent.inference.model} · {requestedEffortLabel(turn.intent.inference)}</p> : null}
       <div className="inspector-heading"><h3>Run receipt</h3><button className="secondary-button copy-receipt" type="button" onClick={() => { void copy(); }}><Copy size={14} /> Copy receipt</button></div>
       <span className="copy-status" role="status">{copyMessage}</span>
@@ -264,7 +267,7 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
   allowed: boolean; imageAttachmentsEnabled: boolean; sessionId: string | undefined; projectId: string | null; max: number; turn: Turn | null;
   maxSteer: number; steer: (run: Turn, input: string, max: number) => Promise<boolean | undefined>;
   recoveries: DraftRecovery[]; consumeRecovery: (recovery: DraftRecovery) => void;
-  send: (sessionId: string, input: string, max: number, inference?: InferenceOverride, images?: LiveRunSubmissionRequest['images']) => boolean; retry: () => void; resume: () => void;
+  send: (sessionId: string, input: string, max: number, inference?: InferenceOverride, images?: LiveRunSubmissionRequest['images'], routing?: LiveRunSubmissionRequest['routing']) => boolean; retry: () => void; resume: () => void;
 }>) {
   const displayedProject = project?.id === projectId ? project : null;
   const projectSnapshot = displayedProject ? projectSendSnapshot(displayedProject) : '';
@@ -302,6 +305,8 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
   const [inferenceOptions, setInferenceOptions] = useState<InferenceOptionsResponse | null>(null);
   const [inferenceError, setInferenceError] = useState(false);
   const preference = useInferencePreference(sessionId, memory.preferences);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const saved = useSavedRouting(sessionId, projectId, allowed && draftsAuthorized, pickerOpen);
   const selection = preference.selection;
   const selectedModel = typeof selection === 'string' ? selection : `${selection.provider}:${selection.model}`;
   const reasoningEffort = typeof selection === 'string' || !('reasoningEffort' in selection) ? undefined : selection.reasoningEffort;
@@ -313,7 +318,7 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
   const [preflightError, setPreflightError] = useState('');
   const preflight = useRef<AbortController | null>(null);
   // Invalidates an asynchronous send if the chat or send context changes.
-  const contextVersion = useMemo(() => ({}), [sessionId, projectId, project, allowed, draftsAuthorized, blocked, turn, selection]);
+  const contextVersion = useMemo(() => ({}), [sessionId, projectId, project, allowed, draftsAuthorized, blocked, turn, selection, saved.opted]);
   const sendContext = useRef(contextVersion);
   sendContext.current = contextVersion;
   useEffect(() => {
@@ -428,6 +433,7 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
     let input = composeProjectInput(message, displayedProject, displayedRoster, sessionId);
     if (!allowed || !sessionId || busy || imageBusy || preflight.current || !message) return;
     if (problem) { setPreflightError(problem); return; }
+    if (saved.opted && !saved.available) { setPreflightError('Saved defaults are unavailable. Refresh or explicitly turn off saved defaults; your draft is kept.'); return; }
     const context = sendContext.current;
     const controller = new AbortController();
     preflight.current = controller;
@@ -460,6 +466,7 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
         }
         input = composeProjectInput(message, fresh, displayedRoster, sessionId);
       }
+      if (saved.opted && !await saved.refresh(controller)) { if (sendContext.current === context) setPreflightError('Saved defaults are unavailable. Your draft is kept; no fallback was sent.'); return; }
       if (input.length > max) { setPreflightError(`Complete message including project context is ${input.length} / ${max} characters. Shorten the message or saved context. Your draft is kept.`); return; }
       if (typeof selection !== 'string') {
         let fresh: InferenceOptionsResponse;
@@ -480,7 +487,7 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
       }
       if (controller.signal.aborted || sendContext.current !== context || (draftsRef.current[sessionId] ?? '') !== draft) return;
       if (!clearForSend(sessionId)) { setPreflightError('Draft storage could not be cleared safely. Message not sent; keep this tab open and retry when storage is available.'); return; }
-      if (send(sessionId, input, max, typeof selection === 'string' ? undefined : selection, images.map(({ artifactId, version }) => ({ artifactId, version })))) {
+      if (send(sessionId, input, max, typeof selection === 'string' ? undefined : selection, images.map(({ artifactId, version }) => ({ artifactId, version })), ...(saved.opted ? [{ mode: 'defaults' as const, projectId }] : []))) {
         setRoomDraft(sessionId, '');
         setImagesBySession(previous => ({ ...previous, [sessionId]: [] }));
       } else setRoomDraft(sessionId, draft);
@@ -489,14 +496,20 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
       setPreflighting(false);
     }
   };
-  const inferencePicker = (<details ref={picker} className={`inference-control${inferenceTarget ? ' header-inference' : ''}`} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }} onKeyDown={event => {
+  const inferencePicker = (<details ref={picker} onToggle={event => {
+        const open = event.currentTarget.open;
+        // A focused control near the bottom can scroll this panel. Each reopen
+        // starts at the prompt choices without moving focus or the chat viewport.
+        if (open) { const panel = event.currentTarget.querySelector<HTMLElement>('.inference-fields'); if (panel) panel.scrollTop = 0; }
+        setPickerOpen(open);
+      }} className={`inference-control${inferenceTarget ? ' header-inference' : ''}`} onBlur={event => { if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }} onKeyDown={event => {
         if (event.key === 'Escape') { event.stopPropagation(); if (picker.current) picker.current.open = false; picker.current?.querySelector('summary')?.focus(); }
       }}>
-        <summary title={`Requested · ${selection === 'inherit' ? 'Inherit' : selection === 'invalid' ? 'Selection unavailable' : `${selectedOption?.label ?? selection.model} · ${effortLabel}`}`}><span className="requested-label">Requested · </span><span className="requested-choice">{selection === 'inherit' ? 'Inherit' : selection === 'invalid' ? 'Selection unavailable' : `${selectedOption?.label ?? selection.model} · ${effortLabel}`}</span></summary>
+        <summary title={`Requested · ${selection === 'inherit' ? saved.opted ? 'Saved defaults' : 'Inherit' : selection === 'invalid' ? 'Selection unavailable' : `${selectedOption?.label ?? selection.model} · ${effortLabel}`}`}><span className="requested-label">Requested · </span><span className="requested-choice">{selection === 'inherit' ? saved.opted ? 'Saved defaults' : 'Inherit' : selection === 'invalid' ? 'Selection unavailable' : `${selectedOption?.label ?? selection.model} · ${effortLabel}`}</span></summary>
         <div className="inference-fields">
           <p className="route-explanation">Requested for the next message. Executed route is reported only in a run’s Activity / Usage receipt; a latest-session receipt does not identify a selected answer.</p>
           <label>Model<select aria-label="Model for this prompt" value={selectedModel} disabled={busy || preflighting || inventoryBusy} onChange={(event) => chooseModel(event.target.value)}>
-            <option value="inherit">Inherit ({inferenceOptions?.default.model ?? 'session default'})</option>
+            <option value="inherit">{saved.opted ? 'No prompt override (use saved defaults)' : `Inherit (${inferenceOptions?.default.model ?? 'session default'})`}</option>
             {selection === 'invalid' ? <option value="invalid" disabled>Stored selection unavailable</option> : null}
             {typeof selection !== 'string' && !selectedOption ? <option value={selectedModel} disabled>{selection.model} (unavailable)</option> : null}
             {inferenceOptions?.options.map(option => <option key={`${option.provider}:${option.model}`} value={`${option.provider}:${option.model}`}>{option.label}</option>)}
@@ -515,8 +528,9 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
               </>}
           </select></label>
           <p>Preflight request for this chat, saved only in this browser. Offered efforts are requests; execution is confirmed only by the current run receipt. Inherit uses session routing without a guaranteed effort.</p>
-          {inferenceOptions?.catalog ? <ModelCatalogView catalog={inferenceOptions.catalog} options={inferenceOptions.options} disabled={busy || preflighting || inventoryBusy} onSelect={chooseModel} /> : null}
           <button className="secondary-button" type="button" disabled={inventoryBusy || preflighting || busy} onClick={() => { setPreflightError(''); setInventoryRetry(value => value + 1); }}>Retry model choices</button>
+          <SavedRoutingControls saved={saved} selection={typeof selection === 'string' || problem ? null : selection} disabled={busy || preflighting || inventoryBusy} />
+          {inferenceOptions?.catalog ? <ModelCatalogView catalog={inferenceOptions.catalog} options={inferenceOptions.options} disabled={busy || preflighting || inventoryBusy} onSelect={chooseModel} /> : null}
         </div>
       </details>);
   return <>

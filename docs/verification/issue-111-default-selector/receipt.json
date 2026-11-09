@@ -1,0 +1,84 @@
+{
+  "evidence": "synthetic isolated candidate only",
+  "issue": 111,
+  "task": "command#issue-111",
+  "worktree_branch": "team/command/issue-111",
+  "candidate_commit": "53b3b475ca4873af3b1201f9516d26779885795d",
+  "studio_source_revision": "301bdfb",
+  "wrapper": "tools/browser_qa.py",
+  "wrapper_sha256": "6d5e3f52c81d2fca1971569988c588f00823a995c69e42d8a61033c42db23b71",
+  "command": "npm exec -- playwright test --config e2e/default-selector.config.ts --workers=1 --reporter=line",
+  "result": {
+    "passed": 3,
+    "failed": 0,
+    "viewports": [
+      "1280x720",
+      "360x740",
+      "360x360"
+    ]
+  },
+  "per_viewport_request_counts": {
+    "total": 18,
+    "GET": 9,
+    "POST": 9,
+    "thread_state_GET": 1,
+    "routing_defaults_read_POST": 3,
+    "routing_defaults_set_POST": 3,
+    "run_submission_POST": 2,
+    "unique_run_request_ids": 1,
+    "external_or_websocket_attempts": 0,
+    "unexpected_operations": 0,
+    "page_errors": 0
+  },
+  "run_behavior": "Synthetic run handler returned 503 for initial and manual same-UUID retry; this proves envelope replay only, no run execution.",
+  "preference_behavior": "Synthetic-only fixture accepted 3 distinct UUID preference changes (save, clear, save); not a live or enabled server write.",
+  "guards": "Origin and WebSocket denial installed before navigation; all API requests routed to isolated fixture handlers; no proxy.",
+  "screenshots": [
+    {
+      "name": "SYNTHETIC-default-selector-picker-1280x720.png",
+      "sha256": "ec3c67bddaa021abe1fa4a8d39a38df23f9626f1acb64e9a8f2a42c0d83473b8",
+      "bytes": 104008
+    },
+    {
+      "name": "SYNTHETIC-default-selector-picker-360x360.png",
+      "sha256": "fad53bf43a4f9e7d31e0c0519c9a161f256511924985f2e769e630b8810dc642",
+      "bytes": 31513
+    },
+    {
+      "name": "SYNTHETIC-default-selector-picker-360x740.png",
+      "sha256": "0e98addd45e4e9d4f48dd20852b691de4b9b51f25b8efe18278e519a868dd766",
+      "bytes": 51407
+    },
+    {
+      "name": "SYNTHETIC-default-selector-prompt-1280x720.png",
+      "sha256": "0a0287a0ea72b8313f49763f293960656849b313864e11f0e138d95482e79d56",
+      "bytes": 114883
+    },
+    {
+      "name": "SYNTHETIC-default-selector-prompt-360x360.png",
+      "sha256": "8f33026056f1eec4d48defb26d98afe574de15fcee8f61eee4f03de7b48a4b78",
+      "bytes": 32490
+    },
+    {
+      "name": "SYNTHETIC-default-selector-prompt-360x740.png",
+      "sha256": "625e124df2254672c409171b0202e4887cb573946442d85b8191f26aab0eae19",
+      "bytes": 56845
+    },
+    {
+      "name": "SYNTHETIC-default-selector-uncertain-1280x720.png",
+      "sha256": "80e6a62018799a5799185a07dd7cf8e3cbfb1d91d9ec6b973357108648126c42",
+      "bytes": 85866
+    },
+    {
+      "name": "SYNTHETIC-default-selector-uncertain-360x360.png",
+      "sha256": "654ce9ec3e41e40df845412b19e47f57470f73d842c65f63ece3382642c24aad",
+      "bytes": 26227
+    },
+    {
+      "name": "SYNTHETIC-default-selector-uncertain-360x740.png",
+      "sha256": "48c6469b79f8c331b75368e5425f72e7f51baf7153c7cfeae3156d98a5035e7b",
+      "bytes": 47977
+    }
+  ],
+  "inspection": "All 9 named SYNTHETIC captures inspected at desktop, mobile and short-height sizes. Input, Send and retry were separately clipped and hit-tested during the test. No authenticated/live data present."
+}

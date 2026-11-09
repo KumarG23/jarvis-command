@@ -1,3 +1,5 @@
+import { handleDefaultRead } from './routing-defaults-route';
+import type { RoutingDefaultTarget } from '@jarvis-command/contracts';
 import { expect, test as base, type Locator } from '@playwright/test';
 import { CommandBootstrapSchema } from '@jarvis-command/contracts';
 import { emptyInbox } from './empty-inbox';
@@ -52,7 +54,7 @@ for (const size of sizes) {
       const diagnostics: unknown[] = [];
       const requests: string[] = [];
       const errors: string[] = [];
-      const unexpected: string[] = [];
+      const unexpected: string[] = [], defaultReads: RoutingDefaultTarget[] = [];
       const escaped: string[] = [];
       const posts: Record<string, unknown>[] = [];
       let presence = 0;
@@ -84,7 +86,7 @@ for (const size of sizes) {
         const path = url.pathname;
         requests.push(`${request.method()} ${path}`);
         if (path === '/api/notifications/presence') { presence++; handlePresence(route); return; }
-        if (handleThreadState(route, [sessionId])) return;
+        if (handleThreadState(route, [sessionId]) || handleDefaultRead(route, [{ scope: 'thread', sessionId, projectId: null }], defaultReads)) return;
         const json = (body: unknown) => route.fulfill({ json: body });
         if (path === '/api/live/runs' && request.method() === 'POST') {
           const payload = request.postDataJSON() as Record<string, unknown>;
@@ -211,11 +213,12 @@ for (const size of sizes) {
         await page.goto('about:blank');
         await expect.poll(() => presence).toBeGreaterThanOrEqual(1);
         expect(runAdmissions()).toBe(1);
+        expect(defaultReads.length).toBeGreaterThan(0);
         expect(unexpected).toEqual([]);
         expect(escaped, 'requests/websockets attempting to leave the loopback preview').toEqual([]);
         expect(errors).toEqual([]);
       } finally {
-        const summary = { diagnostics, requests, errors, runAdmissions: runAdmissions(), presenceRequests: presence, escaped, unexpected };
+        const summary = { diagnostics, requests, errors, runAdmissions: runAdmissions(), defaultReads, presenceRequests: presence, escaped, unexpected };
         await info.attach('synthetic-network-diagnostic', { body: JSON.stringify(summary), contentType: 'application/json' });
         console.log('SYNTHETIC network diagnostic', JSON.stringify(summary));
         await context.close();
