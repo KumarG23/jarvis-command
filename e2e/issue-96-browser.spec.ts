@@ -1,6 +1,8 @@
 import { expect, test as base } from '@playwright/test';
 import { CommandBootstrapSchema } from '@jarvis-command/contracts';
 import { emptyInbox } from './empty-inbox';
+import { handlePresence } from './presence-route';
+import { handleThreadState } from './thread-state-route';
 
 // Use the same owned-context lifecycle as the accepted #97 wrapper fixture.
 const test = base.extend({
@@ -46,6 +48,8 @@ test('SYNTHETIC OpenRouter free selector stays honest at desktop, 360px and shor
     await page.route('**/api/**', async route => {
       const request = route.request(), path = new URL(request.url()).pathname;
       requests.push(`${request.method()} ${path}`);
+      // Accepted shared seams: strict foreground-presence POST and Unknown (never unread) thread state.
+      if (handlePresence(route) || handleThreadState(route, [sessionId])) return;
       const json = (body: unknown) => route.fulfill({ json: body });
       if (path === '/api/live/runs' && request.method() === 'POST') {
         const payload = request.postDataJSON() as Record<string, unknown>;
@@ -126,6 +130,7 @@ test('SYNTHETIC OpenRouter free selector stays honest at desktop, 360px and shor
       expect(bounds).not.toBeNull();
       expect(bounds!.x).toBeGreaterThanOrEqual(0);
       expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
+      await page.screenshot({ path: info.outputPath(`issue-96-free-selector-${width}x${height}.png`) });
       await page.keyboard.press('Escape');
       await expect(catalogRegion).toBeHidden();
       await picker.click();

@@ -1,7 +1,7 @@
 <!-- dev-studio:auto -->
 # Issue #96 browser candidate fixture
 
-Status: unavailable for full acceptance. This is offline candidate evidence only.
+Status: offline synthetic candidate fixture PASSES (see the P10.5 section at the end; the earlier sections are history). Not live route acceptance.
 
 The Studio wrapper accepted the prepared local endpoint/profile configuration and ran the issue-owned fixture with task `command#issue-96`. The wrapper acquired its lock and the Playwright test created a new context. A first, limited fixture run passed the Free label, catalog Use action, provider-default effort state, and viewport checks at 1280×720, 360×740, and 360×360. That run did not exercise send or draft/error behavior and did not assert that model inventory had loaded.
 
@@ -78,3 +78,33 @@ Web typecheck, scoped ESLint, candidate web build and diff checks pass. Reused
 unchanged proxy167/server280/contracts63/header28/turn-recovery46 evidence;
 no full-suite rerun or CI polling. New exact-head CI and Sol review remain pending.
 The inherited live proxy release/enablement/route-proof prerequisite remains deferred.
+
+## P10.5 candidate completion on integrated base (2026-11-09, #115 / PR #118)
+
+Status: **offline synthetic candidate fixture passed; live route proof and phone check pending.**
+Source is the ordinary merge of `release/gpt6-sol-luna` (`21f971ae`) into the preserved
+#109 + #118 stack (`f9ae034`, containing `33c9ea2`); no reset/rebase/force. Flag stays
+default-disabled; no provider, proxy, flag, auth or network action.
+
+Prior-gap recheck: the retry/viewport failure was the picker being dismissed by the outside
+Send button (`TurnView.tsx` Send vs. in-picker Retry); the committed reopen-before-Retry step
+was exercised for the first time and works. The `LiveTurn.test.tsx` artifact-cleanup
+`waitFor` conflicted with an equivalent canonical repair; canonical's was kept once.
+New remaining failure on the integrated base (reproduced, run 1): the strict unexpected-request guard
+rejected canonical's newer `GET .../thread-state` and `POST /api/notifications/presence`.
+Fixed in `e2e/issue-96-browser.spec.ts` by reusing the accepted `handleThreadState`
+(Unknown, never unread) and `handlePresence` (strict `{sessionId, visible}` 204) seams; no
+assertion weakened and `unexpected` must still be empty.
+
+Wrapper runs (task `command#issue-115`, own worktree, new synthetic context, built candidate):
+run 1 failed as above; run 2 and run 3 (adds screenshots) **passed, wrapper exit 0**. Verified in
+one test: bootstrap 200 and schema-valid and mounted; grouped searchable Free label, `Use`
+selection, disabled Provider-default effort; inventory 429 shows the unavailable notice,
+draft retained, **zero POSTs**; after explicit reopen + Retry, **exactly one** `POST /api/live/runs`
+with keys `clientRequestId,inference,input,sessionId` and inference `{provider, model}` only; draft
+cleared on that send; panel within bounds with no horizontal overflow at 1280x720, 360x740,
+360x360 (named captures inspected: `issue-96-free-selector-<w>x<h>.png`; the panel scrolls
+internally at 360x360 with controls reachable). Owned context closed with zero pages; original
+tabs/storage untouched; Chrome left running. A post-close vite proxy ECONNREFUSED for a
+presence beacon is the preview having no backend; no request reached a real API.
+Synthetic evidence only: no authenticated readback, no live inference. **Phone check pending.**
