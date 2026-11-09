@@ -1,5 +1,92 @@
 # P13 status/unread: accepted source and authenticated scope
 
+## Current saved-session recovery prerequisite (November 9)
+
+The focused #111 source change recovers a saved canonical Command chat absent from
+bootstrap through the existing exact GET. It does not enlarge the bounded roster
+or explain why the actual #144 bootstrap omitted its owned chat. The storage key is
+only a hint: same-origin credentials, no-store, redirect refusal, the existing bounded
+JSON reader, schema validation, exact id and Command ownership all precede selection
+and history. The existing retained-chat/ProjectRooms adapter owns navigation.
+
+Initial project inventory must settle before automatic recovery; candidate reload
+exposed and fixed that startup race. An unresolved project hint stays scoped to the
+existing room/membership path, including unavailable rooms and explicit project
+reload. No global recovery is attempted for it. Valid hints survive pending, failed
+and reloaded lookup. Failure offers one explicit bounded retry, without polling.
+Disabled/offline/invalid hints cannot probe history. New chat/project selection,
+Studio/panel navigation and unmount supersede or pause late responses; current drafts
+and focus remain owned by the newer view. A metadata GET is not a viewed message.
+
+Source is built and candidate-tested, awaiting lead review/merge/release. The 22
+focused recovery regressions cover identity failures, no premature history/write,
+lost/reloaded hints, retry, session/project races, draft isolation, project membership
+and startup readiness. Existing App/project interactions (64) and delayed-run A/B
+regressions (2) passed; relevant web typecheck, scoped lint and web build passed.
+Candidate details and inspected captures are recorded below. No live API/browser,
+session/message setup, provider or service operation occurred in this assignment.
+
+The latest attested application remains PR145 source698d6328, mergeddcc3a28,
+actual deployed `sha256:26c03f64ad513fa90d22c20c22edf7c87a2577b5071983a809f5b8b87b09f829`,
+distinct from build d5da7c5b…, rollback `release-app-1794241762657504542`.
+PR147 merged4d1b86b records #144's separate API-only partial receipt: owned exact
+GET200, bootstrap200 omission, stale setup POST409 unchanged; no post-repair assistant
+view/read POST or UI capture. This recovery source requires lead release and separately
+admitted #144 live proof using its preserved exact fixture. Do not recreate or resend it.
+
+P14 producer6339856 is accepted; consumer PR142 merged477ab320 and shell PR146
+merged21f971ae are source/candidate only, unreleased/unconnected. Production Studio
+source remains null. Dashboard cutover and approved Command transport remain external
+lead prerequisites ([packet6743791366](https://github.com/KumarG23/jarvis-command/issues/20#issuecomment-6743791366),
+[packet6745632752](https://github.com/KumarG23/jarvis-command/issues/20#issuecomment-6745632752)).
+Whole P13/P14 remain incomplete. Persisted defaults, approved exact eligible route/lock/
+no-fallback execution proof and any supported native thread/session binding remain
+separate prerequisites in their owning Command/Hermes contracts, as detailed below.
+The old #111 unknown/full-effort tuple, project/Threads live, cross-device new-output
+race and restart gaps are not upgraded. Phone check pending.
+
+## Saved-session candidate evidence (isolated, November 9)
+
+The existing Studio SOURCE `tools/browser_qa.py run` wrapper at source revision
+`301bdfb0ce82c8dbffb16b5babd8d93209febac4` ran from this issue worktree with task
+`command#issue-111`, around the existing Playwright command and
+`e2e/saved-session-recovery.config.ts`. Coordinates/profile remain private. Only new
+task-owned synthetic contexts were used; the pre-navigation egress guard and existing
+no-proxy candidate preview prevented live forwarding. Original tabs/login/storage
+were untouched; shared Chrome stayed running.
+
+Three cases passed: desktop1280×720, Pixel-emulated360×740 and short360×360.
+Each withheld exact metadata until the hint/no-history boundary was checked, then
+proved recovery, authorized history readiness, per-session draft/input/Send reach,
+reload persistence, Studio unavailable/Back/Escape/focus and navigation to B's separate
+draft. Labels remain honest Unknown in this fixture; accepted status-state/read-view
+fixtures are reused rather than represented as new live proof. Full clipping-ancestor
+and pointer-hit checks cover history, input, Send and Studio return. At short height,
+history/Studio content deliberately scroll internally; not all content fits at once.
+All six captures below were visually inspected for clipping/overlap and useful reach.
+
+Per case, the assertion/attachment interval recorded **2 exact metadata GETs, 3 history
+GETs and 8 synthetic presence POSTs**. It recorded zero non-presence mutations, zero
+run admissions, zero blocked external attempts, zero unexpected API paths and zero
+page errors. Counts describe intercepted candidate requests through the final assertion,
+not server audit totals or teardown keepalives. No read POST was needed: the synthetic
+thread-state has unknown latest/unread. This does not certify actual read suppression,
+authenticated output/readback, native background focus, live restart or physical phone.
+
+Named inspected files under `test-results/saved-session-recovery/` (SHA-256):
+
+| Capture | SHA-256 |
+|---|---|
+| SYNTHETIC-recovered-1280x720.png | `2ef06a39e8ae9e9e1dcfcf03704e08cdeef10e3c98c98b87878a3b4d265615b3` |
+| SYNTHETIC-recovery-Studio-1280x720.png | `8c4a8633e6ec78993d1fad18ca8fc385198a797383934b6cf86b860e7d38c2f9` |
+| SYNTHETIC-recovered-360x360.png | `067f3801d5a796b640efd1afa4fb88ecc515b165c1f0fb3226b537044b42732f` |
+| SYNTHETIC-recovery-Studio-360x360.png | `02914b911864b3ae347824663024269c5e5e2805586f6cb132ca676429f26c2d` |
+| SYNTHETIC-recovered-360x740.png | `9fa3e1dba17850d88214ca8ee69cfa4a2b73f7c864fdf5c1b371ca05d34f3290` |
+| SYNTHETIC-recovery-Studio-360x740.png | `d626045e74eac5bd0da3c3d551bd5e39814d428badd73a48a259885343d2b62a` |
+
+## Historical PR130 release and original authenticated scope
+
+
 November 9 source13be0f4 was [independently accepted](https://github.com/KumarG23/jarvis-command/pull/130#issuecomment-6743755037),
 passed hosted exact-head gate42642969282, and merged as
 fcbd5de5ba934d3c07ab01632486b23bf6da83b7. The lead's [release record](https://github.com/KumarG23/jarvis-command/issues/111#issuecomment-6743854477)
@@ -245,3 +332,43 @@ private chat or replay an uncertain admission.
 Phone check pending: real background/foreground and second-device output/read races,
 Pixel cold start/keyboard, labels/scroll/focus and input/Send reachability. Candidate
 fixtures supply neither authenticated backend round trips nor physical acceptance.
+
+## PR145 post-repair authenticated readback (#144; November 9)
+
+Source/candidate repair `698d6328455fef7069b61e50a89001db394234c3` was accepted,
+hosted validate `42653292447` passed, and the pinned gate merged it as
+`dcc3a28bddc9e93be13519dbb3c6c074c7e32493`. Sol's app-only release attests healthy
+deployed pin `sha256:26c03f64ad513fa90d22c20c22edf7c87a2577b5071983a809f5b8b87b09f829`,
+distinct build reference `sha256:d5da7c5bb10b2a445793fd26bc48892c48afe10043a0eb306b4c3b9fa5e01543`,
+and retained rollback `release-app-1794241762657504542`. A wrapped authenticated
+health GET returned200.
+
+Using only the preserved #111 identity, supported `GET /api/live/sessions/{owned}`
+returned200 and confirmed exact ID plus Command ownership before history access.
+Thread-state and canonical messages GETs returned200 and complete history. Hash-only
+records preserve positions: user internal notification0, ordinary assistant1, and
+system setup2. Latest is the eligible assistant at1; durable last-read still points
+to excluded setup2, so unread remains true. No message content, title, or historical
+run/message join was read or inferred. A single exact stale setup2 read POST returned
+409; subsequent GET confirmed latest assistant1, last-read setup2 and unread=true
+were unchanged. This is API-contract evidence, not an assistant-view acceptance.
+
+The task-owned authenticated bootstrap returned200 but did not include the exact
+verified owned session. The UI therefore could not select that session through its
+existing supported path. No session was substituted; no assistant-view read POST,
+draft/navigation/layout interaction, or authenticated viewport capture occurred.
+The actual assistant-view/reload/independent-page acceptance remains open pending an
+authorized way for the exact owned session to appear in the supported UI roster.
+Do not infer the cause of its absence. Candidate3-viewport captures and accepted
+PR145 checks remain unchanged and are not production UI proof.
+
+Across the three wrapped task invocations, API requests were GET20 and POST1; six
+unrelated/initial API requests were blocked by the task firewall. The sole completed
+POST was the rejected stale read; presence and run-admission POSTs were0, external
+requests were not permitted, and no writes landed. No screenshot was captured because the exact
+session was not selectable. Sanitized hashes, wrapper/method counts, release facts
+and this limitation are recorded in
+[the separate #144 live receipt](verification/issue-144-live.json); the original
+#111 receipt is preserved unchanged. P13 remains incomplete for assistant-view
+readback, durable defaults/exact routing, project/Threads acceptance and physical
+phone check pending.
