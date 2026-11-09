@@ -1,7 +1,7 @@
 import { useLatestMessageView } from './useLatestMessageView';
 import { MessageReactions } from './MessageReactions';
 import type { MessageReactionClient } from './useMessageReactions';
-import { SessionMessagesPageSchema, type SessionMessage, type SessionSummary } from '@jarvis-command/contracts';
+import { isChatReadMessage, SessionMessagesPageSchema, type SessionMessage, type SessionSummary } from '@jarvis-command/contracts';
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Command, MessageSquare, SquareTerminal } from 'lucide-react';
 import { MessageContent } from './MessageContent';
@@ -22,6 +22,7 @@ export function LiveRoom({ session, onHistory, reactions, reactionsAvailable = f
   const report = useRef(onHistory);
   report.current = onHistory;
   const messageOffsets = useRef(new Map<string, number>());
+  const messagePositions = useRef(new Map<string, number>());
   const [messages, setMessages] = useState<SessionMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [offset, setOffset] = useState(0);
@@ -74,7 +75,10 @@ export function LiveRoom({ session, onHistory, reactions, reactionsAvailable = f
         || page.pagination.returned !== page.messages.length || page.messages.length > 50
         || (page.pagination.hasMore && page.pagination.returned === 0)) throw new Error('history');
       if (!controller.signal.aborted) {
-        for (const message of page.messages) if (!messageOffsets.current.has(message.id)) messageOffsets.current.set(message.id, offset);
+        page.messages.forEach((message, index) => {
+          if (!messageOffsets.current.has(message.id)) messageOffsets.current.set(message.id, offset);
+          if (!messagePositions.current.has(message.id)) messagePositions.current.set(message.id, offset + index);
+        });
         setMessages((previous) => {
           const seen = new Set(previous.map((message) => message.id));
           return [...previous, ...page.messages.filter((message) => {
@@ -97,8 +101,9 @@ export function LiveRoom({ session, onHistory, reactions, reactionsAvailable = f
     return () => controller.abort();
   }, [session.id, offset, attempt]);
 
-  const latestMessage = !loading && !error && !hasMore ? messages.at(-1) : null;
-  const latestMarker = useLatestMessageView(session.id, latestMessage?.id ?? null, messages.length - 1, readObservation, onLatestViewed);
+  const latestMessage = !loading && !error && !hasMore ? [...messages].reverse().find(isChatReadMessage) ?? null : null;
+  const latestPosition = latestMessage ? messagePositions.current.get(latestMessage.id) : undefined;
+  const latestMarker = useLatestMessageView(session.id, latestPosition === undefined ? null : latestMessage?.id ?? null, latestPosition ?? -1, readObservation, onLatestViewed);
 
   // Derive handoff from the very snapshot being rendered, not a prior mount's
   // effect. Loading/failed/partial history must not remove the only local reply.

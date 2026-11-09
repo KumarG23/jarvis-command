@@ -23,11 +23,14 @@ export class ThreadReadStore {
   #poisoned = false;
   constructor(readonly directory: string) {}
   list() { return this.#transaction(); }
-  advance(entry: Entry) {
+  advance(entry: Entry, correctionFrom?: Pick<Entry, 'messageId' | 'position'>) {
     entry = EntrySchema.parse(entry);
     return this.#transaction(entries => {
       const old = entries.find(item => item.actor === entry.actor && item.sessionId === entry.sessionId);
-      if (old && old.position >= entry.position) return entries;
+      const correctingExactExcludedMarker = old && correctionFrom
+        && old.position === correctionFrom.position && old.messageId === correctionFrom.messageId
+        && old.position > entry.position;
+      if (old && old.position >= entry.position && !correctingExactExcludedMarker) return entries;
       return [...entries.filter(item => item !== old), entry];
     });
   }

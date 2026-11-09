@@ -87,12 +87,43 @@ stale facts expire to Unknown after 60 seconds. Reads are independent of complet
 GET thread-state and POST read use existing authentication/session guards. A read
 revalidates the exact latest canonical message and position and never submits a run.
 The browser requires final-page readiness, foreground/focus, full clipped marker
-intersection and a real hit. Separate private atomic actor/session markers advance
-monotonically, survive restart, and preserve newer output across stale-device clears
-and reversed response delivery. Earlier rollback readers do not open this file.
+intersection and a real hit. Separate private atomic actor/session markers normally
+advance monotonically and survive restart. The issue #144 exact excluded-marker
+correction is the only permitted lower-position replacement; newer valid reads remain
+protected across stale-device clears and reversed response delivery. Earlier rollback
+readers do not open this file.
 Bounds remain 4096 markers/1 MiB, 50 chats per client, two server observations, ten
 100-row history pages, and an eight-second traversal budget checked between bounded
 source calls. Unknown tail means unknown unread/refused clear, never guessed success.
+
+## Latest-chat read-target repair (issue #144)
+
+Read targeting now uses the shared typed predicate `isChatReadMessage`: only user/assistant
+records with no `toolName` or `displayKind` qualify, and empty assistant activity is
+excluded because the transcript hides it. System/setup, tool, internal notification,
+display-only and hidden empty assistant records remain in their original canonical
+transcript positions; neither server traversal nor the browser compacts them. The
+browser records each loaded message's absolute page offset and only places the existing
+visible/focused/clipped/hit-tested marker on the latest eligible message once the final
+history page is loaded.
+
+GET reports the latest eligible canonical identity and leaves durable state untouched.
+Before a view, a pre-repair marker that exactly matches an excluded record in the
+complete current history remains preserved and does not credit an earlier answer. A
+viewed eligible latest message may replace that higher metadata marker through a
+serialized exact-marker compare-and-swap; unmatched/future markers and newer stored
+reads are preserved. This is an explicit semantic correction, not a store reset or
+actor/session migration. Partial/denied/external histories still cannot write. Focused
+source tests cover trailing metadata across pages, empty/non-chat histories, restart,
+stale/concurrent reads and the exact correction condition. **Wrapped offline candidate
+proof, November 9:** the existing isolated P13 fixture passed 1280×720, 360×740 and
+360×360. Scrolling the trailing display-only metadata produced zero read POSTs; viewing
+the assistant at canonical position49 produced exactly
+`{ messageId: "assistant:49", position: 49 }`, with zero run admission. All12 named
+`SYNTHETIC-{header,roster,roster-tail,chat-list}-{1280x720,360x740,360x360}.png` captures
+were inspected under `test-results/thread-status/`. These are offline fixture evidence
+only. Authenticated post-repair readback, live restart/race acceptance and physical
+phone check remain separate; no live readback is claimed.
 
 ## Accepted candidate evidence (historical source phase; synthetic)
 
