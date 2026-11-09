@@ -1,4 +1,5 @@
-import { expect, test } from '@playwright/test';
+import { test } from './candidate-test';
+import { expect } from '@playwright/test';
 import { CommandBootstrapSchema, SessionMessagesPageSchema } from '@jarvis-command/contracts';
 import { emptyInbox } from './empty-inbox';
 import { handlePresence } from './presence-route';

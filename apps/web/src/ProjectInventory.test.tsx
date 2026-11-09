@@ -152,14 +152,15 @@ it('labels failed exact inventory reads unavailable and permits explicit retry w
   expect(f.posts).toHaveLength(0);
 });
 
-it('opens an unscoped retained session from the active notice by exact read without attaching the selected project', async () => {
+it('opens an unscoped retained session with unknown latest state from its retained card by exact read without attaching the selected project', async () => {
   const f = fixture({ ...room, sessionIds: [a!.id], threads: [room.threads![0]!] });
   recoverBoth();
   sessionStorage.setItem(threadRecoveryKey, JSON.stringify({ version: 2, legacyImported: true, records: readThreadRecoveries().map(({ sessionId, clientRequestId, publicRunId }) => ({ sessionId, clientRequestId, publicRunId })) }));
   render(<App loadBootstrap={async () => bootstrap} />);
   fireEvent.change(await primary(), { target: { value: 'SYNTHETIC preserved unscoped draft A' } });
   await waitFor(() => expect(readThreadRecoveries().every(record => !!record.publicRunId)).toBe(true));
-  fireEvent.click(screen.getByRole('button', { name: 'View active chat' }));
+  expect(screen.queryByRole('button', { name: 'View active chat' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: `Supervise ${b!.id}` }));
   await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(b!.title));
   expect(screen.queryByLabelText('Selected project')).toBeNull();
   expect(f.fetcher.mock.calls.some(([url]) => url === `/api/live/sessions/${b!.id}`)).toBe(true);

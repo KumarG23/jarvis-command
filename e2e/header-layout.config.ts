@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -35,7 +36,7 @@ export default defineConfig(await (async () => {
     metadata: { cssVariant: release ? 'dd102c5' : 'candidate build', cssSha256,
       sourceHead: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim() },
     use: { ...devices['Desktop Chrome'], baseURL: 'http://127.0.0.1:3107', serviceWorkers: 'block' },
-    webServer: { command: 'npm exec -w @jarvis-command/web -- vite preview --host 127.0.0.1 --port 3107 --strictPort',
+    webServer: { cwd: fileURLToPath(new URL('..', import.meta.url)), command: 'npm exec -- vite preview --config e2e/thread-status.preview.config.ts --port 3107',
       url: 'http://127.0.0.1:3107', reuseExistingServer: false },
   };
 })());

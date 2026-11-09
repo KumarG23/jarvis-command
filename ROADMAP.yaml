@@ -94,7 +94,7 @@ milestones:
     title: Delete projects
     acceptance:
       - Confirm exact project/counts with delete-only default, optional owned contents deletion, external unlink-only, active-run refusal and snapshot/audit; preserve scope/recovery/restart consistency (§10 P9.6).
-# P13: Useful independent status/unread/routing and owned acceptance harness/session recovery continue; newer owner priority advances P14/shared data dependencies ahead of cosmetics. Preserve source-reviewed draft130 d61e288 (unmerged/unreleased); candidate/browser/routing proof outstanding. Repair fixtures and recover exact owned identity through supported tools; no arbitrary attempt cap. Phone pending; §11.
+# P13: #111 / PR130 source-reviewed delayed-run repair retained; 469f788 hosted CI failed fixtures/compact headers; current feedback repairs have separate local evidence, no new hosted certification; accepted release ordinarily merged. Status/unread candidate harness recovered for desktop/320–430px/short height, with separate fixture lifecycle emulation. Unmerged/unreleased; authenticated/phone and exact routing/defaults prerequisites outstanding. P14/shared data priority unchanged; §11 and docs/p13-thread-state.md.
   - id: P13
     title: Thread status, unread and per-thread model choice
     acceptance:

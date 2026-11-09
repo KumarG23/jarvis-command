@@ -50,8 +50,9 @@ it.each(['unknown', 'running', 'completed'])('opens the existing roster with %s 
   expect(scroll).toHaveBeenCalled();
   expect(entry).toHaveAttribute('aria-expanded', 'true');
   expect(within(roster).getByRole('heading', { name: 'Archived threads' })).toBeVisible();
-  expect(within(roster).getAllByText(/Unknown — no verified Command run/)).toHaveLength(status === 'unknown' ? 3 : 2);
-  if (status !== 'unknown') await within(roster).findByText(new RegExp(`Run ${status}.*latest Command run`));
+  // Retained local cards cannot establish the latest server run's state.
+  expect(within(roster).getAllByRole('img', { name: 'Unknown' })).toHaveLength(3);
+  if (status !== 'unknown') expect(await screen.findByRole('button', { name: `Supervise ${side!.title}` })).toHaveTextContent(`Run ${status} · retained Command run; session status separate`);
   fireEvent.click(within(roster).getByRole('button', { name: external.title }));
   await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(external.title));
   expect(screen.queryByRole('textbox', { name: 'Message Jarvis' })).not.toBeInTheDocument();
