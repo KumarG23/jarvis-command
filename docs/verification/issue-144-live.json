@@ -1,0 +1,112 @@
+{
+  "issue": 144,
+  "kind": "post-repair authenticated owned-session readback; separate from candidate fixtures",
+  "recordedAt": "2026-11-09",
+  "sourceAndRelease": {
+    "source": "698d6328455fef7069b61e50a89001db394234c3",
+    "hostedValidate": "42653292447",
+    "merge": "dcc3a28bddc9e93be13519dbb3c6c074c7e32493",
+    "buildReference": "sha256:d5da7c5bb10b2a445793fd26bc48892c48afe10043a0eb306b4c3b9fa5e01543",
+    "deployedPin": "sha256:26c03f64ad513fa90d22c20c22edf7c87a2577b5071983a809f5b8b87b09f829",
+    "rollback": "release-app-1794241762657504542",
+    "authority": "Sol lead release record; worker did not merge, deploy, publish or operate services",
+    "authenticatedHealthGet": 200
+  },
+  "wrapper": {
+    "tool": "tools/browser_qa.py",
+    "task": "command#issue-144",
+    "ownIssueWorktree": true,
+    "existingAuthenticatedContext": true,
+    "onlyNewTaskPages": true,
+    "originalTabsAndStoragePreserved": true,
+    "chromeLeftRunning": true,
+    "privateCoordinatesOmitted": true,
+    "rawIdentityAndHistoryOmitted": true
+  },
+  "ownedIdentity": {
+    "sessionSha256": "7918b130a537e2fa2d52d0b26649dbf0f68141f235b1b25fee8359301c9f9564",
+    "priorCanonicalOwnershipProof": true,
+    "currentSupportedOwnershipGet": 200,
+    "exactIdMatchedPrivately": true,
+    "ownership": "command",
+    "noSubstituteSelected": true
+  },
+  "postRepairObservation": {
+    "threadStateGet": 200,
+    "messagesGet": 200,
+    "historyComplete": true,
+    "unreadBeforeAnyNewUiView": true,
+    "canonicalMessages": [
+      {
+        "idSha256": "addc598ce00e88510319ba722f2911447e8d4f5edb6af0f596310e9e659e4759",
+        "position": 0,
+        "category": "user internal_notification",
+        "eligibleChatReadTarget": false
+      },
+      {
+        "idSha256": "605db792be11b2f3a82bbc503ad81f3b4d389ec1dcfbe1aebd7bb5f6f720ae52",
+        "position": 1,
+        "category": "ordinary assistant chat message",
+        "eligibleChatReadTarget": true
+      },
+      {
+        "idSha256": "04d0644f3345ae5a1aa85f0d3871b98d7691ba8b4ce9a3f7a43f6aea7b7245ad",
+        "position": 2,
+        "category": "system setup metadata",
+        "eligibleChatReadTarget": false
+      }
+    ],
+    "latestEligible": {
+      "idSha256": "605db792be11b2f3a82bbc503ad81f3b4d389ec1dcfbe1aebd7bb5f6f720ae52",
+      "position": 1
+    },
+    "durableLastReadBeforeAndAfterStaleAttempt": {
+      "idSha256": "04d0644f3345ae5a1aa85f0d3871b98d7691ba8b4ce9a3f7a43f6aea7b7245ad",
+      "position": 2
+    },
+    "staleExcludedSetupPost": {
+      "status": 409,
+      "markerUnchanged": true,
+      "unreadRemained": true
+    },
+    "assistantViewReadPost": "not attempted: exact session absent from authenticated bootstrap",
+    "bootstrap": {
+      "status": 200,
+      "exactOwnedSessionListed": false
+    },
+    "absenceCause": "unknown; no inference made"
+  },
+  "uiAcceptance": {
+    "assistantView": "blocked by bootstrap omission",
+    "readbackReload": "not reached",
+    "independentPageReadback": "not reached",
+    "statusLabels": "not verified",
+    "draftNavigationAndInput": "not verified",
+    "viewportChecks": [],
+    "captures": [],
+    "captureInspection": "none; exact owned session was not selectable",
+    "phone": "phone check pending"
+  },
+  "apiMethodCounts": {
+    "wrappedTaskInvocations": 3,
+    "getRequests": 20,
+    "postRequests": 1,
+    "deleteRequests": 0,
+    "taskFirewallBlockedApiRequests": 6,
+    "assistantReadPosts": 0,
+    "rejectedStaleReadPosts": 1,
+    "presencePostAttempts": 0,
+    "runAdmissionPostAttempts": 0
+  },
+  "limits": {
+    "candidateFixturesRerun": false,
+    "fullSuiteRerun": false,
+    "newInferenceOrMessage": false,
+    "newSession": false,
+    "historicalRunMessageJoinInferred": false,
+    "projectOrStudioMutation": false,
+    "serviceProxyOrProviderOperation": false,
+    "authAccessCredentialOrNetworkChange": false,
+    "wholeP13Complete": false
+  }
+}
