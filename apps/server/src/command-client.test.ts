@@ -234,6 +234,31 @@ describe('Command proxy client', () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
+  it('forwards an exact OpenRouter free route without inventing an effort override', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({ runId, sessionId, status: 'queued', replayed: false }, 202));
+    const client = createCommandProxyClient({ baseUrl, commandProxyKey, fetcher });
+    await client.startRun({
+      sessionId, input: 'Use a free route.', idempotencyKey: `jc-v1-${'e'.repeat(64)}`,
+      inference: { provider: 'openrouter', model: 'z-ai/glm-4.5-air:free' },
+    });
+    expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).toEqual({
+      sessionId, input: 'Use a free route.',
+      inference: { provider: 'openrouter', model: 'z-ai/glm-4.5-air:free' },
+    });
+
+    for (const inference of [
+      { provider: 'openrouter', model: 'anthropic/claude-sonnet-4.5' },
+      { provider: 'openrouter', model: 'z-ai/glm-4.5-air:free-paid' },
+      { provider: 'openrouter', model: 'z-ai/glm-4.5-air:free', reasoningEffort: 'low' },
+    ]) {
+      await expect(client.startRun({
+        sessionId, input: 'Forged route.', idempotencyKey: `jc-v1-${'f'.repeat(64)}`,
+        inference: inference as never,
+      })).rejects.toEqual(new CommandProxyUnavailableError(400));
+    }
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it('projects session history and session mutations through exact routes', async () => {
     const session = {
       id: sessionId,

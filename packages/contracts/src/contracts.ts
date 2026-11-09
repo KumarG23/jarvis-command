@@ -39,10 +39,27 @@ const AnthropicInferenceSchema = z.object({
   provider: z.literal('anthropic'),
   model: z.enum(['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5']),
 }).strict();
+// OpenRouter ids are dynamic, so the allowlist shape is the exact zero-spend suffix:
+// lowercase namespace/segments followed by a single lowercase `:free`. Paid ids,
+// `:free-paid`, extra colons, empty segments and case variants are lookalikes, not
+// free routes. Model ids use the same 160-character bound as catalog model ids.
+export const OPENROUTER_FREE_MODEL_MAX_LENGTH = 160;
+const OPENROUTER_FREE_MODEL_ID = /^[a-z0-9][a-z0-9._-]*(?:\/[a-z0-9._-]+)*:free$/;
+export function isOpenRouterFreeModelId(value: string): boolean {
+  return value.length <= OPENROUTER_FREE_MODEL_MAX_LENGTH && OPENROUTER_FREE_MODEL_ID.test(value);
+}
+// No verified OpenRouter effort contract is advertised, so the override omits effort
+// instead of translating a Codex/xAI value or guessing one.
+const OpenRouterFreeInferenceSchema = z.object({
+  provider: z.literal('openrouter'),
+  model: z.string().max(OPENROUTER_FREE_MODEL_MAX_LENGTH)
+    .refine(isOpenRouterFreeModelId, 'Invalid OpenRouter free model id'),
+}).strict();
 export const InferenceOverrideSchema = z.discriminatedUnion('provider', [
   OpenAiCodexInferenceSchema,
   GrokInferenceSchema,
   AnthropicInferenceSchema,
+  OpenRouterFreeInferenceSchema,
 ]);
 const InferenceOptionFields = {
   label: NonBlankTextSchema(80),
@@ -57,7 +74,12 @@ export const InferenceOptionSchema = z.discriminatedUnion('provider', [
   OpenAiCodexInferenceSchema.omit({ reasoningEffort: true }).extend(InferenceOptionFields).strict(),
   GrokInferenceSchema.omit({ reasoningEffort: true }).extend(InferenceOptionFields).strict(),
   AnthropicInferenceSchema.extend(ProviderDefaultEffortOptionFields).strict(),
+  OpenRouterFreeInferenceSchema.extend({
+    label: NonBlankTextSchema(180),
+    reasoningEfforts: z.array(ReasoningEffortSchema).max(0),
+  }).strict(),
 ]);
+export const MAX_INFERENCE_OPTIONS = 35;
 
 // A sanitized, bounded view of the catalog Hermes advertises. Only these facts cross the
 // BFF boundary; upstream URLs, credentials, warnings and unknown fields never do. The
@@ -91,7 +113,7 @@ export const InferenceOptionsResponseSchema = z.object({
     model: NonBlankTextSchema(160),
   }).strict(),
   // Empty is an honest state: nothing curated is currently advertised and authenticated.
-  options: z.array(InferenceOptionSchema).max(11),
+  options: z.array(InferenceOptionSchema).max(MAX_INFERENCE_OPTIONS),
   catalog: ModelCatalogSchema.optional(),
 }).strict();
 export const LiveRunStateSchema = z.enum([

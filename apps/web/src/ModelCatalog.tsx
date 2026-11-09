@@ -85,9 +85,10 @@ export function ModelCatalogView({ catalog, options, disabled, onSelect }: Reado
             {group.entries.map(entry => {
               const key = `${entry.provider}:${entry.model}`;
               const available = optionKeys.has(key);
+              const freeOpenRouter = available && entry.provider === 'openrouter';
               return <li key={key} className={available ? 'available' : undefined}>
                 <div className="catalog-entry-facts">
-                  <code>{entry.model}</code>
+                  <code>{freeOpenRouter ? <>Free · {entry.model}</> : entry.model}</code>
                   {available
                     ? <span className="catalog-available">Available in Command</span>
                     : <span className="catalog-reason">{reasonLabel(entry)}</span>}
@@ -96,7 +97,7 @@ export function ModelCatalogView({ catalog, options, disabled, onSelect }: Reado
               </li>;
             })}
           </ul>
-          {group.provider === 'openrouter' ? <p className="catalog-note">OpenRouter entries are discovery only. Ids without <code>:free</code> are not eligible, and every OpenRouter route still needs explicit Command approval.</p> : null}
+          {group.provider === 'openrouter' ? <p className="catalog-note">Only advertised OpenRouter ids ending exactly in <code>:free</code> can be available, when the server-side free-route flag is enabled. Other entries remain discovery only.</p> : null}
         </section>)}
       </div>
     </>}
