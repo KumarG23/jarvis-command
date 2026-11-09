@@ -34,14 +34,17 @@ by normal timeline scrolling. Six named sanitized chat/Studio captures were visu
 inspected; names and SHA-256 values are in [the refreshed receipt](verification/issue-144-live.json).
 The original #111 receipt and previous API-only #144 receipt remain separate.
 
-Across five wrapper invocations, the request totals were207 GET and3 POST: one
-successful assistant read, one post-clear stale setup attempt, and one notification
-reconciliation POST blocked before egress. The four follow-up invocations were
-GET-only; there were zero run-admission, presence, DELETE or external requests. The
-post-clear stale attempt's response status was not retained because the harness
-incorrectly expected a 409 error body to echo `lastRead`. It was not retried; later
-GETs reobserved assistant1/unread=false. The earlier API-only stale POST returned409
-before the assistant was read. This limitation is explicit in the receipt.
+Across five wrapper invocations, the wrapper observed 207 GET and 3 POST attempts.
+Native wrapper diagnostics recorded 95 API attempts blocked before egress: 23 on the
+initial invocation and 18 on each of four follow-ups. This includes one blocked
+notification-reconciliation POST, leaving 94 blocked GETs; 113 GETs and two read
+POSTs were forwarded to the backend. The forwarded POSTs were the successful
+assistant read and one post-clear stale setup attempt. The stale attempt's response
+status was not retained because the harness incorrectly expected a 409 error body to
+echo `lastRead`. It was not retried; later GETs reobserved assistant1/unread=false.
+Thus there were no forwarded run admissions, presence calls, external requests or
+other mutations. The earlier API-only stale POST returned409 before the assistant
+was read. This limitation is explicit in the receipt.
 
 P13 remains incomplete for saved defaults, exact route/effort proof, project/Threads,
 cross-device new-output race, restart and physical phone acceptance. P14 consumer142

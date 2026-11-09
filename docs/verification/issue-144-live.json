@@ -223,8 +223,6 @@
       "short-height-reach-probe": "GET41 POST0",
       "final-focused-recheck": "GET41 POST0"
     },
-    "GET": 207,
-    "POST": 3,
     "DELETE": 0,
     "other": 0,
     "forwardedAssistantReadPosts": 1,
@@ -232,7 +230,32 @@
     "notificationsReconciliationPostsBlockedBeforeEgress": 1,
     "presencePostAttempts": 0,
     "runAdmissionPostAttempts": 0,
-    "externalAttempts": 0
+    "externalAttempts": 0,
+    "wrapperAttemptedGET": 207,
+    "wrapperAttemptedPOST": 3,
+    "wrapperDeniedApiAttemptsByInvocation": [
+      23,
+      18,
+      18,
+      18,
+      18
+    ],
+    "wrapperDeniedApiAttemptsTotal": 95,
+    "forwardedBackendRequests": {
+      "GET": 113,
+      "POST": 2
+    },
+    "blockedBeforeEgressRequests": {
+      "GET": 94,
+      "POST": 1
+    },
+    "forwardedReadPostAttempts": {
+      "successfulAssistantRead": 1,
+      "postClearStaleSetupAttemptStatusUnknown": 1
+    },
+    "forwardedRunAdmissionPosts": 0,
+    "forwardedPresencePosts": 0,
+    "forwardedOtherMutationPosts": 0
   },
   "limits": {
     "candidateFixturesRerun": false,
