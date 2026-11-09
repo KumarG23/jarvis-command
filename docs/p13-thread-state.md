@@ -245,3 +245,43 @@ private chat or replay an uncertain admission.
 Phone check pending: real background/foreground and second-device output/read races,
 Pixel cold start/keyboard, labels/scroll/focus and input/Send reachability. Candidate
 fixtures supply neither authenticated backend round trips nor physical acceptance.
+
+## PR145 post-repair authenticated readback (#144; November 9)
+
+Source/candidate repair `698d6328455fef7069b61e50a89001db394234c3` was accepted,
+hosted validate `42653292447` passed, and the pinned gate merged it as
+`dcc3a28bddc9e93be13519dbb3c6c074c7e32493`. Sol's app-only release attests healthy
+deployed pin `sha256:26c03f64ad513fa90d22c20c22edf7c87a2577b5071983a809f5b8b87b09f829`,
+distinct build reference `sha256:d5da7c5bb10b2a445793fd26bc48892c48afe10043a0eb306b4c3b9fa5e01543`,
+and retained rollback `release-app-1794241762657504542`. A wrapped authenticated
+health GET returned200.
+
+Using only the preserved #111 identity, supported `GET /api/live/sessions/{owned}`
+returned200 and confirmed exact ID plus Command ownership before history access.
+Thread-state and canonical messages GETs returned200 and complete history. Hash-only
+records preserve positions: user internal notification0, ordinary assistant1, and
+system setup2. Latest is the eligible assistant at1; durable last-read still points
+to excluded setup2, so unread remains true. No message content, title, or historical
+run/message join was read or inferred. A single exact stale setup2 read POST returned
+409; subsequent GET confirmed latest assistant1, last-read setup2 and unread=true
+were unchanged. This is API-contract evidence, not an assistant-view acceptance.
+
+The task-owned authenticated bootstrap returned200 but did not include the exact
+verified owned session. The UI therefore could not select that session through its
+existing supported path. No session was substituted; no assistant-view read POST,
+draft/navigation/layout interaction, or authenticated viewport capture occurred.
+The actual assistant-view/reload/independent-page acceptance remains open pending an
+authorized way for the exact owned session to appear in the supported UI roster.
+Do not infer the cause of its absence. Candidate3-viewport captures and accepted
+PR145 checks remain unchanged and are not production UI proof.
+
+Across the three wrapped task invocations, API requests were GET20 and POST1; six
+unrelated/initial API requests were blocked by the task firewall. The sole completed
+POST was the rejected stale read; presence and run-admission POSTs were0, external
+requests were not permitted, and no writes landed. No screenshot was captured because the exact
+session was not selectable. Sanitized hashes, wrapper/method counts, release facts
+and this limitation are recorded in
+[the separate #144 live receipt](verification/issue-144-live.json); the original
+#111 receipt is preserved unchanged. P13 remains incomplete for assistant-view
+readback, durable defaults/exact routing, project/Threads acceptance and physical
+phone check pending.
