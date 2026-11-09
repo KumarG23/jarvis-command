@@ -1,6 +1,7 @@
 # Documentation projection of MASTER_PLAN.md §10 and §12; current disposition/evidence comments cite §11.
-# This file grants no authority, never turns Deferred into pending implementation, and does not replenish the completed product backlog.
+# This file grants no authority. MASTER_PLAN §0.2 reopens only named requested outcomes; unavailable/unsupported is interim, not product completion. Historical evidence remains unchanged.
 # P1: Done/live; phone check pending. Historical per-answer receipt remains unsupported. Evidence: §11 P1 / https://github.com/KumarG23/jarvis-command/issues/24#issuecomment-6473022817
+# No new build/deployment/authenticated/phone evidence. Ordinary engineering/browser/CI/recovery has no arbitrary retry/turn cap; diagnose, repair, split or qualified handoff with progress. Preserve all WIP/native ownership and runtime/security/spend restrictions.
 milestones:
   - id: P1
     title: Truthful status, usage and model/effort
@@ -56,54 +57,60 @@ milestones:
     title: Model catalog
     acceptance:
       - Every selectable model is advertised, authenticated and on the existing approved eligibility allowlist; other entries remain unavailable with a reason, with no paid fallback or credential exposure (§10 P10; §12 model-selection scenario).
-# Initial owner reopening; later addenda below extend the bounded queue. Original dispositions above stand. Authority: MASTER_PLAN §0.2 / https://github.com/KumarG23/jarvis-command/issues/20#issuecomment-6689706582
+# Prior reopenings/evidence below are historical. Current authority: MASTER_PLAN §0.2 / https://github.com/KumarG23/jarvis-command/issues/20#issuecomment-6741080803
 # P9.5: Done, live; phone check pending. Evidence: §11 P9.5 / https://github.com/KumarG23/jarvis-command/pull/104#issuecomment-6690969896
   - id: P9_5
     title: Threads entry point
     acceptance:
       - A persistent top-right project-chat Threads control opens the existing truthful roster and preserves attach/split, validated links, per-chat drafts and owned-run recovery at desktop, 320–430 px and short keyboard viewports (§10 P9.5; §12 mobile/recovery scenarios).
-# P10.4: Source released/live unavailable at 518b400; proxy enablement/live route execution Deferred; phone check pending; MASTER_PLAN §11.
+# P10.4: Reopened — enablement and actual executed-route proofs outstanding. Historical source released/live unavailable at 518b400; no new runtime proof. Prior exact three-route authorization only; proxy/control boundary remains lead-owned. Phone pending; MASTER_PLAN §11.
   - id: P10_4
     title: Anthropic routes in the selector
     acceptance:
       - Only the three owner-authorized Anthropic routes become selectable with unchanged admission/model lock and truthful requested-versus-executed proof after lead establishes the documented proxy release path (§10 P10.4; §12 model-selection scenario).
-# Later owner addenda: MASTER_PLAN §0.2 records exact directives 6689850279 / 6689899077 / 6689916605. These are queued documentation, not implementation or worker live/destructive authority.
-# P10.5: Deferred after #115 exhausted its two authorized browser attempts. PR109 source and draft repair PR118 remain preserved/unmerged; candidate acceptance and live free-route proof unavailable. §11 P10.5 / #115 disposition 6693113166.
+# Prior exact authorization: MASTER_PLAN §0.2.1 records directives 6689850279 / 6689899077 / 6689916605. Current engineering scope is §0.2; no worker live provider/destructive authority.
+# P10.5: Reopened — preserve draft109 and stacked118, unmerged/unreleased. Historical #115 attempts did not establish final candidate/send/viewport or live-route proof. Diagnose/repair without arbitrary cap; prior authenticated advertised :free routes only, zero spend. §11.
   - id: P10_5
     title: OpenRouter free routes
     acceptance:
       - Only authenticated advertised OpenRouter ids ending exactly in :free become eligible, with unchanged model lock/admission and honest route/error proof; paid/lookalike routes remain rejected (§10 P10.5).
-# P11: PR110 identity source and writer live-accepted; deployed app 28f30500…, rollback release-app-1793994255383408242 restores reader 0a2881af…. #119 service recreation retained peak/violet identity (desktop). Optional model marks Deferred after #97 exhausted two attempts; draft122 preserved, unmerged/unreleased; candidate mobile/V2 fixture unverified. Phone check pending. §11 P11 / #99 6694077728 / #97 disposition 6694582617.
+# P11: Historical identity source/writer live-accepted (PR110); optional model-mark draft122 remains preserved/unmerged/unreleased and is NOT reopened. Its old attempt-based disposition grants no cap on requested engineering. No new device/runtime evidence; phone pending. §11.
   - id: P11
     title: Visual identity
     acceptance:
       - Restrained AA semantic accents and deterministic project icons use existing optional metadata; model-family marks use verified executed identity only, with desktop/360 px evidence (§10 P11).
-# P12: PR124 backend + PR127 UI (7d96c78) released disabled in healthy app c0863e9b…, rollback release-app-1794053680217289497. Authenticated bootstrap readback: message_reactions capability absent, 3 GETs, zero reaction/non-GET requests. Disabled-state UI at 1280×720/360×740/360×360 NOT verified live (2/2 wrapped attempts used; proof session unidentified) — PARTIAL. Phase1 enablement Deferred, phase2 exact binding Unsupported, phone pending. §11 P12 / review6696938526 / packet6696991304.
+# P12: Reopened — PR124/127 backend/UI released disabled; historical authenticated bootstrap proves capability absence only (3 GETs). Disabled-state UI/draft/focus/viewport, enabled persistence/context and exact-binding prerequisite remain outstanding; no arbitrary readback cap. Phone pending; §11.
   - id: P12
     title: Message reactions
     acceptance:
       - Durable audited user reactions enter the next explicit run as bounded deduplicated context; verified phase 2 markers require exact target binding; no reaction admits a run or approval (§10 P12).
-# P6.1: PR120 merged/released 71661a0; build fab393b7…; healthy app 95a6823f…, rollback release-app-1794000567535486711 restores 1999ee…. #99 authenticated disabled-state readback accepted at desktop/360×740/360×360; zero reply devices/items. Actual reply delivery Unsupported—Deferred: exact binding Unsupported, push disabled, phone pending. Prior #119 bridge readback remains partial. §11 P6.1 / #99 6696167846 / release 6696144548.
+# P6.1: Reopened — historical disabled/unavailable state live-accepted at desktop/360px/short height; PR120 merged/released. Exact final-message binding and real reply delivery remain prerequisite/delivery work; VAPID/egress/enablement lead-owned. No push acceptance; phone pending; §11.
   - id: P6_1
     title: Reply notifications
     acceptance:
       - One sanitized assistant-reply push per durable final message, opt-out reply preview and authorized deep link; no run-state alerts, replay duplicates or external-session notifications (§10 P6.1).
-# P9.6: Source released/live unavailable at 518b400 after factory-binding repair; authenticated GET/UI proof accepted. Deletion enablement/contents recovery Deferred; no live deletion; phone check pending.
+# P9.6: Reopened — source released/live unavailable at 518b400 and authenticated GET/UI proof accepted historically. Deletion/recovery remains outstanding; no live deletion authority for workers. Phone pending; §11.
   - id: P9_6
     title: Delete projects
     acceptance:
       - Confirm exact project/counts with delete-only default, optional owned contents deletion, external unlink-only, active-run refusal and snapshot/audit; preserve scope/recovery/restart consistency (§10 P9.6).
-# P13: Delivery Deferred. Repaired source reviewed at draft130 d61e288/review6707363347; draft130 unmerged/unreleased; two wrapped-browser attempts exhausted; routing Deferred/Unsupported and phone pending. P14/#112 follows; P14.1/#113 staged. Exact dispositions/evidence remain in §11.
+# P13: Useful independent status/unread/routing and owned acceptance harness/session recovery continue; newer owner priority advances P14/shared data dependencies ahead of cosmetics. Preserve source-reviewed draft130 d61e288 (unmerged/unreleased); candidate/browser/routing proof outstanding. Repair fixtures and recover exact owned identity through supported tools; no arbitrary attempt cap. Phone pending; §11.
   - id: P13
     title: Thread status, unread and per-thread model choice
     acceptance:
-      - Existing Threads/project/chat surfaces use one accessible verified StatusIcon; per-actor last-read syncs without admission; exact per-thread routing is offered only when supported and eligible, otherwise unavailable (§10 P13; §12 state, authorization and model-selection scenarios).
-# P14: unavailable destination (PR #133 merged 0e9e6b03, app-only deploy healthy, rollback retained). Authenticated readback #137: two attempts spent (attempt 1 unknown; attempt 2 proof session not in roster, early return); UI acceptance Deferred, no third attempt; physical phone pending. Live crew/activity Unsupported — Deferred (exporter/schema/GET-only relay/auth/freshness/redaction prerequisites external); not full P14 Done. P14.1/#113 Unsupported — Deferred, report merged 4e4ae7a (docs/p141-studio-intake-capability.md). Evidence: docs/p14-studio-capability.md, docs/verification/issue-137.md, §11.
+      - Recover exact owned acceptance-session identity through supported tools and repair fixtures/history readiness without guessing or duplicating sends; offline candidate proof remains separate from authenticated readback (§0.2; §11).
+      - Existing Threads/project/chat surfaces use one accessible verified StatusIcon; per-actor last-read syncs without admission; exact per-thread routing is offered only when supported and eligible, otherwise interim unavailable with a concrete contract prerequisite, never counted complete (§10 P13; §12 state, authorization and model-selection scenarios).
+# P14 priority: Neal directive https://github.com/KumarG23/jarvis-command/issues/20#issuecomment-6741635455 and Studio-owned shared projection https://github.com/KumarG23/dev-studio/issues/93 advance data dependencies ahead of cosmetics while preserving independent P13. Dashboard first; parallel Command consumption after contract exists, no second collector or permanent unavailable substitute.
+# P14 historical evidence: PR133 unavailable destination merged/deployed historically; #137 captured attempt1 unknown, attempt2 bootstrap200/proof-session absent, no UI acceptance. Resume owned recovery/acceptance without arbitrary cap. Live projection/exporter/schema/freshness prerequisites are engineering; relay/auth/network boundary actions remain unresolved lead/owner exceptions. §11; historical docs/verification/issue-137.md.
   - id: P14
     title: Studio crew view, read-only
     acceptance:
+      - Consume the single Studio-owned versioned bounded GET-only multi-project projection shared with the existing dashboard (Studio #93); explicit freshness/provenance/redaction/error semantics and the existing narrow approved read path, with any actual changed credential/network/auth boundary isolated for lead/Jarvis resolution (§0.2; §10 P14).
+      - All registered projects show product display names, goal/current milestone, active work/owners/roles/model, latest meaningful progress/source/time, blocker/dependency/owner/next action, distinct CI/check/review/merged/deployed/ready-to-test states and evidence links; only explicit plan/checklist progress, no invented percentages or process-presence-as-progress; unknown/stale age and count coverage stay explicit (§10 P14).
+      - A mobile-first overview to project to work/agent detail shows Needs attention, Building, Checking, Review and Ready to test; protected desktop/360px readback is separate from offline fixtures, and requested model/effort never substitutes for executed evidence (§0.2; §10 P14).
       - Top-level Studio shows only an authoritative bounded sanitized projection, summary before redacted activity detail, with stale/unavailable truth; no shell, PTY, tmux, credentials or runtime control (§10 P14; §12 authorization and unavailable-state scenarios).
+# P14.1: Reopened prerequisite engineering — historical intake report PR135 merged 4e4ae7a; no intake/relay/step-up or steering proof. Integrate after accepted P14 phase1; keep unavailable meanwhile. No new security/network/runtime authority; §11.
   - id: P14_1
     title: Studio steering, lead and planner only
     acceptance:
-      - Confirmed audited bounded text directives use a proven existing owner-input intake, with observed Sent/Seen/Acted states and no extra wakeups, duplicate sends, invented endpoint or new authority (§10 P14.1; §12 authorization and recovery scenarios).
+      - Confirmed audited bounded text directives use a proven supported owner-input intake (engineer exact missing contract prerequisites), with observed Sent/Seen/Acted states and no extra wakeups, duplicate sends, invented endpoint or new authority (§10 P14.1; §12 authorization and recovery scenarios).
