@@ -1,0 +1,1190 @@
+{
+  "version": 1,
+  "task": "command#issue-144",
+  "observedAt": "2026-11-09T20:24:16.746Z",
+  "sourceRevision": "863ea9fb945fea72f61caf2f1acf0128b893b8ab",
+  "release": {
+    "pr153Source": "9058cfec33a10c01c983f5b0841728b1cf57e8bd",
+    "mergedRevision": "863ea9fb945fea72f61caf2f1acf0128b893b8ab",
+    "buildSha256": "e494f6998759a3cb5e912a7e79c9d66db7aef38e5388fe5c65a44ea2d8f298d0",
+    "deployedAppPinSha256": "48f0adf2c03ed0d1e7ec71975c0586d3ac5b3e611f02f1ac90150a94ba764774",
+    "rollback": "release-app-1794254490234032358",
+    "rollbackRestoresSha256": "cbb0e9e44d46e152a30d4fc5ee31691903d1542eec9374db274f90aab04ed2fa"
+  },
+  "protectedReadback": {
+    "health": {
+      "status": 200,
+      "version": "0.2.0"
+    },
+    "bootstrap": {
+      "status": 200,
+      "appVersion": "0.2.0",
+      "identityProvider": "cloudflare-access",
+      "selectedSessionListed": false
+    },
+    "hermes": {
+      "state": "online",
+      "capabilities": [
+        "run_events_sse"
+      ]
+    },
+    "ownership": {
+      "status": 200,
+      "verified": true,
+      "sessionSha256": "7918b130a537e2fa2d52d0b26649dbf0f68141f235b1b25fee8359301c9f9564",
+      "scope": "global-command"
+    },
+    "threadState": {
+      "status": 200,
+      "historyComplete": true,
+      "latestPosition": 1,
+      "lastReadPosition": 1,
+      "unread": false
+    },
+    "historyBefore": {
+      "complete": true,
+      "messageCount": 3,
+      "positions": [
+        {
+          "role": "user",
+          "position": 0,
+          "displayKind": "internal_notification",
+          "toolRecord": false,
+          "empty": false,
+          "idSha256": "addc598ce00e88510319ba722f2911447e8d4f5edb6af0f596310e9e659e4759"
+        },
+        {
+          "role": "assistant",
+          "position": 1,
+          "displayKind": null,
+          "toolRecord": false,
+          "empty": false,
+          "idSha256": "605db792be11b2f3a82bbc503ad81f3b4d389ec1dcfbe1aebd7bb5f6f720ae52"
+        },
+        {
+          "role": "system",
+          "position": 2,
+          "displayKind": null,
+          "toolRecord": false,
+          "empty": false,
+          "idSha256": "04d0644f3345ae5a1aa85f0d3871b98d7691ba8b4ce9a3f7a43f6aea7b7245ad"
+        }
+      ]
+    },
+    "ownershipVerified": true
+  },
+  "sourceGuard": {
+    "read": {
+      "status": 200,
+      "noStore": true,
+      "strictShape": true,
+      "writesAvailable": false,
+      "revision": 0,
+      "selectionIsNull": true
+    },
+    "set": {
+      "status": 503,
+      "error": "routing_writes_unavailable",
+      "bodyKeys": [
+        "error",
+        "message"
+      ],
+      "cacheControl": "no-store"
+    },
+    "afterSetRead": {
+      "status": 200,
+      "noStore": true,
+      "strictShape": true,
+      "revision": 0,
+      "selectionIsNull": true,
+      "writesAvailable": false,
+      "unchanged": true
+    },
+    "routedRun": {
+      "status": 503,
+      "error": "routing_writes_unavailable",
+      "bodyKeys": [
+        "error",
+        "message"
+      ],
+      "cacheControl": "no-store"
+    },
+    "routedRunLookup": {
+      "status": 404,
+      "absent": true,
+      "hasPublicRunId": false
+    },
+    "state": "writes-disabled-confirmed",
+    "noPreferenceChange": true,
+    "guardRequestLookupStatus": 404,
+    "additionalRunAdmissionForwarded": 0
+  },
+  "legacyRun": {
+    "state": "accepted-once-and-recovered",
+    "modelEligibility": {
+      "status": 200,
+      "route": "openai-codex/gpt-6-luna",
+      "requestedEffort": "low",
+      "advertised": true,
+      "authenticated": true,
+      "eligible": true,
+      "selectable": true,
+      "lowOffered": true
+    },
+    "promptSelection": {
+      "model": "openai-codex/gpt-6-luna",
+      "reasoningEffort": "low",
+      "explicitlySelectedInUi": true
+    },
+    "acceptance": {
+      "httpStatus": 200,
+      "exactRequestLookupAfterSend": 200,
+      "runStatusHttpStatus": 200,
+      "runStatus": "completed",
+      "exactSessionRequestRunIdentity": true,
+      "requested": {
+        "provider": "openai-codex",
+        "model": "gpt-6-luna",
+        "reasoningEffort": "low"
+      },
+      "executed": {
+        "provider": "openai-codex",
+        "model": "gpt-6-luna",
+        "reasoningEffort": "low",
+        "reasoningEffortSource": "wire"
+      },
+      "exact": true,
+      "fallbackUsed": false,
+      "routeSource": "unknown",
+      "apiCalls": 1,
+      "routingFieldOmitted": true,
+      "oneLegacyAdmission": true,
+      "noRetry": true
+    },
+    "canonicalHistory": {
+      "complete": true,
+      "canonicalRecordCount": 5,
+      "records": [
+        {
+          "role": "user",
+          "position": 0,
+          "displayKind": "internal_notification",
+          "toolRecord": false,
+          "empty": false,
+          "idSha256": "addc598ce00e88510319ba722f2911447e8d4f5edb6af0f596310e9e659e4759",
+          "inputMatch": false
+        },
+        {
+          "role": "assistant",
+          "position": 1,
+          "displayKind": null,
+          "toolRecord": false,
+          "empty": false,
+          "idSha256": "605db792be11b2f3a82bbc503ad81f3b4d389ec1dcfbe1aebd7bb5f6f720ae52",
+          "inputMatch": false
+        },
+        {
+          "role": "system",
+          "position": 2,
+          "displayKind": null,
+          "toolRecord": false,
+          "empty": false,
+          "idSha256": "04d0644f3345ae5a1aa85f0d3871b98d7691ba8b4ce9a3f7a43f6aea7b7245ad",
+          "inputMatch": false
+        },
+        {
+          "role": "user",
+          "position": 3,
+          "displayKind": "internal_notification",
+          "toolRecord": false,
+          "empty": false,
+          "idSha256": "411a9a06feb04c2311e199448b402438e565c216d3644157d38abaf8882c73c6",
+          "inputMatch": true
+        },
+        {
+          "role": "assistant",
+          "position": 4,
+          "displayKind": null,
+          "toolRecord": false,
+          "empty": false,
+          "idSha256": "5de96eabbcd7fa34618c0fd6ab1e267f95f37a1fd5fcc962903eaf517cfb5c58",
+          "inputMatch": false
+        }
+      ],
+      "syntheticUserInputMatchesOnce": true,
+      "syntheticUserPosition": 3,
+      "latestEligibleAssistantPosition": 4,
+      "messageRunJoin": "not claimed"
+    },
+    "reloadRecovery": {
+      "exactRequestLookup": 200,
+      "exactRunStatus": 200,
+      "requestAndRunIdentityRetained": true,
+      "secondAdmission": false
+    }
+  },
+  "viewports": [
+    {
+      "width": 1280,
+      "height": 720,
+      "statusLabels": [
+        {
+          "label": "Idle",
+          "text": "Idle"
+        }
+      ],
+      "statusVisible": true,
+      "inputVisible": true,
+      "sendVisible": true,
+      "sendHit": true,
+      "draftRetained": true,
+      "modelSelectorReachable": true,
+      "selectorFocus": true,
+      "escapeRestoresSelectorFocus": true,
+      "narrowNavigationReach": true,
+      "capture": "desktop-1280x720.png",
+      "captureSha256": "bcc60e0a3eefe1e3fed465ec3ddead8d89a0cfd2891abdc055d77b272483812f"
+    },
+    {
+      "width": 360,
+      "height": 740,
+      "statusLabels": [
+        {
+          "label": "Idle",
+          "text": "Idle"
+        }
+      ],
+      "statusVisible": true,
+      "inputVisible": true,
+      "sendVisible": true,
+      "sendHit": true,
+      "draftRetained": true,
+      "modelSelectorReachable": true,
+      "selectorFocus": true,
+      "escapeRestoresSelectorFocus": true,
+      "narrowNavigationReach": true,
+      "capture": "mobile-360x740.png",
+      "captureSha256": "a5178e64d7d23cd79542132e7950e5fce3ad7123f4e20239c760f4918c91cb2f"
+    },
+    {
+      "width": 360,
+      "height": 360,
+      "statusLabels": [
+        {
+          "label": "Idle",
+          "text": "Idle"
+        }
+      ],
+      "statusVisible": true,
+      "inputVisible": true,
+      "sendVisible": true,
+      "sendHit": true,
+      "draftRetained": true,
+      "modelSelectorReachable": true,
+      "selectorFocus": true,
+      "escapeRestoresSelectorFocus": true,
+      "narrowNavigationReach": true,
+      "capture": "short-360x360.png",
+      "captureSha256": "569a420a10bfd315ce0650798a47079b0b22fa9c41e3379462419befa5340db1"
+    }
+  ],
+  "browserRequestAccounting": {
+    "categories": {
+      "bootstrap": {
+        "attempted": 3,
+        "forwarded": 3,
+        "blockedBeforeEgress": 0,
+        "responses": 3,
+        "statuses": {
+          "200": 3
+        }
+      },
+      "health": {
+        "attempted": 1,
+        "forwarded": 1,
+        "blockedBeforeEgress": 0,
+        "responses": 1,
+        "statuses": {
+          "200": 1
+        }
+      },
+      "rooms-index": {
+        "attempted": 2,
+        "forwarded": 2,
+        "blockedBeforeEgress": 0,
+        "responses": 2,
+        "statuses": {
+          "200": 2
+        }
+      },
+      "other-get": {
+        "attempted": 10,
+        "forwarded": 0,
+        "blockedBeforeEgress": 10,
+        "responses": 0,
+        "statuses": {}
+      },
+      "owned-session": {
+        "attempted": 2,
+        "forwarded": 2,
+        "blockedBeforeEgress": 0,
+        "responses": 2,
+        "statuses": {
+          "200": 2
+        }
+      },
+      "owned-thread-state": {
+        "attempted": 2,
+        "forwarded": 2,
+        "blockedBeforeEgress": 0,
+        "responses": 2,
+        "statuses": {
+          "200": 2
+        }
+      },
+      "owned-history": {
+        "attempted": 3,
+        "forwarded": 3,
+        "blockedBeforeEgress": 0,
+        "responses": 3,
+        "statuses": {
+          "200": 3
+        }
+      },
+      "routing-default-read": {
+        "attempted": 2,
+        "forwarded": 2,
+        "blockedBeforeEgress": 0,
+        "responses": 2,
+        "statuses": {
+          "200": 2
+        }
+      },
+      "routing-default-set": {
+        "attempted": 1,
+        "forwarded": 1,
+        "blockedBeforeEgress": 0,
+        "responses": 1,
+        "statuses": {
+          "503": 1
+        }
+      },
+      "run-admission": {
+        "attempted": 2,
+        "forwarded": 2,
+        "blockedBeforeEgress": 0,
+        "responses": 2,
+        "statuses": {
+          "200": 1,
+          "503": 1
+        }
+      },
+      "run-request-lookup": {
+        "attempted": 2,
+        "forwarded": 1,
+        "blockedBeforeEgress": 1,
+        "responses": 1,
+        "statuses": {
+          "404": 1
+        }
+      },
+      "model-options": {
+        "attempted": 3,
+        "forwarded": 3,
+        "blockedBeforeEgress": 0,
+        "responses": 3,
+        "statuses": {
+          "200": 3
+        }
+      },
+      "run-events": {
+        "attempted": 1,
+        "forwarded": 0,
+        "blockedBeforeEgress": 1,
+        "responses": 0,
+        "statuses": {}
+      },
+      "run-status": {
+        "attempted": 1,
+        "forwarded": 1,
+        "blockedBeforeEgress": 0,
+        "responses": 1,
+        "statuses": {
+          "200": 1
+        }
+      }
+    },
+    "attempted": {
+      "GET": 30,
+      "POST": 5,
+      "DELETE": 0,
+      "other": 0
+    },
+    "forwarded": {
+      "GET": 18,
+      "POST": 5,
+      "DELETE": 0,
+      "other": 0
+    },
+    "blockedBeforeEgress": {
+      "GET": 12,
+      "POST": 0,
+      "DELETE": 0,
+      "other": 0
+    },
+    "responses": {
+      "GET": 18,
+      "POST": 5,
+      "DELETE": 0,
+      "other": 0
+    },
+    "responseStatuses": {
+      "200": 20,
+      "404": 1,
+      "503": 2
+    },
+    "externalBlocked": 0,
+    "presencePostsForwarded": 0,
+    "runAdmissionPostsForwarded": 0,
+    "recoveryInvocation": {
+      "attempted": {
+        "GET": 26,
+        "POST": 1,
+        "DELETE": 0,
+        "other": 0
+      },
+      "forwarded": {
+        "GET": 18,
+        "POST": 0,
+        "DELETE": 0,
+        "other": 0
+      },
+      "blockedBeforeEgress": {
+        "GET": 8,
+        "POST": 1,
+        "DELETE": 0,
+        "other": 0
+      },
+      "responses": {
+        "GET": 18,
+        "POST": 0,
+        "DELETE": 0,
+        "other": 0
+      },
+      "statuses": {},
+      "externalBlocked": 0,
+      "categories": {
+        "bootstrap": {
+          "attempted": 3,
+          "forwarded": 3,
+          "blockedBeforeEgress": 0,
+          "responses": 3,
+          "statuses": {
+            "200": 3
+          }
+        },
+        "health": {
+          "attempted": 1,
+          "forwarded": 1,
+          "blockedBeforeEgress": 0,
+          "responses": 1,
+          "statuses": {
+            "200": 1
+          }
+        },
+        "rooms-index": {
+          "attempted": 2,
+          "forwarded": 2,
+          "blockedBeforeEgress": 0,
+          "responses": 2,
+          "statuses": {
+            "200": 2
+          }
+        },
+        "owned-thread-state": {
+          "attempted": 4,
+          "forwarded": 4,
+          "blockedBeforeEgress": 0,
+          "responses": 4,
+          "statuses": {
+            "200": 4
+          }
+        },
+        "other": {
+          "attempted": 8,
+          "forwarded": 0,
+          "blockedBeforeEgress": 8,
+          "responses": 0,
+          "statuses": {}
+        },
+        "owned-session": {
+          "attempted": 1,
+          "forwarded": 1,
+          "blockedBeforeEgress": 0,
+          "responses": 1,
+          "statuses": {
+            "200": 1
+          }
+        },
+        "legacy-request-lookup": {
+          "attempted": 1,
+          "forwarded": 1,
+          "blockedBeforeEgress": 0,
+          "responses": 1,
+          "statuses": {
+            "200": 1
+          }
+        },
+        "run-status": {
+          "attempted": 1,
+          "forwarded": 1,
+          "blockedBeforeEgress": 0,
+          "responses": 1,
+          "statuses": {
+            "200": 1
+          }
+        },
+        "owned-history": {
+          "attempted": 4,
+          "forwarded": 4,
+          "blockedBeforeEgress": 0,
+          "responses": 4,
+          "statuses": {
+            "200": 4
+          }
+        },
+        "model-options": {
+          "attempted": 1,
+          "forwarded": 1,
+          "blockedBeforeEgress": 0,
+          "responses": 1,
+          "statuses": {
+            "200": 1
+          }
+        },
+        "thread-read": {
+          "attempted": 1,
+          "forwarded": 0,
+          "blockedBeforeEgress": 1,
+          "responses": 0,
+          "statuses": {}
+        }
+      }
+    },
+    "finalInvocation": {
+      "attempted": {
+        "GET": 25,
+        "POST": 1,
+        "DELETE": 0,
+        "other": 0
+      },
+      "forwarded": {
+        "GET": 17,
+        "POST": 1,
+        "DELETE": 0,
+        "other": 0
+      },
+      "blockedBeforeEgress": {
+        "GET": 8,
+        "POST": 0,
+        "DELETE": 0,
+        "other": 0
+      },
+      "responses": {
+        "GET": 17,
+        "POST": 1,
+        "DELETE": 0,
+        "other": 0
+      },
+      "responseStatuses": {
+        "200": 18
+      },
+      "externalBlocked": 0,
+      "categories": {
+        "bootstrap": {
+          "attempted": 3,
+          "forwarded": 3,
+          "blockedBeforeEgress": 0,
+          "responses": 3,
+          "statuses": {
+            "200": 3
+          }
+        },
+        "health": {
+          "attempted": 1,
+          "forwarded": 1,
+          "blockedBeforeEgress": 0,
+          "responses": 1,
+          "statuses": {
+            "200": 1
+          }
+        },
+        "rooms-index": {
+          "attempted": 2,
+          "forwarded": 2,
+          "blockedBeforeEgress": 0,
+          "responses": 2,
+          "statuses": {
+            "200": 2
+          }
+        },
+        "owned-thread-state": {
+          "attempted": 4,
+          "forwarded": 4,
+          "blockedBeforeEgress": 0,
+          "responses": 4,
+          "statuses": {
+            "200": 4
+          }
+        },
+        "other": {
+          "attempted": 8,
+          "forwarded": 0,
+          "blockedBeforeEgress": 8,
+          "responses": 0,
+          "statuses": {}
+        },
+        "owned-session": {
+          "attempted": 1,
+          "forwarded": 1,
+          "blockedBeforeEgress": 0,
+          "responses": 1,
+          "statuses": {
+            "200": 1
+          }
+        },
+        "legacy-request-lookup": {
+          "attempted": 1,
+          "forwarded": 1,
+          "blockedBeforeEgress": 0,
+          "responses": 1,
+          "statuses": {
+            "200": 1
+          }
+        },
+        "run-status": {
+          "attempted": 1,
+          "forwarded": 1,
+          "blockedBeforeEgress": 0,
+          "responses": 1,
+          "statuses": {
+            "200": 1
+          }
+        },
+        "owned-history": {
+          "attempted": 3,
+          "forwarded": 3,
+          "blockedBeforeEgress": 0,
+          "responses": 3,
+          "statuses": {
+            "200": 3
+          }
+        },
+        "model-options": {
+          "attempted": 1,
+          "forwarded": 1,
+          "blockedBeforeEgress": 0,
+          "responses": 1,
+          "statuses": {
+            "200": 1
+          }
+        },
+        "thread-read": {
+          "attempted": 1,
+          "forwarded": 1,
+          "blockedBeforeEgress": 0,
+          "responses": 1,
+          "statuses": {
+            "200": 1
+          }
+        }
+      }
+    },
+    "noAdditionalAdmissionForwarded": true,
+    "persistenceInvocation": {
+      "attempted": {
+        "GET": 13,
+        "POST": 0
+      },
+      "forwarded": {
+        "GET": 11,
+        "POST": 0
+      },
+      "blocked": {
+        "GET": 2,
+        "POST": 0
+      },
+      "responses": {
+        "GET": 10,
+        "POST": 0
+      },
+      "statuses": {
+        "200": 10
+      }
+    },
+    "invocations": [
+      {
+        "name": "bridge-guard-and-legacy-send",
+        "attempted": {
+          "GET": 30,
+          "POST": 5
+        },
+        "forwarded": {
+          "GET": 18,
+          "POST": 5
+        },
+        "blockedBeforeEgress": {
+          "GET": 12,
+          "POST": 0
+        }
+      },
+      {
+        "name": "initial-request-recovery-read-only-view-attempt",
+        "attempted": {
+          "GET": 27,
+          "POST": 1
+        },
+        "forwarded": {
+          "GET": 19,
+          "POST": 0
+        },
+        "blockedBeforeEgress": {
+          "GET": 8,
+          "POST": 1
+        }
+      },
+      {
+        "name": "read-guard-correction-view-attempt",
+        "attempted": {
+          "GET": 26,
+          "POST": 1
+        },
+        "forwarded": {
+          "GET": 18,
+          "POST": 0
+        },
+        "blockedBeforeEgress": {
+          "GET": 8,
+          "POST": 1
+        }
+      },
+      {
+        "name": "native-assistant-read-and-viewports",
+        "attempted": {
+          "GET": 25,
+          "POST": 1
+        },
+        "forwarded": {
+          "GET": 17,
+          "POST": 1
+        },
+        "blockedBeforeEgress": {
+          "GET": 8,
+          "POST": 0
+        }
+      },
+      {
+        "name": "read-marker-persistence-check-1",
+        "attempted": {
+          "GET": 13,
+          "POST": 0
+        },
+        "forwarded": {
+          "GET": 11,
+          "POST": 0
+        },
+        "blockedBeforeEgress": {
+          "GET": 2,
+          "POST": 0
+        }
+      },
+      {
+        "name": "read-marker-persistence-check-2",
+        "attempted": {
+          "GET": 13,
+          "POST": 0
+        },
+        "forwarded": {
+          "GET": 11,
+          "POST": 0
+        },
+        "blockedBeforeEgress": {
+          "GET": 2,
+          "POST": 0
+        }
+      }
+    ],
+    "aggregate": {
+      "attempted": {
+        "GET": 134,
+        "POST": 8,
+        "total": 142
+      },
+      "forwardedToBackend": {
+        "GET": 94,
+        "POST": 6,
+        "total": 100
+      },
+      "blockedBeforeEgress": {
+        "GET": 40,
+        "POST": 2,
+        "total": 42
+      },
+      "externalRequests": 0,
+      "serverAuditTotals": "unknown; no supported audit read was used"
+    },
+    "forwardedPostCategories": {
+      "routingDefaultsRead": 2,
+      "routingDefaultsSetGuard": 1,
+      "routingBearingRunGuard": 1,
+      "legacyRunAdmission": 1,
+      "assistantReadMarker": 1,
+      "presence": 0,
+      "other": 0
+    }
+  },
+  "boundaries": {
+    "newSession": false,
+    "newProject": false,
+    "providerOrPaidRouteChange": false,
+    "sourceActivation": false,
+    "serviceOrProxyOperation": false,
+    "runtimeAuthFlagNetworkOrCredentialChange": false,
+    "physicalPhoneCheck": "pending"
+  },
+  "loadedAssets": [
+    {
+      "kind": "css",
+      "sha256": "3434a6cda84db390c49fd28658c429e9a9e406eb3059aa64f4d5f696307ce656",
+      "status": 200
+    },
+    {
+      "kind": "js",
+      "sha256": "580ad8c58061a4dde99bde0a56905e382f0568516ee2f5b84dbfb52085709021",
+      "status": 200
+    },
+    {
+      "kind": "js",
+      "sha256": "9742073ef7fc795e7673d98f272992843298426a0ffd8cb3507784df5143608b",
+      "status": 200
+    },
+    {
+      "kind": "js",
+      "sha256": "f1cb1f1aba0d53733b446e0926b2d3f63e33e1b25f267741d67a17ce603ba8f0",
+      "status": 200
+    },
+    {
+      "kind": "js",
+      "sha256": "580ad8c58061a4dde99bde0a56905e382f0568516ee2f5b84dbfb52085709021",
+      "status": 200
+    },
+    {
+      "kind": "css",
+      "sha256": "3434a6cda84db390c49fd28658c429e9a9e406eb3059aa64f4d5f696307ce656",
+      "status": 200
+    },
+    {
+      "kind": "js",
+      "sha256": "9742073ef7fc795e7673d98f272992843298426a0ffd8cb3507784df5143608b",
+      "status": 200
+    },
+    {
+      "kind": "js",
+      "sha256": "f1cb1f1aba0d53733b446e0926b2d3f63e33e1b25f267741d67a17ce603ba8f0",
+      "status": 200
+    }
+  ],
+  "loadedHtml": {
+    "status": 200,
+    "sha256": "49c99b68380a4d8a857a71ade0c5e0591617654705fefbc71d5fd0468dc7330a",
+    "contentType": "text/html; charset=utf-8"
+  },
+  "completed": true,
+  "stopStage": "legacy-send",
+  "stopReason": "page.evaluate: TypeError: Failed to fetch     at eval (eval at evaluate (:311:30), <anonymous>:5:28)     at UtilityScript.evaluate (<anonymous>:313:16)     at UtilityScript.<anonym",
+  "ui": {
+    "loadedSameOriginDocument": true,
+    "captureCount": 0,
+    "captures": [],
+    "taskPageSelectionAndDraftRestored": false
+  },
+  "recovery": {
+    "healthStatus": 200,
+    "bootstrapStatus": 200,
+    "ownershipVerified": true,
+    "sessionSha256": "7918b130a537e2fa2d52d0b26649dbf0f68141f235b1b25fee8359301c9f9564",
+    "exactRequestLookup": {
+      "status": 200,
+      "exactIdentityMatches": true,
+      "runIdSha256": "1989b4ca50f8c4f35a5a8a44069543d45d7aa3037b5c399c8b8b0703a59ed641"
+    },
+    "runStatus": {
+      "status": 200,
+      "exactRunAndSessionMatch": true,
+      "runStatus": "completed",
+      "requested": {
+        "provider": "openai-codex",
+        "model": "gpt-6-luna",
+        "reasoningEffort": "low"
+      },
+      "executed": {
+        "provider": "openai-codex",
+        "model": "gpt-6-luna",
+        "reasoningEffort": "low",
+        "reasoningEffortSource": "wire"
+      },
+      "exact": true,
+      "fallbackUsed": false,
+      "routeSource": "unknown",
+      "apiCalls": 1
+    },
+    "beforeView": {
+      "status": 200,
+      "historyComplete": true,
+      "canonicalCount": 5,
+      "latestEligiblePosition": 4,
+      "lastReadPosition": 1,
+      "unread": true
+    },
+    "nativeView": {
+      "canonicalLatestPosition": 4,
+      "messageIdMatches": true,
+      "visible": true,
+      "focused": true,
+      "rect": {
+        "left": 448,
+        "top": 421.53125,
+        "right": 1130,
+        "bottom": 423.53125,
+        "width": 682,
+        "height": 2
+      },
+      "pane": {
+        "left": 260,
+        "top": 73,
+        "right": 1280,
+        "bottom": 545.828125
+      },
+      "hit": true
+    },
+    "afterView": {
+      "status": 200,
+      "historyComplete": true,
+      "latestEligiblePosition": 4,
+      "lastReadPosition": 4,
+      "unread": false,
+      "exactLatestReadPostForwarded": true,
+      "readPosts": [
+        {
+          "position": 4,
+          "messageIdSha256": "5de96eabbcd7fa34618c0fd6ab1e267f95f37a1fd5fcc962903eaf517cfb5c58"
+        }
+      ],
+      "readDecisions": [
+        {
+          "idMatches": true,
+          "positionMatches": true,
+          "visibleFocusedHitClip": true,
+          "position": 4,
+          "messageIdSha256": "5de96eabbcd7fa34618c0fd6ab1e267f95f37a1fd5fcc962903eaf517cfb5c58"
+        }
+      ],
+      "eligibleMessageIdSha256": "5de96eabbcd7fa34618c0fd6ab1e267f95f37a1fd5fcc962903eaf517cfb5c58"
+    },
+    "noSecondAdmission": true,
+    "taskPageDraftAndHintsRestored": true,
+    "captureCount": 3,
+    "captures": [
+      {
+        "name": "desktop-1280x720.png",
+        "sha256": "bcc60e0a3eefe1e3fed465ec3ddead8d89a0cfd2891abdc055d77b272483812f"
+      },
+      {
+        "name": "mobile-360x740.png",
+        "sha256": "a5178e64d7d23cd79542132e7950e5fce3ad7123f4e20239c760f4918c91cb2f"
+      },
+      {
+        "name": "short-360x360.png",
+        "sha256": "569a420a10bfd315ce0650798a47079b0b22fa9c41e3379462419befa5340db1"
+      }
+    ],
+    "reloadIndependentRead": {
+      "samePage": {
+        "threadStateStatus": 200,
+        "historyComplete": true,
+        "latestEligiblePosition": 4,
+        "lastReadPosition": 4,
+        "unread": false,
+        "exactReadMarker": true,
+        "canonicalRecordCount": 5,
+        "userInputMatchCount": 1,
+        "userInputCanonicalPosition": 3,
+        "userMessageIdSha256": "411a9a06feb04c2311e199448b402438e565c216d3644157d38abaf8882c73c6"
+      },
+      "independentPage": {
+        "threadStateStatus": 200,
+        "lastReadPosition": 4,
+        "unread": false,
+        "markerRetained": true,
+        "requestLookupStatus": 200,
+        "requestIdentityRetained": true,
+        "exactMessageIdHashRetained": true
+      },
+      "canonicalHistory": {
+        "count": 5,
+        "records": [
+          {
+            "role": "user",
+            "position": 0,
+            "displayKind": "internal_notification",
+            "toolRecord": false,
+            "empty": false,
+            "idSha256": "addc598ce00e88510319ba722f2911447e8d4f5edb6af0f596310e9e659e4759",
+            "inputMatch": false
+          },
+          {
+            "role": "assistant",
+            "position": 1,
+            "displayKind": null,
+            "toolRecord": false,
+            "empty": false,
+            "idSha256": "605db792be11b2f3a82bbc503ad81f3b4d389ec1dcfbe1aebd7bb5f6f720ae52",
+            "inputMatch": false
+          },
+          {
+            "role": "system",
+            "position": 2,
+            "displayKind": null,
+            "toolRecord": false,
+            "empty": false,
+            "idSha256": "04d0644f3345ae5a1aa85f0d3871b98d7691ba8b4ce9a3f7a43f6aea7b7245ad",
+            "inputMatch": false
+          },
+          {
+            "role": "user",
+            "position": 3,
+            "displayKind": "internal_notification",
+            "toolRecord": false,
+            "empty": false,
+            "idSha256": "411a9a06feb04c2311e199448b402438e565c216d3644157d38abaf8882c73c6",
+            "inputMatch": true
+          },
+          {
+            "role": "assistant",
+            "position": 4,
+            "displayKind": null,
+            "toolRecord": false,
+            "empty": false,
+            "idSha256": "5de96eabbcd7fa34618c0fd6ab1e267f95f37a1fd5fcc962903eaf517cfb5c58",
+            "inputMatch": false
+          }
+        ],
+        "oneSyntheticUserInputAtPosition3": true
+      },
+      "runStatus": {
+        "status": 200,
+        "exactSessionRequestRunIdentity": true,
+        "runStatus": "completed",
+        "requested": {
+          "provider": "openai-codex",
+          "model": "gpt-6-luna",
+          "reasoningEffort": "low"
+        },
+        "executed": {
+          "provider": "openai-codex",
+          "model": "gpt-6-luna",
+          "reasoningEffort": "low",
+          "reasoningEffortSource": "wire"
+        },
+        "exact": true,
+        "fallbackUsed": false,
+        "routeSource": "unknown",
+        "apiCalls": 1
+      },
+      "requestAccounting": {
+        "attempted": {
+          "GET": 13,
+          "POST": 0
+        },
+        "forwarded": {
+          "GET": 11,
+          "POST": 0
+        },
+        "blocked": {
+          "GET": 2,
+          "POST": 0
+        },
+        "responses": {
+          "GET": 10,
+          "POST": 0
+        },
+        "statuses": {
+          "200": 10
+        }
+      },
+      "noMutation": true
+    },
+    "priorIncompleteAttempts": [
+      {
+        "reason": "run response capture incomplete; exact identity recovered later by supported GET",
+        "runAdmissionRetried": false,
+        "lookupBlockedBeforeEgress": true
+      },
+      {
+        "reason": "read guard initially expected sessionId in body; actual contract carries session in URL",
+        "readPOSTBlockedBeforeEgress": true,
+        "serverWriteOccurred": false
+      }
+    ]
+  },
+  "priorRecoveryAttempt": {
+    "healthStatus": 200,
+    "bootstrapStatus": 200,
+    "ownershipVerified": true,
+    "sessionSha256": "7918b130a537e2fa2d52d0b26649dbf0f68141f235b1b25fee8359301c9f9564",
+    "exactRequestLookup": {
+      "status": 200,
+      "exactIdentityMatches": true,
+      "runIdSha256": "1989b4ca50f8c4f35a5a8a44069543d45d7aa3037b5c399c8b8b0703a59ed641"
+    },
+    "runStatus": {
+      "status": 200,
+      "exactRunAndSessionMatch": true,
+      "state": "completed",
+      "requested": {
+        "provider": "openai-codex",
+        "model": "gpt-6-luna",
+        "reasoningEffort": "low"
+      },
+      "executed": {
+        "provider": "openai-codex",
+        "model": "gpt-6-luna",
+        "reasoningEffort": "low",
+        "reasoningEffortSource": "wire"
+      },
+      "exact": true,
+      "fallbackUsed": false,
+      "routeSource": "unknown",
+      "apiCalls": 1
+    },
+    "beforeView": {
+      "threadStateStatus": 200,
+      "historyComplete": true,
+      "canonicalCount": 5,
+      "latestEligiblePosition": 4,
+      "lastReadPosition": 1,
+      "unread": true
+    },
+    "nativeViewBefore": {
+      "eligiblePosition": 4,
+      "messageIdMatches": true,
+      "visible": true,
+      "focused": true,
+      "intersecting": true,
+      "hit": true
+    },
+    "completed": false,
+    "stopStage": "initialize",
+    "stopReason": "protected readback stopped safely; no admission retried"
+  }
+}
