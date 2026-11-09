@@ -13,6 +13,24 @@ const session = { id: 'jc_' + 'a'.repeat(32), title: 'SYNTHETIC saved-default se
 const selection = { provider: 'openai-codex' as const, model: 'gpt-6-luna' as const, reasoningEffort: 'low' as const };
 async function reachable(control: Locator) {
   await control.scrollIntoViewIfNeeded();
+  // The browser can align the scrollable page while leaving a nested panel's
+  // last control against its clipped border. Bring the full hit target inside
+  // each real scroll ancestor, then inspect the resulting clipping geometry.
+  await control.evaluate(element => {
+    for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+      const style = getComputedStyle(parent), box = parent.getBoundingClientRect(), rect = element.getBoundingClientRect();
+      if (/(auto|scroll)/.test(style.overflowY)) {
+        const top = box.top + parent.clientTop, bottom = top + parent.clientHeight;
+        if (rect.bottom > bottom) parent.scrollTop += rect.bottom - bottom + 2;
+        else if (rect.top < top) parent.scrollTop -= top - rect.top + 2;
+      }
+      if (/(auto|scroll)/.test(style.overflowX)) {
+        const left = box.left + parent.clientLeft, right = left + parent.clientWidth;
+        if (rect.right > right) parent.scrollLeft += rect.right - right + 2;
+        else if (rect.left < left) parent.scrollLeft -= left - rect.left + 2;
+      }
+    }
+  });
   const geometry = await control.evaluate(element => {
     const r = element.getBoundingClientRect(); let top = 0, left = 0, bottom = innerHeight, right = innerWidth;
     for (let p = element.parentElement; p; p = p.parentElement) {
@@ -21,9 +39,10 @@ async function reachable(control: Locator) {
       if (/(auto|scroll|hidden|clip)/.test(s.overflowX)) { left = Math.max(left, b.left + p.clientLeft); right = Math.min(right, b.left + p.clientLeft + p.clientWidth); }
     }
     const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-    return { full: r.top >= top && r.bottom <= bottom && r.left >= left && r.right <= right, hit: !!hit && element.contains(hit) };
+    return { full: r.top >= top && r.bottom <= bottom && r.left >= left && r.right <= right, hit: !!hit && element.contains(hit), rect: { top: r.top, right: r.right, bottom: r.bottom, left: r.left }, clip: { top, right, bottom, left } };
   });
-  expect(geometry).toEqual({ full: true, hit: true });
+  expect(geometry.full, `control must fit clipped viewport and scroll ancestors: ${JSON.stringify(geometry)}`).toBe(true);
+  expect(geometry.hit).toBe(true);
 }
 for (const [width, height] of [[1280, 720], [360, 740], [360, 360]]) test.describe(`${width}x${height}`, () => {
   const device = devices[width === 1280 ? 'Desktop Chrome' : 'Pixel 7'];
@@ -84,14 +103,20 @@ for (const [width, height] of [[1280, 720], [360, 740], [360, 360]]) test.descri
     await expect(mode).toBeDisabled(); expect(mutations).toHaveLength(0); expect(bodies).toHaveLength(0);
     // Fixture-only availability transition; never changes the actual source guard.
     writesAvailable = true; const refresh = page.getByRole('button', { name: 'Refresh saved defaults' }); await reachable(refresh); await refresh.click(); await expect(mode).toBeEnabled();
-    await page.getByRole('combobox', { name: 'Model for this prompt' }).selectOption('openai-codex:gpt-6-luna');
+    const model = page.getByRole('combobox', { name: 'Model for this prompt' });
+    const effort = page.getByRole('combobox', { name: 'Reasoning for this prompt' });
+    await reachable(model); await model.selectOption('openai-codex:gpt-6-luna');
+    await reachable(effort);
     const save = page.getByRole('button', { name: 'Save prompt choice for thread' }); await reachable(save); await save.click(); await expect(page.getByText('Thread: gpt-6-luna · low (revision 1)')).toBeVisible();
     const clear = page.getByRole('button', { name: 'Clear thread default' }); await reachable(clear); await clear.click(); await expect(page.getByText('Thread: Not set (revision 2)')).toBeVisible();
     await reachable(save); await save.click(); await expect(page.getByText('Thread: gpt-6-luna · low (revision 3)')).toBeVisible();
     expect(new Set(mutations.map(mutation => mutation.clientRequestId)).size).toBe(3); expect(bodies).toHaveLength(0);
-    await reachable(mode); await mode.check(); await page.getByRole('combobox', { name: 'Model for this prompt' }).selectOption('inherit');
-    await page.screenshot({ path: info.outputPath(`SYNTHETIC-default-selector-picker-${width}x${height}.png`) });
-    await page.locator('details.inference-control > summary').click(); await expect(draft).toHaveValue('SYNTHETIC retained selector draft');
+    await reachable(mode); await mode.check(); await reachable(model); await model.selectOption('inherit');
+    await page.screenshot({ path: info.outputPath(`SYNTHETIC-default-selector-prompt-${width}x${height}.png`) });
+    await reachable(mode); await page.screenshot({ path: info.outputPath(`SYNTHETIC-default-selector-picker-${width}x${height}.png`) });
+    const summary = page.locator('details.inference-control > summary');
+    await summary.focus(); await page.keyboard.press('Escape'); await expect(summary).toBeFocused(); await expect(model).toBeHidden();
+    await expect(draft).toHaveValue('SYNTHETIC retained selector draft');
     const send = page.getByRole('button', { name: 'Send message', exact: true }); await reachable(draft); await reachable(send); await send.click();
     const retry = page.getByRole('button', { name: 'Retry same intent', exact: true }); await expect(retry).toBeVisible();
     expect(bodies).toHaveLength(1); expect(bodies[0]).toMatchObject({ sessionId: session.id, routing: { mode: 'defaults', projectId: null } }); expect(bodies[0]).not.toHaveProperty('inference');
@@ -99,6 +124,17 @@ for (const [width, height] of [[1280, 720], [360, 740], [360, 360]]) test.descri
     await page.screenshot({ path: info.outputPath(`SYNTHETIC-default-selector-uncertain-${width}x${height}.png`) });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     expect(blocked).toEqual([]); expect(unexpected).toEqual([]); expect(errors).toEqual([]);
-    await info.attach('synthetic-request-categories', { body: JSON.stringify({ requests, preferenceChanges: mutations.length, explicitRunPosts: bodies.length, uniqueRunUUIDs: new Set(bodies.map(body => body.clientRequestId)).size, blocked, unexpected }), contentType: 'application/json' });
+    const receipt = {
+      totalApiRequests: requests.length,
+      methods: { get: requests.filter(item => item.startsWith('GET ')).length, post: requests.filter(item => item.startsWith('POST ')).length },
+      threadStateGets: requests.filter(item => item === `GET /api/live/sessions/${session.id}/thread-state`).length,
+      defaultsReadPosts: requests.filter(item => item === 'POST /api/live/routing-defaults/read').length,
+      preferenceSetPosts: mutations.length, explicitRunPosts: bodies.length,
+      uniqueRunRequestIds: new Set(bodies.map(body => body.clientRequestId)).size,
+      externalOrSocketAttempts: blocked.length, unexpectedOperations: unexpected.length, pageErrors: errors.length,
+      execution: 'synthetic upstream returned 503 for same-UUID manual retry; no real execution',
+    };
+    console.log('SYNTHETIC default-selector request receipt', JSON.stringify(receipt));
+    await info.attach('synthetic-request-categories', { body: JSON.stringify(receipt), contentType: 'application/json' });
   });
 });

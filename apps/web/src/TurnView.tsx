@@ -502,7 +502,7 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
         // starts at the prompt choices without moving focus or the chat viewport.
         if (open) { const panel = event.currentTarget.querySelector<HTMLElement>('.inference-fields'); if (panel) panel.scrollTop = 0; }
         setPickerOpen(open);
-      }} className={`inference-control${inferenceTarget ? ' header-inference' : ''}`} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }} onKeyDown={event => {
+      }} className={`inference-control${inferenceTarget ? ' header-inference' : ''}`} onBlur={event => { if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }} onKeyDown={event => {
         if (event.key === 'Escape') { event.stopPropagation(); if (picker.current) picker.current.open = false; picker.current?.querySelector('summary')?.focus(); }
       }}>
         <summary title={`Requested · ${selection === 'inherit' ? saved.opted ? 'Saved defaults' : 'Inherit' : selection === 'invalid' ? 'Selection unavailable' : `${selectedOption?.label ?? selection.model} · ${effortLabel}`}`}><span className="requested-label">Requested · </span><span className="requested-choice">{selection === 'inherit' ? saved.opted ? 'Saved defaults' : 'Inherit' : selection === 'invalid' ? 'Selection unavailable' : `${selectedOption?.label ?? selection.model} · ${effortLabel}`}</span></summary>

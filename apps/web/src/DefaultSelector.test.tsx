@@ -13,13 +13,14 @@ afterEach(() => { localStorage.clear(); vi.unstubAllGlobals(); vi.restoreAllMock
 function fixture() {
   let availability = true;
   const reads: object[] = [], writes: object[] = [];
-  vi.stubGlobal('fetch', vi.fn(async (path: string, init?: RequestInit) => {
+  const fetcher = vi.fn(async (path: string, init?: RequestInit) => {
     if (path === '/api/live/model-options') return Response.json(inventory);
     if (path === '/api/rooms') return Response.json({ version: 1, rooms: [room] });
     if (path === '/api/live/routing-defaults/read') { const target = JSON.parse(String(init?.body)); reads.push(target); return Response.json({ target, revision: 3, selection: inference, replayed: false, writesAvailable: availability }); }
     writes.push({ path, init }); throw Error('No synthetic mutation authorized');
-  }));
-  return { reads, writes, disable: () => { availability = false; } };
+  });
+  vi.stubGlobal('fetch', fetcher);
+  return { reads, writes, fetcher, disable: () => { availability = false; } };
 }
 async function openPicker() {
   await waitFor(() => expect(screen.getByRole('combobox', { name: 'Model for this prompt' })).toBeEnabled());
@@ -108,4 +109,19 @@ it.each([null, projectId])('App submits the selected pane with exact routing/pro
   sendDraft(); await waitFor(() => expect(bodies).toHaveLength(1));
   expect(bodies[0]).toMatchObject({ sessionId, routing: { mode: 'defaults', projectId: context } });
   expect(bodies[0]).not.toHaveProperty('inference'); expect(unexpected).toEqual([]);
+});
+
+it('keeps the picker open when a busy refresh disables its focused control', async () => {
+  const f = fixture(); render(<TurnComposer {...props()} />); await openPicker();
+  const details = document.querySelector('details.inference-control') as HTMLDetailsElement;
+  let release!: (value: Response) => void;
+  f.fetcher.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+  const refresh = screen.getByRole('button', { name: 'Refresh saved defaults' });
+  refresh.focus(); fireEvent.click(refresh);
+  expect(refresh).toBeDisabled();
+  fireEvent.blur(details, { relatedTarget: null });
+  expect(details.open).toBe(true);
+  await act(async () => release(Response.json({ target: { scope: 'thread', sessionId, projectId: null }, revision: 3, selection: inference, replayed: false, writesAvailable: false })));
+  expect(details.open).toBe(true);
+  expect(screen.getByRole('checkbox', { name: 'Use saved defaults for the next message' })).toBeDisabled();
 });
