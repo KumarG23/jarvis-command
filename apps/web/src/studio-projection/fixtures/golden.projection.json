@@ -1,0 +1,786 @@
+{
+ "schema": "studio.projection",
+ "version": 1,
+ "read_only": true,
+ "method": "GET",
+ "observed_at": "2026-11-09T15:00:00+00:00",
+ "fresh_for_seconds": 30,
+ "stale_after_seconds": 86400,
+ "provenance": [
+  "GitHub issues/pull requests (repo-qualified)",
+  "studio user tmux session names",
+  "local assignment, exit and worker-activity receipts (mtime only)",
+  "plan and roadmap files at project base ref",
+  "GitHub merged PRs; Studio scheduler release receipts where they exist"
+ ],
+ "redaction": "No bodies, native sessions, paths, logs, prompts or credentials; links rebuilt from repo slugs.",
+ "limits": {
+  "max_projects": 16,
+  "max_items_per_project": 100
+ },
+ "totals": {
+  "coverage": {
+   "projects": 3,
+   "with_counts": 2,
+   "complete": false
+  },
+  "attention": null,
+  "building": null,
+  "checking": null,
+  "review": null,
+  "ready_to_test": null,
+  "integrated": null,
+  "unverified": null,
+  "queued": null,
+  "open": null,
+  "open_issues": null,
+  "open_prs": null,
+  "blocked": null,
+  "ready": null,
+  "running": null,
+  "sessions": null
+ },
+ "projects": [
+  {
+   "id": "command",
+   "display_name": "Jarvis Command",
+   "repo": "Example/command-synth",
+   "dispatch": {
+    "state": "unpaused",
+    "kind": null,
+    "resume_at": null
+   },
+   "goal": "SYNTHETIC goal: show crew progress honestly.",
+   "goal_source": "MASTER_PLAN.md",
+   "milestone": {
+    "source": "studio-plan block on open issues",
+    "basis": "active_delivery",
+    "title": "P14 consumer",
+    "ambiguous": false,
+    "issues": 4
+   },
+   "progress": {
+    "kind": "plan_checklist",
+    "done": 1,
+    "total": 3,
+    "source": "MASTER_PLAN.md",
+    "committed_at": "2026-11-09T11:00:00Z"
+   },
+   "plan": {
+    "state": "read",
+    "reason": null,
+    "unreadable": [],
+    "base_commit": "cccccccccccc",
+    "base_committed_at": "2026-11-09T11:00:00Z",
+    "files": [
+     {
+      "file": "MASTER_PLAN.md",
+      "commit": "dddddddddddd",
+      "committed_at": "2026-11-09T11:00:00Z"
+     }
+    ],
+    "roadmap": null,
+    "milestone_status": []
+   },
+   "counts": {
+    "attention": 2,
+    "building": 1,
+    "checking": 1,
+    "review": 1,
+    "ready_to_test": 1,
+    "integrated": 1,
+    "unverified": 1,
+    "queued": 0,
+    "open": 0,
+    "open_issues": 8,
+    "open_prs": 3,
+    "sessions": 1,
+    "running": 1,
+    "blocked": 1,
+    "ready": 0
+   },
+   "latest_event": {
+    "kind": "issue_updated",
+    "at": "2026-11-09T14:00:00+00:00",
+    "age_seconds": 3600,
+    "source": "GitHub issue",
+    "ref": "Example/command-synth#1"
+   },
+   "delivery": {
+    "merged": [
+     {
+      "id": "Example/command-synth#14",
+      "number": 14,
+      "title": "SYNTHETIC merged PR",
+      "merged_at": "2026-11-09T09:00:00Z",
+      "merge_sha": "abababababab",
+      "release": {
+       "state": "unknown",
+       "reason": "no read-only release receipt for this project"
+      },
+      "url": "https://github.com/Example/command-synth/pull/14"
+     }
+    ],
+    "coverage": "latest 10 merged PRs",
+    "release": {
+     "state": "unknown",
+     "reason": "no read-only release receipt for this project"
+    }
+   },
+   "sessions": 1,
+   "running": 1,
+   "work": [
+    {
+     "id": "Example/command-synth#2",
+     "number": 2,
+     "title": "SYNTHETIC failing checks",
+     "lane": "attention",
+     "state": "open",
+     "run": {
+      "observed": "not_running",
+      "session": false,
+      "last_activity_at": null,
+      "last_exit_at": null
+     },
+     "owner": null,
+     "prs": [
+      {
+       "id": "Example/command-synth#11",
+       "number": 11,
+       "title": "SYNTHETIC failing PR",
+       "draft": false,
+       "ci": "failed",
+       "review": "none",
+       "updated_at": "2026-11-09T12:00:00Z",
+       "links": [
+        {
+         "label": "PR",
+         "url": "https://github.com/Example/command-synth/pull/11"
+        },
+        {
+         "label": "validate",
+         "url": "https://github.com/Example/command-synth/actions/runs/1/job/2"
+        }
+       ]
+      }
+     ],
+     "integration": [],
+     "milestone": "P14 consumer",
+     "updated_at": "2026-11-09T12:00:00+00:00",
+     "age_seconds": 10800,
+     "stale": false,
+     "blocker": {
+      "reason": "Required check failing",
+      "owner": null,
+      "dependencies": [],
+      "unsupported_dependency_refs": 0,
+      "next_action": "Fix failing check",
+      "source": "GitHub checks"
+     },
+     "evidence": [
+      {
+       "label": "Issue",
+       "url": "https://github.com/Example/command-synth/issues/2"
+      },
+      {
+       "label": "PR",
+       "url": "https://github.com/Example/command-synth/pull/11"
+      },
+      {
+       "label": "validate",
+       "url": "https://github.com/Example/command-synth/actions/runs/1/job/2"
+      }
+     ]
+    },
+    {
+     "id": "Example/command-synth#6",
+     "number": 6,
+     "title": "SYNTHETIC blocked on dependency",
+     "lane": "attention",
+     "state": "blocked",
+     "run": {
+      "observed": "not_running",
+      "session": false,
+      "last_activity_at": null,
+      "last_exit_at": null
+     },
+     "owner": {
+      "profile": "sol",
+      "role": "lead",
+      "configured": {
+       "model": "gpt-6-sol",
+       "pool": "openai",
+       "effort": null,
+       "source": "roster profile + assignment route_effort (configured/requested)"
+      },
+      "executed": {
+       "state": "unknown",
+       "reason": "no executed-route receipt is read; do not infer from configured"
+      }
+     },
+     "prs": [],
+     "integration": [],
+     "milestone": null,
+     "updated_at": "2026-11-08T09:00:00+00:00",
+     "age_seconds": 108000,
+     "stale": true,
+     "blocker": {
+      "reason": "Provider usage limit reached",
+      "owner": "Neal",
+      "dependencies": [
+       {
+        "id": "Example/studio-synth#9",
+        "repo": "Example/studio-synth",
+        "number": 9,
+        "url": "https://github.com/Example/studio-synth/issues/9"
+       }
+      ],
+      "unsupported_dependency_refs": 0,
+      "next_action": "Wait for pool reset or lead reassigns",
+      "source": "GitHub label + assignment receipt"
+     },
+     "evidence": [
+      {
+       "label": "Issue",
+       "url": "https://github.com/Example/command-synth/issues/6"
+      }
+     ]
+    },
+    {
+     "id": "Example/command-synth#5",
+     "number": 5,
+     "title": "SYNTHETIC ready to test",
+     "lane": "ready_to_test",
+     "state": "open",
+     "run": {
+      "observed": "not_running",
+      "session": false,
+      "last_activity_at": null,
+      "last_exit_at": null
+     },
+     "owner": null,
+     "prs": [],
+     "integration": [],
+     "milestone": null,
+     "updated_at": "2026-11-09T11:00:00+00:00",
+     "age_seconds": 14400,
+     "stale": false,
+     "blocker": null,
+     "evidence": [
+      {
+       "label": "Issue",
+       "url": "https://github.com/Example/command-synth/issues/5"
+      }
+     ]
+    },
+    {
+     "id": "Example/command-synth#4",
+     "number": 4,
+     "title": "SYNTHETIC awaiting review",
+     "lane": "review",
+     "state": "open",
+     "run": {
+      "observed": "not_running",
+      "session": false,
+      "last_activity_at": null,
+      "last_exit_at": null
+     },
+     "owner": null,
+     "prs": [
+      {
+       "id": "Example/command-synth#13",
+       "number": 13,
+       "title": "SYNTHETIC reviewable PR",
+       "draft": false,
+       "ci": "passed",
+       "review": "review_required",
+       "updated_at": "2026-11-09T10:00:00Z",
+       "links": [
+        {
+         "label": "PR",
+         "url": "https://github.com/Example/command-synth/pull/13"
+        }
+       ]
+      }
+     ],
+     "integration": [],
+     "milestone": "P14 consumer",
+     "updated_at": "2026-11-09T10:00:00+00:00",
+     "age_seconds": 18000,
+     "stale": false,
+     "blocker": null,
+     "evidence": [
+      {
+       "label": "Issue",
+       "url": "https://github.com/Example/command-synth/issues/4"
+      },
+      {
+       "label": "PR",
+       "url": "https://github.com/Example/command-synth/pull/13"
+      }
+     ]
+    },
+    {
+     "id": "Example/command-synth#3",
+     "number": 3,
+     "title": "SYNTHETIC checks pending",
+     "lane": "checking",
+     "state": "open",
+     "run": {
+      "observed": "not_running",
+      "session": false,
+      "last_activity_at": null,
+      "last_exit_at": null
+     },
+     "owner": null,
+     "prs": [
+      {
+       "id": "Example/command-synth#12",
+       "number": 12,
+       "title": "SYNTHETIC pending PR",
+       "draft": false,
+       "ci": "pending",
+       "review": "none",
+       "updated_at": "2026-11-09T13:00:00Z",
+       "links": [
+        {
+         "label": "PR",
+         "url": "https://github.com/Example/command-synth/pull/12"
+        }
+       ]
+      }
+     ],
+     "integration": [],
+     "milestone": "P14 consumer",
+     "updated_at": "2026-11-09T13:00:00+00:00",
+     "age_seconds": 7200,
+     "stale": false,
+     "blocker": null,
+     "evidence": [
+      {
+       "label": "Issue",
+       "url": "https://github.com/Example/command-synth/issues/3"
+      },
+      {
+       "label": "PR",
+       "url": "https://github.com/Example/command-synth/pull/12"
+      }
+     ]
+    },
+    {
+     "id": "Example/command-synth#1",
+     "number": 1,
+     "title": "SYNTHETIC running worker",
+     "lane": "building",
+     "state": "running",
+     "run": {
+      "observed": "running",
+      "session": true,
+      "last_activity_at": "2026-11-09T14:58:00+00:00",
+      "last_exit_at": null
+     },
+     "owner": {
+      "profile": "sonnet",
+      "role": "worker",
+      "configured": {
+       "model": "claude-sonnet-5-5",
+       "pool": "claude",
+       "effort": "high",
+       "source": "roster profile + assignment route_effort (configured/requested)"
+      },
+      "executed": {
+       "state": "unknown",
+       "reason": "no executed-route receipt is read; do not infer from configured"
+      }
+     },
+     "prs": [],
+     "integration": [],
+     "milestone": "P14 consumer",
+     "updated_at": "2026-11-09T14:00:00+00:00",
+     "age_seconds": 3600,
+     "stale": false,
+     "blocker": null,
+     "evidence": [
+      {
+       "label": "Issue",
+       "url": "https://github.com/Example/command-synth/issues/1"
+      }
+     ]
+    },
+    {
+     "id": "Example/command-synth#7",
+     "number": 7,
+     "title": "SYNTHETIC merged awaiting release",
+     "lane": "integrated",
+     "state": "open",
+     "run": {
+      "observed": "not_running",
+      "session": false,
+      "last_activity_at": null,
+      "last_exit_at": null
+     },
+     "owner": null,
+     "prs": [],
+     "integration": [
+      {
+       "id": "Example/command-synth#14",
+       "number": 14,
+       "title": "SYNTHETIC merged PR",
+       "merged_at": "2026-11-09T09:00:00Z",
+       "merge_sha": "abababababab",
+       "release": {
+        "state": "unknown",
+        "reason": "no read-only release receipt for this project"
+       },
+       "url": "https://github.com/Example/command-synth/pull/14"
+      }
+     ],
+     "milestone": null,
+     "updated_at": "2026-11-09T09:00:00+00:00",
+     "age_seconds": 21600,
+     "stale": false,
+     "blocker": null,
+     "evidence": [
+      {
+       "label": "Issue",
+       "url": "https://github.com/Example/command-synth/issues/7"
+      },
+      {
+       "label": "merged PR #14",
+       "url": "https://github.com/Example/command-synth/pull/14"
+      }
+     ]
+    },
+    {
+     "id": "Example/command-synth#8",
+     "number": 8,
+     "title": "SYNTHETIC session without activity",
+     "lane": "unverified",
+     "state": "unverified",
+     "run": {
+      "observed": "not_running",
+      "session": false,
+      "last_activity_at": null,
+      "last_exit_at": "2026-11-09T13:00:00+00:00"
+     },
+     "owner": null,
+     "prs": [],
+     "integration": [],
+     "milestone": null,
+     "updated_at": "2026-11-09T13:00:00+00:00",
+     "age_seconds": 7200,
+     "stale": false,
+     "blocker": null,
+     "evidence": [
+      {
+       "label": "Issue",
+       "url": "https://github.com/Example/command-synth/issues/8"
+      }
+     ]
+    }
+   ],
+   "unlinked_prs": [],
+   "truncated": false,
+   "unmatched_sessions": 0,
+   "errors": [],
+   "sources": {
+    "github": "online",
+    "workers": "observed",
+    "plan": "read"
+   }
+  },
+  {
+   "id": "studio",
+   "display_name": "Dev Studio",
+   "repo": "Example/studio-synth",
+   "dispatch": {
+    "state": "paused",
+    "kind": "transient",
+    "resume_at": "2026-11-09T16:00:00Z"
+   },
+   "goal": null,
+   "goal_source": null,
+   "milestone": {
+    "source": "studio-plan block on open issues",
+    "basis": "active_delivery",
+    "title": "Projection",
+    "ambiguous": false,
+    "issues": 1
+   },
+   "progress": {
+    "kind": "plan_milestones",
+    "count": 1,
+    "note": "plan-reported statuses, verbatim; no completion is inferred"
+   },
+   "plan": {
+    "state": "partial",
+    "reason": "some plan files unreadable",
+    "unreadable": [
+     "ROADMAP.md"
+    ],
+    "base_commit": "eeeeeeeeeeee",
+    "base_committed_at": "2026-11-09T06:00:00Z",
+    "files": [
+     {
+      "file": "ROADMAP.yaml",
+      "commit": "ffffffffffff",
+      "committed_at": "2026-11-09T06:00:00Z"
+     }
+    ],
+    "roadmap": {
+     "source": "ROADMAP.yaml",
+     "milestones": [
+      {
+       "id": "P14",
+       "title": "SYNTHETIC consumer",
+       "status": "live unavailable; phone check pending",
+       "status_source": "ROADMAP.yaml comment"
+      }
+     ]
+    },
+    "milestone_status": [
+     {
+      "id": "P14",
+      "title": "SYNTHETIC consumer",
+      "status": "live unavailable; phone check pending",
+      "status_source": "ROADMAP.yaml comment"
+     }
+    ]
+   },
+   "counts": {
+    "attention": 0,
+    "building": 1,
+    "checking": 0,
+    "review": 0,
+    "ready_to_test": 0,
+    "integrated": 1,
+    "unverified": 0,
+    "queued": 0,
+    "open": 0,
+    "open_issues": 2,
+    "open_prs": 1,
+    "sessions": 0,
+    "running": 0,
+    "blocked": 0,
+    "ready": 1
+   },
+   "latest_event": {
+    "kind": "pr_updated",
+    "at": "2026-11-09T14:00:00+00:00",
+    "age_seconds": 3600,
+    "source": "GitHub pull request",
+    "ref": "Example/studio-synth#21"
+   },
+   "delivery": {
+    "merged": [
+     {
+      "id": "Example/studio-synth#22",
+      "number": 22,
+      "title": "SYNTHETIC merged in release",
+      "merged_at": "2026-11-08T19:00:00Z",
+      "merge_sha": "abababababab",
+      "release": {
+       "state": "in_live_scheduler_release",
+       "live_sha": "1234567890ab"
+      },
+      "url": "https://github.com/Example/studio-synth/pull/22"
+     }
+    ],
+    "coverage": "latest 10 merged PRs",
+    "release": {
+     "state": "known",
+     "kind": "studio_scheduler_release",
+     "live_sha": "1234567890ab",
+     "activated_at": "2026-11-09T13:00:00Z",
+     "note": "scheduler release only; the dashboard is deployed separately"
+    }
+   },
+   "sessions": 0,
+   "running": 0,
+   "work": [
+    {
+     "id": "Example/studio-synth#9",
+     "number": 9,
+     "title": "SYNTHETIC draft work",
+     "lane": "building",
+     "state": "open",
+     "run": {
+      "observed": "not_running",
+      "session": false,
+      "last_activity_at": null,
+      "last_exit_at": null
+     },
+     "owner": null,
+     "prs": [
+      {
+       "id": "Example/studio-synth#21",
+       "number": 21,
+       "title": "SYNTHETIC draft PR",
+       "draft": true,
+       "ci": "unknown",
+       "review": "none",
+       "updated_at": "2026-11-09T14:00:00Z",
+       "links": [
+        {
+         "label": "PR",
+         "url": "https://github.com/Example/studio-synth/pull/21"
+        }
+       ]
+      }
+     ],
+     "integration": [],
+     "milestone": "Projection",
+     "updated_at": "2026-11-09T14:00:00+00:00",
+     "age_seconds": 3600,
+     "stale": false,
+     "blocker": null,
+     "evidence": [
+      {
+       "label": "Issue",
+       "url": "https://github.com/Example/studio-synth/issues/9"
+      },
+      {
+       "label": "PR",
+       "url": "https://github.com/Example/studio-synth/pull/21"
+      }
+     ]
+    },
+    {
+     "id": "Example/studio-synth#10",
+     "number": 10,
+     "title": "SYNTHETIC queued",
+     "lane": "integrated",
+     "state": "ready",
+     "run": {
+      "observed": "not_running",
+      "session": false,
+      "last_activity_at": null,
+      "last_exit_at": null
+     },
+     "owner": null,
+     "prs": [],
+     "integration": [
+      {
+       "id": "Example/studio-synth#22",
+       "number": 22,
+       "title": "SYNTHETIC merged in release",
+       "merged_at": "2026-11-08T19:00:00Z",
+       "merge_sha": "abababababab",
+       "release": {
+        "state": "in_live_scheduler_release",
+        "live_sha": "1234567890ab"
+       },
+       "url": "https://github.com/Example/studio-synth/pull/22"
+      }
+     ],
+     "milestone": null,
+     "updated_at": "2026-11-09T07:00:00+00:00",
+     "age_seconds": 28800,
+     "stale": false,
+     "blocker": null,
+     "evidence": [
+      {
+       "label": "Issue",
+       "url": "https://github.com/Example/studio-synth/issues/10"
+      },
+      {
+       "label": "merged PR #22",
+       "url": "https://github.com/Example/studio-synth/pull/22"
+      }
+     ]
+    }
+   ],
+   "unlinked_prs": [],
+   "truncated": false,
+   "unmatched_sessions": 0,
+   "errors": [
+    {
+     "source": "plan",
+     "message": "some plan files unreadable"
+    }
+   ],
+   "sources": {
+    "github": "online",
+    "workers": "observed",
+    "plan": "partial"
+   }
+  },
+  {
+   "id": "creature-gba",
+   "display_name": "Emberbound",
+   "repo": "Example/emberbound-synth",
+   "dispatch": {
+    "state": "unpaused",
+    "kind": null,
+    "resume_at": null
+   },
+   "goal": null,
+   "goal_source": null,
+   "milestone": null,
+   "progress": {
+    "kind": "unknown",
+    "reason": "plan source unavailable"
+   },
+   "plan": {
+    "state": "unavailable",
+    "reason": "plan collector not run",
+    "unreadable": [],
+    "base_commit": null,
+    "base_committed_at": null,
+    "files": [],
+    "roadmap": null,
+    "milestone_status": []
+   },
+   "counts": null,
+   "latest_event": null,
+   "delivery": null,
+   "sessions": null,
+   "running": null,
+   "work": [],
+   "unlinked_prs": [],
+   "truncated": false,
+   "unmatched_sessions": null,
+   "errors": [
+    {
+     "source": "workers",
+     "message": "Worker observation unavailable; session and running counts unknown"
+    },
+    {
+     "source": "plan",
+     "message": "plan collector not run"
+    },
+    {
+     "source": "github",
+     "message": "GitHub unavailable; work counts unknown"
+    }
+   ],
+   "sources": {
+    "github": "unavailable",
+    "workers": "unknown",
+    "plan": "unavailable"
+   }
+  }
+ ],
+ "errors": [
+  {
+   "project": "studio",
+   "source": "plan",
+   "message": "some plan files unreadable"
+  },
+  {
+   "project": "creature-gba",
+   "source": "workers",
+   "message": "Worker observation unavailable; session and running counts unknown"
+  },
+  {
+   "project": "creature-gba",
+   "source": "plan",
+   "message": "plan collector not run"
+  },
+  {
+   "project": "creature-gba",
+   "source": "github",
+   "message": "GitHub unavailable; work counts unknown"
+  }
+ ]
+}

@@ -23,6 +23,8 @@ import { TurnComposer, TurnView } from './TurnView';
 import { SessionContextMeter } from './SessionContextMeter';
 import { SessionLifecycleControls } from './SessionLifecycleControls';
 import { NotificationsPane, useNotifications } from './Notifications';
+import { StudioProjectionView } from './studio-projection/StudioProjectionView';
+import { STUDIO_PROJECTION_SOURCE } from './studio-projection/studioProjectionConfig';
 
 const ArtifactStudio = lazy(() => import('./ArtifactStudio').then(module => ({ default: module.ArtifactStudio })));
 
@@ -844,7 +846,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
           <Clapperboard size={39} strokeWidth={1.5} aria-hidden="true" />
           <p className="eyebrow">UNAVAILABLE</p>
           <h1 id="studio-crew-title">Studio crew</h1>
-          <p>Live team status is not connected in this build. No crew members, tasks or activity are available to show here.</p>
+          <StudioProjectionView source={STUDIO_PROJECTION_SOURCE} active={studioOpen} />
           <p className="studio-note">This page reads and changes nothing. Your chats, projects and any running replies stay as you left them.</p>
         </div>
       </div></div>
