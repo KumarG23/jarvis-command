@@ -3,7 +3,7 @@
   "issue": 111,
   "task": "command#issue-111",
   "worktree_branch": "team/command/issue-111",
-  "candidate_commit": "pending commit of tested working-tree delta",
+  "candidate_commit": "53b3b475ca4873af3b1201f9516d26779885795d",
   "studio_source_revision": "301bdfb",
   "wrapper": "tools/browser_qa.py",
   "wrapper_sha256": "6d5e3f52c81d2fca1971569988c588f00823a995c69e42d8a61033c42db23b71",
