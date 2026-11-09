@@ -1,3 +1,4 @@
+import { ProjectRoomStore } from './project-room-store';
 import { ReactionStore } from './reaction-store';
 import { createPushService } from './push-service';
 import { AuditLedger } from './audit-ledger';
@@ -94,6 +95,7 @@ export function createCommandServer(
     liveRoom = createLiveRoomService({
       client,
       ledger,
+      rooms: new ProjectRoomStore(dirname(config.command.auditLogPath)),
       notify: notifications ? createRunNotifier(notifications) : undefined,
       notifyReply: notifications ? createReplyNotifier({ store: notifications, push, enabled: config.push?.replies === true, source: REPLY_EVIDENCE_SOURCE, presence }) : undefined,
       reactions: new ReactionStore(dirname(config.command.auditLogPath)),

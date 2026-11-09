@@ -19,6 +19,13 @@ export class ProjectRoomStore {
   #poisoned = false;
   constructor(readonly directory: string) {}
   list() { return this.#transaction(); }
+  // Read-only admission guard: keep membership/archive state stable until the
+  // existing bounded upstream admission finishes. Never rewrites room metadata.
+  async readLocked<T>(operation: (rooms: ProjectRoom[]) => Promise<T>): Promise<T> {
+    let result!: T;
+    await this.#transaction(undefined, undefined, undefined, async rooms => { result = await operation(rooms); });
+    return result;
+  }
   async deletedIds() { let ids: string[] = []; await this.#transaction(undefined, undefined, value => { ids = value; }); return ids; }
   remove(id: string, validate: (room: ProjectRoom) => Promise<void>) {
     return this.#transaction(async rooms => {
@@ -28,12 +35,13 @@ export class ProjectRoomStore {
     }, id);
   }
   update(change: (rooms: ProjectRoom[]) => ProjectRoom[]) { return this.#transaction(change); }
-  #transaction(change?: (rooms: ProjectRoom[]) => ProjectRoom[] | Promise<ProjectRoom[]>, deleting?: string, observe?: (ids: string[]) => void): Promise<ProjectRoom[]> {
+  #transaction(change?: (rooms: ProjectRoom[]) => ProjectRoom[] | Promise<ProjectRoom[]>, deleting?: string, observe?: (ids: string[]) => void, read?: (rooms: ProjectRoom[]) => Promise<void>): Promise<ProjectRoom[]> {
     const operation = this.#queue.then(() => transactions.run(this.directory, async () => {
       if (this.#poisoned) throw new RoomStorageError();
       let directory: FileHandle | undefined;
       let staging: string | undefined;
       let renamed = false;
+      let readFailure = false;
       try {
         if (!isAbsolute(this.directory) || resolve(this.directory) !== this.directory) throw new RoomStorageError();
         // Reject symlinks throughout the configured path. Writable ancestors are
@@ -72,6 +80,10 @@ export class ProjectRoomStore {
         }
         await bound();
         observe?.(deletedRoomIds);
+        if (read) {
+          try { await read(rooms); } catch (error) { readFailure = true; throw error; }
+          await bound();
+        }
         if (!change) return rooms;
         const changed = await change(rooms);
         if (deleting && !rooms.some(room => room.id === deleting)) return rooms;
@@ -96,6 +108,7 @@ export class ProjectRoomStore {
         this.#seen = true;
         return next.rooms;
       } catch (error) {
+        if (readFailure) throw error;
         if (renamed) this.#poisoned = true; // Commit may have landed: require readback/restart, never silently retry.
         if (error instanceof Error && 'statusCode' in error && [400, 404, 409].includes(error.statusCode as number)) throw error;
         throw new RoomStorageError();

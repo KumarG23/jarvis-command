@@ -1,3 +1,4 @@
+import { RoutingDefaultTargetSchema, RoutingDefaultSetSchema } from '@jarvis-command/contracts';
 import { ThreadReadRequestSchema } from '@jarvis-command/contracts';
 import { ThreadReadStore } from './thread-read-store';
 import { createThreadState } from './thread-state';
@@ -204,6 +205,10 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
       });
       return { room: updated.find(room => room.id === roomId)! };
     });
+    routes.post('/api/live/routing-defaults/read', { bodyLimit: 1024 }, async (request, reply) => reply.header('cache-control', 'no-store').send(
+      await dependencies.liveRoom!.readRoutingDefault(subjects.get(request)!, parse(RoutingDefaultTargetSchema, request.body))));
+    routes.post('/api/live/routing-defaults/set', { bodyLimit: 2048 }, async (request, reply) => reply.header('cache-control', 'no-store').send(
+      await dependencies.liveRoom!.setRoutingDefault(subjects.get(request)!, parse(RoutingDefaultSetSchema, request.body))));
     routes.get('/api/live/model-options', { exposeHeadRoute: false }, async (request) => (
       dependencies.liveRoom!.getInferenceOptions(subjects.get(request)!)
     ));
