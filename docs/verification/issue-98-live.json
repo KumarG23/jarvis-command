@@ -1,0 +1,241 @@
+{
+ "issue": 98,
+ "kind": "authenticated disabled-state UI readback of the released app, exact owned acceptance chat; separate from synthetic candidate fixtures",
+ "recordedAt": "2026-11-09",
+ "baseHead": "f37537d0fcb6724a9a912f700525bc5dbd30d384",
+ "release": {
+  "authority": "lead release record (not verified by this worker): app pin cbb0e9e44d46e152a30d4fc5ee31691903d1542eec9374db274f90aab04ed2fa, rollback release-app-1794247473897753628",
+  "observed": {
+   "health": 200,
+   "bootstrap": 200,
+   "appVersion": "0.2.0",
+   "hermes": "online",
+   "loadedMainAsset": "index-DmuAbY9G.js",
+   "matchesCurrentHtml": true
+  },
+  "deployedPinFromBrowser": "unknown; not exposed by supported read contracts"
+ },
+ "wrapper": {
+  "tool": "tools/browser_qa.py",
+  "task": "command#issue-98",
+  "ownIssueWorktree": true,
+  "existingAuthenticatedContext": true,
+  "coordinatesOmitted": true,
+  "finalAcceptedInvocation": {
+   "newTaskPageOnly": true,
+   "ownPageClosed": true,
+   "otherPagesUrlHashesUnchangedBetweenStartAndEndOfThisRun": true,
+   "localStorageKeysUnchanged": true,
+   "chromeRunningAtEnd": true
+  },
+  "wholePassPreservationUnproven": "Earlier preliminary invocations ran before the final run, so the final run's start/end URL comparison cannot prove preservation of the original tab across the whole pass. No retained before-first-invocation vs after-cleanup identity record exists. Whole-pass original-tab preservation and exact cleanup ownership are UNKNOWN.",
+  "heuristicCleanupLimitation": "One cleanup invocation looped over ALL pages of the existing context and closed exactly one by an age (<900s) and history-length (>1) heuristic. That is not task ownership; the closed page was probably this task's own leftover page but that is not proven. A metadata-only inspection invocation read history length, visibility, focus, age, a saved-hint presence flag and viewport size from ALL pages, including the original tab; it made no navigation or write. Future cleanup must use a retained exact task target identity; unknown ownership is left open and reported, never selected by age, history, title or order."
+ },
+ "identity": {
+  "sessionSha256": "7918b130a537e2fa2d52d0b26649dbf0f68141f235b1b25fee8359301c9f9564",
+  "exactSupportedGet": 200,
+  "exactIdMatched": true,
+  "ownership": "command",
+  "verifiedBeforeHistory": true,
+  "listedInBootstrap": false,
+  "selection": "task-owned page sessionStorage hint only; released app recovered the chat through its exact GET; no project hint; no substitute",
+  "bootstrapOmissionCause": "unknown"
+ },
+ "capability": {
+  "capabilityCount": 10,
+  "messageReactionsAdvertised": false,
+  "bootstrapMentionsReaction": false
+ },
+ "ui": {
+  "notice": "Reactions unavailable on this server.",
+  "reactionControlsAndPickers": 0,
+  "historyRowsRendered": 3,
+  "composerEnabled": true,
+  "draft": "harmless synthetic unsent text, never sent",
+  "draftRetainedAcrossViewports": true,
+  "draftAfterNarrowDrawerRoundTrip": true,
+  "draftAfterReload": "retained",
+  "noticeAfterReload": "Reactions unavailable on this server.",
+  "pageErrors": [],
+  "viewports": {
+   "1280x720": {
+    "noticeInViewportAndTimeline": true,
+    "noticeHitTest": true,
+    "inputReachable": true,
+    "sendReachable": true,
+    "inputFocused": true,
+    "overlap": false,
+    "horizontalOverflow": false,
+    "draftRetained": true,
+    "captureSha256": "3bb0dd7be987efacff419e772b0a2963aa5942cbf1f3ad8037521e1dd68e8cd7"
+   },
+   "360x740": {
+    "noticeInViewportAndTimeline": true,
+    "noticeHitTest": true,
+    "inputReachable": true,
+    "sendReachable": true,
+    "inputFocused": true,
+    "overlap": false,
+    "horizontalOverflow": false,
+    "draftRetained": true,
+    "captureSha256": "24a80ff5a47d55600ee32a657ae7f29a8606113c68590958334814e558801ed1"
+   },
+   "360x360": {
+    "noticeInViewportAndTimeline": true,
+    "noticeHitTest": true,
+    "inputReachable": true,
+    "sendReachable": true,
+    "inputFocused": true,
+    "overlap": false,
+    "horizontalOverflow": false,
+    "draftRetained": true,
+    "captureSha256": "aabbbb3b50be61dab0a65ad5839892ce578513430050da5dd860c5f493c4a051"
+   }
+  },
+  "captures": "docs/verification/issue-98/p12-disabled-<viewport>.png; message bodies, sidebar and header blurred in the page before capture; all three inspected, no clipping or overlap",
+  "shortHeightNote": "360x360 inspected after normal scrollIntoView of the notice; history scrolls internally"
+ },
+ "requests": {
+  "scope": "final accepted wrapped run, page egress guard installed before navigation; counts are attempts seen by the guard, not server audit totals",
+  "attempts": {
+   "GET /api/health": 2,
+   "GET /api/bootstrap": 3,
+   "GET /api/live/sessions/{owned}": 3,
+   "GET /api/rooms": 2,
+   "GET /api/notifications": 6,
+   "GET /api/live/sessions/{owned}/context": 4,
+   "GET /api/live/session-controls": 2,
+   "GET /api/live/model-options": 2,
+   "GET /api/live/sessions/{owned}/thread-state": 2,
+   "GET /api/artifacts": 2,
+   "GET /api/sessions/{owned}/messages": 2,
+   "POST /api/notifications/presence": 2
+  },
+  "blocked": {
+   "GET /api/artifacts": 2
+  },
+  "forwarded": {
+   "GET /api/health": 2,
+   "GET /api/bootstrap": 3,
+   "GET /api/live/sessions/{owned}": 3,
+   "GET /api/rooms": 2,
+   "GET /api/notifications": 6,
+   "GET /api/live/sessions/{owned}/context": 4,
+   "GET /api/live/session-controls": 2,
+   "GET /api/live/model-options": 2,
+   "GET /api/live/sessions/{owned}/thread-state": 2,
+   "GET /api/sessions/{owned}/messages": 2,
+   "POST /api/notifications/presence": 2
+  },
+  "responseStatuses": {
+   "GET /api/health 200": 2,
+   "GET /api/bootstrap 200": 3,
+   "GET /api/live/sessions/{owned} 200": 3,
+   "GET /api/rooms 200": 2,
+   "GET /api/notifications 200": 6,
+   "GET /api/live/sessions/{owned}/context 200": 4,
+   "GET /api/live/session-controls 200": 2,
+   "GET /api/sessions/{owned}/messages 200": 2,
+   "GET /api/live/sessions/{owned}/thread-state 200": 2,
+   "GET /api/live/model-options 200": 2,
+   "POST /api/notifications/presence 204": 2
+  },
+  "reactionAttempts": 0,
+  "reactionForwarded": 0,
+  "presencePostsForwarded": 2,
+  "readPostsForwarded": 0,
+  "otherForwardedMutations": 0,
+  "preparatoryRuns": [
+   {
+    "n": 1,
+    "what": "final-run script before a path fix",
+    "browserContact": "none; the script exited reading a private file before connecting",
+    "traffic": "none"
+   },
+   {
+    "n": 2,
+    "what": "stale-asset run (loaded the older precached shell; saved chat not recovered; note never rendered)",
+    "attemptedForwardedStatus200": {
+     "GET /api/health": 1,
+     "GET /api/bootstrap": 3,
+     "GET /api/rooms": 2,
+     "GET /api/notifications": 4,
+     "GET /api/live/sessions/{owned}": 1
+    },
+    "blocked": "none recorded",
+    "postsAttempted": 0,
+    "pageClose": "unknown: that version did not record closure",
+    "note": "the guard's own start/end URL hashes matched"
+   },
+   {
+    "n": 3,
+    "what": "read-only asset diagnosis, first version (script defect in its route handler)",
+    "traffic": "unknown; the handler threw on its first request, probably before any forwarding, but nothing was recorded",
+    "pageClose": "unknown; the page was left open or abandoned"
+   },
+   {
+    "n": 4,
+    "what": "read-only asset diagnosis, fixed (GETs to health and bootstrap only allowed; everything else aborted)",
+    "forwardedGet": {
+     "/api/health": 1,
+     "/api/bootstrap": 3
+    },
+    "blocked": "unknown; aborted requests were not counted",
+    "postsAttempted": "unknown, none allowed by the handler",
+    "pageClose": "closed by the script, not verified"
+   },
+   {
+    "n": 5,
+    "what": "all-pages metadata inspection (no network)",
+    "traffic": "none issued by the script",
+    "readsAllPages": true
+   },
+   {
+    "n": 6,
+    "what": "age/history heuristic cleanup (no network)",
+    "traffic": "none issued by the script",
+    "closedPages": 1,
+    "ownershipProven": false
+   },
+   {
+    "n": 7,
+    "what": "accepted-path run that failed on inline-style injection (blocked by page CSP) before captures",
+    "attempted": {
+     "GET /api/health": 1,
+     "GET /api/bootstrap": 2,
+     "GET /api/rooms": 1,
+     "GET /api/notifications": 3,
+     "GET /api/live/sessions/{owned}": 2,
+     "GET /api/live/sessions/{owned}/context": 2,
+     "GET /api/live/sessions/{owned}/thread-state": 1,
+     "GET /api/sessions/{owned}/messages": 1,
+     "GET /api/live/session-controls": 1,
+     "GET /api/live/model-options": 1,
+     "GET /api/artifacts": 1,
+     "POST /api/notifications/presence": 1
+    },
+    "blocked": {
+     "GET /api/artifacts": 1
+    },
+    "forwarded": "all other attempted calls; the one presence POST returned 204",
+    "reactionAttempts": 0,
+    "readPosts": 0,
+    "ownPageClosed": true
+   }
+  ],
+  "preparatoryRunsNote": "Recovered only from outputs this worker's native session retained; server audit totals are unknown and nothing is inferred as zero where no record exists."
+ },
+ "limits": {
+  "candidateFixturesRerun": false,
+  "sourceTestsRerun": false,
+  "newInferenceOrMessage": false,
+  "newSession": false,
+  "runAdmission": false,
+  "enabledReactionOrContextProof": false,
+  "phase2Binding": "Unsupported; no historical or latest-session join",
+  "physicalPhone": "phone check pending",
+  "wholeP12Complete": false,
+  "pr149": "still pending at this write; its receipt is preserved, not rewritten",
+  "wholePassOriginalTabPreservation": "unknown (see wrapper.wholePassPreservationUnproven)"
+ }
+}

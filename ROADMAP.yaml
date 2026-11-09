@@ -69,7 +69,7 @@ milestones:
     acceptance:
       - Only the three owner-authorized Anthropic routes become selectable with unchanged admission/model lock and truthful requested-versus-executed proof after lead establishes the documented proxy release path (§10 P10.4; §12 model-selection scenario).
 # Prior exact authorization: MASTER_PLAN §0.2.1 records directives 6689850279 / 6689899077 / 6689916605. Current engineering scope is §0.2; no worker live provider/destructive authority.
-# P10.5: Reopened — preserve draft109 and stacked118, unmerged/unreleased. Historical #115 attempts did not establish final candidate/send/viewport or live-route proof. Diagnose/repair without arbitrary cap; prior authenticated advertised :free routes only, zero spend. §11.
+# P10.5: PR118 source/candidate reviewed and gate-merged f37537d (validate42672629757), still unreleased/unenabled. #115 source repair is closed; #96 reopened for actual release/enablement/execution proof. Preserve #109 and historical receipts. Existing :free-only/zero-spend boundary; §11.
   - id: P10_5
     title: OpenRouter free routes
     acceptance:
@@ -79,7 +79,7 @@ milestones:
     title: Visual identity
     acceptance:
       - Restrained AA semantic accents and deterministic project icons use existing optional metadata; model-family marks use verified executed identity only, with desktop/360 px evidence (§10 P11).
-# P12: Reopened — PR124/127 backend/UI released disabled; historical authenticated bootstrap proves capability absence only (3 GETs). Disabled-state UI/draft/focus/viewport, enabled persistence/context and exact-binding prerequisite remain outstanding; no arbitrary readback cap. Phone pending; §11.
+# P12: PR124/127 released disabled (lead record: app cbb0e9e4…, rollback release-app-1794247473897753628). 2026-11-09 authenticated readback of exact owned chat: message_reactions absent, real Reactions-unavailable notice, input/Send/focus/unsent draft reachable, no clipping/overlap at 1280×720/360×740/360×360; zero reaction attempts, 2 owned presence POSTs forwarded. Enabled persistence/context needs approved REACTIONS_MODE, phase2 exact binding Unsupported, phone pending; whole P12 not Done. §11 / receipt docs/verification/issue-98-live.json.
   - id: P12
     title: Message reactions
     acceptance:
@@ -94,13 +94,13 @@ milestones:
     title: Delete projects
     acceptance:
       - Confirm exact project/counts with delete-only default, optional owned contents deletion, external unlink-only, active-run refusal and snapshot/audit; preserve scope/recovery/restart consistency (§10 P9.6).
-# P13 current: saved-session exact-GET recovery is source/candidate only, built/tested and awaiting lead review/merge/release; bootstrap omission cause remains unknown. No live operation in this assignment. PR145 source698d6328 reviewed/gate-passed, mergeddcc3a28 and app-only deployed pin26c03f64 (build d5da7c5b distinct; retained rollback1794241762657504542). Post-repair authenticated GETs confirm exact owned session, assistant position1, excluded system setup marker position2 and stale-target409; authenticated bootstrap200 omits that exact session, so no assistant UI view/read POST or viewport captures occurred. P13 remains incomplete for UI readback, routing/defaults, project/Threads and phone. See §11, docs/p13-thread-state.md and docs/verification/issue-144-live.json; preserve prior #111 receipt.
+# P13 current: PR145 read-target repair and PR148 exact saved-session recovery are reviewed, gate-merged and app-only released in base26cb4db; healthy app pin sha256:cbb0e9e4… (build sha256:f85ccfa1… distinct), rollback release-app-1794247473897753628. Authenticated #144 owned assistant at canonical position1 was actually viewed; exact read POST200 cleared old setup2 marker and remained exact after reload/independent GET. 1280x720/360x740/360x360 status/history/draft/model-picker/Studio/focus/input/Send passed; six sanitized captures are hashed in docs/verification/issue-144-live.json. Five wrapper invocations observed 207 GET and 3 POST attempts; diagnostics recorded 95 API attempts blocked before egress (23 initial, 18 in each follow-up), yielding 113 forwarded GET and 2 forwarded read POSTs (assistant success and stale setup attempt, response status unknown); one reconciliation POST was blocked. No forwarded run admission, presence, external request or other mutation. No stale retry; later GET retained assistant1/unread=false. #111 is active Sol-dev durable-defaults/frozen-admission source work. Prior API-only receipt is docs/verification/issue-144-api-only.json; original #111 receipt unchanged. P13 incomplete for defaults/exact route and effort proof, project/Threads, cross-device race/restart and phone; whole P13 incomplete.
   - id: P13
     title: Thread status, unread and per-thread model choice
     acceptance:
       - Recover exact owned acceptance-session identity through supported tools and repair fixtures/history readiness without guessing or duplicating sends; offline candidate proof remains separate from authenticated readback (§0.2; §11).
       - Existing Threads/project/chat surfaces use one accessible verified StatusIcon; per-actor last-read syncs without admission; exact per-thread routing is offered only when supported and eligible, otherwise interim unavailable with a concrete contract prerequisite, never counted complete (§10 P13; §12 state, authorization and model-selection scenarios).
-# P14 priority: accepted Studio producer6339856 / #93/PR94, consumer142 merged477ab320 and shell146 merged21f971ae source/candidate only, unreleased/unconnected; production Studio source=null. Dashboard production cutover/protected readback and approved narrow Command transport remain unresolved; see #20 comments6743791366/6745632752. Preserve ownership/data priority; no source or runtime authority inferred.
+# P14 priority: consumer142 and shell146 are app-released with PR148 in base26cb4db at healthy pin sha256:cbb0e9e4…; production Studio source=null, view unconnected and no crew-data acceptance. Dashboard cutover/protected readback and approved narrow transport remain unresolved in #20 packets6743791366/6745632752. No new endpoint, credential or network authority; P14 incomplete.
 # P14 historical evidence: PR133 unavailable destination merged/deployed historically; #137 captured attempt1 unknown, attempt2 bootstrap200/proof-session absent, no UI acceptance. Resume owned recovery/acceptance without arbitrary cap. Live projection/exporter/schema/freshness prerequisites are engineering; relay/auth/network boundary actions remain unresolved lead/owner exceptions. §11; historical docs/verification/issue-137.md.
   - id: P14
     title: Studio crew view, read-only
