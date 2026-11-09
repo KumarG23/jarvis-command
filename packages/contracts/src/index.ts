@@ -93,3 +93,5 @@ export * from './push';
 export * from './project-roster';
 export * from './reactions';
 export * from './thread-state';
+
+export { RoutingResolutionRequestSchema, RoutingDefaultTargetSchema, RoutingDefaultSetSchema, RoutingDefaultResponseSchema, FrozenRoutingSchema, type RoutingDefaultTarget, type RoutingDefaultResponse, type RoutingDefaultSet, type FrozenRouting } from './contracts';

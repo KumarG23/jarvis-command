@@ -1,3 +1,4 @@
+import { RoutingUnavailableError } from './routing-defaults';
 import { ThreadReadStorageError } from './thread-read-store';
 import { ThreadObservationUnavailableError } from './thread-state';
 import { ReactionStorageError, ReactionUnavailableError, ReactionConflictError, ReactionBoundsError } from './reaction-store';
@@ -58,6 +59,7 @@ export function buildApp(dependencies: AppDependencies) {
     : undefined);
 
   app.setErrorHandler((error, request, reply) => {
+    if (error instanceof RoutingUnavailableError) return reply.code(503).send({ error: 'routing_unavailable', message: error.message });
     const errorName = error instanceof Error ? error.name : 'UnknownError';
     const candidateStatusCode = typeof error === 'object'
       && error !== null

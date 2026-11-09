@@ -1,3 +1,4 @@
+import { FrozenRoutingSchema, RoutingDefaultResponseSchema, RoutingDefaultTargetSchema, InferenceOverrideSchema, type RoutingDefaultTarget, type RoutingDefaultSet, type FrozenRouting } from '@jarvis-command/contracts';
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, open, type FileHandle } from 'node:fs/promises';
@@ -25,6 +26,7 @@ const AuditActionSchema = z.enum([
   'session.continued',
   'session.delete.requested',
   'session.deleted',
+  'routing.default.set',
   'run.requested',
   'run.started',
   'run.replayed',
@@ -53,6 +55,8 @@ const AuditDraftSchema = z.object({
   status: LiveRunStateSchema.nullable(),
   choice: ApprovalChoiceSchema.nullable(),
   receipt: LiveRunUsageSchema.nullable().optional(),
+  routing: FrozenRoutingSchema.optional(),
+  defaultChange: z.object({ target: RoutingDefaultTargetSchema, revision: z.number().int().min(1).max(4096), selection: InferenceOverrideSchema.nullable() }).strict().optional(),
 }).strict();
 
 const AuditEntrySchema = AuditDraftSchema.extend({
@@ -77,6 +81,7 @@ export type AuditRunRecord = Readonly<{
   status: z.infer<typeof LiveRunStateSchema>;
   requestedAt: string;
   receipt: LiveRunUsage | null;
+  routing?: FrozenRouting;
 }>;
 
 export type AuditSessionReceipt = Readonly<{
@@ -96,10 +101,13 @@ export class AuditLedger {
   readonly #handle: FileHandle;
   readonly #entries: AuditEntry[];
   readonly #dedupe = new Map<string, AuditEntry>();
+  readonly #defaults = new Map<string, NonNullable<AuditEntry['defaultChange']>>();
+  readonly #defaultRequests = new Map<string, AuditEntry>();
   readonly #runsByClient = new Map<string, AuditRunRecord>();
   readonly #runsByPublic = new Map<string, AuditRunRecord>();
   readonly #now: () => Date;
   #writeQueue: Promise<unknown> = Promise.resolve();
+  #defaultsQueue: Promise<unknown> = Promise.resolve();
   #expectedSize: number;
   #expectedBytes: Buffer;
   readonly #path: string;
@@ -173,6 +181,44 @@ export class AuditLedger {
     const parsedDraft = AuditDraftSchema.parse(draft);
     // Check dedupe under the same serialized integrity guard as a new append.
     return this.#enqueueAppend(dedupeKey, parsedDraft);
+  }
+
+  public routingDefault(actor: string, target: RoutingDefaultTarget) {
+    this.assertHealthy();
+    const key = `${actor}:${routingTargetKey(RoutingDefaultTargetSchema.parse(target))}`;
+    const current = this.#defaults.get(key);
+    return RoutingDefaultResponseSchema.parse({ target, revision: current?.revision ?? 0, selection: current?.selection ?? null, replayed: false });
+  }
+
+  public defaultRequest(actor: string, clientRequestId: string) {
+    this.assertHealthy();
+    return this.#defaultRequests.get(runClientKey(actor, clientRequestId));
+  }
+
+  public setRoutingDefault(actor: string, request: RoutingDefaultSet) {
+    const operation = this.#defaultsQueue.then(async () => {
+      await this.verifyStorage();
+      const conflict = () => Object.assign(Error('Routing default revision or request ID conflicts'), { statusCode: 409 });
+      const previous = this.defaultRequest(actor, request.clientRequestId);
+      const fingerprint = sha256(canonicalJson(request));
+      if (previous) {
+        if (previous.requestFingerprint !== fingerprint) throw conflict();
+        return RoutingDefaultResponseSchema.parse({ ...previous.defaultChange, replayed: true });
+      }
+      if (this.findRunByClientRequest(actor, request.clientRequestId)) throw conflict();
+      const current = this.routingDefault(actor, request.target);
+      if (current.revision !== request.expectedRevision) throw conflict();
+      if (this.#defaultRequests.size >= 4096) throw new AuditIntegrityError('Routing default storage bound reached');
+      const change = { target: request.target, selection: request.selection, revision: current.revision + 1 };
+      await this.appendOnce(`default:${actor}:${request.clientRequestId}`, {
+        action: 'routing.default.set', actor, sessionId: request.target.scope === 'thread' ? request.target.sessionId : request.target.projectId,
+        publicRunId: null, clientRequestId: request.clientRequestId, upstreamRunId: null, requestId: null,
+        requestFingerprint: fingerprint, outcome: 'succeeded', status: null, choice: null, defaultChange: change,
+      });
+      return RoutingDefaultResponseSchema.parse({ ...change, replayed: false });
+    });
+    this.#defaultsQueue = operation.catch(() => undefined);
+    return operation;
   }
 
   public findRunByClientRequest(actor: string, clientRequestId: string): AuditRunRecord | null {
@@ -351,10 +397,22 @@ export class AuditLedger {
   }
 
   #validateMapping(entry: z.infer<typeof AuditDraftSchema>): void {
+    if (entry.action === 'routing.default.set') {
+      if (!entry.defaultChange || !entry.clientRequestId || !entry.requestFingerprint || entry.publicRunId || entry.upstreamRunId || entry.status || entry.choice || entry.requestId || entry.routing || entry.outcome !== 'succeeded') throw new AuditIntegrityError();
+      const target = entry.defaultChange.target;
+      const expectedFingerprint = sha256(canonicalJson({ target, selection: entry.defaultChange.selection, expectedRevision: entry.defaultChange.revision - 1, clientRequestId: entry.clientRequestId }));
+      if (entry.requestFingerprint !== expectedFingerprint) throw new AuditIntegrityError('Invalid default envelope');
+      if (entry.sessionId !== (target.scope === 'thread' ? target.sessionId : target.projectId)
+        || this.#defaultRequests.size >= 4096 || this.defaultRequest(entry.actor, entry.clientRequestId)
+        || this.#runsByClient.has(runClientKey(entry.actor, entry.clientRequestId))
+        || entry.defaultChange.revision !== this.routingDefault(entry.actor, target).revision + 1) throw new AuditIntegrityError('Invalid routing default history');
+    } else if (entry.defaultChange) throw new AuditIntegrityError();
     if (entry.action === 'run.requested' || entry.action === 'run.started') {
+      if (entry.clientRequestId && this.defaultRequest(entry.actor, entry.clientRequestId)) throw new AuditIntegrityError();
       if (!entry.publicRunId || !entry.clientRequestId || !entry.requestFingerprint || !entry.status
         || (entry.action === 'run.started' && !entry.upstreamRunId)) throw new AuditIntegrityError();
     }
+    if (entry.routing && entry.action !== 'run.requested') throw new AuditIntegrityError('Resolution must be frozen on request');
     for (const record of this.#runsByPublic.values()) {
       if ((entry.actor === record.actor && entry.clientRequestId === record.clientRequestId)
         || entry.publicRunId === record.publicRunId
@@ -362,6 +420,8 @@ export class AuditLedger {
         if (entry.actor !== record.actor || entry.sessionId !== record.sessionId
           || entry.publicRunId !== record.publicRunId || entry.clientRequestId !== record.clientRequestId
           || entry.requestFingerprint !== record.requestFingerprint
+          || (entry.routing && canonicalJson(entry.routing) !== canonicalJson(record.routing))
+          || (entry.action === 'run.requested' && !!entry.routing !== !!record.routing)
           || (record.upstreamRunId && entry.upstreamRunId !== record.upstreamRunId)) {
           throw new AuditIntegrityError('Conflicting audit run mapping');
         }
@@ -370,6 +430,11 @@ export class AuditLedger {
   }
 
   #indexEntry(entry: AuditEntry): void {
+    if (entry.action === 'routing.default.set' && entry.defaultChange && entry.clientRequestId) {
+      this.#defaults.set(`${entry.actor}:${routingTargetKey(entry.defaultChange.target)}`, entry.defaultChange);
+      this.#defaultRequests.set(runClientKey(entry.actor, entry.clientRequestId), entry);
+      return;
+    }
     if (
       (entry.action === 'run.requested' || entry.action === 'run.started')
       && entry.publicRunId
@@ -380,6 +445,8 @@ export class AuditLedger {
       if (entry.action === 'run.started' && !entry.upstreamRunId) {
         throw new AuditIntegrityError('Started run is missing upstream identity');
       }
+      const previous = this.#runsByPublic.get(runPublicKey(entry.actor, entry.publicRunId));
+      const routing = entry.routing ?? previous?.routing;
       const record: AuditRunRecord = Object.freeze({
         actor: entry.actor,
         sessionId: entry.sessionId,
@@ -388,8 +455,9 @@ export class AuditLedger {
         upstreamRunId: entry.upstreamRunId,
         requestFingerprint: entry.requestFingerprint,
         status: entry.status,
-        requestedAt: this.#runsByPublic.get(runPublicKey(entry.actor, entry.publicRunId))?.requestedAt ?? entry.timestamp,
+        requestedAt: previous?.requestedAt ?? entry.timestamp,
         receipt: entry.receipt ?? null,
+        ...(routing ? { routing } : {}),
       });
       this.#runsByClient.set(runClientKey(entry.actor, entry.clientRequestId), record);
       this.#runsByPublic.set(runPublicKey(entry.actor, entry.publicRunId), record);
@@ -493,6 +561,8 @@ function projectDraft(entry: AuditEntry): z.infer<typeof AuditDraftSchema> {
     status: entry.status,
     choice: entry.choice,
     ...(entry.receipt !== undefined ? { receipt: entry.receipt } : {}),
+    ...(entry.routing ? { routing: entry.routing } : {}),
+    ...(entry.defaultChange ? { defaultChange: entry.defaultChange } : {}),
   };
 }
 
@@ -515,4 +585,10 @@ function canonicalJson(value: unknown): string {
 
 function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
+}
+
+function routingTargetKey(target: RoutingDefaultTarget): string {
+  // Thread preferences belong to the independent session. projectId is explicit
+  // authorization/provenance context, never an inferred project default.
+  return target.scope === 'thread' ? `thread:${target.sessionId}` : `project:${target.projectId}`;
 }

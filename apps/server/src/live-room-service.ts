@@ -1,3 +1,7 @@
+import { createRoutingDefaults } from './routing-defaults';
+import { KeyedSerialQueue } from './keyed-serial-queue';
+import type { ProjectRoomStore } from './project-room-store';
+import type { FrozenRouting, RoutingDefaultSet } from '@jarvis-command/contracts';
 import { ReactionTargetSchema, ReactionMutationSchema, SessionMessagesPageSchema, SessionMutationResponseSchema, type ReactionTarget, type ReactionMutation } from '@jarvis-command/contracts';
 import { type ReactionStore, ReactionUnavailableError } from './reaction-store';
 import { ProjectRosterStatusSchema } from '@jarvis-command/contracts';
@@ -61,6 +65,7 @@ const TERMINAL_STATES = new Set<LiveRunState>([
 ]);
 
 type LiveRoomServiceOptions = Readonly<{
+  rooms?: Pick<ProjectRoomStore, 'list' | 'readLocked'>;
   client: CommandProxyClient;
   ledger: AuditLedger;
   resolveImages?: (references: NonNullable<LiveRunSubmissionRequest['images']>) => Promise<ReadonlyArray<Readonly<{ mime: string; bytes: Buffer }>>>;
@@ -96,6 +101,7 @@ export class LiveRoomNotFoundError extends Error {
 export function createLiveRoomService({
   client,
   ledger,
+  rooms,
   resolveImages,
   createPublicRunId = () => `jcr_${randomBytes(16).toString('hex')}`,
   now = () => new Date(),
@@ -104,6 +110,8 @@ export function createLiveRoomService({
   reactions,
   reactionsEnabled = false,
 }: LiveRoomServiceOptions) {
+  const routingRequests = new KeyedSerialQueue();
+  const defaults = createRoutingDefaults(ledger, client, rooms);
   const submissions = new Map<string, { fingerprint: string; operation: Promise<LiveRunSubmissionResponse> }>();
   const compactionSubmissions = new Map<string, { fingerprint: string; operation: Promise<ContextCompactionSubmissionResponse> }>();
 
@@ -214,6 +222,7 @@ export function createLiveRoomService({
       images: request.images ? JSON.stringify(request.images) : '',
       input: request.input,
       sessionId: request.sessionId,
+      ...(request.routing ? { routing: JSON.stringify(request.routing) } : {}),
     }));
     const pending = submissions.get(submissionKey);
     if (pending) {
@@ -223,10 +232,12 @@ export function createLiveRoomService({
 
     if (submittingSessions.has(request.sessionId)) throw new LiveRoomConflictError();
     submittingSessions.add(request.sessionId);
-    const operation = (async () => {
+    const operation = routingRequests.run(submissionKey, async () => {
       const existing = ledger.findRunByClientRequest(actor, request.clientRequestId);
       if (existing) {
-        const { prepared, requestFingerprint } = await prepareReactionContext(request, actor, payloadFingerprint, false);
+        if (!!existing.routing !== !!request.routing || (existing.routing && existing.routing.envelopeFingerprint !== payloadFingerprint)) throw new LiveRoomConflictError('Client request ID was already used for another envelope');
+        const resolvedRequest = existing.routing ? { ...request, inference: existing.routing.inference } : request;
+        const { prepared, requestFingerprint } = await prepareReactionContext(resolvedRequest, actor, payloadFingerprint, false);
         if (
           existing.requestFingerprint !== requestFingerprint
           || existing.sessionId !== request.sessionId
@@ -250,6 +261,7 @@ export function createLiveRoomService({
         });
       }
 
+      if (ledger.defaultRequest(actor, request.clientRequestId)) throw new LiveRoomConflictError('Client request ID was used for a default change');
       for (const active of ledger.activeRunsForSession(request.sessionId)) {
         if (!active.upstreamRunId) throw new LiveRoomConflictError('Session already has a pending run admission');
         const status = await projectStatus(active, await client.getRun(active.upstreamRunId));
@@ -258,13 +270,16 @@ export function createLiveRoomService({
         }
       }
 
-      const { prepared, requestFingerprint } = await prepareReactionContext(request, actor, payloadFingerprint, reactionsEnabled);
+      const routing: FrozenRouting | undefined = request.routing ? await defaults.resolve(actor, request, payloadFingerprint) : undefined;
+      const resolvedRequest = routing ? { ...request, inference: routing.inference } : request;
+      const { prepared, requestFingerprint } = await prepareReactionContext(resolvedRequest, actor, payloadFingerprint, reactionsEnabled);
       const publicRunId = createPublicRunId();
       if (!PUBLIC_RUN_ID.test(publicRunId)) throw new Error('Public run ID factory returned an invalid ID');
       const requested = await ledger.appendOnce(
         `request:${actor}:${request.clientRequestId}`,
         {
           action: 'run.requested',
+          ...(routing ? { routing } : {}),
           actor,
           sessionId: request.sessionId,
           publicRunId,
@@ -287,9 +302,10 @@ export function createLiveRoomService({
         status: requested.status ?? 'queued',
         requestedAt: requested.timestamp,
         receipt: null,
+        ...(routing ? { routing } : {}),
       });
       return admitUpstreamRun(pendingRecord, prepared, false);
-    })();
+    });
 
     submissions.set(submissionKey, { fingerprint: payloadFingerprint, operation });
     try {
@@ -309,29 +325,32 @@ export function createLiveRoomService({
       ? await resolveImages?.(request.images)
       : undefined;
     if (request.images?.length && !images) throw new Error('Artifact image resolver unavailable');
-    const upstream = await client.startRun({
-      sessionId: request.sessionId,
-      input: request.input,
-      idempotencyKey: `jc-v1-${sha256(`${record.actor}\0${record.clientRequestId}`)}`,
-      ...(request.inference ? { inference: request.inference } : {}),
-      ...(images?.length ? { images } : {}),
-    });
-    if (upstream.sessionId !== record.sessionId) throw new LiveRoomConflictError();
-    await ledger.appendOnce(`started:${record.publicRunId}`, auditDraft({
-      ...record,
-      upstreamRunId: upstream.runId,
-    }, {
-      action: 'run.started',
-      outcome: upstream.replayed || recoveredAdmission ? 'replayed' : 'succeeded',
-      status: upstream.status,
-    }));
-    return LiveRunSubmissionResponseSchema.parse({
-      publicRunId: record.publicRunId,
-      sessionId: record.sessionId,
-      status: upstream.status,
-      replayed: upstream.replayed || recoveredAdmission,
-      clientRequestId: record.clientRequestId,
-    });
+    const admit = async () => {
+      const upstream = await client.startRun({
+        sessionId: request.sessionId,
+        input: request.input,
+        idempotencyKey: `jc-v1-${sha256(`${record.actor}\0${record.clientRequestId}`)}`,
+        ...(request.inference ? { inference: request.inference } : {}),
+        ...(images?.length ? { images } : {}),
+      });
+      if (upstream.sessionId !== record.sessionId) throw new LiveRoomConflictError();
+      await ledger.appendOnce(`started:${record.publicRunId}`, auditDraft({
+        ...record,
+        upstreamRunId: upstream.runId,
+      }, {
+        action: 'run.started',
+        outcome: upstream.replayed || recoveredAdmission ? 'replayed' : 'succeeded',
+        status: upstream.status,
+      }));
+      return LiveRunSubmissionResponseSchema.parse({
+        publicRunId: record.publicRunId,
+        sessionId: record.sessionId,
+        status: upstream.status,
+        replayed: upstream.replayed || recoveredAdmission,
+        clientRequestId: record.clientRequestId,
+      });
+    };
+    return record.routing ? defaults.withFrozen(request, record.routing, admit) : admit();
   };
 
   const projectContextCompactionStatus = async (
@@ -399,7 +418,8 @@ export function createLiveRoomService({
     }
     if (submittingSessions.has(request.sessionId)) throw new LiveRoomConflictError();
     submittingSessions.add(request.sessionId);
-    const operation = (async () => {
+    const operation = routingRequests.run(submissionKey, async () => {
+      if (ledger.defaultRequest(actor, request.clientRequestId)) throw new LiveRoomConflictError('Client request ID was used for a default change');
       await reactions?.assertNoSendClaim(actor, request.clientRequestId);
       const existing = ledger.findRunByClientRequest(actor, request.clientRequestId);
       if (existing) {
@@ -440,7 +460,7 @@ export function createLiveRoomService({
         requestedAt: requested.timestamp, receipt: null,
       });
       return admitContextCompaction(pendingRecord, request, false);
-    })();
+    });
     compactionSubmissions.set(submissionKey, { fingerprint: requestFingerprint, operation });
     try { return await operation; } finally {
       compactionSubmissions.delete(submissionKey);
@@ -594,6 +614,8 @@ export function createLiveRoomService({
     },
 
     submitRun,
+    readRoutingDefault: (subject: string, target: unknown) => defaults.read(actorFingerprint(subject), target),
+    setRoutingDefault: (subject: string, raw: RoutingDefaultSet) => routingRequests.run(`${actorFingerprint(subject)}\0${raw.clientRequestId}`, () => defaults.set(actorFingerprint(subject), raw)),
     submitContextCompaction,
 
     async getContextCompaction(subject: string, publicOperationId: string): Promise<ContextCompactionStatus> {

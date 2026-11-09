@@ -211,11 +211,39 @@ export const SessionMutationResponseSchema = z.object({
   session: SessionSummarySchema,
 }).strict();
 
+// Opt-in only: omitted routing preserves the legacy admission/retry envelope.
+export const RoutingResolutionRequestSchema = z.object({
+  mode: z.literal('defaults'), projectId: z.string().regex(/^room_[a-f0-9]{32}$/).nullable(),
+}).strict();
+export const RoutingDefaultTargetSchema = z.discriminatedUnion('scope', [
+  z.object({ scope: z.literal('thread'), sessionId: z.string().regex(/^jc_[a-f0-9]{32}$/), projectId: z.string().regex(/^room_[a-f0-9]{32}$/).nullable() }).strict(),
+  z.object({ scope: z.literal('project'), projectId: z.string().regex(/^room_[a-f0-9]{32}$/) }).strict(),
+]);
+export const RoutingDefaultSetSchema = z.object({
+  target: RoutingDefaultTargetSchema, expectedRevision: z.number().int().nonnegative().max(4096),
+  clientRequestId: z.uuid(), selection: InferenceOverrideSchema.nullable(),
+}).strict();
+export const RoutingDefaultResponseSchema = z.object({
+  target: RoutingDefaultTargetSchema, revision: z.number().int().nonnegative().max(4096),
+  selection: InferenceOverrideSchema.nullable(), replayed: z.boolean(),
+}).strict();
+export const FrozenRoutingSchema = z.object({
+  envelopeFingerprint: z.string().regex(/^[a-f0-9]{64}$/), inference: InferenceOverrideSchema,
+  source: z.enum(['prompt', 'thread', 'project', 'command']),
+  projectId: z.string().regex(/^room_[a-f0-9]{32}$/).nullable(),
+  threadRevision: z.number().int().nonnegative().max(4096), projectRevision: z.number().int().nonnegative().max(4096),
+}).strict();
+export type RoutingDefaultTarget = z.infer<typeof RoutingDefaultTargetSchema>;
+export type RoutingDefaultResponse = z.infer<typeof RoutingDefaultResponseSchema>;
+export type RoutingDefaultSet = z.infer<typeof RoutingDefaultSetSchema>;
+export type FrozenRouting = z.infer<typeof FrozenRoutingSchema>;
+
 export const LiveRunSubmissionRequestSchema = z.object({
   sessionId: SessionIdSchema,
   input: NonBlankTextSchema(16_000),
   clientRequestId: ClientRequestIdSchema,
   inference: InferenceOverrideSchema.optional(),
+  routing: RoutingResolutionRequestSchema.optional(),
   images: z.array(z.object({
     artifactId: z.string().regex(/^art_[a-f0-9]{32}$/),
     version: z.number().int().min(1).max(10_000),
