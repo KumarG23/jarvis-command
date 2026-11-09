@@ -14,7 +14,7 @@ let threads: ReturnType<typeof useThreadTurns>;
 function Harness({ visible = [] as string[], composerFor }: { visible?: string[]; composerFor?: string }) {
   threads = useThreadTurns([a, b], visible);
   const live = threads.get(composerFor);
-  return <>{threads.supervisors}{composerFor && threads.ready(composerFor) ? <TurnComposer retainedDrafts={live.composerDrafts} sessionId={composerFor} projectId={null} allowed draftsAuthorized imageAttachmentsEnabled max={4000} maxSteer={100} turn={live.turn} send={live.send} retry={live.retry} resume={live.resume} steer={live.steer} recoveries={live.recoveries} consumeRecovery={live.consumeRecovery} /> : null}</>;
+  return <>{threads.supervisors}{composerFor && threads.ready(composerFor) ? <TurnComposer retainedDrafts={live.composerDrafts} sessionId={composerFor} projectId={null} allowed draftsAuthorized imageAttachmentsEnabled max={4000} maxSteer={100} turn={live.turn} send={(id, input, max, inference, images, routing) => live.send(id, input, max, inference, images, undefined, null, routing)} retry={live.retry} resume={live.resume} steer={live.steer} recoveries={live.recoveries} consumeRecovery={live.consumeRecovery} /> : null}</>;
 }
 function deferred<T>() {
   let resolve!: (value: T) => void;

@@ -1,3 +1,5 @@
+import { handleDefaultRead } from './routing-defaults-route';
+import type { RoutingDefaultTarget } from '@jarvis-command/contracts';
 import { test } from './candidate-test';
 import { expect } from '@playwright/test';
 import { CommandBootstrapSchema } from '@jarvis-command/contracts';
@@ -18,9 +20,10 @@ const luna = { provider: 'openai-codex', model: 'gpt-6-luna', label: 'Synthetic 
 
 test('requested choices survive two chats and reload; stale inventory preserves draft; one explicit send shows usage without route metadata', async ({ page }, info) => {
   let options = [sol, luna], posts = 0, inventories = 0;
-  const unexpected: string[] = [];
+  const unexpected: string[] = [], defaultReads: RoutingDefaultTarget[] = [];
   await page.route('**/api/**', async route => {
     if (handlePresence(route)) return;
+    if (handleDefaultRead(route, [], defaultReads)) return;
     const req = route.request(), path = new URL(req.url()).pathname;
     if (path === '/api/live/runs' && req.method() === 'POST') {
       posts++;
@@ -74,10 +77,24 @@ test('requested choices survive two chats and reload; stale inventory preserves 
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath(`synthetic-${width}.png`) });
   }
+  // Additional prepared acceptance for the longer saved-default picker. Keep
+  // the original desktop/390px assertions above; deliberately scroll each
+  // prompt control into full clipped view at 360px and keyboard height.
+  for (const height of [740, 360]) {
+    await page.setViewportSize({ width: 360, height });
+    await page.locator('.inference-control > summary').press('Escape');
+    await expect(page.locator('.inference-control > summary')).toBeFocused();
+    await expand();
+    await expect(model).toBeInViewport({ ratio: 1 });
+    await effort.scrollIntoViewIfNeeded(); await expect(effort).toBeInViewport({ ratio: 1 });
+    await effort.press('Escape');
+    await expect(page.locator('.inference-control > summary')).toBeFocused();
+    await expect(draft).toHaveValue('SYNTHETIC draft retained');
+  }
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.getByRole('button', { name: 'Send message', exact: true }).click();
   await page.getByText('Activity / Usage', { exact: true }).click();
   const receipt = page.getByRole('region', { name: 'Execution receipt' });
   await expect(receipt).toContainText('Executed route unavailable'); await expect(receipt).toContainText('2 tokens · 0 in / 2 out');
-  expect(posts).toBe(1); expect(inventories).toBeGreaterThanOrEqual(5); expect(unexpected).toEqual([]);
+  expect(posts).toBe(1); expect(defaultReads).toEqual([]); expect(inventories).toBeGreaterThanOrEqual(5); expect(unexpected).toEqual([]);
 });
