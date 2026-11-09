@@ -79,7 +79,7 @@ milestones:
     title: Visual identity
     acceptance:
       - Restrained AA semantic accents and deterministic project icons use existing optional metadata; model-family marks use verified executed identity only, with desktop/360 px evidence (§10 P11).
-# P12: Reopened — PR124/127 backend/UI released disabled; historical authenticated bootstrap proves capability absence only (3 GETs). Disabled-state UI/draft/focus/viewport, enabled persistence/context and exact-binding prerequisite remain outstanding; no arbitrary readback cap. Phone pending; §11.
+# P12: PR124/127 released disabled (lead record: app cbb0e9e4…, rollback release-app-1794247473897753628). 2026-11-09 authenticated readback of exact owned chat: message_reactions absent, real Reactions-unavailable notice, input/Send/focus/unsent draft reachable, no clipping/overlap at 1280×720/360×740/360×360; zero reaction attempts, 2 owned presence POSTs forwarded. Enabled persistence/context needs approved REACTIONS_MODE, phase2 exact binding Unsupported, phone pending; whole P12 not Done. §11 / receipt docs/verification/issue-98-live.json.
   - id: P12
     title: Message reactions
     acceptance:

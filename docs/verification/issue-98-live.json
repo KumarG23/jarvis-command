@@ -1,0 +1,158 @@
+{
+ "issue": 98,
+ "kind": "authenticated disabled-state UI readback of the released app, exact owned acceptance chat; separate from synthetic candidate fixtures",
+ "recordedAt": "2026-11-09",
+ "baseHead": "f37537d0fcb6724a9a912f700525bc5dbd30d384",
+ "release": {
+  "authority": "lead release record (not verified by this worker): app pin cbb0e9e44d46e152a30d4fc5ee31691903d1542eec9374db274f90aab04ed2fa, rollback release-app-1794247473897753628",
+  "observed": {
+   "health": 200,
+   "bootstrap": 200,
+   "appVersion": "0.2.0",
+   "hermes": "online",
+   "loadedMainAsset": "index-DmuAbY9G.js",
+   "matchesCurrentHtml": true
+  },
+  "deployedPinFromBrowser": "unknown; not exposed by supported read contracts"
+ },
+ "wrapper": {
+  "tool": "tools/browser_qa.py",
+  "task": "command#issue-98",
+  "ownIssueWorktree": true,
+  "existingAuthenticatedContext": true,
+  "onlyNewTaskPages": true,
+  "ownPageClosed": true,
+  "originalTabCountAndUrlsUnchanged": true,
+  "localStorageKeysUnchanged": true,
+  "chromeLeftRunning": true,
+  "coordinatesOmitted": true
+ },
+ "identity": {
+  "sessionSha256": "7918b130a537e2fa2d52d0b26649dbf0f68141f235b1b25fee8359301c9f9564",
+  "exactSupportedGet": 200,
+  "exactIdMatched": true,
+  "ownership": "command",
+  "verifiedBeforeHistory": true,
+  "listedInBootstrap": false,
+  "selection": "task-owned page sessionStorage hint only; released app recovered the chat through its exact GET; no project hint; no substitute",
+  "bootstrapOmissionCause": "unknown"
+ },
+ "capability": {
+  "capabilityCount": 10,
+  "messageReactionsAdvertised": false,
+  "bootstrapMentionsReaction": false
+ },
+ "ui": {
+  "notice": "Reactions unavailable on this server.",
+  "reactionControlsAndPickers": 0,
+  "historyRowsRendered": 3,
+  "composerEnabled": true,
+  "draft": "harmless synthetic unsent text, never sent",
+  "draftRetainedAcrossViewports": true,
+  "draftAfterNarrowDrawerRoundTrip": true,
+  "draftAfterReload": "retained",
+  "noticeAfterReload": "Reactions unavailable on this server.",
+  "pageErrors": [],
+  "viewports": {
+   "1280x720": {
+    "noticeInViewportAndTimeline": true,
+    "noticeHitTest": true,
+    "inputReachable": true,
+    "sendReachable": true,
+    "inputFocused": true,
+    "overlap": false,
+    "horizontalOverflow": false,
+    "draftRetained": true,
+    "captureSha256": "3bb0dd7be987efacff419e772b0a2963aa5942cbf1f3ad8037521e1dd68e8cd7"
+   },
+   "360x740": {
+    "noticeInViewportAndTimeline": true,
+    "noticeHitTest": true,
+    "inputReachable": true,
+    "sendReachable": true,
+    "inputFocused": true,
+    "overlap": false,
+    "horizontalOverflow": false,
+    "draftRetained": true,
+    "captureSha256": "24a80ff5a47d55600ee32a657ae7f29a8606113c68590958334814e558801ed1"
+   },
+   "360x360": {
+    "noticeInViewportAndTimeline": true,
+    "noticeHitTest": true,
+    "inputReachable": true,
+    "sendReachable": true,
+    "inputFocused": true,
+    "overlap": false,
+    "horizontalOverflow": false,
+    "draftRetained": true,
+    "captureSha256": "aabbbb3b50be61dab0a65ad5839892ce578513430050da5dd860c5f493c4a051"
+   }
+  },
+  "captures": "docs/verification/issue-98/p12-disabled-<viewport>.png; message bodies, sidebar and header blurred in the page before capture; all three inspected, no clipping or overlap",
+  "shortHeightNote": "360x360 inspected after normal scrollIntoView of the notice; history scrolls internally"
+ },
+ "requests": {
+  "scope": "final accepted wrapped run, page egress guard installed before navigation; counts are attempts seen by the guard, not server audit totals",
+  "attempts": {
+   "GET /api/health": 2,
+   "GET /api/bootstrap": 3,
+   "GET /api/live/sessions/{owned}": 3,
+   "GET /api/rooms": 2,
+   "GET /api/notifications": 6,
+   "GET /api/live/sessions/{owned}/context": 4,
+   "GET /api/live/session-controls": 2,
+   "GET /api/live/model-options": 2,
+   "GET /api/live/sessions/{owned}/thread-state": 2,
+   "GET /api/artifacts": 2,
+   "GET /api/sessions/{owned}/messages": 2,
+   "POST /api/notifications/presence": 2
+  },
+  "blocked": {
+   "GET /api/artifacts": 2
+  },
+  "forwarded": {
+   "GET /api/health": 2,
+   "GET /api/bootstrap": 3,
+   "GET /api/live/sessions/{owned}": 3,
+   "GET /api/rooms": 2,
+   "GET /api/notifications": 6,
+   "GET /api/live/sessions/{owned}/context": 4,
+   "GET /api/live/session-controls": 2,
+   "GET /api/live/model-options": 2,
+   "GET /api/live/sessions/{owned}/thread-state": 2,
+   "GET /api/sessions/{owned}/messages": 2,
+   "POST /api/notifications/presence": 2
+  },
+  "responseStatuses": {
+   "GET /api/health 200": 2,
+   "GET /api/bootstrap 200": 3,
+   "GET /api/live/sessions/{owned} 200": 3,
+   "GET /api/rooms 200": 2,
+   "GET /api/notifications 200": 6,
+   "GET /api/live/sessions/{owned}/context 200": 4,
+   "GET /api/live/session-controls 200": 2,
+   "GET /api/sessions/{owned}/messages 200": 2,
+   "GET /api/live/sessions/{owned}/thread-state 200": 2,
+   "GET /api/live/model-options 200": 2,
+   "POST /api/notifications/presence 204": 2
+  },
+  "reactionAttempts": 0,
+  "reactionForwarded": 0,
+  "presencePostsForwarded": 2,
+  "readPostsForwarded": 0,
+  "otherForwardedMutations": 0,
+  "preparatoryRuns": "an earlier stale-shell run, a read-only asset diagnosis and a first accepted-path run forwarded only GETs plus 1 exact-owned presence POST; same guard, zero reaction attempts. A script-defect crash left one task-owned page open; it was identified by age/history and closed, original tab untouched."
+ },
+ "limits": {
+  "candidateFixturesRerun": false,
+  "sourceTestsRerun": false,
+  "newInferenceOrMessage": false,
+  "newSession": false,
+  "runAdmission": false,
+  "enabledReactionOrContextProof": false,
+  "phase2Binding": "Unsupported; no historical or latest-session join",
+  "physicalPhone": "phone check pending",
+  "wholeP12Complete": false,
+  "pr149": "still pending at this write; its receipt is preserved, not rewritten"
+ }
+}
