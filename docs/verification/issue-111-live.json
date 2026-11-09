@@ -378,7 +378,8 @@
   "phone": "check pending",
   "wholeP13": "incomplete",
   "countsDefinition": "Browser-observed forwarded/initiated task-page API requests, including reads that may be cancelled at navigation; not server audit totals. All four POST response statuses are verified.",
-  "uiMutations": {
+  "pickerInspection": "Read-only; no model or effort selection changed.",
+  "authorizedPosts": {
     "sessionCreate": {
       "count": 1,
       "status": 200
@@ -396,6 +397,5 @@
       "status": 409
     },
     "other": 0
-  },
-  "pickerInspection": "Read-only; no model or effort selection changed."
+  }
 }
