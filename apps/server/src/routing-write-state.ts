@@ -1,6 +1,6 @@
-// Compatible-reader release stage. Activate only in a later reviewed source increment
-// after this reader is deployed and retained as the recoverable rollback image.
-export const ROUTING_WRITES_AVAILABLE: boolean = false;
+// Source writer stage (#156). Release requires the verified compatible-reader
+// rollback image and current ledger; see docs/p13-writer-activation.md.
+export const ROUTING_WRITES_AVAILABLE: boolean = true;
 
 export class RoutingWritesUnavailableError extends Error {
   readonly statusCode = 503;

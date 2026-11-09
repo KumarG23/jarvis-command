@@ -1,3 +1,4 @@
+import type * as RoutingWriteState from './routing-write-state';
 import { chmod, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,6 +12,12 @@ import { ReactionStore } from './reaction-store';
 import { ProjectRoomStore } from './project-room-store';
 import { buildApp } from './app';
 import { loadConfig } from './config';
+// Historical PR153 disabled bridge fixture, isolated from the active writer suite.
+// Preserve the unavailable guard and recovery assertions for compatible rollback.
+vi.mock('./routing-write-state', async importOriginal => {
+  const original = await importOriginal<typeof RoutingWriteState>();
+  return { ...original, ROUTING_WRITES_AVAILABLE: false, requireRoutingWrites: () => { throw new original.RoutingWritesUnavailableError(); } };
+});
 const sessionId = 'jc_' + 'a'.repeat(32), projectId = 'room_' + 'b'.repeat(32);
 const a: InferenceOverride = { provider: 'openai-codex', model: 'gpt-6-luna', reasoningEffort: 'low' };
 const b: InferenceOverride = { ...a, model: 'gpt-6-sol' };
@@ -69,7 +76,7 @@ async function persisted(mode: 'pending' | 'accepted') {
   return { f, req, id, common };
 }
 
-it('production bridge returns typed unavailable before new writes, reaction/image claims or upstream admission', async () => {
+it('historical disabled bridge fixture returns typed unavailable before new writes, reaction/image claims or upstream admission', async () => {
   const f = await fixture(), reactions = new ReactionStore(f.directory);
   const forSend = vi.spyOn(reactions, 'forSend');
   const service = createLiveRoomService({ ledger: f.ledger, client: f.client, rooms: f.rooms, reactions, reactionsEnabled: true, resolveImages: f.resolveImages });
@@ -132,7 +139,7 @@ it.each(['removed-route', 'removed-membership', 'external', 'expired'] as const)
   expect(f.ledger.findRunByClientRequest(actor, req.clientRequestId)).toMatchObject({ publicRunId: common.publicRunId, upstreamRunId: null, routing: { inference: a } });
 });
 
-it.each(['pending', 'accepted'] as const)('continues real pre-change %s ledger envelopes unchanged in the production bridge', async mode => {
+it.each(['pending', 'accepted'] as const)('continues real pre-change %s ledger envelopes unchanged in the historical disabled bridge fixture', async mode => {
   const f = await fixture(); await f.ledger.close();
   const bytes = await readFile(new URL('./fixtures/routing-legacy-f37537d.jsonl', import.meta.url), 'utf8');
   const prefix = mode === 'pending' ? bytes.split('\n')[0] + '\n' : bytes;
