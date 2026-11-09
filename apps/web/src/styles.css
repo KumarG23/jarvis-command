@@ -661,3 +661,8 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
   .command-header:has(.header-thread-states) { padding-block: 0; gap: 5px 6px; }
   .command-header:has(.header-thread-states) .health-button { top: 0; }
 }
+.saved-routing-controls { flex: 1 1 100%; min-width: 0; display: grid; gap: 8px; margin: 4px 0; border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+.saved-routing-controls > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.saved-routing-controls p { overflow-wrap: anywhere; }
+.inference-fields .saved-routing-controls label { display: flex; align-items: center; min-height: 44px; letter-spacing: normal; text-transform: none; }
+.saved-routing-controls input[type="checkbox"] { flex: 0 0 auto; width: 20px; height: 20px; }

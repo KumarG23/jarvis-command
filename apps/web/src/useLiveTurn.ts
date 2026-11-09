@@ -361,7 +361,9 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
     images?: LiveRunSubmissionRequest['images'],
     clientRequestId?: string,
     projectId?: string | null,
+    routing?: LiveRunSubmissionRequest['routing'],
   ) {
+    if (routing && routing.projectId !== (projectId ?? null)) return false;
     const baseline = histories.current.get(sessionId);
     if ((sessionScope && sessionId !== sessionScope) || !baseline?.complete || (current.current?.done && !current.current.historyMatched && completed.current.length >= MAX_UNCONFIRMED_TURNS)) return false;
     if (recoveryBlocked.current || (current.current && !current.current.done) || !input.trim() || input.length > max) return false;
@@ -371,9 +373,14 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
       sessionId,
       input,
       clientRequestId: clientRequestId ?? crypto.randomUUID(),
-      ...(inference ? { inference } : {}),
-      ...(images?.length ? { images } : {}),
+      ...(inference ? { inference: { ...inference } } : {}),
+      ...(images?.length ? { images: images.map(image => ({ ...image })) } : {}),
+      ...(routing ? { routing: { ...routing } } : {}),
     };
+    if (intent.inference) Object.freeze(intent.inference);
+    if (intent.routing) Object.freeze(intent.routing);
+    if (intent.images) { intent.images.forEach(image => Object.freeze(image)); Object.freeze(intent.images); }
+    Object.freeze(intent);
     const pending = { ...(projectId ? { projectId } : {}), sessionId, clientRequestId: intent.clientRequestId, publicRunId: null };
     try { writeStored(pending, null); stored.current = pending; }
     catch { recoveryBlocked.current = true; setRecoveryError('Local reload recovery unavailable — message not sent; writer locked.'); return false; }
