@@ -129,11 +129,12 @@ it('new output arriving during a read commit stays unread on authoritative readb
   await state.read('a', id, { messageId: 'm:1', position: 1 });
   expect(await service().read('a', id)).toMatchObject({ unread: true, latest: { messageId: 'm:2' } });
 });
-it('partial bounded history and malformed identities never clear unread', async () => {
-  const { state, source } = await fixture(1001);
+it('partial bounded history and malformed identities never clear unread or write a marker', async () => {
+  const { state, source, store } = await fixture(1001);
   expect(await state.read('a', id)).toMatchObject({ unread: null, historyComplete: false, latest: null });
   expect(source.getMessages).toHaveBeenCalledTimes(10);
   await expect(state.read('a', id, { messageId: 'm:999', position: 999 })).rejects.toMatchObject({ statusCode: 409 });
+  expect(await store.list()).toEqual([]);
   source.getMessages.mockImplementationOnce(async () => ({ sessionId: 'wrong', messages: [], pagination: { offset: 0, limit: 100, returned: 0, hasMore: false } }));
   await expect(state.read('a', id)).rejects.toThrow();
 });
