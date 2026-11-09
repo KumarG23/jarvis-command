@@ -1,10 +1,82 @@
-# P13 status/unread candidate and routing prerequisites
+# P13 status/unread: accepted source and authenticated scope
 
-Current scope: status/unread source plus isolated candidate acceptance under the
-November 9 reopening (MASTER_PLAN §0.2). PR130 remains unmerged/unreleased; this is
-not P13 Done. Delayed-run repair d61e288 was source-reviewed in review 6707363347.
-Accepted release b7b20b9 was ordinarily merged, preserving the Studio destination,
-focus/presence behavior, P12 partial readback, and the current plan authority.
+November 9 source13be0f4 was [independently accepted](https://github.com/KumarG23/jarvis-command/pull/130#issuecomment-6743755037),
+passed hosted exact-head gate42642969282, and merged as
+fcbd5de5ba934d3c07ab01632486b23bf6da83b7. The lead's [release record](https://github.com/KumarG23/jarvis-command/issues/111#issuecomment-6743854477)
+attests healthy app-only deployed pin `sha256:f6c6c3e0b077c5a29ae683776fc428f31d94443f8741f4e9dc49f7ca3d4bb336`,
+distinct from build reference `sha256:1752e61424455bbd42f7cfcbf3d18abe2fdcf8423758941d9f8fbc80f8b89ba9`.
+Rollback `release-app-1794237821439543083` restores6531b270…. No proxy was changed.
+This worker observed authenticated health/bootstrap200 and exercised the deployed
+UI/APIs; it did not inspect/restart services or independently attest the image pin.
+Whole P13 remains incomplete; phone check pending.
+
+## Authenticated owned-session evidence (November 9)
+
+One visibly labelled TEST session was created once through supported POST sessions.
+Its exact successful response was durably recorded in private own git metadata,
+then canonical GET proved that exact session's Command ownership before history.
+No identifier was inferred from counts/titles. An initial read-only probe used the
+wrong identity label and stopped before creation; the corrected public schema is
+`cloudflare-access`. No uncertain create or run was retried.
+
+The advertised default was ineligible, so it was not inherited. The single admitted
+setup message explicitly selected existing included `openai-codex/gpt-6-luna`,
+currently advertised/authenticated/eligible/selectable, with minimal effort and
+existing model-lock/no-fallback controls. Exact request lookup matched its accepted
+public run. It completed with one reported provider API call and no observed tool
+events. Same-run receipt: provider/model matched, requested `minimal`, executed
+wire-reported `low`, `exact=true`, `fallbackUsed=false`, route source unknown.
+**This is not exact effort/full-tuple proof.** The UI correctly warns that the
+requested route changed. That acceptance check stopped; no retry, reroute, provider
+change or paid fallback was attempted. Lead/installed-contract owner must reconcile
+offered effort, wire effort and exact-receipt semantics through a separately scoped
+prerequisite; do not hide the discrepancy or silently translate executed evidence.
+
+Initial empty history was Unknown, unread=false. The server subsequently reported
+Working; completed canonical output remained unread before any UI view. The deployed
+header then showed Unread. Exactly one focused, native-visible, fully clipped and
+hit-tested latest marker view caused POST read200; canonical GET matched the exact
+latest identity/position. Header became Idle. Server readback, UI reload and an
+independent task page retained the clear; a deliberately older canonical marker
+POST returned409 without regressing it. UI viewing/navigation admitted zero runs.
+
+**Canonical-tail limit:** this installed history has three records; the tail at
+position2 is a `session_meta` projected as a system “Session setup record (not a chat
+message).” The assistant reply precedes it. This proves the returned canonical-tail
+protocol, not assistant-answer-specific unread binding. No historical message/run
+join or latest-session receipt association was inferred. Lead must retain this
+semantic distinction when deciding whether setup metadata qualifies as the chat
+read tail; any contract/source change needs separate ownership/admission.
+
+Authenticated1280×720,360×740 and360×360 checks passed: labelled Idle, compact headers
+73/119px under existing limits, clipped pointer hits for input/44px Send, reachable
+canonical assistant text, read-only model/effort fields with deliberate picker scrolling,
+Escape focus return, retained same-page draft through Studio Back/Escape and reload,
+and honest Studio unavailable navigation. No project fixture mutation was admitted:
+project summaries/Threads live acceptance is not claimed. Needs you was not forced;
+Working was observed through server facts, not a live animated-label capture.
+Physical background/keyboard/two-device race, cross-actor denial and live restart
+acceptance remain separate from accepted source/candidate tests.
+
+All browser commands used the own-worktree Studio SOURCE wrapper/task
+`command#issue-111`, source6339856aae28f03cddcd2996b5c1c4ec770388d7, existing authenticated
+context and new task pages only. No cookies/credentials were read/exported. Original
+tabs/storage and Chrome were preserved. Unrelated inbox/project/artifact reads were
+blocked only on task pages; actual own-session API responses were not mocked or
+rewritten. Private recents are masked in captures. Consequently this does not accept
+inbox/presence or project behavior. No visibility/focus getters were spoofed.
+
+Browser-observed forwarded API requests (not server audit totals):59GET, one session create POST, one setup-run POST, two read
+POSTs (one view200, one stale409), zero presence/other mutation POSTs. Sixteen
+unrelated task-page GETs were blocked before forwarding. The setup inference is
+counted separately from status/read actions. Full category counts, bounded proof,
+release attribution and12 inspected capture hashes are in [the live receipt](verification/issue-111-live.json).
+Exact identities/responses remain in private own git metadata
+`issue-111-live-acceptance.json`; use that supported binding, never guess or resend.
+Named sanitized captures under `test-results/issue-111-live/` are
+`AUTHENTICATED-{status-chat,studio,history,picker}-{1280x720,360x740,360x360}.png`.
+
+## Implemented source contract
 
 Shared status uses bounded actor-authorized server snapshots and canonical read
 identities. Retained run A cannot override the latest session observation for run B:
@@ -22,14 +94,14 @@ Bounds remain 4096 markers/1 MiB, 50 chats per client, two server observations, 
 100-row history pages, and an eight-second traversal budget checked between bounded
 source calls. Unknown tail means unknown unread/refused clear, never guessed success.
 
-## Candidate evidence (synthetic, not authenticated live proof)
+## Accepted candidate evidence (historical source phase; synthetic)
 
 Existing Studio source wrapper revision 347b642a4b6bbd2119a04211054490e1e68e0b01,
 run from this issue worktree with task command#issue-111 around the existing
 Playwright command/config. Endpoint/profile stay private. Task-owned contexts only;
 original tabs/login/storage retained, shared Chrome left running. The candidate
 preview explicitly disables proxy fallback and rejects escaped API calls with 503,
-including teardown keepalives. A direct unmatched-API probe verifies that guard.
+including teardown keepalives. A direct unmatched-API probe verified that guard in the source phase.
 
 The two November 7 fixture failures are historical. Recovery first confirmed valid
 session timestamps and final-page readiness, then fixed the preview working directory.
@@ -58,7 +130,7 @@ truncated titles and wrapping status text; no run/transport behavior changed.
 Named captures per case: SYNTHETIC-header-WxH.png, SYNTHETIC-roster-WxH.png,
 SYNTHETIC-roster-tail-WxH.png and SYNTHETIC-chat-list-WxH.png, beneath
 `test-results/thread-status/feedback-final/`. Inspected capture names/hashes and
-fixture/build source hashes are in [the candidate receipt](verification/issue-111-candidate.json).
+fixture/build source hashes are in [the historical candidate receipt](verification/issue-111-candidate.json). Its runtime-status fields describe the pre-gate handoff, not the later release/live evidence above.
 Short-height surfaces use deliberate internal scrolling; a single capture does not
 claim all rows fit simultaneously. Focused merge tests retain the delayed A/B repair
 and Studio interactions; unchanged accepted backend/read/reaction tests are reused.
@@ -68,8 +140,9 @@ and Studio interactions; unchanged accepted backend/read/reaction tests are reus
 Hosted validate [42635904835](https://github.com/KumarG23/jarvis-command/actions/runs/42635904835)
 failed at 469f788: legacy fixtures rejected the new GET, retained-run expectations
 claimed unverified session activity, and the added status strip inflated project
-headers to 141 px mobile / 119.5 px desktop. That run remains failed; local checks
-below do not certify a new hosted run.
+headers to 141 px mobile / 119.5 px desktop. That older run remains failed. The repaired13be0f4 later passed exact-head hosted
+gate42642969282 before the lead merged/released it; source-phase local checks below
+are separate from that gate and the authenticated evidence above.
 
 The shared synthetic read seam serves only explicitly listed canonical fixture
 session IDs and a query-free GET thread-state. It returns schema-valid Unknown
@@ -88,7 +161,7 @@ retry fixture reopens the picker through its real control after focused-button
 replacement; short-height Send deliberately centers in its scrolling footer with
 the original strict viewport assertion. No force-click or relaxed bounds.
 
-Current focused checks: 34 affected web cases (including delayed A/B), one server
+Source-phase focused checks: 34 affected web cases (including delayed A/B), one server
 roster/bootstrap case, 46 affected browser fixture cases, and ten P13 status/read
 cases pass. The 18-case project/history compact matrix and ten sidebar keyboard/reach cases pass under the original
 limits. Web typecheck, scoped lint and build pass; accepted unchanged gates are
@@ -99,16 +172,19 @@ Affected synthetic suites use fresh contexts through the same issue-111 wrapper
 when locally admitted; CI retains its ordinary isolated browser. Their previews
 now share the fail-closed, no-proxy candidate server. Named final captures and
 focused outcomes are recorded in the candidate receipt. Earlier unchanged
-backend/store/reaction gates are reused. Full workspace/hosted CI certification,
-authenticated live readback and phone acceptance are not claimed.
+backend/store/reaction gates are reused. Those local source checks were not full workspace/hosted certification. Later
+gate/release and scoped authenticated evidence are recorded above; phone remains
+pending. No candidate suites were rerun during this acceptance/docs phase.
 
 ## Smallest routing prerequisite for lead admission
 
 Source check: ProjectRoomCreateSchema/ProjectThreadSchema are strict and have no saved
 routing-default fields. inferencePreference.ts saves only a browser-local per-session
 next-run request. Existing run admission fingerprints inference; the command proxy
-validates offered eligibility and sends require_model_lock. This assignment makes no
-current installed provider/lock/execution claim and performs no live route call.
+validates offered eligibility and sends require_model_lock. The source phase made no
+installed-route claim. The later single owned setup call above provides applicable
+same-run receipt evidence, with the minimal-versus-low effort discrepancy still
+unresolved; it does not close exact per-thread routing or durable defaults.
 
 **Owning repository: KumarG23/jarvis-command.** Proposed narrow operations (not existing
 endpoints): read/set a saved routing default with target scope thread/project,
@@ -131,9 +207,10 @@ patch or endpoint is presumed here. Native delegation separately needs an author
 immutable thread/persona↔session binding and its attributable run receipt; it does
 not gate Command-owned independent-session defaults. No historical answer/run join.
 
-Sol owns exact-head review, gate merge, recoverable release and authorized live
-readback. That readback needs an explicitly admitted owned fixture identity through
-supported contracts, never a guessed private chat or replayed uncertain admission.
+Sol owns further review, recoverable release/rollback and separately admitted live
+work. The exact newly recovered owned identity is retained privately; no further
+message/create or provider action is granted by this evidence. Never substitute a
+private chat or replay an uncertain admission.
 Phone check pending: real background/foreground and second-device output/read races,
 Pixel cold start/keyboard, labels/scroll/focus and input/Send reachability. Candidate
 fixtures supply neither authenticated backend round trips nor physical acceptance.
