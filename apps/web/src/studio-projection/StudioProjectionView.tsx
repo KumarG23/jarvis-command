@@ -116,6 +116,15 @@ export function StudioProjectionView({ source, active, refreshMs, now = Date.now
   const lastKnown = snapshot !== null && failure !== null;
   const partial = snapshot ? partialReasons(snapshot) : [];
 
+  if (!source) {
+    // Disabled: no transport is approved, so nothing is requested and no Studio data (retained or otherwise) is shown.
+    return (
+      <div className="spv-disabled-root" role="status" data-state="disabled">
+        <p><strong className="spv-sr">Studio view is disabled. </strong>Live team status is not connected in this build. No crew members, tasks or activity are available to show here.</p>
+      </div>
+    );
+  }
+
   return (
     <section ref={root} className="spv-root" aria-labelledby="spv-title" onKeyDown={onKeyDown} aria-busy={loading}>
       <header className="spv-header">
@@ -123,22 +132,16 @@ export function StudioProjectionView({ source, active, refreshMs, now = Date.now
           <h2 id="spv-title" ref={heading} tabIndex={-1}>
             {level === 'overview' ? 'Studio projects' : level === 'project' ? project!.displayName : item!.title}
           </h2>
-          {source && <p className="spv-source small">Source: {source.label}</p>}
+          <p className="spv-source small">Source: {source.label}</p>
         </div>
         <div className="spv-actions">
           {level !== 'overview' && <button type="button" className="spv-button" onClick={back}>{level === 'item' ? `Back to ${project!.displayName}` : 'All projects'}</button>}
-          {source && <button type="button" className="spv-button" disabled={loading || !active} onClick={() => void load()}>{loading ? 'Refreshing…' : 'Refresh'}</button>}
+          <button type="button" className="spv-button" disabled={loading || !active} onClick={() => void load()}>{loading ? 'Refreshing…' : 'Refresh'}</button>
         </div>
       </header>
 
       <div role="status" aria-live="polite" className="spv-status-region">
-        {!source && (
-          <div className="spv-banner spv-disabled" data-state="disabled">
-            <strong>Studio view is disabled.</strong> No approved Command-to-Studio read path exists yet, so nothing is requested and no Studio data is shown.
-            The exact server contract that would enable it is in docs/p14-projection-consumer.md.
-          </div>
-        )}
-        {source && loading && !snapshot && <div className="spv-banner" data-state="loading">Loading Studio projection…</div>}
+        {loading && !snapshot && <div className="spv-banner" data-state="loading">Loading Studio projection…</div>}
         {failure && (
           <div className="spv-banner spv-failure" data-state={snapshot ? 'last-known' : 'failed'}>
             <strong>{FAILURE_TITLE[failure.kind]}.</strong> {failure.message}{' '}

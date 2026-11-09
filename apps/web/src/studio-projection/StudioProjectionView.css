@@ -67,3 +67,4 @@
 }
 @media (max-height: 480px) { .spv-root h3 { margin-top: 12px; } .spv-tile { padding: 6px 10px; } }
 @media (prefers-reduced-motion: no-preference) { .spv-card, .spv-item { transition: border-color .12s; } }
+.spv-disabled-root p { margin: 0; }

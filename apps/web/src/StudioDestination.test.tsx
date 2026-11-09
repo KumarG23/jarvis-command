@@ -221,4 +221,23 @@ describe('Studio unavailable destination', () => {
     expect(within(screen.getByLabelText('Attached images')).getByText('synthetic.png')).toBeInTheDocument();
     expect(within(screen.getByRole('navigation', { name: 'Projects' })).getByRole('button', { name: 'SYNTHETIC project' })).toHaveAttribute('aria-current', 'page');
   });
+
+  it('mounts the inert projection view: disabled source issues no request of any kind, shows no snapshot controls, and keeps one level-1 heading', async () => {
+    const calls = fixture();
+    const composer = await openShell();
+    fireEvent.change(composer, { target: { value: 'SYNTHETIC draft kept through Studio' } });
+    const before = calls.length;
+    fireEvent.click(studioButton());
+    const studio = screen.getByRole('region', { name: 'Studio crew' });
+    expect(within(studio).getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(within(studio).getByRole('status')).toHaveAttribute('data-state', 'disabled');
+    expect(within(studio).queryByRole('button', { name: /Refresh/ })).not.toBeInTheDocument();
+    expect(within(studio).queryByText(/Snapshot|Last known|Studio projects/)).not.toBeInTheDocument();
+    await new Promise(resolve => setTimeout(resolve, 50));
+    // Opening Studio makes no request at all (reply-presence suspension is the only allowed traffic) and clears no read marker.
+    expect(calls.slice(before).filter(call => !call.url.endsWith('/api/notifications/presence'))).toEqual([]);
+    fireEvent.keyDown(studio, { key: 'Escape' });
+    expect(await screen.findByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('SYNTHETIC draft kept through Studio');
+    expect(calls.slice(before).filter(call => call.method !== 'GET' && !call.url.endsWith('/api/notifications/presence'))).toEqual([]);
+  });
 });

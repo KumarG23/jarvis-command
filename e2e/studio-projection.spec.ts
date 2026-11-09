@@ -32,7 +32,7 @@ async function open(page: Page, fixture: string, extra = '') {
   await page.goto(`/studio-projection-candidate.html?fixture=${fixture}${extra}`);
   return foreign;
 }
-const noOverflow = async (page: Page) => expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1 && document.querySelector('.spv-root')!.scrollWidth <= document.querySelector('.spv-root')!.clientWidth + 1)).toBe(true);
+const noOverflow = async (page: Page) => expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1 && document.querySelector('.spv-root, .spv-disabled-root')!.scrollWidth <= document.querySelector('.spv-root, .spv-disabled-root')!.clientWidth + 1)).toBe(true);
 
 for (const size of sizes) {
   test.describe(size.name, () => {
@@ -75,7 +75,7 @@ for (const size of sizes) {
       await guard(context, page);
       try {
         const expectations: Array<[string, string, string]> = [
-          ['disabled', '', 'Studio view is disabled.'], ['loading', '', 'Loading Studio projection…'], ['unreachable', '', 'Studio is unreachable.'],
+          ['disabled', '', 'Live team status is not connected in this build.'], ['loading', '', 'Loading Studio projection…'], ['unreachable', '', 'Studio is unreachable.'],
           ['malformed', '', 'Studio data was rejected as untrustworthy.'], ['version', '', 'Studio projection version is not supported.'],
           ['healthy', '&age=172800', 'Stale.'],
         ];
