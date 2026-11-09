@@ -42,8 +42,9 @@ type Props = Readonly<{
   contextTarget?: HTMLElement | null;
   onOpenChange?: (open: boolean) => void;
   onNavigate?: () => void;
+  onReady?: () => void;
 }>;
-export function ProjectRooms({ ref, sessions, threadStates = {}, statusClock, selectedSessionId, onScope, onProjectScope, onProjectChange, onOpenArtifacts, artifactsEnabled, onSession, onResolvedSessions, onDeleted, contextTarget, onOpenChange, onNavigate }: Props) {
+export function ProjectRooms({ ref, sessions, threadStates = {}, statusClock, selectedSessionId, onScope, onProjectScope, onProjectChange, onOpenArtifacts, artifactsEnabled, onSession, onResolvedSessions, onDeleted, contextTarget, onOpenChange, onNavigate, onReady }: Props) {
   const [rooms, setRooms] = useState<ProjectRoom[]>([]);
   const [selected, setSelected] = useState<ProjectRoom | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -100,7 +101,7 @@ export function ProjectRooms({ ref, sessions, threadStates = {}, statusClock, se
   const [deleteUncertain, setDeleteUncertain] = useState(false);
   useEffect(() => { if (projectDelete && !busy) cancelDelete.current?.focus(); }, [projectDelete, busy]);
   const [deleteTarget, setDeleteTarget] = useState<SessionSummary | null>(null);
-  const callbacks = useRef({ onScope, onProjectScope, onSession, onResolvedSessions, onDeleted, onOpenChange, onNavigate }); callbacks.current = { onScope, onProjectScope, onSession, onResolvedSessions, onDeleted, onOpenChange, onNavigate };
+  const callbacks = useRef({ onScope, onProjectScope, onSession, onResolvedSessions, onDeleted, onOpenChange, onNavigate, onReady }); callbacks.current = { onScope, onProjectScope, onSession, onResolvedSessions, onDeleted, onOpenChange, onNavigate, onReady };
   const mounted = useRef(true), working = useRef(false);
   const opener = useRef<HTMLElement | null>(null), closeButton = useRef<HTMLButtonElement | null>(null), search = useRef<HTMLInputElement | null>(null);
   const roomCreation = useRef<{ name: string; goal: string; instructions: string; repository: string; notes: string; projectIcon?: string; projectColor?: string }>({ name: '', goal: '', instructions: '', repository: '', notes: '' });
@@ -148,10 +149,11 @@ export function ProjectRooms({ ref, sessions, threadStates = {}, statusClock, se
   }));
   function remember(id: string | null) { try { if (id) sessionStorage.setItem(KEY, id); else sessionStorage.removeItem(KEY); } catch { /* Optional view hint, never the room database. */ } }
   async function perform(operation: () => Promise<void>) {
-    if (working.current) return;
+    if (working.current) return false;
     working.current = true; setBusy(true); setError(null);
     try { await operation(); } catch (failure) { if (mounted.current) setError(failure instanceof Error ? failure.message : 'Project operation unavailable'); }
     finally { working.current = false; if (mounted.current) setBusy(false); }
+    return true;
   }
   async function saveMetadata(id: string, metadata: unknown) {
     const expected = ProjectRoomCreateSchema.parse(metadata);
@@ -207,12 +209,15 @@ export function ProjectRooms({ ref, sessions, threadStates = {}, statusClock, se
     callbacks.current.onScope(null); callbacks.current.onProjectScope?.(null); callbacks.current.onSession(session); callbacks.current.onNavigate?.();
   }
   async function load(remembered?: string) {
+    if (!remembered) {
+      try { const hint = sessionStorage.getItem(KEY); if (hint && /^room_[a-f0-9]{32}$/.test(hint)) remembered = hint; } catch { /* Optional view hint. */ }
+    }
     const data = ProjectRoomsSchema.parse(await request('/api/rooms'));
     if (!mounted.current) return;
     reconcileProjects(data.rooms);
     if (remembered) {
       const room = data.rooms.find(item => item.id === remembered);
-      if (!room) { remember(null); callbacks.current.onScope(null); callbacks.current.onProjectScope?.(null); return; }
+      if (!room) throw Error('Saved project could not be verified. Its selection and drafts are kept; reload projects or choose another chat.');
       await choose(room);
     }
   }
@@ -222,8 +227,8 @@ export function ProjectRooms({ ref, sessions, threadStates = {}, statusClock, se
     try { remembered = sessionStorage.getItem(KEY); } catch { /* Optional hint. */ }
     if (remembered && /^room_[a-f0-9]{32}$/.test(remembered)) {
       callbacks.current.onScope('Loading project'); callbacks.current.onProjectScope?.(null); callbacks.current.onSession(null);
-      void perform(() => load(remembered!));
-    } else void perform(() => load());
+      void perform(() => load(remembered!)).then(performed => { if (performed && mounted.current) callbacks.current.onReady?.(); });
+    } else void perform(() => load()).then(performed => { if (performed && mounted.current) callbacks.current.onReady?.(); });
     return () => { mounted.current = false; };
   }, []);
   // Resolve older project chats outside bootstrap recents without exposing internal IDs.

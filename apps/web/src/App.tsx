@@ -239,9 +239,21 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
   const [project, setProject] = useState<ProjectRoom | null>(null);
   const [projectSendError, setProjectSendError] = useState('');
   useEffect(() => { setProjectSendError(''); }, [projectId]);
+  const [savedSelection] = useState(() => {
+    try { return { id: sessionStorage.getItem(appStorageKey('jarvis-command:selected-session:v1')), project: sessionStorage.getItem(appStorageKey('jarvis-command:project-room:v1')) }; }
+    catch { return { id: null, project: null }; }
+  });
+  const missingSaved = !!savedSelection.id && !bootstrap.sessions.some(session => session.id === savedSelection.id);
+  const [preserveSaved, setPreserveSaved] = useState(!!savedSelection.project || missingSaved);
+  const [projectNavigationReady, setProjectNavigationReady] = useState(false);
+  const [savedRecovery, setSavedRecovery] = useState<'pending' | 'retry' | 'done'>(() => {
+    if (!missingSaved || savedSelection.project || !/^jc_[a-f0-9]{32}$/.test(savedSelection.id!)) return 'done';
+    return bootstrap.command.liveRoom.enabled && bootstrap.hermes.state === 'online' ? 'pending' : 'retry';
+  });
   const [selectedSession, setSelectedSession] = useState<SessionSummary | null>(() => {
-    if (!bootstrap.command.liveRoom.enabled) return null;
-    try { const id = sessionStorage.getItem(appStorageKey('jarvis-command:selected-session:v1')); return bootstrap.sessions.find(session => session.id === id) ?? bootstrap.sessions.find(session => session.id === readThreadRecoveries()[0]?.sessionId) ?? null; } catch { return null; }
+    if (!bootstrap.command.liveRoom.enabled || savedSelection.project) return null;
+    try { return bootstrap.sessions.find(session => session.id === savedSelection.id)
+      ?? (!savedSelection.id ? bootstrap.sessions.find(session => session.id === readThreadRecoveries()[0]?.sessionId) : null) ?? null; } catch { return null; }
   });
   const selectionRef = useRef({ projectId, sessionId: selectedSession?.id ?? null });
   const threadLinkAttempt = useRef(0);
@@ -259,9 +271,15 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     if (!resolved.length) return;
     setSessions(previous => [...previous.filter(session => !resolved.some(item => item.id === session.id)), ...resolved]);
   }, []);
-  const retainedNavigation = useRef<{ controller: AbortController } | null>(null);
+  const retainedNavigation = useRef<{ controller: AbortController; saved?: boolean } | null>(null);
   const [retainedFeedback, setRetainedFeedback] = useState('');
-  useEffect(() => () => retainedNavigation.current?.controller.abort(), []);
+  useEffect(() => () => { retainedNavigation.current?.controller.abort(); retainedNavigation.current = null; }, []);
+  useEffect(() => {
+    if (!projectNavigationReady || savedRecovery !== 'pending') return;
+    if (!bootstrap.command.liveRoom.enabled || bootstrap.hermes.state !== 'online') { setSavedRecovery('retry'); return; }
+    void openRetainedThread(savedSelection.id!, undefined, true);
+    // Start once the existing project adapter is ready; further attempts are explicit.
+  }, [projectNavigationReady]);
   // Exact durable reply to focus once its real history loads; cleared when the focus settles.
   const [replyFocus, setReplyFocus] = useState<{ sessionId: string; messageId: string } | null>(null);
   const [notificationAttachment, setNotificationAttachment] = useState<Extract<NotificationTarget, { state: 'available' }> | null>(null);
@@ -320,8 +338,8 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
   const projects = useRef<ProjectRoomsHandle | null>(null), menu = useRef<HTMLButtonElement | null>(null), sidebar = useRef<HTMLElement | null>(null);
   const panelClose = useRef<HTMLButtonElement | null>(null), panelOpener = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    try { if (selectedSession) sessionStorage.setItem(appStorageKey('jarvis-command:selected-session:v1'), selectedSession.id); else sessionStorage.removeItem(appStorageKey('jarvis-command:selected-session:v1')); } catch { /* Optional view hint. */ }
-  }, [selectedSession]);
+    try { if (selectedSession) sessionStorage.setItem(appStorageKey('jarvis-command:selected-session:v1'), selectedSession.id); else if (!preserveSaved) sessionStorage.removeItem(appStorageKey('jarvis-command:selected-session:v1')); } catch { /* Optional view hint. */ }
+  }, [selectedSession, preserveSaved]);
   useEffect(() => {
     if (navigationOpen) sidebar.current?.querySelector<HTMLButtonElement>('.close-navigation')?.focus();
   }, [navigationOpen]);
@@ -439,7 +457,16 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     secondSource.current.sessionId = id;
     setSecondSessionId(id);
   }
+  function finishSavedSelection(session?: SessionSummary | null) {
+    // ProjectRooms clears/replaces its hint before explicit global/project navigation.
+    // Its initial project-loading null callbacks must retain the original scoped hint.
+    let sameProject = false;
+    try { sameProject = !!savedSelection.project && sessionStorage.getItem(appStorageKey('jarvis-command:project-room:v1')) === savedSelection.project; } catch { /* Keep authorization separate from optional storage. */ }
+    if (!session && sameProject) return;
+    setPreserveSaved(false); setSavedRecovery('done');
+  }
   function selectSession(session: SessionSummary | null) {
+    finishSavedSelection(session);
     leaveStudio();
     invalidateRetainedNavigation();
     invalidateThreadNavigation(selectionRef.current.projectId, session?.id ?? null);
@@ -450,6 +477,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     setSelectedSession(session);
   }
   function selectProjectId(id: string | null) {
+    finishSavedSelection();
     leaveStudio();
     invalidateRetainedNavigation();
     invalidateThreadNavigation(id, selectionRef.current.sessionId);
@@ -502,16 +530,18 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     if (!retainedNavigation.current) return;
     retainedNavigation.current.controller.abort();
     retainedNavigation.current = null;
+    if (savedRecovery !== 'done') setSavedRecovery('done');
     setRetainedFeedback('Your selection changed while the retained chat was checked. Your current chat and drafts were kept; retry to open it.');
   }
-  async function openRetainedThread(sessionId: string, retainedProjectId?: string) {
+  async function openRetainedThread(sessionId: string, retainedProjectId?: string, saved = false) {
     // A later retained click also supersedes an in-flight message thread link.
     pendingThreadNavigation.current = null;
     threadLinkAttempt.current++;
     setThreadLinkFeedback('');
     retainedNavigation.current?.controller.abort();
-    const attempt = { controller: new AbortController() };
+    const attempt = { controller: new AbortController(), saved };
     retainedNavigation.current = attempt;
+    if (saved) setSavedRecovery('pending');
     setRetainedFeedback('Checking the retained chat before opening…');
     try {
       // Recovery ids are hints, never session facts. Always verify exact access; a
@@ -525,10 +555,12 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
       if (target.session.id !== sessionId || target.session.ownership !== 'command') throw Error('Retained chat identity or ownership is unavailable. Your current chat and drafts were kept.');
       retainedNavigation.current = null;
       const opened = target.room ? projects.current?.openLinkedChat(target.room, target.session) : projects.current?.selectChat(target.session);
+      if (saved && !opened) setSavedRecovery('retry');
       setRetainedFeedback(opened ? '' : 'Project navigation is busy or has an edit draft. Your current chat and drafts were kept; finish the edit and retry.');
     } catch {
       if (retainedNavigation.current !== attempt) return;
       retainedNavigation.current = null;
+      if (saved) setSavedRecovery('retry');
       setRetainedFeedback('Retained chat access or project membership could not be verified. Your current chat and drafts were kept; retry. No message was sent.');
     }
   }
@@ -547,7 +579,13 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     if (window.history.state?.commandNavigation === navigationEntry.current) window.history.back();
     navigationVisible.current = false; setNavigationOpen(false); if (restoreFocus) navigationOpener()?.focus();
   }
+  function pauseSavedRecovery() {
+    if (savedRecovery !== 'pending') return;
+    if (retainedNavigation.current?.saved) { retainedNavigation.current.controller.abort(); retainedNavigation.current = null; }
+    setSavedRecovery('retry'); setRetainedFeedback('Saved chat recovery paused. Your view and drafts were kept.');
+  }
   function openStudio(element?: HTMLElement | null) {
+    pauseSavedRecovery();
     if (studioVisible.current) { if (navigationOpen) closeNavigation(); return; }
     if (element) studioNav.current = element as HTMLButtonElement;
     studioDismissed.current = false;
@@ -608,6 +646,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     setProjectName(name);
   }
   function openPanel(kind: 'runtime' | 'settings' | 'artifacts' | 'agents' | 'collaboration' | 'notifications', element: HTMLElement) {
+    pauseSavedRecovery();
     leaveStudio();
     if (kind !== 'artifacts') setSaveActive(false);
     projects.current?.closeDetails(); panelOpener.current = element; setPane(kind); if (navigationOpen) closeNavigation(false);
@@ -782,11 +821,11 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
       }
     }}>
       <div className="sidebar-brand"><Command size={29} /><strong>Jarvis Command</strong><button className="icon-button close-navigation" type="button" aria-label="Close chat navigation" onClick={() => closeNavigation()}><X size={20} /></button></div>
-      {liveEnabled ? <ProjectRooms ref={projects} onResolvedSessions={mergeResolvedSessions} threadStates={statusStates} statusClock={threadState.clock} sessions={sessions} selectedSessionId={selectedSession?.id} onScope={setProjectScope} onProjectScope={selectProjectId} onProjectChange={setProject} artifactsEnabled={artifactStudioEnabled} onOpenArtifacts={() => { leaveStudio(); projects.current?.closeDetails(); setPane('artifacts'); }} onSession={selectSession} onDeleted={sessionId => {
+      {liveEnabled ? <ProjectRooms onReady={() => setProjectNavigationReady(true)} ref={projects} onResolvedSessions={mergeResolvedSessions} threadStates={statusStates} statusClock={threadState.clock} sessions={sessions} selectedSessionId={selectedSession?.id} onScope={setProjectScope} onProjectScope={selectProjectId} onProjectChange={setProject} artifactsEnabled={artifactStudioEnabled} onOpenArtifacts={() => { pauseSavedRecovery(); leaveStudio(); projects.current?.closeDetails(); setPane('artifacts'); }} onSession={selectSession} onDeleted={sessionId => {
         setSessions(previous => previous.filter(session => session.id !== sessionId));
         if (selectedSession?.id === sessionId) { selectSession(null); setProjectScope(null); selectProjectId(null); }
       }} contextTarget={contextTarget}
-        onOpenChange={open => { setPane(previous => open ? 'project' : previous === 'project' ? null : previous); if (open && navigationOpen) closeNavigation(); }} onNavigate={() => { if (navigationOpen || (typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 760px)').matches)) closeNavigation(); }} /> : <div className="sidebar-scroll"><p className="empty-copy">Live chat is unavailable.</p>{sessions.map(session => <div key={session.id} className="sidebar-item"><MessageSquare size={17} /><span>{session.title}</span></div>)}</div>}
+        onOpenChange={open => { if (open) pauseSavedRecovery(); setPane(previous => open ? 'project' : previous === 'project' ? null : previous); if (open && navigationOpen) closeNavigation(); }} onNavigate={() => { if (navigationOpen || (typeof window.matchMedia === 'function' && window.matchMedia('(max-width: 760px)').matches)) closeNavigation(); }} /> : <div className="sidebar-scroll"><p className="empty-copy">Live chat is unavailable.</p>{sessions.map(session => <div key={session.id} className="sidebar-item"><MessageSquare size={17} /><span>{session.title}</span></div>)}</div>}
       <div className="thread-status-list" aria-label="Thread supervision">
         {navigationOpen && retainedFeedback ? <p role="status" className="notice">{retainedFeedback}</p> : null}
         {threads.all.filter(item => item.turn).map(item => <button type="button" className="sidebar-item" aria-label={`Supervise ${sessions.find(session => session.id === item.turn!.intent.sessionId)?.title ?? item.turn!.intent.sessionId}`} key={item.turn!.intent.sessionId} onClick={() => { void openRetainedThread(item.turn!.intent.sessionId, item.turn!.projectId); }}><span>{sessions.find(session => session.id === item.turn!.intent.sessionId)?.title ?? 'Retained thread'}<StatusIcon state={threadStatus(statusStates[item.turn!.intent.sessionId], threadState.clock)} /><small>{item.turn!.phase} · retained Command run; session status separate{item.turn!.statusObservedAt ? ` · checked ${new Date(item.turn!.statusObservedAt).toLocaleTimeString()}` : ' · status observation unavailable'}</small></span></button>)}
@@ -815,6 +854,9 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
         const reason = thread?.archived ? 'Archived' : !session ? 'Unavailable — retry chat titles in project navigation' : session.ownership !== 'command' ? 'Read-only external chat' : '';
         return <option key={id} value={id} disabled={!!reason}>{title}{session && session.title !== title ? ` · ${session.title}` : ''}{reason ? ` · ${reason}` : ''}</option>;
       })}</select></label></div> : null}
+      {preserveSaved && savedSelection.project && !/^room_[a-f0-9]{32}$/.test(savedSelection.project) ? <p role="status" className="notice">Saved project is unavailable. Choose a project or chat to continue; your drafts are kept.</p> : null}
+      {preserveSaved && savedRecovery === 'done' && !savedSelection.project ? <p role="status" className="notice">Saved chat is unavailable. Choose a chat to continue; your drafts are kept.</p> : null}
+      {savedRecovery === 'retry' ? <p role="status" className="notice">Saved chat could not be opened. Your selection hint and drafts are kept. <button type="button" disabled={!bootstrap.command.liveRoom.enabled || bootstrap.hermes.state !== 'online'} onClick={() => void openRetainedThread(savedSelection.id!, undefined, true)}>Retry saved chat</button></p> : null}
       {!navigationOpen && retainedFeedback ? <p role="status" className="notice">{retainedFeedback}</p> : null}
       {bootstrap.identity.provider === 'development' ? <div className="preview-notice">Development preview · {bootstrap.command.version}</div> : null}
       {!hermesOnline ? <p className="notice error" role="status">{health}. {bootstrap.hermes.state === 'offline' ? 'Check the connection before sending.' : 'Some capabilities may be unavailable.'}</p> : null}
@@ -832,7 +874,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
         {liveEnabled && selectedSession?.ownership === 'command' && !live.historyReady(selectedSession.id) ? <p className="composer-feedback" role="status">Load complete chat history before sending. Retry history or load remaining pages.</p> : null}
         {live.historyBacklogFull ? <p role="alert" className="notice">Unconfirmed reply limit reached. Your replies are retained; retry history before sending more.</p> : null}
         {projectSendError ? <p role="alert">{projectSendError}</p> : null}
-        {liveEnabled ? <TurnComposer retainedDrafts={live.composerDrafts} inferenceTarget={inferenceTarget} draftsAuthorized={draftAuthorizedSession !== null && draftAuthorizedSession === selectedSession?.id} blocked={!!live.recoveryError || !live.historyReady(selectedSession?.id) || live.historyBacklogFull} allowed={!!writeAllowed} imageAttachmentsEnabled={artifactStudioEnabled} sessionId={selectedSession?.id} projectId={projectId} project={project} onProjectReadback={room => { setProject(room); projects.current?.readback(room); }} max={bootstrap.command.liveRoom.maxInputCharacters} maxSteer={bootstrap.command.liveRoom.maxSteerCharacters} turn={live.turn} send={(session, input, max, inference, images) => live.send(session, input, max, inference, images, undefined, projectId)} retry={live.retry} resume={live.resume} steer={live.steer} recoveries={live.recoveries} consumeRecovery={live.consumeRecovery} /> : <p className="composer-feedback">Messaging is unavailable in this read-only connection.</p>}
+        {liveEnabled ? <TurnComposer retainedDrafts={live.composerDrafts} inferenceTarget={inferenceTarget} draftsAuthorized={draftAuthorizedSession !== null && draftAuthorizedSession === selectedSession?.id} blocked={(preserveSaved && !selectedSession) || !!live.recoveryError || !live.historyReady(selectedSession?.id) || live.historyBacklogFull} allowed={!!writeAllowed} imageAttachmentsEnabled={artifactStudioEnabled} sessionId={selectedSession?.id} projectId={projectId} project={project} onProjectReadback={room => { setProject(room); projects.current?.readback(room); }} max={bootstrap.command.liveRoom.maxInputCharacters} maxSteer={bootstrap.command.liveRoom.maxSteerCharacters} turn={live.turn} send={(session, input, max, inference, images) => live.send(session, input, max, inference, images, undefined, projectId)} retry={live.retry} resume={live.resume} steer={live.steer} recoveries={live.recoveries} consumeRecovery={live.consumeRecovery} /> : <p className="composer-feedback">Messaging is unavailable in this read-only connection.</p>}
       </footer>
     </main>
     {studioOpen ? <section ref={studioRegion} tabIndex={-1} className="command-main studio-destination" aria-labelledby="studio-crew-title" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); closeStudio(); } }}>
