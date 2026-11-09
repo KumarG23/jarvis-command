@@ -620,7 +620,10 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 @keyframes thread-working { 0%,100% { color: #ffe38a; } 20% { color: #9ae8af; } 40% { color: #fff; } 60% { color: #ffb7e1; } 80% { color: #ffbf8b; } }
 @media (prefers-reduced-motion: reduce) { .thread-state-working svg { animation: none; color: #ffe38a; } }
 .latest-message-view { display: block; height: 2px; width: 100%; }
-.chat-item > span:has(.thread-state) { display: flex; flex-direction: column; min-width: 0; align-items: flex-start; }
+.chat-item > span:has(.thread-state) { display: flex; flex-direction: column; min-width: 0; align-items: flex-start; overflow: visible; white-space: normal; }
+.chat-item-title { display: block; width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-item .thread-state { max-width: 100%; align-items: flex-start; }
+.chat-item .thread-state > span { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .room-breadcrumb .thread-state { margin-left: 6px; }
 .header-thread-states { display: flex; gap: 16px; flex-basis: 100%; grid-column: 1 / -1; grid-row: 3; min-width: 0; flex-wrap: wrap; color: var(--muted); font-size: 11px; }
 .header-thread-states > span { display: inline-flex; align-items: center; gap: 6px; }

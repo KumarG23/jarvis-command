@@ -1,83 +1,100 @@
-# P13 source and outstanding proof
+# P13 status/unread candidate and routing prerequisites
 
-Shared labelled status is derived from fresh actor-bound Command run observations
-and canonical saved-message/read identities. No observed Command run means Unknown.
-Queued/running means Working; waiting approval, failed or interrupted needs attention;
-verified terminal completion/cancellation permits Idle only when unread is known false.
-Unread is independent of completion. Observations expire after 60 seconds.
-Shared status uses only the bounded server snapshot. Retained supervisors still
-supervise their exact admitted run, but cannot prove it is the session's latest run.
-Their overlay is removed: delayed prior terminal/approval responses, local verification
-and newer arrival times cannot replace the latest server state. Same-run overlays
-are also omitted until an authoritative latest-run identity can be matched; no new
-identity contract or historical message/run join is invented. Reconnect text does
-not alter lifecycle. Retained cards label their own run separately from session status.
-Shared summaries can lag until the existing bounded snapshot refresh, then expire
-to Unknown if observations are stale.
+Current scope: status/unread source plus isolated candidate acceptance under the
+November 9 reopening (MASTER_PLAN §0.2). PR130 remains unmerged/unreleased; this is
+not P13 Done. Delayed-run repair d61e288 was source-reviewed in review 6707363347.
+Accepted release b7b20b9 was ordinarily merged, preserving the Studio destination,
+focus/presence behavior, P12 partial readback, and the current plan authority.
 
-The existing narrow authenticated session routes now include GET `thread-state` and
-POST `read`. POST accepts only a canonical message id and zero-based position and
-revalidates that exact latest row. The browser reports it only from a fully visible
-bottom-of-message marker in a visible, focused, clipped conversation pane after the
-last history page loads. Reads do not submit runs or change notification readAt.
-Actor fingerprints and per-session read positions persist in a separate private
-atomic file on the existing mount. Readers from earlier releases never open it.
-Monotonic positions prevent stale devices from regressing a read; newer output has
-an independent identity and stays unread. UI response merging also preserves newer
-tails/reads when response delivery is reversed or timestamps tie.
+Shared status uses bounded actor-authorized server snapshots and canonical read
+identities. Retained run A cannot override the latest session observation for run B:
+no local overlay is permitted without authoritative latest-run identity. Retained
+cards label their own run separately. Run absence/transport text does not imply Idle;
+stale facts expire to Unknown after 60 seconds. Reads are independent of completion.
 
-Bounds: 4096 actor/session markers, 1 MiB file, 50 observed chats per client,
-two active server observations, at most ten 100-row oldest-first history pages,
-and an eight-second traversal budget checked between existing bounded source reads.
-No tail within those bounds means unread Unknown and read refused. Overflow or
-storage failure does not evict a newer marker or claim success. Polling occurs every
-30 seconds only while the document is visible; ordinary focus refreshes share the
-same in-flight guard and existing server rate limits. A lower or changed canonical
-position is never treated as permission to clear newer output.
+GET thread-state and POST read use existing authentication/session guards. A read
+revalidates the exact latest canonical message and position and never submits a run.
+The browser requires final-page readiness, foreground/focus, full clipped marker
+intersection and a real hit. Separate private atomic actor/session markers advance
+monotonically, survive restart, and preserve newer output across stale-device clears
+and reversed response delivery. Earlier rollback readers do not open this file.
+Bounds remain 4096 markers/1 MiB, 50 chats per client, two server observations, ten
+100-row history pages, and an eight-second traversal budget checked between bounded
+source calls. Unknown tail means unknown unread/refused clear, never guessed success.
 
-## Routing capability disposition
+## Candidate evidence (synthetic, not authenticated live proof)
 
-Existing independent P9 explicit prompt selection, per-browser per-session preference,
-effort eligibility checks, proxy `require_model_lock: true` and applicable run receipts
-are preserved. They are not a historical answer/run join. This change does not enable
-new provider routes or treat a requested route as executed evidence.
+Existing Studio source wrapper revision 347b642a4b6bbd2119a04211054490e1e68e0b01,
+run from this issue worktree with task command#issue-111 around the existing
+Playwright command/config. Endpoint/profile stay private. Task-owned contexts only;
+original tabs/login/storage retained, shared Chrome left running. The candidate
+preview explicitly disables proxy fallback and rejects escaped API calls with 503,
+including teardown keepalives. A direct unmatched-API probe verifies that guard.
 
-Saved thread/project defaults and delegated binding remain unavailable. The permitted
-proxy status helper reports the relocated proxy unreachable through that tool, so no
-current installed advertised/authenticated/approved exact-route proof was obtained.
-Final Neal packet prerequisite: verify the installed independent session's exact
-eligible route lock/no fallback through existing authorized access and an owned run;
-for native delegation additionally provide a supported exact authorized
-thread-to-session route binding and attributable execution receipt. Only after that
-proof may defaults resolve prompt → thread → project → Command for the next run.
-No endpoint, route inheritance, provider enablement, family mark, or historical receipt
-association is invented here. Existing model selection remains available separately.
+The two November 7 fixture failures are historical. Recovery first confirmed valid
+session timestamps and final-page readiness, then fixed the preview working directory.
+Playwright's target focus emulation kept background pages visible even after a
+separate CDP override; negative hidden/unfocused states therefore use explicitly
+labelled, temporary fixture getters. Native getters are restored before proving
+real intersection/hit geometry and the read POST. This does not prove native OS/tab
+background behavior, authenticated focus suppression, or a physical keyboard.
 
-## Evidence disposition
+Ten candidate cases cover 1280×720/360 and each of 320/360/390/430×740/360, with
+mobile UA/touch emulation and short-height keyboard simulation. They verify:
+- Final-page completion, hidden or unfocused state, and an offscreen latest marker
+  cause zero read POSTs. Actual focused marker view causes exactly one strict read.
+- Shared labelled Idle/Unread/Needs you/Working/Unknown; urgency ordering; project
+  summary; CSS Working animation and reduced-motion static state; Recent chats labels.
+- Full clipping-ancestor bounds and actual hits after deliberate internal scrolling;
+  reachable input and 44 px Send; retained draft and Threads/navigation focus return.
+- No run admission or unexpected write. Read/presence POSTs are intercepted fixtures.
 
-Focused source tests cover every status, staleness, urgency/recency, response ordering,
-latest-marker visibility/focus, exact pagination, actor separation/denial, restart,
-bounds, cross-device stale clears and new output during clear, and zero run admission.
-Prior successful 181 web/52 server checks and builds are retained as source evidence.
-The source-only review repair adds an App-level red/green regression: a prior run A's
-delayed completion/approval cannot overwrite another device's newer run B Working,
-nor revive stale/missing state or erase independent unread output. Relevant changed
-checks are recorded separately in the PR; lead re-review is pending.
+A first matrix found one scroll-edge label reach failure at 430×360; explicit centered
+scrolling plus clipping/hit checks repaired that harness path. A suspected text cut passed normal-height checks, but the stricter full matrix
+reproduced it at 1280×360, where the outer sidebar scrollbar narrows the row.
+The label-bounds regression failed before repair and passes with independently
+truncated titles and wrapping status text; no run/transport behavior changed.
 
-Candidate browser acceptance is **deferred after two failed attempts**, both through
-the Studio source wrapper in this issue's own worktree and task-owned synthetic
-contexts. Attempt 1 supplied a null required session timestamp and failed bootstrap.
-Attempt 2 tried to fill the composer before loading the final history page enabled it;
-all three viewports stopped there. There are no candidate acceptance images to inspect,
-no proven viewport/hit reach, and no browser smoke-test claim. The corrected fixture
-is retained but not run a third time. Preview teardown reported local presence proxy
-connection refusal; that is not authenticated BFF/live evidence. Original tabs/storage
-and Chrome were retained. The lead split the assignment into this source-only
-identity repair and Deferred visual acceptance. Both attempts remain spent; this repair grants no additional
-browser run or release authority.
+Named captures per case: SYNTHETIC-header-WxH.png, SYNTHETIC-roster-WxH.png,
+SYNTHETIC-roster-tail-WxH.png and SYNTHETIC-chat-list-WxH.png, beneath
+`test-results/thread-status/final-accepted/`. Inspected capture names/hashes and
+fixture/build source hashes are in [the candidate receipt](verification/issue-111-candidate.json).
+Short-height surfaces use deliberate internal scrolling; a single capture does not
+claim all rows fit simultaneously. Focused merge tests retain the delayed A/B repair
+and Studio interactions; unchanged accepted backend/read/reaction tests are reused.
 
-Unreleased. Authenticated readback belongs to Sol after recoverable release. Physical
-Android remains **phone check pending**. On phone, check status labels/urgency,
-short-height scrolling, background/foreground, actual latest-page view and a second
-device receiving newer output after an older device clears. No notification delivery
-or delegated-route execution is claimed.
+## Smallest routing prerequisite for lead admission
+
+Source check: ProjectRoomCreateSchema/ProjectThreadSchema are strict and have no saved
+routing-default fields. inferencePreference.ts saves only a browser-local per-session
+next-run request. Existing run admission fingerprints inference; the command proxy
+validates offered eligibility and sends require_model_lock. This assignment makes no
+current installed provider/lock/execution claim and performs no live route call.
+
+**Owning repository: KumarG23/jarvis-command.** Proposed narrow operations (not existing
+endpoints): read/set a saved routing default with target scope thread/project,
+validated projectId/sessionId, expectedRevision, clientRequestId UUID and nullable
+InferenceOverride selection. Use existing approved actor authorization and exact
+session ownership/project-membership validation; bounded durable storage and audit;
+reject stale revisions, conflicting UUID reuse and ineligible routes. Resolve prompt
+→ thread → project → Command only for a newly explicit run. Freeze resolved selection
+and source revisions in its existing idempotency/fingerprint record so retries cannot
+re-resolve changed defaults or execute twice. No generic proxy or provider enablement.
+
+Execution proof prerequisite: lead-authorized owned independent P9 session/run using
+an advertised, authenticated, approved exact tuple; require model lock/no fallback,
+then verify that same public run/session's requested/executed provider/model/effort,
+exact and fallback fields through the supported receipt, including retry/restart.
+Unknown effort/receipt fields remain unknown. An unavailable state is interim, not
+completion. If the installed contract fails, lead/Jarvis must identify the owning
+Hermes source repository/version and admit that exact backend repair; no runtime
+patch or endpoint is presumed here. Native delegation separately needs an authorized
+immutable thread/persona↔session binding and its attributable run receipt; it does
+not gate Command-owned independent-session defaults. No historical answer/run join.
+
+Sol owns exact-head review, gate merge, recoverable release and authorized live
+readback. That readback needs an explicitly admitted owned fixture identity through
+supported contracts, never a guessed private chat or replayed uncertain admission.
+Phone check pending: real background/foreground and second-device output/read races,
+Pixel cold start/keyboard, labels/scroll/focus and input/Send reachability. Candidate
+fixtures supply neither authenticated backend round trips nor physical acceptance.

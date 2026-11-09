@@ -1,0 +1,338 @@
+{
+  "issue": 111,
+  "kind": "isolated synthetic candidate acceptance",
+  "recordedAt": "2026-11-09T14:31:49.901737+00:00",
+  "acceptedReleaseBase": "b7b20b94f8f04baaac5263abb710228d06e12b9d",
+  "preservedRunIdentityRepair": "d61e2882050ef00ddf8f96bb98d80de5d7f287e9",
+  "wrapper": {
+    "sourceRevision": "347b642a4b6bbd2119a04211054490e1e68e0b01",
+    "task": "command#issue-111",
+    "sourceTool": "tools/browser_qa.py",
+    "ownIssueWorktree": true,
+    "endpointAndProfile": "existing configured private values, omitted"
+  },
+  "command": "npm exec -- playwright test --config=e2e/thread-status.config.ts --output test-results/thread-status/final-accepted",
+  "result": {
+    "wrapperExit": 0,
+    "casesPassed": 10,
+    "casesFailed": 0,
+    "durationSeconds": 21.7,
+    "readPostsPerCase": 1,
+    "runAdmissions": 0,
+    "unexpectedWrites": 0,
+    "fallbackApiProbeStatus": 503
+  },
+  "lifecycle": {
+    "negativeVisibilityAndFocus": "explicit isolated fixture emulation; Playwright target focus emulation prevented native background proof",
+    "positiveRead": "native getters restored; real IntersectionObserver, clipping bounds and elementFromPoint hit",
+    "nativeOsBackgroundProof": false,
+    "physicalKeyboardProof": false
+  },
+  "review": {
+    "screenshotsInspected": 40,
+    "shortHeight": "deliberate internal scrolling; one frame does not show every row at once",
+    "labelRepair": "1280x360 label clipping failed the stronger bounds check before independent title truncation/status wrapping; final matrix passes"
+  },
+  "sourceFiles": {
+    "apps/web/src/App.tsx": "75c2f3187af4ebd595cc3811726fde0f3b8c893a6bd4deece8ecbfc72765cc9d",
+    "apps/web/src/ProjectRooms.tsx": "d41a4efcf1c752b0ac1fe671a9eb1cc2c794affa7bb2dab88ba534ce0df9febd",
+    "apps/web/src/ThreadConversation.tsx": "d21dd794d5d634512310ba31b066ece5b7ff31ca5316eef048c66d394d857657",
+    "apps/web/src/styles.css": "c8b15a3f011f3db8887e94ce1c2e456143e7aa3e889ea0a3d5de2b589e364a57",
+    "apps/web/src/threadStatus.ts": "3d4cdc549de822a0406e6e498a03662036ed772c58a21806a4db3790ef5055a9",
+    "apps/web/src/useLatestMessageView.ts": "0687705b14567245c2181f533f0aa1fea28db3f39d03710014c7cf0515614f8f",
+    "apps/web/src/useThreadStates.ts": "d5cc9e60d119fca1dc4614da5036e8e8a9ded69f4439b46aff4047c71eb15813",
+    "e2e/thread-status.spec.ts": "f3523d7f5cc6dd046c4aeda80755a4ae26846a986489381905ec2c0cecdbace2",
+    "e2e/thread-status.config.ts": "7cf1a1c75cda0487b08175ec32d81ee19716cfc44afbef2f6bd5a074bf34b9aa",
+    "e2e/thread-status.preview.config.ts": "1129e136b730671fcf087992e178b21f1787d5ec8d69c8718c05ab0ec70c41c9"
+  },
+  "webBuildIndexSha256": "678e58c2d4a276802703a229110190d05eaee6dfb12ac2398c820bb23053b628",
+  "runtimeStatus": {
+    "merged": false,
+    "deployed": false,
+    "authenticatedLiveAcceptance": false,
+    "phone": "pending",
+    "wholeP13": "outstanding: routing defaults/exact route and live/physical proof remain separate"
+  },
+  "captures": [
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-1280x360-SYNTHETIC-status-read-1280x360/SYNTHETIC-chat-list-1280x360.png",
+      "width": 1280,
+      "height": 360,
+      "sha256": "7592ac671ab663d70d9e70cc01a634c3bb51bacca17022ace650c09890ef7275",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-1280x360-SYNTHETIC-status-read-1280x360/SYNTHETIC-header-1280x360.png",
+      "width": 1280,
+      "height": 360,
+      "sha256": "e75bfbea202cb270d1dc72ef87af1750af99333c376f367be50c31836ce5c266",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-1280x360-SYNTHETIC-status-read-1280x360/SYNTHETIC-roster-1280x360.png",
+      "width": 1280,
+      "height": 360,
+      "sha256": "d67ba1d7adf20d3dd0558c8fb54f8275dececd4646c2c60ffdcd71e8bd586d47",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-1280x360-SYNTHETIC-status-read-1280x360/SYNTHETIC-roster-tail-1280x360.png",
+      "width": 1280,
+      "height": 360,
+      "sha256": "5eda98a30792810d64dd7b8dc10ecbd8890ddc4a573299d0385311d04f413b93",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-1280x720-SYNTHETIC-status-read-1280x720/SYNTHETIC-chat-list-1280x720.png",
+      "width": 1280,
+      "height": 720,
+      "sha256": "8cbc33995f4fa4aa579a297094a06bf2884ecaa0c154a2b6411ed045a830c704",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-1280x720-SYNTHETIC-status-read-1280x720/SYNTHETIC-header-1280x720.png",
+      "width": 1280,
+      "height": 720,
+      "sha256": "ddc5879c6e4982c568dab486658dc22eec5c59c3f30de664d7436349df5a71f6",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-1280x720-SYNTHETIC-status-read-1280x720/SYNTHETIC-roster-1280x720.png",
+      "width": 1280,
+      "height": 720,
+      "sha256": "d777ea82a861fdd6689aced532f889f0e534347bfd913f5f8fd951a6cb06139f",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-1280x720-SYNTHETIC-status-read-1280x720/SYNTHETIC-roster-tail-1280x720.png",
+      "width": 1280,
+      "height": 720,
+      "sha256": "7b2f7ade8a264ba4541208b17cb922df59efacd966d20825ac5a6817647e7679",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-320x360-SYNTHETIC-status-read-320x360/SYNTHETIC-chat-list-320x360.png",
+      "width": 320,
+      "height": 360,
+      "sha256": "bd1cbc0b1add7bf91ec4e52247bcec52f34fc70093f0be0e9473bba0b146750c",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-320x360-SYNTHETIC-status-read-320x360/SYNTHETIC-header-320x360.png",
+      "width": 320,
+      "height": 360,
+      "sha256": "4d3bc19d578029ed58fca48649f06694e3f4aba48cbde36c8992318b9a153f33",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-320x360-SYNTHETIC-status-read-320x360/SYNTHETIC-roster-320x360.png",
+      "width": 320,
+      "height": 360,
+      "sha256": "7ca883a7bbcc589e04c160173c5021712c2e6ac81350fa4cc03260729f8bedc6",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-320x360-SYNTHETIC-status-read-320x360/SYNTHETIC-roster-tail-320x360.png",
+      "width": 320,
+      "height": 360,
+      "sha256": "36b7a3898f40f065320993b4941e831de48d8487fb098e4a5bced594c152e860",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-320x740-SYNTHETIC-status-read-320x740/SYNTHETIC-chat-list-320x740.png",
+      "width": 320,
+      "height": 740,
+      "sha256": "b6b9fcb4f0b0dfea987d95cecdf1161f0c375d015f7f45bc8560b722a0e7f9c2",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-320x740-SYNTHETIC-status-read-320x740/SYNTHETIC-header-320x740.png",
+      "width": 320,
+      "height": 740,
+      "sha256": "0d00a3e80ec15a340b93422c5e34d26887f709d92c3658ad7c87e208f80caf85",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-320x740-SYNTHETIC-status-read-320x740/SYNTHETIC-roster-320x740.png",
+      "width": 320,
+      "height": 740,
+      "sha256": "c69af657cc432a291c335cce5cb3ee8229c3b9888c91430937b1c132bb3e8287",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-320x740-SYNTHETIC-status-read-320x740/SYNTHETIC-roster-tail-320x740.png",
+      "width": 320,
+      "height": 740,
+      "sha256": "f338dd15596b9e7f3ecbc131b409691b3a1c2a5824950a600b2f261fa9c9d733",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-360x360-SYNTHETIC-status-read-360x360/SYNTHETIC-chat-list-360x360.png",
+      "width": 360,
+      "height": 360,
+      "sha256": "a701caa24006566e970d9da389db8376bdd4a0b202ed884c4fa691f6143982f7",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-360x360-SYNTHETIC-status-read-360x360/SYNTHETIC-header-360x360.png",
+      "width": 360,
+      "height": 360,
+      "sha256": "8e2610876c5ee672788b4a2cbd8732252e83767890a1c888be4c50402dd477f5",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-360x360-SYNTHETIC-status-read-360x360/SYNTHETIC-roster-360x360.png",
+      "width": 360,
+      "height": 360,
+      "sha256": "493218cc4fd2a3dbdfa399085c548a013e07d74bb664ab5fa02d50c726899f05",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-360x360-SYNTHETIC-status-read-360x360/SYNTHETIC-roster-tail-360x360.png",
+      "width": 360,
+      "height": 360,
+      "sha256": "6f0f7b3b004b9843348f18bcb7d88c0115a5f6fdff07d8ff41f521bd450c0f35",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-360x740-SYNTHETIC-status-read-360x740/SYNTHETIC-chat-list-360x740.png",
+      "width": 360,
+      "height": 740,
+      "sha256": "339d4488f8a477061cb48ba9b1295dc48e6e26085b32a970fa60a9ec40d497c1",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-360x740-SYNTHETIC-status-read-360x740/SYNTHETIC-header-360x740.png",
+      "width": 360,
+      "height": 740,
+      "sha256": "78d5c36f62f3d603038d49766f4a7220c94653e521a8919c7dfd9eec6fcfc7ad",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-360x740-SYNTHETIC-status-read-360x740/SYNTHETIC-roster-360x740.png",
+      "width": 360,
+      "height": 740,
+      "sha256": "0557c4cfede91060a0dc8dd7c35331289ca8e090f52e243f6877281b8f599dc1",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-360x740-SYNTHETIC-status-read-360x740/SYNTHETIC-roster-tail-360x740.png",
+      "width": 360,
+      "height": 740,
+      "sha256": "2f8eaf231ed4e1a8ee087e8302cf939fbaca89e0e9d7621a134f576b99352426",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-390x360-SYNTHETIC-status-read-390x360/SYNTHETIC-chat-list-390x360.png",
+      "width": 390,
+      "height": 360,
+      "sha256": "87e5388a9388fbe16828a00bea94fc650fc28abfa789a198bcf15ca582f3eee0",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-390x360-SYNTHETIC-status-read-390x360/SYNTHETIC-header-390x360.png",
+      "width": 390,
+      "height": 360,
+      "sha256": "57f675c1bdfe34582eb57633fd309c27a980f7020e2cef01986e32e77147d295",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-390x360-SYNTHETIC-status-read-390x360/SYNTHETIC-roster-390x360.png",
+      "width": 390,
+      "height": 360,
+      "sha256": "e36a653640fcec46f4d814ef6216e6eb2b6481faeb06f5b647846b3b7d5b74f2",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-390x360-SYNTHETIC-status-read-390x360/SYNTHETIC-roster-tail-390x360.png",
+      "width": 390,
+      "height": 360,
+      "sha256": "22690d87fa081a08d104554760e5fc5db21815f7069e036eba6988b9a9d3bf35",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-390x740-SYNTHETIC-status-read-390x740/SYNTHETIC-chat-list-390x740.png",
+      "width": 390,
+      "height": 740,
+      "sha256": "2d297042df36c53da115a8ed449543a9c7508d65d489b81b948d78f330581e80",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-390x740-SYNTHETIC-status-read-390x740/SYNTHETIC-header-390x740.png",
+      "width": 390,
+      "height": 740,
+      "sha256": "1061ef47cb9fc5f244f4001352f8e3beff4cfcaf70e9d25cad084c15a197db06",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-390x740-SYNTHETIC-status-read-390x740/SYNTHETIC-roster-390x740.png",
+      "width": 390,
+      "height": 740,
+      "sha256": "bc0ed0b8ebd9286f696cb06dd6cb2493d8237202d922cc4a46708c2c990a704d",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-390x740-SYNTHETIC-status-read-390x740/SYNTHETIC-roster-tail-390x740.png",
+      "width": 390,
+      "height": 740,
+      "sha256": "966c2dd43593a0e3035e416f870c932df91eb1f5631246199904b931e0be5b17",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-430x360-SYNTHETIC-status-read-430x360/SYNTHETIC-chat-list-430x360.png",
+      "width": 430,
+      "height": 360,
+      "sha256": "37fcffdd7fcb4ef4b505727197f7c26437c6870974261b92f8a755a35d8ca79c",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-430x360-SYNTHETIC-status-read-430x360/SYNTHETIC-header-430x360.png",
+      "width": 430,
+      "height": 360,
+      "sha256": "87f75f544b74752f7e4111aa6b6a1d396a469f434ffab470d61c7cb8a346674e",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-430x360-SYNTHETIC-status-read-430x360/SYNTHETIC-roster-430x360.png",
+      "width": 430,
+      "height": 360,
+      "sha256": "b81e245916b97ca62bb10a1599538d55bd125aabcd89925fb1a1bad0578b9446",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-430x360-SYNTHETIC-status-read-430x360/SYNTHETIC-roster-tail-430x360.png",
+      "width": 430,
+      "height": 360,
+      "sha256": "3575a9f63d8e941eff47c95633fd59451746d33c64a7b773b2407f7c67bbe0b8",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-430x740-SYNTHETIC-status-read-430x740/SYNTHETIC-chat-list-430x740.png",
+      "width": 430,
+      "height": 740,
+      "sha256": "1f4efb29b8d67f3517f51ef24cb22b6e14994f56b11e286c42258004f3c6f34e",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-430x740-SYNTHETIC-status-read-430x740/SYNTHETIC-header-430x740.png",
+      "width": 430,
+      "height": 740,
+      "sha256": "618e6491f3c58deca46ff1845b86bfaa2c452b18fb7e4b59ea661a38a859309f",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-430x740-SYNTHETIC-status-read-430x740/SYNTHETIC-roster-430x740.png",
+      "width": 430,
+      "height": 740,
+      "sha256": "07b8cd8e6d2472360c0fb8d512818c75dd55053b00f7a13d1a93f548316f862f",
+      "inspected": true
+    },
+    {
+      "file": "test-results/thread-status/final-accepted/thread-status-430x740-SYNTHETIC-status-read-430x740/SYNTHETIC-roster-tail-430x740.png",
+      "width": 430,
+      "height": 740,
+      "sha256": "16ae4e3d14b2d3255a010aad2c474f02d132d8f77b5f8ac0895d2b396910d124",
+      "inspected": true
+    }
+  ]
+}
