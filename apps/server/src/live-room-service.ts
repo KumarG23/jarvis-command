@@ -1,3 +1,4 @@
+import { requireRoutingWrites } from './routing-write-state';
 import { createRoutingDefaults } from './routing-defaults';
 import { KeyedSerialQueue } from './keyed-serial-queue';
 import type { ProjectRoomStore } from './project-room-store';
@@ -262,6 +263,8 @@ export function createLiveRoomService({
       }
 
       if (ledger.defaultRequest(actor, request.clientRequestId)) throw new LiveRoomConflictError('Client request ID was used for a default change');
+      // Recovery above must remain available; reject new identities before claims/status work.
+      if (request.routing) requireRoutingWrites();
       for (const active of ledger.activeRunsForSession(request.sessionId)) {
         if (!active.upstreamRunId) throw new LiveRoomConflictError('Session already has a pending run admission');
         const status = await projectStatus(active, await client.getRun(active.upstreamRunId));
