@@ -1,0 +1,401 @@
+{
+  "issue": 111,
+  "kind": "authenticated owned-session acceptance; separate from candidate fixtures",
+  "recordedAt": "2026-11-09T15:43:47.686814+00:00",
+  "release": {
+    "reviewedSource": "13be0f4a670ff346b5c776475b77e57dbfee7de1",
+    "merge": "fcbd5de5ba934d3c07ab01632486b23bf6da83b7",
+    "buildReference": "sha256:1752e61424455bbd42f7cfcbf3d18abe2fdcf8423758941d9f8fbc80f8b89ba9",
+    "deployedPin": "sha256:f6c6c3e0b077c5a29ae683776fc428f31d94443f8741f4e9dc49f7ca3d4bb336",
+    "rollback": "release-app-1794237821439543083",
+    "attestation": "https://github.com/KumarG23/jarvis-command/issues/111#issuecomment-6743854477",
+    "pinAndServiceHealthAuthority": "lead release record; worker did not operate services",
+    "authenticatedHealthAndBootstrap": 200
+  },
+  "wrapper": {
+    "sourceRevision": "6339856aae28f03cddcd2996b5c1c4ec770388d7",
+    "tool": "tools/browser_qa.py",
+    "task": "command#issue-111",
+    "ownIssueWorktree": true,
+    "existingAuthenticatedContext": true,
+    "onlyNewTaskPages": true,
+    "originalTabsAndStoragePreserved": true,
+    "chromeLeftRunning": true,
+    "privateCoordinatesOmitted": true
+  },
+  "ownedIdentity": {
+    "sessionSha256": "7918b130a537e2fa2d52d0b26649dbf0f68141f235b1b25fee8359301c9f9564",
+    "runSha256": "0331e06040764d86af2ab758b286a0e9356fd9655cb556f0248fb11c3fcb63b4",
+    "clientRequestSha256": "b4176c0090530f71b1bce8d04c3594a4f2bad2834a160bb0892aa43f034018cf",
+    "exactRawReceipts": "private own git metadata issue-111-live-acceptance.json",
+    "createPosts": 1,
+    "createResponseStatus": 200,
+    "canonicalOwnershipVerifiedBeforeHistory": true,
+    "initialCanonicalHistoryCount": 0,
+    "uncertainCreateOrRunResends": 0,
+    "requestLookupMatchedAcceptedRun": true,
+    "fixtureRetained": true
+  },
+  "run": {
+    "purpose": "single authorized fixture setup, separate from read/view actions",
+    "admissions": 1,
+    "providerCallsReported": 1,
+    "status": "completed",
+    "eligibility": {
+      "provider": "openai-codex",
+      "model": "gpt-6-luna",
+      "advertised": true,
+      "authenticated": true,
+      "eligible": true,
+      "selectable": true,
+      "unavailableReason": null
+    },
+    "executionReceipt": {
+      "requested": {
+        "provider": "openai-codex",
+        "model": "gpt-6-luna",
+        "reasoningEffort": "minimal"
+      },
+      "executed": {
+        "provider": "openai-codex",
+        "model": "gpt-6-luna",
+        "reasoningEffort": "low",
+        "reasoningEffortSource": "wire"
+      },
+      "routeSource": "unknown",
+      "exact": true,
+      "fallbackUsed": false
+    },
+    "exactEffortAcceptance": false,
+    "gap": "requested minimal; executed low from wire, despite exact=true and fallbackUsed=false; no retry/reroute. Lead/installed-contract owner must resolve exact effort semantics.",
+    "unselectableDefault": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-5-5",
+      "action": "not inherited; selected existing included advertised/authenticated/eligible Codex route"
+    },
+    "eventTypes": [
+      "message.delta",
+      "message.delta",
+      "message.delta",
+      "message.delta",
+      "message.delta",
+      "run.completed"
+    ],
+    "toolEventsObserved": 0,
+    "historicalAnswerRunJoin": false
+  },
+  "statusAndRead": {
+    "initialEmptyState": "unknown",
+    "initialUnread": false,
+    "workingRunObserved": true,
+    "workingUiLabelObserved": false,
+    "needsYouObserved": false,
+    "unreadBeforeAnyUiView": true,
+    "initialUiLabel": "Chat\nUnread",
+    "canonicalHistoryComplete": true,
+    "canonicalTailPosition": 2,
+    "canonicalTailRole": "system",
+    "canonicalTailMeaning": "session_meta projected as Session setup record (not a chat message).",
+    "scopeLimit": "Canonical-tail read proof; no assistant-answer-specific read binding inferred. Latest-session receipt stays separately labelled.",
+    "uiSuccessfulReadPosts": 1,
+    "uiReadProof": {
+      "nativeVisible": true,
+      "nativeFocus": true,
+      "messageMatches": true,
+      "position": 2,
+      "fullClipped": true,
+      "hit": true
+    },
+    "readResponseStatus": 200,
+    "readbackMatchesExactCanonicalTail": true,
+    "uiReloadRetainedRead": true,
+    "uiReloadRetainedDraft": true,
+    "independentTaskPageRetainedRead": true,
+    "olderCanonicalMarkerRejected": 409,
+    "olderMarkerDidNotRegressClear": true,
+    "uiRunAdmissions": 0,
+    "nativeVisibilityOrFocusGetterSpoofing": false,
+    "liveServiceRestartTested": false,
+    "physicalTwoDeviceOutputRaceTested": false
+  },
+  "uiChecks": [
+    {
+      "width": 1280,
+      "height": 720,
+      "headerHeight": 73,
+      "inputAndSendReach": true,
+      "pickerEscapeFocus": true,
+      "studioEscapeAndBack": true,
+      "draftRetained": true
+    },
+    {
+      "width": 360,
+      "height": 740,
+      "headerHeight": 119,
+      "inputAndSendReach": true,
+      "pickerEscapeFocus": true,
+      "studioEscapeAndBack": true,
+      "draftRetained": true
+    },
+    {
+      "width": 360,
+      "height": 360,
+      "headerHeight": 119,
+      "inputAndSendReach": true,
+      "pickerEscapeFocus": true,
+      "studioEscapeAndBack": true,
+      "draftRetained": true
+    }
+  ],
+  "historyAndPickerChecks": [
+    {
+      "width": 1280,
+      "height": 720,
+      "canonicalAssistantTextReach": true,
+      "modelAndEffortClippedHitReach": true,
+      "pickerEscapeFocus": true
+    },
+    {
+      "width": 360,
+      "height": 740,
+      "canonicalAssistantTextReach": true,
+      "modelAndEffortClippedHitReach": true,
+      "pickerEscapeFocus": true
+    },
+    {
+      "width": 360,
+      "height": 360,
+      "canonicalAssistantTextReach": true,
+      "modelAndEffortClippedHitReach": true,
+      "pickerEscapeFocus": true
+    }
+  ],
+  "privacy": {
+    "apiResponsesWereNotMockedOrRewritten": true,
+    "unrelatedInboxProjectArtifactReadsBlockedOnTaskPages": true,
+    "noPrivateConversationHistoryRead": true,
+    "privateRecentsMaskedInCaptures": true,
+    "taskPageServiceWorkerBypass": true,
+    "cookiesCredentialsNotReadOrExported": true,
+    "presencePosts": 0,
+    "presenceLimit": "Inbox not loaded for privacy, so this phase does not accept reply presence/delivery."
+  },
+  "forwardedApiCounts": [
+    {
+      "method": "GET",
+      "category": "/api/bootstrap",
+      "count": 6
+    },
+    {
+      "method": "GET",
+      "category": "/api/health",
+      "count": 5
+    },
+    {
+      "method": "GET",
+      "category": "/api/live/model-options",
+      "count": 6
+    },
+    {
+      "method": "GET",
+      "category": "/api/live/runs/:run",
+      "count": 3
+    },
+    {
+      "method": "GET",
+      "category": "/api/live/runs/:run/events",
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "category": "/api/live/session-controls",
+      "count": 4
+    },
+    {
+      "method": "GET",
+      "category": "/api/live/sessions/:session",
+      "count": 2
+    },
+    {
+      "method": "GET",
+      "category": "/api/live/sessions/:session/context",
+      "count": 8
+    },
+    {
+      "method": "GET",
+      "category": "/api/live/sessions/:session/run-requests/:request",
+      "count": 1
+    },
+    {
+      "method": "GET",
+      "category": "/api/live/sessions/:session/thread-state",
+      "count": 17
+    },
+    {
+      "method": "GET",
+      "category": "/api/sessions/:session/messages",
+      "count": 6
+    },
+    {
+      "method": "POST",
+      "category": "/api/live/runs",
+      "count": 1
+    },
+    {
+      "method": "POST",
+      "category": "/api/live/sessions",
+      "count": 1
+    },
+    {
+      "method": "POST",
+      "category": "/api/live/sessions/:session/read",
+      "count": 2
+    }
+  ],
+  "scopeBlockedApiCounts": [
+    {
+      "method": "GET",
+      "category": "/api/artifacts",
+      "count": 4
+    },
+    {
+      "method": "GET",
+      "category": "/api/notifications",
+      "count": 8
+    },
+    {
+      "method": "GET",
+      "category": "/api/rooms",
+      "count": 4
+    }
+  ],
+  "countsInclude": "Initial read-only identity-label guard failure and its corrected preflight; no create/run attempted in failed probe. POST read includes one UI200 and one stale-marker409.",
+  "limits": [
+    "No project fixture mutation was admitted: project summary/Threads and cross-project live proof remain candidate-only.",
+    "Needs you was not forced; Working was observed through authoritative server facts, not live UI animation acceptance.",
+    "Physical Android/background behavior, service restart, cross-actor denial and physical two-device concurrent output/read race were not tested here; accepted source/candidate tests remain separate.",
+    "Saved thread/project routing defaults and exact eligible full-tuple execution proof remain outstanding.",
+    "P14 producer6339856 accepted; consumer141 active; dashboard production cutover and Command transport unresolved."
+  ],
+  "captures": [
+    {
+      "file": "test-results/issue-111-live/AUTHENTICATED-status-chat-1280x720.png",
+      "width": 1280,
+      "height": 720,
+      "sha256": "7dab88a3f437e35e4eaec59f5f6c6af1a3f75c6fd5658582b07136246c252b79",
+      "sanitized": true,
+      "inspected": true
+    },
+    {
+      "file": "test-results/issue-111-live/AUTHENTICATED-studio-1280x720.png",
+      "width": 1280,
+      "height": 720,
+      "sha256": "43e7b96cdc36dbbc75fd15203974990423009f9605c25d98d661923b26c05629",
+      "sanitized": true,
+      "inspected": true
+    },
+    {
+      "file": "test-results/issue-111-live/AUTHENTICATED-status-chat-360x740.png",
+      "width": 360,
+      "height": 740,
+      "sha256": "5a1915085c14a396aaca2dab603378374076ef5b1d777fea0248df08db76ec32",
+      "sanitized": true,
+      "inspected": true
+    },
+    {
+      "file": "test-results/issue-111-live/AUTHENTICATED-studio-360x740.png",
+      "width": 360,
+      "height": 740,
+      "sha256": "676ba04114c2d821bbc1f00de75313b48cf18d5d95ee00a910f82086565c93ec",
+      "sanitized": true,
+      "inspected": true
+    },
+    {
+      "file": "test-results/issue-111-live/AUTHENTICATED-status-chat-360x360.png",
+      "width": 360,
+      "height": 360,
+      "sha256": "895ea2b4504d446bbfc77968972e63d19924bc4354bc9a2dd6d305b867ff0a4a",
+      "sanitized": true,
+      "inspected": true
+    },
+    {
+      "file": "test-results/issue-111-live/AUTHENTICATED-studio-360x360.png",
+      "width": 360,
+      "height": 360,
+      "sha256": "0b39c336b2feb30b7f97a98f54714f56a5e5fef84449947e03d6f3f1eb3570df",
+      "sanitized": true,
+      "inspected": true
+    },
+    {
+      "file": "test-results/issue-111-live/AUTHENTICATED-history-1280x720.png",
+      "width": 1280,
+      "height": 720,
+      "sha256": "b0fdec3d47186a62906a927698f31dbe99798ba958418b89b5212c42a3298268",
+      "sanitized": true,
+      "inspected": true
+    },
+    {
+      "file": "test-results/issue-111-live/AUTHENTICATED-picker-1280x720.png",
+      "width": 1280,
+      "height": 720,
+      "sha256": "a847dfa37204a7d817124b37dc6ec66a99a6ddc4d09f8ed0f18f82518d7322e1",
+      "sanitized": true,
+      "inspected": true
+    },
+    {
+      "file": "test-results/issue-111-live/AUTHENTICATED-history-360x740.png",
+      "width": 360,
+      "height": 740,
+      "sha256": "16caf9c2fdaa1c57126a76d2a8b9403ec2af0f870aee08447cfe06b81d572bfc",
+      "sanitized": true,
+      "inspected": true
+    },
+    {
+      "file": "test-results/issue-111-live/AUTHENTICATED-picker-360x740.png",
+      "width": 360,
+      "height": 740,
+      "sha256": "6cd3db8bcd03d86d16a4cc30e98326cd3acce2ec230bdd09b3bf79f185091685",
+      "sanitized": true,
+      "inspected": true
+    },
+    {
+      "file": "test-results/issue-111-live/AUTHENTICATED-history-360x360.png",
+      "width": 360,
+      "height": 360,
+      "sha256": "cb4dbcdc5585c587b2161f5be451f066a0473947904f587cce44ee58d911b254",
+      "sanitized": true,
+      "inspected": true
+    },
+    {
+      "file": "test-results/issue-111-live/AUTHENTICATED-picker-360x360.png",
+      "width": 360,
+      "height": 360,
+      "sha256": "ee016718112d0461cc1401182495bdf1bf017d66d4fbebb437f7d262182d7918",
+      "sanitized": true,
+      "inspected": true
+    }
+  ],
+  "phone": "check pending",
+  "wholeP13": "incomplete",
+  "countsDefinition": "Browser-observed forwarded/initiated task-page API requests, including reads that may be cancelled at navigation; not server audit totals. All four POST response statuses are verified.",
+  "pickerInspection": "Read-only; no model or effort selection changed.",
+  "authorizedPosts": {
+    "sessionCreate": {
+      "count": 1,
+      "status": 200
+    },
+    "setupRun": {
+      "count": 1,
+      "status": 200
+    },
+    "canonicalViewRead": {
+      "count": 1,
+      "status": 200
+    },
+    "staleReadRejected": {
+      "count": 1,
+      "status": 409
+    },
+    "other": 0
+  }
+}
