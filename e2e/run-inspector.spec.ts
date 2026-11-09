@@ -1,5 +1,8 @@
-import { expect, test } from '@playwright/test';
+import { test } from './candidate-test';
+import { handleThreadState } from './thread-state-route';
+import { expect } from '@playwright/test';
 import { emptyInbox } from './empty-inbox';
+import { handlePresence } from './presence-route';
 
 test.use({ serviceWorkers: 'block', hasTouch: true });
 
@@ -35,6 +38,7 @@ test('inspects and copies a synthetic run receipt at this viewport', async ({ pa
   } }));
   await page.route('**/api/rooms', route => route.fulfill({ json: { version: 1, rooms: [] } }));
   await page.route('**/api/notifications', route => route.fulfill({ json: emptyInbox }));
+  await page.route('**/api/notifications/presence', route => { handlePresence(route); });
   await page.route('**/api/live/model-options', route => route.fulfill({ json: {
     default: { provider: 'openai-codex', model: 'gpt-5.6-sol' },
     options: [{ provider: 'openai-codex', model: 'gpt-5.6-sol', label: 'Sol', reasoningEfforts: ['high'] }],
@@ -54,6 +58,7 @@ test('inspects and copies a synthetic run receipt at this viewport', async ({ pa
   ].map(event => `event: ${event.type}\ndata: ${JSON.stringify({ ...event, publicRunId, timestamp })}\n\n`).join('') }));
   await page.route(`**/api/live/runs/${publicRunId}`, route => route.fulfill({ json: { publicRunId, sessionId, status: 'completed', updatedAt: timestamp, approval: null, output: 'Inspector ready.', error: null, pendingSteer: null, usage } }));
 
+  await page.route('**/api/live/sessions/*/thread-state', route => { if (!handleThreadState(route, [sessionId])) throw Error('Unexpected synthetic thread-state session'); });
   await page.goto('/');
   if (testInfo.project.name.startsWith('mobile')) await page.getByRole('button', { name: 'Open chat navigation' }).click();
   await page.getByRole('button', { name: session.title, exact: true }).click();
@@ -117,6 +122,7 @@ test('quiet restored run labels observation age at desktop/mobile widths and rem
   await page.clock.install();
   await page.addInitScript(({ sessionId, publicRunId }) => sessionStorage.setItem('jarvis-command:live-turn', JSON.stringify({ sessionId, publicRunId, clientRequestId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' })), { sessionId, publicRunId });
   await page.route('**/api/**', route => {
+    if (handlePresence(route)) return;
     const request = route.request(); const path = new URL(request.url()).pathname;
     if (request.method() !== 'GET') { mutations.push(path); return route.abort(); }
     if (path === `/api/live/runs/${publicRunId}`) return route.fulfill({ json: { publicRunId, sessionId, status: done ? 'completed' : 'running', updatedAt: timestamp, approval: null, output: null, error: null, pendingSteer: null, usage: null } });
@@ -130,6 +136,7 @@ test('quiet restored run labels observation age at desktop/mobile widths and rem
     };
     return path in responses ? route.fulfill({ json: responses[path] }) : route.abort();
   });
+  await page.route('**/api/live/sessions/*/thread-state', route => { if (!handleThreadState(route, [sessionId])) throw Error('Unexpected synthetic thread-state session'); });
   await page.goto('/');
   const age = page.getByRole('timer', { name: 'Current-tab observation age' });
   await expect(page.getByRole('button', { name: 'Stop run', exact: true })).toBeVisible();

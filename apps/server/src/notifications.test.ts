@@ -440,6 +440,15 @@ describe('notification routes', () => {
     expect((await r.post('/api/notifications/reconcile', 'alice')).json()).toMatchObject({ checked: 1, unavailable: 1 });
   });
 
+  it('persists the reply-text setting only when supplied and preserves it across legacy edits', async () => {
+    const r = await routeHarness();
+    const categories = { 'run-completed': true, 'run-failed': true, approval: true };
+    expect((await r.post('/api/notifications/preferences', 'alice', { categories })).json().preferences).toEqual({ categories });
+    expect((await r.post('/api/notifications/preferences', 'alice', { categories, showReplyText: false })).json().preferences).toEqual({ categories, showReplyText: false });
+    const legacy = { categories: { ...categories, approval: false } };
+    expect((await r.post('/api/notifications/preferences', 'alice', legacy)).json().preferences).toEqual({ ...legacy, showReplyText: false });
+  });
+
   it('saves preferences with authoritative readback and surfaces storage faults', async () => {
     const r = await routeHarness();
     const next = { categories: { 'run-completed': false, 'run-failed': true, approval: true } };

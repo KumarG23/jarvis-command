@@ -23,9 +23,15 @@ const FILTERS = [
   { key: 'run-completed', label: 'Finished' },
   { key: 'run-failed', label: 'Failed' },
   { key: 'approval', label: 'Approvals' },
+  { key: 'assistant-reply', label: 'Replies' },
 ] as const;
 type FilterKey = (typeof FILTERS)[number]['key'];
 
+const REPLY_STATUS = {
+  disabled: 'Reply notifications are turned off on this server. No reply alerts are sent.',
+  unsupported: 'Reply notifications are unavailable: Hermes does not yet provide the exact final-message binding they require, so none are sent.',
+  available: 'Reply notifications are on for new final replies only.',
+} as const;
 const read = { credentials: 'same-origin', headers: { accept: 'application/json' } } as const;
 const write = (body: unknown): RequestInit => ({
   method: 'POST', credentials: 'same-origin',
@@ -69,7 +75,14 @@ export function useNotifications(enabled: boolean, refreshKey: string) {
     if (saved && JSON.stringify(saved.preferences) !== JSON.stringify(preferences)) { setError('Preferences were not saved as requested. Your edits are kept; try again.'); return false; }
     return saved !== null;
   };
-  const open = (id: string): Promise<NotificationTarget | null> => run(
+  // Opens can resolve out of order; only the newest request may navigate.
+  const openSequence = useRef(0);
+  const open = async (id: string): Promise<NotificationTarget | null> => {
+    const ticket = ++openSequence.current;
+    const target = await openRequest(id);
+    return ticket === openSequence.current ? target : null;
+  };
+  const openRequest = (id: string): Promise<NotificationTarget | null> => run(
     async c => NotificationTargetSchema.parse(await boundedJson(`/api/notifications/${id}/open`, write({}), c)),
     value => value.state === 'available' ? value.inbox : null,
     'This notification could not be opened. It may no longer exist.',
@@ -127,6 +140,7 @@ export function NotificationsPane({ state, onOpen }: Readonly<{
     <p className="muted small">Shows runs you started in Command that finished or failed, and approvals they are waiting on. Events from the CLI, Discord or other surfaces are unavailable. Push delivery and device controls are shown below.</p>
     {inbox?.delivery.inApp === 'incomplete' ? <p role="status" className="notice">Delivery is incomplete. Only the latest 100 notifications are kept. Events before inbox setup or beyond bounded recovery may be missing. Checking runs can recover some recent completions, but cannot recover every past approval. Check the chat for current run and approval status.</p> : null}
     {inbox?.delivery.approvals === 'unavailable' ? <p role="status" className="notice">New approval notifications are unavailable: durable approval tracking reached its limit or older request identities were already discarded. Existing notifications remain usable. Review approvals in the chat.</p> : null}
+    {inbox?.delivery.replies ? <p role="status" className="notice">{REPLY_STATUS[inbox.delivery.replies]}</p> : null}
     {error ? <p role="alert" className="notice error">{error}</p> : null}
     {error && !inbox ? <button type="button" className="secondary-button" disabled={busy} onClick={() => void state.refresh()}>Try again</button> : null}
     {notice ? <p role="status" className="notice">{notice}</p> : null}
@@ -155,13 +169,17 @@ export function NotificationsPane({ state, onOpen }: Readonly<{
       <PushSettings push={inbox.push} refresh={state.refresh} />
       <section aria-labelledby="notification-preferences">
         <h4 id="notification-preferences">Preferences</h4>
-        <p className="muted small">Choose which new events are recorded. Turning a category off does not remove existing items or add past events later.</p>
+        <p className="muted small">Choose which new events are recorded. When reply text is off, reply notifications say only that Jarvis replied. Turning a category off does not remove existing items or add past events later.</p>
         {preferences ? <fieldset className="notification-preferences">
           <legend className="visually-hidden">Record these events</legend>
           {(Object.keys(CATEGORY_LABELS) as NotificationCategory[]).map(category => <label key={category} className="notification-preference">
-            <input type="checkbox" checked={preferences.categories[category]} onChange={event => { setSaved(false); setDraft({ categories: { ...preferences.categories, [category]: event.target.checked } }); }} />
+            <input type="checkbox" checked={preferences.categories[category]} onChange={event => { setSaved(false); setDraft({ ...preferences, categories: { ...preferences.categories, [category]: event.target.checked } }); }} />
             <span>{CATEGORY_LABELS[category]}</span>
           </label>)}
+          <label className="notification-preference">
+            <input type="checkbox" checked={preferences.showReplyText !== false} onChange={event => { setSaved(false); setDraft({ ...preferences, showReplyText: event.target.checked }); }} />
+            <span>Show reply text in notifications</span>
+          </label>
         </fieldset> : null}
         <button type="button" className="secondary-button" disabled={!dirty || busy} onClick={async () => { if (draft && await state.savePreferences(draft)) { setDraft(null); setSaved(true); } }}>Save preferences</button>
         {saved && !dirty ? <p role="status" className="muted small">Preferences saved and confirmed.</p> : null}

@@ -1,6 +1,8 @@
-import { expect, test } from '@playwright/test';
+import { test } from './candidate-test';
+import { expect } from '@playwright/test';
 import { CommandBootstrapSchema, SessionMessagesPageSchema } from '@jarvis-command/contracts';
 import { emptyInbox } from './empty-inbox';
+import { handlePresence } from './presence-route';
 
 // Clearly labeled synthetic data. Real owned browser/backend evidence is recorded separately.
 const sessionId = 'jc_issue14_synthetic';
@@ -20,6 +22,7 @@ test('lost ACK and mid-run reload recover by GET, with one canonical answer and 
   let completed = false;
   const unexpected: string[] = [];
   await page.route('**/api/**', async route => {
+    if (handlePresence(route)) return;
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path === '/api/live/runs' && request.method() === 'POST') {
@@ -96,6 +99,7 @@ test('SYNTHETIC uncertain artifact save survives reload with one exact artifact'
   const bodies: Record<string, unknown>[] = [];
   const unexpected: string[] = [];
   await page.route('**/api/**', async route => {
+    if (handlePresence(route)) return;
     const req = route.request(), url = new URL(req.url()), path = url.pathname;
     if (path === '/api/artifacts/text' && req.method() === 'POST') {
       const body = req.postDataJSON(); bodies.push(body);

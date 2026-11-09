@@ -575,3 +575,89 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 .project-delete-backdrop { z-index: 1000; padding: 12px; }
 .project-delete-dialog { max-height: calc(100dvh - 24px); overflow-y: auto; overflow-wrap: anywhere; }
 .project-delete-dialog button { min-height: 44px; }
+
+/* P11: bounded project accents; labels remain the primary identity cue. */
+:root { --project-green: #70d6a5; --project-blue: #8bbcf5; --project-violet: #c4a5f5; --project-amber: #e6ba66; }
+.project-identity { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 24px; width: 24px; height: 24px; border: 1px solid currentColor; border-radius: 6px; font-size: 18px; line-height: 1; color: var(--project-green); background: var(--panel); vertical-align: middle; }
+.project-identity::before { content: attr(data-glyph); }
+.project-identity[data-color="blue"] { color: var(--project-blue); }
+.project-identity[data-color="violet"] { color: var(--project-violet); }
+.project-identity[data-color="amber"] { color: var(--project-amber); }
+.room-breadcrumb > span .project-identity { margin-right: 7px; }
+.project-roster-heading { display: flex; align-items: center; gap: 8px; }
+.project-identity-settings { min-width: 0; margin: 0 0 20px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.project-identity-settings legend { color: var(--text); font-size: 13px; }
+.project-identity-settings select { min-height: 44px; }
+
+/* Saved-message feedback stays in the scrollable transcript, above the composer. */
+.message-reactions { margin-top: 8px; font-size: 12px; }
+.reaction-chips, .reaction-options, .reaction-picker-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.reaction-chip { min-width: 44px; min-height: 44px; padding: 6px 9px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); }
+.reaction-chip[aria-pressed="true"] { border-color: var(--cyan); background: #193029; }
+.reaction-chip:disabled { opacity: .6; cursor: default; }
+.reaction-picker { display: flex; flex-direction: column; margin-top: 6px; padding: 6px; max-height: min(260px, 45dvh); overflow: hidden; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); }
+.reaction-picker-heading { flex: 0 0 auto; justify-content: space-between; }
+.reaction-picker-content { min-height: 44px; overflow-y: auto; }
+.reaction-options .reaction-chip { display: inline-flex; align-items: center; gap: 6px; }
+.reaction-note { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.reaction-picker p { margin: 6px 0; }
+.history-message[data-reply-focus='true'] { outline: 2px solid var(--accent, #7dd3fc); outline-offset: 4px; border-radius: 10px; }
+
+@media (max-height: 500px) {
+  .command-main:has(.reaction-picker) .composer-wrap { max-height: 26dvh; flex-shrink: 1; overflow-y: auto; padding-block: 4px; }
+  .command-main:has(.reaction-picker) .timeline { padding-block: 4px; }
+}
+
+/* P13: every semantic color has a persistent icon and text label. */
+.thread-state { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; line-height: 1.5; flex-shrink: 0; }
+.thread-state svg { flex-shrink: 0; }
+.thread-state-idle { color: #c4a2ff; }
+.thread-state-unread { color: #80bbff; }
+.thread-state-needs-you { color: #ff959f; }
+.thread-state-unknown { color: #b5bbc8; }
+.thread-state-working { color: #ffe38a; }
+.thread-state-working svg { animation: thread-working 4s linear infinite; }
+@keyframes thread-working { 0%,100% { color: #ffe38a; } 20% { color: #9ae8af; } 40% { color: #fff; } 60% { color: #ffb7e1; } 80% { color: #ffbf8b; } }
+@media (prefers-reduced-motion: reduce) { .thread-state-working svg { animation: none; color: #ffe38a; } }
+.latest-message-view { display: block; height: 2px; width: 100%; }
+.chat-item > span:has(.thread-state) { display: flex; flex-direction: column; min-width: 0; align-items: flex-start; overflow: visible; white-space: normal; }
+.chat-item-title { display: block; width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-item .thread-state { max-width: 100%; align-items: flex-start; }
+.chat-item .thread-state > span { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.room-breadcrumb .thread-state { margin-left: 6px; }
+.header-thread-states { display: flex; gap: 16px; flex-basis: 100%; grid-column: 1 / -1; grid-row: 3; min-width: 0; flex-wrap: wrap; color: var(--muted); font-size: 11px; }
+.header-thread-states > span { display: inline-flex; align-items: center; gap: 6px; }
+@media (max-height: 480px) {
+  .command-main:has(.header-thread-states) .composer-wrap { max-height: 35dvh; flex-shrink: 1; overflow-y: auto; padding-block: 4px; }
+  .command-main:has(.header-thread-states) .timeline { padding-block: 4px; }
+}
+
+/* Studio destination: a global, honest unavailable view. It is not project Threads
+   and never replaces the chat/project context pane. */
+.command-main[hidden] { display: none; }
+.studio-destination { outline: none; }
+.studio-header .room-breadcrumb { flex: 1; }
+.studio-return { flex: 0 0 auto; min-height: 44px; }
+.studio-scroll { display: flex; flex-direction: column; }
+.studio-unavailable { max-width: 640px; }
+.studio-unavailable > svg { color: var(--muted); }
+.studio-unavailable .studio-note { margin-top: 14px; font-size: 13px; color: var(--subtle); }
+@media (max-width: 760px) {
+  .studio-header { grid-template-columns: 44px minmax(0, 1fr) auto; }
+  .studio-header .room-breadcrumb { grid-column: 2; }
+  .studio-header .studio-return { grid-column: 3; }
+  .studio-unavailable { margin-top: clamp(16px, 6vh, 60px); }
+}
+
+/* Keep status text in the existing desktop identity row. Mobile retains a
+   labelled status strip, using the header's spare padding rather than chat space. */
+@media (min-width: 761px) {
+  .command-header:not(.has-project-threads):has(.header-thread-states) { padding-block: 3px; row-gap: 4px; }
+  .command-header:not(.has-project-threads) .header-thread-states { order: 1; }
+  .has-project-threads .room-breadcrumb { align-self: start; padding-bottom: 20px; }
+  .has-project-threads .header-thread-states { grid-column: 1; grid-row: 1; align-self: end; gap: 12px; flex-wrap: nowrap; }
+}
+@media (max-width: 760px) {
+  .command-header:has(.header-thread-states) { padding-block: 0; gap: 5px 6px; }
+  .command-header:has(.header-thread-states) .health-button { top: 0; }
+}

@@ -1,7 +1,10 @@
-import { expect, test } from '@playwright/test';
+import { test } from './candidate-test';
+import { handleThreadState } from './thread-state-route';
+import { expect } from '@playwright/test';
 import { emptyInbox } from './empty-inbox';
 import { LiveRoomSessionCreateRequestSchema } from '../packages/contracts/src/contracts';
 import type { ProjectRoom } from '../packages/contracts/src/project-rooms';
+import { handlePresence } from './presence-route';
 
 const timestamp = '2026-10-31T18:00:00.000Z';
 const sessions = ['a', 'b', 'c'].map(letter => ({ id: 'jc_' + letter.repeat(32), title: `SYNTHETIC chat ${letter}`, source: 'api_server', ownership: 'command', model: null, lastActive: timestamp, messageCount: 0, toolCallCount: 0, pinned: false }));
@@ -15,6 +18,7 @@ for (const [width, height] of [[1280, 720], [320, 740], [360, 740], [390, 740], 
     const upstreamTitles = new Set<string>();
     page.on('pageerror', error => errors.push(error.message));
     await page.route('**/api/**', async route => {
+    if (handlePresence(route) || handleThreadState(route, sessions.map(session => session.id))) return;
       const req = route.request(), path = new URL(req.url()).pathname;
       const json = (body: unknown) => route.fulfill({ json: body });
       if (path === '/api/bootstrap') return json({ identity: { provider: 'development' }, command: { version: 'SYNTHETIC P9.1 fixture', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 16000, maxSteerCharacters: 4000 } }, hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse'], readinessChecks: {} }, sessions: sessions.slice(0, creates) });
@@ -105,6 +109,7 @@ for (const committed of [false, true]) for (const width of [1280, 360]) {
     const unexpected: string[] = [];
     await page.addInitScript(id => sessionStorage.setItem('jarvis-command:project-room:v1', id), room.id);
     await page.route('**/api/**', async route => {
+    if (handlePresence(route) || handleThreadState(route, sessions.map(session => session.id))) return;
       const req = route.request(), path = new URL(req.url()).pathname;
       const json = (body: unknown) => route.fulfill({ json: body });
       if (path === '/api/bootstrap') return json({ identity: { provider: 'development' }, command: { version: 'SYNTHETIC recovery fixture', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 16000, maxSteerCharacters: 4000 } }, hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse'], readinessChecks: {} }, sessions: creates ? [old, created] : [old] });

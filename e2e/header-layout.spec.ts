@@ -1,4 +1,6 @@
-import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
+import { test } from './candidate-test';
+import { handleThreadState } from './thread-state-route';
+import { expect, type Locator, type Page, type TestInfo } from '@playwright/test';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import {
@@ -7,6 +9,7 @@ import {
   SessionMessagesPageSchema, SessionMutationResponseSchema,
 } from '@jarvis-command/contracts';
 import { emptyInbox } from './empty-inbox';
+import { handlePresence } from './presence-route';
 
 // Synthetic local APIs only. The IDs identify the existing issue-2 fixture;
 // the content below is fabricated test content, never a live history readback.
@@ -135,6 +138,7 @@ async function mockApis(page: Page, lifecycle?: 'running' | 'failed') {
   }
   const unexpected: string[] = [];
   await page.route('**/api/**', async route => {
+    if (handlePresence(route) || handleThreadState(route, [session.id])) return;
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (request.method() !== 'GET' || !(path in responses)) {

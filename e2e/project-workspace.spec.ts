@@ -1,5 +1,8 @@
-import { expect, test } from '@playwright/test';
+import { test } from './candidate-test';
+import { handleThreadState } from './thread-state-route';
+import { expect } from '@playwright/test';
 import { emptyInbox } from './empty-inbox';
+import { handlePresence } from './presence-route';
 
 const timestamp = '2026-10-28T12:00:00.000Z';
 const sid = 'jc_' + 'a'.repeat(32), pid = 'room_' + 'b'.repeat(32), aid = 'art_' + 'c'.repeat(32);
@@ -16,6 +19,7 @@ for (const width of [1280, 320, 360, 390, 430]) test(`SYNTHETIC project workspac
   const runId = 'jcr_' + 'e'.repeat(32);
   let creates = 0;
   await page.route('**/api/**', async route => {
+    if (handlePresence(route) || handleThreadState(route, [sid])) return;
     const req = route.request(), url = new URL(req.url()), path = url.pathname;
     const json = (body: unknown) => route.fulfill({ json: body });
     if (path === '/api/bootstrap') return json({ identity: { provider: 'development' }, command: { version: 'SYNTHETIC P4.5 fixture', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 16000, maxSteerCharacters: 4000 } }, hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse', 'artifact_studio'], readinessChecks: {} }, sessions: [] });
@@ -70,7 +74,7 @@ for (const width of [1280, 320, 360, 390, 430]) test(`SYNTHETIC project workspac
   await page.getByRole('button', { name: 'Restore project', exact: true }).click();
   await page.getByRole('button', { name: 'Start project chat' }).click();
   await page.getByRole('button', { name: 'Open project details' }).click();
-  await expect(page.getByText('In-run delegation detail is not available from this Hermes installation')).toBeVisible();
+  await expect(page.getByText(/^Delegated thread model defaults unavailable:/)).toBeVisible();
   await page.getByRole('button', { name: 'Open project files / upload' }).click();
   await expect(page.getByLabel('Artifact scope')).toHaveValue('current-project');
   await page.getByLabel('Upload artifact file').setInputFiles({ name: 'SYNTHETIC reference.txt', mimeType: 'text/plain', buffer: Buffer.from('SYNTHETIC reference bytes') });
@@ -97,7 +101,7 @@ for (const width of [1280, 320, 360, 390, 430]) test(`SYNTHETIC project workspac
   await page.setViewportSize({ width, height: 360 });
   await composer.focus(); await expect(composer).toBeInViewport();
   const sendButton = page.getByRole('button', { name: 'Send message' });
-  await sendButton.scrollIntoViewIfNeeded();
+  await sendButton.evaluate(el => el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' }));
   const sendBox = await sendButton.boundingBox();
   expect(sendBox!.y).toBeGreaterThanOrEqual(0); expect(sendBox!.y + sendBox!.height).toBeLessThanOrEqual(360);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -139,6 +143,7 @@ for (const change of ['archived', 'removed', 'stale', 'unavailable', 'unchanged'
   let reads = 0;
   const admissions: Record<string, unknown>[] = [];
   await page.route('**/api/**', async route => {
+    if (handlePresence(route) || handleThreadState(route, [sid])) return;
     const path = new URL(route.request().url()).pathname;
     const json = (body: unknown) => route.fulfill({ json: body });
     if (path === '/api/bootstrap') return json({ identity: { provider: 'development' }, command: { version: 'SYNTHETIC generation Retry', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 16000, maxSteerCharacters: 4000 } }, hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse', 'artifact_studio'], readinessChecks: {} }, sessions: [session] });

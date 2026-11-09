@@ -8,7 +8,7 @@ const page = (id: string) => ({ sessionId: id, messages: [{ sessionId: id, id: '
 function fixture() {
   return {
     getSession: vi.fn(async (_subject: string, id: string) => ({ session: { id } }) as never),
-    getRosterStatus: vi.fn(async () => ({ status: 'idle' as const, runUpdatedAt: null })),
+    getRosterStatus: vi.fn(async () => ({ status: 'unknown' as const, runUpdatedAt: null })),
     getMessages: vi.fn(async (_subject: string, id: string) => page(id)),
   };
 }
@@ -19,7 +19,7 @@ it('reads only the stored bounded membership as the same actor; clips excerpts a
   expect(result).toMatchObject({ limit: 4, total: 6, omitted: 2, partial: true });
   expect(service.getSession.mock.calls).toEqual(ids.slice(0, 4).map(id => ['actor-a', id]));
   expect(service.getMessages.mock.calls).toEqual(ids.slice(0, 4).map(id => ['actor-a', id, 2, 0]));
-  expect(result.items[0]).toMatchObject({ title: null, archived: null, status: 'idle', messagesTruncated: true, messages: [{ role: 'tool', text: 'x'.repeat(240), truncated: true }] });
+  expect(result.items[0]).toMatchObject({ title: null, archived: null, status: 'unknown', messagesTruncated: true, messages: [{ role: 'tool', text: 'x'.repeat(240), truncated: true }] });
 });
 it('isolates per-item session, status and message failures; accepts external read-only session ids', async () => {
   const service = fixture();

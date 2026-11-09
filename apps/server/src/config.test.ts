@@ -30,8 +30,9 @@ describe('loadConfig', () => {
     });
 
     expect(config).toEqual({
+      reactionsEnabled: false,
       projectDeletionEnabled: false,
-      push: { capability: { state: 'unavailable', reason: 'disabled' } },
+      push: { capability: { state: 'unavailable', reason: 'disabled' }, replies: false },
       nodeEnv: 'production',
       host: '127.0.0.1',
       port: 3000,
@@ -227,4 +228,10 @@ it('keeps project deletion disabled unless explicitly configured', () => {
   expect(loadConfig(environment).projectDeletionEnabled).toBe(false);
   expect(loadConfig({ ...environment, PROJECT_DELETION_MODE: 'enabled' }).projectDeletionEnabled).toBe(true);
   expect(() => loadConfig({ ...environment, PROJECT_DELETION_MODE: 'true' })).toThrow();
+});
+
+it('keeps reactions disabled by default and accepts only an explicit server control', () => {
+  expect(loadConfig(productionEnvironment).reactionsEnabled).toBe(false);
+  expect(loadConfig({ ...productionEnvironment, REACTIONS_MODE: 'enabled' }).reactionsEnabled).toBe(true);
+  expect(() => loadConfig({ ...productionEnvironment, REACTIONS_MODE: 'true' })).toThrow();
 });

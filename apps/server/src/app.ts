@@ -1,3 +1,6 @@
+import { ThreadReadStorageError } from './thread-read-store';
+import { ThreadObservationUnavailableError } from './thread-state';
+import { ReactionStorageError, ReactionUnavailableError, ReactionConflictError, ReactionBoundsError } from './reaction-store';
 import { CommandBootstrapSchema, type CommandBootstrap } from '@jarvis-command/contracts';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
@@ -9,6 +12,7 @@ import { AuditIntegrityError } from './audit-ledger';
 import { ArtifactConflictError, ArtifactDeletedError, ArtifactNotFoundError, ArtifactStorageError, ArtifactStore } from './artifact-store';
 import { RoomStorageError } from './project-room-store';
 import { NotificationNotFoundError, NotificationStorageError, type NotificationStore } from './notification-store';
+import type { Presence } from './reply-notifier';
 import { CommandProxyUnavailableError } from './command-client';
 import type { AppConfig } from './config';
 import type { HermesSnapshot } from './hermes-client';
@@ -27,6 +31,7 @@ type AppDependencies = Readonly<{
   liveRoom?: ReturnType<typeof createLiveRoomService> | undefined;
   artifactStore?: ArtifactStore | undefined;
   notifications?: NotificationStore | undefined;
+  presence?: Presence | undefined;
   checkLiveRoom?: () => Promise<void>;
   liveStreamLimits?: LiveStreamLimits;
   now?: () => Date;
@@ -61,6 +66,11 @@ export function buildApp(dependencies: AppDependencies) {
       ? error.statusCode
       : undefined;
     request.log.error({ errorType: errorName }, 'request failed');
+    if (error instanceof ThreadReadStorageError || error instanceof ThreadObservationUnavailableError) return reply.code(503).send({ error: 'thread_state_unavailable' });
+    if (error instanceof ReactionUnavailableError) return reply.code(409).send({ error: 'reactions_unavailable' });
+    if (error instanceof ReactionConflictError) return reply.code(409).send({ error: 'reaction_conflict' });
+    if (error instanceof ReactionBoundsError) return reply.code(409).send({ error: 'reaction_limit_reached' });
+    if (error instanceof ReactionStorageError) return reply.code(503).send({ error: 'reaction_storage_unavailable' });
     if (error instanceof RoomStorageError) return reply.code(503).send({ error: 'room_storage_unavailable' });
     if (error instanceof NotificationStorageError) return reply.code(503).send({ error: 'notification_storage_unavailable' });
     if (error instanceof NotificationNotFoundError) return reply.code(404).send({ error: 'notification_not_found' });
@@ -156,6 +166,12 @@ export function buildApp(dependencies: AppDependencies) {
     if (liveRoomEnabled) {
       try { await dependencies.checkLiveRoom?.(); } catch { liveRoomEnabled = false; }
     }
+    const capabilities = [...new Set([
+      ...snapshot.capabilities.filter(capability => capability !== 'message_reactions'),
+      ...(dependencies.config.artifacts.enabled ? ['artifact_studio'] : []),
+    ])];
+    // An optional UI capability must not overflow the existing bootstrap contract.
+    if (liveRoomEnabled && dependencies.config.reactionsEnabled && capabilities.length < 100) capabilities.push('message_reactions');
     const payload: CommandBootstrap = {
       identity: { provider: verifiedIdentity.provider },
       command: {
@@ -177,9 +193,7 @@ export function buildApp(dependencies: AppDependencies) {
         provider: snapshot.provider,
         gatewayState: snapshot.gatewayState,
         activeAgents: snapshot.activeAgents,
-        capabilities: dependencies.config.artifacts.enabled
-          ? [...new Set([...snapshot.capabilities, 'artifact_studio'])]
-          : snapshot.capabilities,
+        capabilities,
         readinessChecks: snapshot.readinessChecks,
       },
       sessions: snapshot.sessions,

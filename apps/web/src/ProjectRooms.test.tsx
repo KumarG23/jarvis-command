@@ -604,3 +604,96 @@ it.each([false, true])('reads authoritative projects after lost ACK, clears sele
   }
   expect(writes).toBe(1);
 });
+
+it.each(['reject', 'mismatch', 'success'] as const)('keeps identity settings/drafts honest across adverse readback: %s', async outcome => {
+  sessionStorage.setItem('jarvis-command:project-room:v1', room.id);
+  const readbacks = createReadbackFixture<Response>();
+  let stored = { ...room, projectIcon: 'peak', projectColor: 'blue' }, writes = 0;
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === '/api/rooms') return readbacks.read('identity', () => Response.json({ version: 1, rooms: [stored] }));
+    expect(url).toBe(`/api/rooms/${room.id}`); writes++;
+    stored = { ...stored, ...JSON.parse(String(init?.body)) }; return Response.json({ room: stored });
+  }));
+  const view = render(<ProjectRooms sessions={[]} onScope={vi.fn()} onSession={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Project details' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Edit project' }));
+  fireEvent.change(screen.getByLabelText('Project glyph'), { target: { value: 'orbit' } });
+  fireEvent.change(screen.getByLabelText('Project accent'), { target: { value: 'violet' } });
+  readbacks.arm();
+  fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+  await waitFor(() => expect(readbacks.pending('identity')).toBe(1));
+  if (outcome === 'reject') await act(async () => readbacks.reject('identity', Error('SYNTHETIC unavailable readback')));
+  else await act(async () => readbacks.resolve('identity', Response.json({ version: 1, rooms: [outcome === 'mismatch' ? { ...stored, projectIcon: 'tiles' } : stored] })));
+  expect(writes).toBe(1);
+  if (outcome !== 'success') {
+    await screen.findByRole('alert');
+    expect(screen.getByLabelText('Project glyph')).toHaveValue('orbit');
+    expect(screen.getByLabelText('Project accent')).toHaveValue('violet');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('form', { name: 'Edit project' })).not.toBeInTheDocument();
+    expect(view.container.querySelector('.project-title .project-identity')).toHaveAttribute('data-icon', 'peak');
+  } else {
+    expect(screen.queryByRole('form', { name: 'Edit project' })).not.toBeInTheDocument();
+    expect(view.container.querySelector('.project-title .project-identity')).toHaveAttribute('data-icon', 'orbit');
+    view.unmount();
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method) stored = { ...stored, ...JSON.parse(String(init.body)) };
+      return Response.json({ version: 1, rooms: [stored] });
+    }));
+    render(<ProjectRooms sessions={[]} onScope={vi.fn()} onSession={vi.fn()} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Project details' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit project' }));
+    expect(screen.getByLabelText('Project accent')).toHaveValue('violet');
+    fireEvent.change(screen.getByLabelText('Project name'), { target: { value: 'Rename only' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+    await waitFor(() => expect(screen.queryByRole('form', { name: 'Edit project' })).not.toBeInTheDocument());
+  }
+});
+
+it('creates with explicit identity choices and retains those choices on failed create readback', async () => {
+  let reads = 0, writes = 0;
+  vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+    if (!init?.method) { reads++; if (reads > 1) throw Error('SYNTHETIC readback failed'); return Response.json({ version: 1, rooms: [] }); }
+    writes++; expect(JSON.parse(String(init.body))).toMatchObject({ projectIcon: 'spark', projectColor: 'amber' });
+    return Response.json({ room: { ...room, projectIcon: 'spark', projectColor: 'amber' } });
+  }));
+  render(<ProjectRooms sessions={[]} onScope={vi.fn()} onSession={vi.fn()} />);
+  await screen.findByText('No projects yet.');
+  fireEvent.click(screen.getByRole('button', { name: 'New project' }));
+  fireEvent.change(screen.getByLabelText('Project name'), { target: { value: 'Synthetic project' } });
+  fireEvent.change(screen.getByLabelText('Project goal'), { target: { value: 'Exact metadata' } });
+  fireEvent.change(screen.getByLabelText('Project glyph'), { target: { value: 'spark' } });
+  fireEvent.change(screen.getByLabelText('Project accent'), { target: { value: 'amber' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Create project' }));
+  await screen.findByRole('alert'); expect(writes).toBe(1);
+  expect(screen.getByLabelText('Project glyph')).toHaveValue('spark');
+  expect(screen.getByLabelText('Project accent')).toHaveValue('amber');
+  fireEvent.click(screen.getByRole('button', { name: 'Close project details' }));
+  fireEvent.click(screen.getByRole('button', { name: 'New project' }));
+  expect(screen.getByLabelText('Project accent')).toHaveValue('amber'); expect(writes).toBe(1);
+});
+
+it('keeps legacy and unknown identity metadata through unrelated edit/archive paths', async () => {
+  sessionStorage.setItem('jarvis-command:project-room:v1', room.id);
+  let stored = { ...room, projectIcon: 'future-glyph', projectColor: 'future-accent' };
+  const writes: Record<string, unknown>[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+    if (init?.method) {
+      const body = JSON.parse(String(init.body)); writes.push(body);
+      stored = { ...stored, ...body }; return Response.json({ room: stored });
+    }
+    return Response.json({ version: 1, rooms: [stored] });
+  }));
+  render(<ProjectRooms sessions={[]} onScope={vi.fn()} onSession={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Project details' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Edit project' }));
+  expect(screen.getByLabelText('Project glyph')).toHaveValue('auto');
+  fireEvent.change(screen.getByLabelText('Project name'), { target: { value: 'Unrelated rename' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save changes' }));
+  await waitFor(() => expect(screen.queryByRole('form', { name: 'Edit project' })).not.toBeInTheDocument());
+  fireEvent.click(screen.getByRole('button', { name: 'Archive project' }));
+  await screen.findByRole('button', { name: 'Restore project' });
+  expect(stored).toMatchObject({ projectIcon: 'future-glyph', projectColor: 'future-accent', archived: true });
+  expect(writes).toHaveLength(2);
+  for (const write of writes) { expect(write).not.toHaveProperty('projectIcon'); expect(write).not.toHaveProperty('projectColor'); }
+});

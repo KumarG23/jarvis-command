@@ -1,4 +1,7 @@
-import { expect, test, type Page } from '@playwright/test';
+import { test } from './candidate-test';
+import { handleThreadState } from './thread-state-route';
+import { expect, type Page } from '@playwright/test';
+import { handlePresence } from './presence-route';
 
 // Owned local fixtures only. Every API is intercepted; no Hermes, inference, push or permission prompt.
 test.use({ serviceWorkers: 'block' });
@@ -25,6 +28,7 @@ async function fixture(page: Page, incomplete = false, pushAvailable = false) {
   let devices: Array<{ id: string; registeredAt: string; expiresAt: string }> = [];
   const inbox = () => ({ push: { capability: pushAvailable ? { state: 'available', publicKey: 'B' + 'a'.repeat(86) } : { state: 'unavailable', reason: 'disabled' }, devices }, version: 1, items, unreadCount: items.filter(i => i.readAt === null).length, preferences: { categories }, delivery: incomplete ? { ...delivery, inApp: 'incomplete', approvals: 'unavailable' } : delivery });
   await page.route('**/api/**', route => {
+    if (handlePresence(route) || handleThreadState(route, [chatA.id, chatB.id])) return;
     const request = route.request(), path = new URL(request.url()).pathname, method = request.method();
     const body = request.postData() ? JSON.parse(request.postData()!) : undefined;
     if (path === '/api/bootstrap') return route.fulfill({ json: { identity: { provider: 'development' }, command: { version: 'SYNTHETIC P6', environment: 'test', generatedAt: timestamp, liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 16000, maxSteerCharacters: 4000 } }, hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse'], readinessChecks: {} }, sessions: [chatA, chatB] } });

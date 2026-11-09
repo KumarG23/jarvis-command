@@ -3,6 +3,9 @@
    No authenticated fetch, runtime API cache, arbitrary URL or action handling. */
 (() => {
   const validId = id => typeof id === 'string' && /^ntf_[a-f0-9]{32}$/.test(id);
+  // Version 2 (reply alerts only) carries a server-sanitized, bounded one-line title/body.
+  // eslint-disable-next-line no-control-regex
+  const validText = (value, max) => typeof value === 'string' && value.length > 0 && value.length <= max && !/[\u0000-\u001f\u007f-\u009f]/.test(value);
   const claim = id => new Promise(resolve => {
     // Exact bounded receipts survive worker restarts. At capacity/storage failure do not display.
     const request = indexedDB.open('command-push-receipts', 1);
@@ -29,12 +32,14 @@
   self.addEventListener('push', event => {
     event.waitUntil((async () => {
       try {
-        if (!event.data || event.data.text().length > 256) return;
+        if (!event.data || event.data.text().length > 1024) return;
         const payload = event.data.json();
-        if (payload.version !== 1 || !validId(payload.id) || Object.keys(payload).sort().join(',') !== 'id,version') return;
+        const keys = Object.keys(payload).sort().join(',');
+        const reply = payload.version === 2 && keys === 'body,id,title,version' && validText(payload.title, 80) && validText(payload.body, 160);
+        if (!validId(payload.id) || !(reply || (payload.version === 1 && keys === 'id,version'))) return;
         if (!await claim(payload.id)) return;
-        await self.registration.showNotification('Jarvis Command', {
-          body: 'An update is available. Sign in to Command to review it.',
+        await self.registration.showNotification(reply ? payload.title : 'Jarvis Command', {
+          body: reply ? payload.body : 'An update is available. Sign in to Command to review it.',
           icon: '/pwa-192.png', tag: payload.id, renotify: false,
           data: { id: payload.id },
         });

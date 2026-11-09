@@ -1,16 +1,27 @@
 import { z } from 'zod';
 import { PushStateSchema } from './push';
-import { LiveRunStateSchema, SessionIdSchema, SessionSummarySchema } from './contracts';
+import { LiveRunStateSchema, OpaqueIdentifierSchema, SessionIdSchema, SessionSummarySchema } from './contracts';
 
 // Private in-app inbox (MASTER_PLAN P6, first slice). Text is generic by design: no prompt,
 // output, command or approval detail is stored in a notification.
+// Run-state categories: the only ones the run-state notifier, preferences and sender know.
 export const NotificationCategorySchema = z.enum(['run-completed', 'run-failed', 'approval']);
+// Rollback reader bridge (#99): a later writer may persist one assistant-reply item. Items of this
+// category are readable and preserved here but are never created, toggled or pushed by this code.
+export const NotificationItemCategorySchema = z.enum([...NotificationCategorySchema.options, 'assistant-reply']);
 export const NotificationIdSchema = z.string().regex(/^ntf_[a-f0-9]{32}$/);
 const IsoTimestampSchema = z.iso.datetime({ offset: true });
 
+export const NotificationReplySchema = z.object({
+  // Durable ids from the verified session history pair; never a raw upstream run id.
+  messageId: OpaqueIdentifierSchema,
+  // Executed model label, or null when the executed identity is not known.
+  label: z.string().min(1).max(80).nullable(),
+}).strict();
+
 export const NotificationItemSchema = z.object({
   id: NotificationIdSchema,
-  category: NotificationCategorySchema,
+  category: NotificationItemCategorySchema,
   // When this server first observed the event; not Hermes' completion time.
   observedAt: IsoTimestampSchema,
   sessionId: SessionIdSchema,
@@ -18,7 +29,8 @@ export const NotificationItemSchema = z.object({
   title: z.string().min(1).max(80),
   body: z.string().min(1).max(160),
   readAt: IsoTimestampSchema.nullable(),
-}).strict();
+  reply: NotificationReplySchema.optional(),
+}).strict().refine(item => (item.category === 'assistant-reply') === (item.reply !== undefined));
 
 export const NotificationPreferencesSchema = z.object({
   categories: z.object({
@@ -26,6 +38,9 @@ export const NotificationPreferencesSchema = z.object({
     'run-failed': z.boolean(),
     approval: z.boolean(),
   }).strict(),
+  // "Show reply text in notifications". Absent means the owner default (on). Optional so a store
+  // written before or after this field exists stays readable and the field survives edits.
+  showReplyText: z.boolean().optional(),
 }).strict();
 
 export const NotificationInboxSchema = z.object({
@@ -40,6 +55,8 @@ export const NotificationInboxSchema = z.object({
     approvals: z.enum(['available', 'unavailable']).optional(),
     push: z.enum(['available', 'unavailable']),
     externalSurfaces: z.literal('unavailable'),
+    // Reply alerts: off by server control, unsupported without an exact final-message binding, or live.
+    replies: z.enum(['disabled', 'unsupported', 'available']).optional(),
   }).strict(),
 }).strict();
 
@@ -59,6 +76,8 @@ export const NotificationTargetSchema = z.discriminatedUnion('state', [
     state: z.literal('available'),
     sessionId: SessionIdSchema,
     publicRunId: z.string().regex(/^jcr_[a-f0-9]{32}$/),
+    // Exact reply to focus for an assistant-reply item; absent for run-state items.
+    messageId: OpaqueIdentifierSchema.optional(),
     clientRequestId: z.uuid(),
     runStatus: LiveRunStateSchema,
     approvalPending: z.boolean(),
@@ -70,6 +89,8 @@ export const NotificationTargetSchema = z.discriminatedUnion('state', [
 ]);
 
 export type NotificationCategory = z.infer<typeof NotificationCategorySchema>;
+export type NotificationItemCategory = z.infer<typeof NotificationItemCategorySchema>;
+export type NotificationReply = z.infer<typeof NotificationReplySchema>;
 export type NotificationItem = z.infer<typeof NotificationItemSchema>;
 export type NotificationPreferences = z.infer<typeof NotificationPreferencesSchema>;
 export type NotificationInbox = z.infer<typeof NotificationInboxSchema>;
