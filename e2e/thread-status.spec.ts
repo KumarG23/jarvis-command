@@ -3,7 +3,7 @@ import { emptyInbox } from './empty-inbox';
 import { handlePresence } from './presence-route';
 import { CommandBootstrapSchema, ProjectRoomSchema, SessionSummarySchema, SessionMessagesPageSchema, ThreadStateSchema, ThreadReadRequestSchema, type ThreadState } from '@jarvis-command/contracts';
 const test = base.extend({ browser: async ({ playwright }, use) => {
-  if (!process.env.STUDIO_BROWSER_CDP_ENDPOINT || process.env.STUDIO_QA_TASK_ID !== 'command#issue-111') throw Error('Use Studio browser QA wrapper for command#issue-111');
+  if (!process.env.STUDIO_BROWSER_CDP_ENDPOINT || process.env.STUDIO_QA_TASK_ID !== 'command#issue-144') throw Error('Use Studio browser QA wrapper for command#issue-144');
   const browser = await playwright.chromium.connectOverCDP(process.env.STUDIO_BROWSER_CDP_ENDPOINT);
   await use(browser); // Leave shared Chrome and original tabs/storage running.
 } });
@@ -40,10 +40,11 @@ for (const [width, height] of [[1280, 720], [1280, 360], ...[320, 360, 390, 430]
     if (handlePresence(route)) return;
     const session = sessions.find(s => path.includes(s.id));
     const index = session ? sessions.indexOf(session) : -1;
-    const state = (): ThreadState => ({ sessionId: session!.id, observedAt: new Date().toISOString(), runObservedAt: index === 4 ? null : new Date().toISOString(), recentAt: null, runStatus: (['completed', 'waiting-approval', 'running', 'completed', 'unknown'] as const)[index]!, historyComplete: true, latest: { messageId: 'm:1', position: 1 }, lastRead: (index === 0 ? cleared : index !== 3) ? { messageId: 'm:1', position: 1 } : null, unread: index === 0 ? !cleared : index === 3 });
+    const latest = index === 0 ? { messageId: 'assistant:49', position: 49 } : { messageId: 'm:1', position: 1 };
+    const state = (): ThreadState => ({ sessionId: session!.id, observedAt: new Date().toISOString(), runObservedAt: index === 4 ? null : new Date().toISOString(), recentAt: null, runStatus: (['completed', 'waiting-approval', 'running', 'completed', 'unknown'] as const)[index]!, historyComplete: true, latest, lastRead: (index === 0 ? cleared : index !== 3) ? latest : null, unread: index === 0 ? !cleared : index === 3 });
     if (session && path.endsWith('/read') && request.method() === 'POST') {
       expect(session.id).toBe(sessions[0]!.id);
-      const target = ThreadReadRequestSchema.parse(request.postDataJSON()); expect(target).toEqual({ messageId: 'm:1', position: 1 });
+      const target = ThreadReadRequestSchema.parse(request.postDataJSON()); expect(target).toEqual(latest);
       reads.push(target); cleared = true; return json(ThreadStateSchema.parse(state()));
     }
     if (request.method() !== 'GET') { errors.push(`unexpected write ${path}`); return route.abort(); }
@@ -53,6 +54,22 @@ for (const [width, height] of [[1280, 720], [1280, 360], ...[320, 360, 390, 430]
     if (session && path === `/api/live/sessions/${session.id}`) return json({ session });
     if (session && path.endsWith('/messages')) {
       const offset = Number(url.searchParams.get('offset'));
+      if (index === 0) {
+        if (offset === 50) { finalRequested = true; await finalHistory; }
+        const messages = offset === 0
+          ? Array.from({ length: 50 }, (_, i) => ({ id: i === 49 ? 'assistant:49' : `assistant:${i}`, sessionId: session.id, role: 'assistant' as const, content: i === 49 ? 'SYNTHETIC eligible assistant answer' : `SYNTHETIC earlier canonical answer ${i}`, timestamp: null, toolName: null, displayKind: null }))
+          : Array.from({ length: 50 }, (_, i) => {
+            const records = [
+              { role: 'system' as const, content: 'SYNTHETIC setup metadata', toolName: null, displayKind: null },
+              { role: 'user' as const, content: 'SYNTHETIC internal notification', toolName: null, displayKind: 'internal_notification' },
+              { role: 'tool' as const, content: 'SYNTHETIC tool output', toolName: 'fixture-tool', displayKind: null },
+              { role: 'assistant' as const, content: '', toolName: null, displayKind: null },
+              { role: 'assistant' as const, content: 'SYNTHETIC display-only activity', toolName: null, displayKind: 'display_only' },
+            ];
+            return { id: `metadata:${i}`, sessionId: session.id, timestamp: null, ...records[i % records.length]! };
+          });
+        return json(SessionMessagesPageSchema.parse({ sessionId: session.id, messages, pagination: { offset, limit: 50, returned: messages.length, hasMore: offset === 0 } }));
+      }
       if (offset === 1) { finalRequested = true; await finalHistory; }
       return json(SessionMessagesPageSchema.parse({ sessionId: session.id, messages: [{ id: `m:${offset}`, sessionId: session.id, role: 'assistant', content: offset ? 'SYNTHETIC actual latest message' : 'SYNTHETIC first page; latest not loaded yet\n'.repeat(35), timestamp: null, toolName: null, displayKind: null }], pagination: { offset, limit: 50, returned: 1, hasMore: offset === 0 } }));
     }
@@ -91,10 +108,14 @@ for (const [width, height] of [[1280, 720], [1280, 360], ...[320, 360, 390, 430]
   releaseFinal();
   await expect(composer).toBeEnabled();
   const marker = page.locator('.latest-message-view');
+  const frame = () => page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  const metadataTail = page.locator('[data-message-id="metadata:49"]');
+  await metadataTail.scrollIntoViewIfNeeded(); await expect(metadataTail).toBeInViewport();
+  await frame(); expect(reads).toHaveLength(0);
+  expect(await metadataTail.locator('.latest-message-view').count()).toBe(0);
   await marker.scrollIntoViewIfNeeded();
   await expect(marker).toBeInViewport();
   // Let the real IntersectionObserver deliver while visibility/focus deny a read.
-  const frame = () => page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   await frame(); expect(reads).toHaveLength(0);
   await lifecycle.evaluate(set => set('unfocused'));
   await frame(); expect(reads).toHaveLength(0);
@@ -161,7 +182,7 @@ for (const [width, height] of [[1280, 720], [1280, 360], ...[320, 360, 390, 430]
     const fallback = await page.request.get('/api/__synthetic_unhandled');
     expect(fallback.status()).toBe(503); expect(await fallback.json()).toEqual({ error: 'synthetic_fixture_api_not_intercepted' });
   }
-  expect(errors).toEqual([]); expect(reads).toHaveLength(1);
+  expect(errors).toEqual([]); expect(reads).toEqual([{ messageId: 'assistant:49', position: 49 }]);
   await lifecycle.dispose();
 });
 });
