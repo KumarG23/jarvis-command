@@ -108,3 +108,32 @@ internally at 360x360 with controls reachable). Owned context closed with zero p
 tabs/storage untouched; Chrome left running. A post-close vite proxy ECONNREFUSED for a
 presence beacon is the preview having no backend; no request reached a real API.
 Synthetic evidence only: no authenticated readback, no live inference. **Phone check pending.**
+
+## Review 6747589420 repair: egress guard and per-viewport adverse sequence (2026-11-09)
+
+Status: **offline synthetic candidate only; supersedes the single-test claims in the section above** (its "zero POSTs"
+counted run admissions only, and its post-close presence ECONNREFUSED was a forwarded request, not isolation).
+Phone check pending; no authenticated readback, live inference or route proof.
+
+- **Isolation:** `e2e/issue-96-browser.config.ts` now serves the candidate through
+  `e2e/issue-96-browser.preview.config.ts` (`proxy: {}`, `/api` answers 503), the same pattern as
+  `thread-status.preview.config.ts`, so nothing falls back to the loopback BFF. The spec asserts
+  `STUDIO_QA_TASK_ID === 'command#issue-115'`, and installs a context-level guard **before navigation** that stays
+  through teardown: any non-preview origin is aborted and recorded, `/api` is served only by the synthetic handler,
+  and WebSockets are refused and counted. After the send the test navigates to `about:blank` so the unload presence
+  beacon runs under the guard. Result in each case: escaped requests/websockets `[]`, unexpected `[]`.
+- **Per-viewport cases:** three independent tests (desktop 1280x720; 360x740 and 360x360 with mobile emulation,
+  touch `tap`). Each runs bootstrap, grouped/searchable Free label, Use selection (provider-default, effort disabled),
+  keyboard-typed draft, Send with one inventory 429 -> notice, draft retained, **0 run admissions**; explicit picker
+  reopen + Retry (still 0 admissions); Send -> **exactly 1** `POST /api/live/runs` with keys
+  `clientRequestId,inference,input,sessionId` and inference `{provider, model}` only; draft cleared; same session
+  header. Presence is counted separately (3 requests per case, `204`, strict `{sessionId, visible}`).
+- **Reachability:** for the session row, picker summary, catalog search, Use, draft input, Send (twice) and Retry the
+  test scrolls into view and requires the control's centre to be inside the viewport and topmost by
+  `elementFromPoint` (catches clipping ancestors and overlays), plus focus on the draft.
+- **Run (wrapper, task `command#issue-115`, new synthetic contexts):** run 4 failed only on my own session-identity
+  locator (everything through the send had passed in all three cases); run 5 after fixing that locator:
+  **3 passed, wrapper exit 0**, each context closed with zero pages. Captures
+  `issue-96-<case>-{1-catalog,2-error-draft-retained,3-retry,4-sent}.png` inspected for 360x360 (error, retry) and
+  360x740 (sent): Retry sits inside the internally scrolling picker; the 360x360 composer Send button is partly
+  below the fold but its centre is in the viewport and hit-tested. Original tabs/storage untouched, Chrome left running.
