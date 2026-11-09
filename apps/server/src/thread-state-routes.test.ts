@@ -12,18 +12,22 @@ it('uses existing actor authorization and mutation guards, strict target schemas
   const headers = { 'cf-access-jwt-assertion': 'valid', origin: 'https://command.example', 'x-jarvis-command': '1', 'content-type': 'application/json' };
   const getSession = vi.fn(async (actor: string) => { expect(actor).toBe('verified-actor'); return { session: { id, ownership: 'command' } }; });
   const submitRun = vi.fn();
-  const liveRoom = { getSession, submitRun, getRosterStatus: vi.fn(async () => ({ status: 'unknown', runUpdatedAt: null })), getMessages: vi.fn(async () => ({ sessionId: id, messages: [{ id: 'm:1', sessionId: id, role: 'assistant', content: 'test', timestamp: null, toolName: null, displayKind: null }], pagination: { limit: 100, offset: 0, returned: 1, hasMore: false } })) } as unknown as ReturnType<typeof createLiveRoomService>;
+  const liveRoom = { getSession, submitRun, getRosterStatus: vi.fn(async () => ({ status: 'unknown', runUpdatedAt: null })), getMessages: vi.fn(async () => ({ sessionId: id, messages: [
+    { id: 'answer', sessionId: id, role: 'assistant', content: 'test', timestamp: null, toolName: null, displayKind: null },
+    { id: 'setup', sessionId: id, role: 'system', content: 'metadata', timestamp: null, toolName: null, displayKind: null },
+  ], pagination: { limit: 100, offset: 0, returned: 2, hasMore: false } })) } as unknown as ReturnType<typeof createLiveRoomService>;
   const app = buildApp({ config, liveRoom, hermes: { readSnapshot: vi.fn() }, verifyAccess: async assertion => { if (assertion !== 'valid') throw Error('denied'); return { subject: 'verified-actor', provider: 'cloudflare-access' as const }; } });
   try {
     const url = `/api/live/sessions/${id}/read`;
-    const payload = { messageId: 'm:1', position: 0 };
+    const payload = { messageId: 'answer', position: 0 };
     expect((await app.inject({ method: 'POST', url, payload })).statusCode).toBe(401);
     expect((await app.inject({ method: 'POST', url, headers: { ...headers, origin: 'https://other.example' }, payload })).statusCode).toBe(403);
     expect((await app.inject({ method: 'POST', url, headers, payload: { ...payload, actor: 'spoof' } })).statusCode).toBe(400);
     expect(getSession).not.toHaveBeenCalled();
     const before = await app.inject({ url: `/api/live/sessions/${id}/thread-state`, headers });
-    expect(before.statusCode).toBe(200); expect(before.json().unread).toBe(true); expect(before.headers['cache-control']).toBe('no-store');
+    expect(before.statusCode).toBe(200); expect(before.json()).toMatchObject({ latest: payload, unread: true }); expect(before.headers['cache-control']).toBe('no-store');
     expect((await app.inject({ method: 'POST', url, headers, payload })).json().unread).toBe(false);
+    expect((await app.inject({ method: 'POST', url, headers, payload: { messageId: 'setup', position: 1 } })).statusCode).toBe(409);
     getSession.mockRejectedValueOnce(Object.assign(Error('denied'), { statusCode: 403 }));
     expect((await app.inject({ method: 'POST', url, headers, payload })).statusCode).toBe(403);
     expect(submitRun).not.toHaveBeenCalled();

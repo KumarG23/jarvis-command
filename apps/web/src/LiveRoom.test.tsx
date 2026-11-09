@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { LiveRoom } from './LiveRoom';
 import { TurnView } from './TurnView';
@@ -52,6 +52,41 @@ it('labels saved conversation cards consistently and hides empty assistant tool-
   expect(await screen.findByRole('article', { name: 'Your message' })).toHaveTextContent('You');
   expect(screen.queryByRole('article', { name: 'Jarvis response' })).not.toBeInTheDocument();
   expect(screen.queryByText('Assistant activity record — no text was saved.')).not.toBeInTheDocument();
+});
+it('views the last rendered chat message at its absolute canonical position after metadata-only trailing pages', async () => {
+  const ordinary = Array.from({ length: 50 }, (_, index) => ({ id: index === 49 ? 'answer:canonical' : `chat:${index}`, sessionId: session.id, role: 'assistant', content: index === 49 ? 'answer' : 'prior answer', timestamp: null, toolName: null, displayKind: null }));
+  const metadata = Array.from({ length: 50 }, (_, index) => {
+    const records = [
+      { role: 'system', content: 'setup', toolName: null, displayKind: null },
+      { role: 'user', content: 'notification', toolName: null, displayKind: 'internal_notification' },
+      { role: 'tool', content: 'tool output', toolName: 'shell', displayKind: null },
+      { role: 'assistant', content: '', toolName: null, displayKind: null },
+      { role: 'assistant', content: 'display output', toolName: null, displayKind: 'display_only' },
+    ];
+    return { id: `metadata:${index}`, sessionId: session.id, timestamp: null, ...records[index % records.length] };
+  });
+  const pages = [ordinary, metadata];
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    const offset = Number(new URL(url, 'http://fixture').searchParams.get('offset'));
+    const messages = pages[offset / 50]!;
+    return Response.json({ sessionId: session.id, messages, pagination: { limit: 50, offset, returned: messages.length, hasMore: offset === 0 } });
+  }));
+  let observe!: (entries: { isIntersecting: boolean; intersectionRatio: number }[]) => void;
+  vi.stubGlobal('IntersectionObserver', class { constructor(callback: typeof observe) { observe = callback; } observe() {} disconnect() {} });
+  vi.spyOn(document, 'hasFocus').mockReturnValue(true);
+  vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+  vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({ x: 0, y: 20, top: 20, bottom: 22, left: 0, right: 100, width: 100, height: 2, toJSON() {} });
+  Object.defineProperty(document, 'elementFromPoint', { configurable: true, value: () => document.querySelector('.latest-message-view') });
+  const onLatestViewed = vi.fn();
+  render(<div className="timeline"><LiveRoom session={session} onHistory={vi.fn()} onLatestViewed={onLatestViewed} /></div>);
+  await screen.findByRole('button', { name: 'Load more messages' });
+  fireEvent.click(screen.getByRole('button', { name: 'Load more messages' }));
+  await waitFor(() => expect(document.querySelector('[data-message-id="answer:canonical"] .latest-message-view')).not.toBeNull());
+  expect(document.querySelector('[data-message-id="metadata:0"] .latest-message-view')).toBeNull();
+  await waitFor(() => { expect(observe).toBeTypeOf('function'); });
+  act(() => observe([{ isIntersecting: true, intersectionRatio: 1 }]));
+  expect(onLatestViewed).toHaveBeenCalledExactlyOnceWith(session.id, 'answer:canonical', 49);
+  expect(onLatestViewed).not.toHaveBeenCalledWith(session.id, 'metadata:49', 99);
 });
 it.each(['success', 'denied'])('offers honest %s copying after a reply moves to saved history', async mode => {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ sessionId: session.id, messages: [{ id: 'saved:1', sessionId: session.id, role: 'assistant', content, timestamp: session.lastActive, toolName: null, displayKind: null }], pagination: { limit: 50, offset: 0, returned: 1, hasMore: false } })));
