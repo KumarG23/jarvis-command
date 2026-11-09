@@ -4,21 +4,21 @@ Plan: [MASTER_PLAN.md §0.2, §10 P14, §11](../MASTER_PLAN.md). Producer: Studi
 `KumarG23/dev-studio` PR #94 merged as `6339856aae28f03cddcd2996b5c1c4ec770388d7`
 (`dashboard/projection.py`, `current.py`, `server.py`, `docs/verification/issue-93.md`).
 
-## State: source slice only — disabled, isolated, **not** integrated
+## State: consumer integrated into the Studio destination with a null (disabled) source
 
 | Piece | State |
 | --- | --- |
 | Strict v1 decoder, `StudioProjectionView`, transport seam, fixtures | Source + tests in this PR |
-| Shell wiring (`App.tsx` Studio destination) | **Not done.** Serialized under #141 after #111 ownership is released |
+| Shell wiring (`App.tsx` Studio destination) | Done, inert: `StudioProjectionView` is mounted with `STUDIO_PROJECTION_SOURCE = null` (`studioProjectionConfig.ts`), `active` only while the destination is shown. Source/candidate only — not released |
 | Transport from Command to Studio | **Unresolved.** No approved path is proven; none is implemented or enabled |
 | Production | Disabled. The view takes `source: null` and issues no request and shows "disabled" |
 | Authenticated desktop/mobile readback, physical phone | Pending (separate gates) |
-| Browser captures | Pending: no browser configuration was reachable from this worktree (see Evidence) |
+| Candidate browser proof | Done with fixtures through the Studio wrapper (see Evidence); not authenticated or physical |
 
 P14 as a whole is **not** done: it needs a supported production round trip, protected desktop/mobile readback and a
 recoverable release.
 
-## Layout (all new files; no shared-shell, `App.tsx`, `styles.css`, e2e fixture or #111 file touched)
+## Layout (consumer files are new; the shell slice touches only the Studio destination block in `App.tsx`)
 
 - `apps/web/src/studio-projection/studioProjection.ts` — types and `decodeStudioProjection`.
 - `studioProjectionSource.ts` — `ProjectionSource` seam (fixtures only), `readBoundedText`.
@@ -120,4 +120,13 @@ parameter, forwarding or `fetch` in this code.
   (never forwards) any non-harness request and the spec asserts none was attempted. Named captures were inspected
   (phone overview, 360×360 detail, desktop last-known). Observation: at 360×360 the status banners occupy most of the first
   screen; content is reachable by scroll, unclipped. This is fixture evidence only — not authenticated readback.
+- Integrated shell (candidate, synthetic): `e2e/studio-shell.spec.ts` (copy of the accepted destination spec, task
+  `command#issue-141`, context egress guard that aborts any non-loopback request before forwarding) passed 3/3 at 1280×720,
+  360×740 and 360×360 through the wrapper: entry → disabled destination → drawer dismissals, Escape and Return to chat
+  restore the same chat with the exact unsent draft and focus; no Studio request, no non-presence mutation, no overflow.
+  Named captures for 1280×720 and 360×360 were inspected. The preview proxy logged refused loopback connections for
+  reply-presence calls (no backend runs behind the synthetic preview); nothing left the loopback origin. Component-level:
+  `StudioDestination.test.tsx` (6 tests, incl. the new inert-view test) and the studio-projection suites.
 - Not claimed: authenticated readback, protected production, physical phone, any live Studio data.
+
+Product copy while disabled is the short existing notice only; implementation instructions stay in this document.

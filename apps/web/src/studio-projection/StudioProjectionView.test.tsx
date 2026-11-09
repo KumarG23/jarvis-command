@@ -20,7 +20,7 @@ afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
 describe('disabled and inactive', () => {
   it('stays disabled with no transport and issues no read', () => {
     render(<StudioProjectionView source={null} active now={at(5)} />);
-    expect(screen.getByText('Studio view is disabled.')).toBeVisible();
+    expect(screen.getByText(/Live team status is not connected in this build/)).toBeVisible();
     expect(screen.queryByRole('button', { name: /Refresh/ })).toBeNull();
     expect(screen.queryByText(/Source:/)).toBeNull();
   });
@@ -233,7 +233,7 @@ describe('source lifecycle', () => {
     await screen.findByText('Jarvis Command');
     view.rerender(<StudioProjectionView source={null} active now={at(5)} />);
     expect(screen.queryByText('Jarvis Command')).toBeNull();
-    expect(screen.getByText('Studio view is disabled.')).toBeVisible();
+    expect(screen.getByText(/Live team status is not connected in this build/)).toBeVisible();
     view.rerender(<StudioProjectionView source={first} active now={at(5)} />);
     await screen.findByText('Jarvis Command');
     const slow = Object.assign(fixtureSource('SYNTHETIC second fixture', () => new Promise<ProjectionReadResult>(() => undefined)), {});
