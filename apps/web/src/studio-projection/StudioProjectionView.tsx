@@ -35,8 +35,11 @@ function Link({ url, children }: Readonly<{ url: string; children: ReactNode }>)
 }
 
 export function StudioProjectionView({ source, active, refreshMs, now = Date.now }: StudioProjectionViewProps) {
-  const [snapshot, setSnapshot] = useState<StudioSnapshot | null>(null);
-  const [failure, setFailure] = useState<Failure | null>(null);
+  // Data is recorded together with the source that produced it and only shown for that same source.
+  const [snapshotRec, setSnapshotRec] = useState<Readonly<{ source: ProjectionSource; value: StudioSnapshot }> | null>(null);
+  const [failureRec, setFailureRec] = useState<Readonly<{ source: ProjectionSource; value: Failure }> | null>(null);
+  const snapshot = source && snapshotRec?.source === source ? snapshotRec.value : null;
+  const failure = source && failureRec?.source === source ? failureRec.value : null;
   const [loading, setLoading] = useState(false);
   const [clock, setClock] = useState(() => now());
   const [nav, setNav] = useState<Nav>({ project: null, item: null });
@@ -46,9 +49,10 @@ export function StudioProjectionView({ source, active, refreshMs, now = Date.now
   const inFlight = useRef<AbortController | null>(null);
   const nowRef = useRef(now);
   nowRef.current = now;
+  const snapshotRef = useRef<StudioSnapshot | null>(null), failureRef = useRef<Failure | null>(null);
 
   const load = useCallback(async () => {
-    if (!source || inFlight.current) return; // never overlap or duplicate a read
+    if (!source || inFlight.current || document.visibilityState === 'hidden') return; // never overlap, duplicate or read while hidden
     const controller = new AbortController();
     inFlight.current = controller;
     setLoading(true);
@@ -56,15 +60,18 @@ export function StudioProjectionView({ source, active, refreshMs, now = Date.now
       const result = await source.read(controller.signal);
       if (controller.signal.aborted) return;
       const at = nowRef.current();
-      if (result.status !== 200 && result.status !== 503) { setFailure({ kind: 'http', message: `HTTP ${result.status}.`, at }); return; }
+      if (result.status !== 200 && result.status !== 503) { setFailureRec({ source, value: { kind: 'http', message: `HTTP ${result.status}.`, at } }); return; }
       const decoded = decodeStudioProjection(result.body);
-      if (decoded.ok) { setSnapshot(decoded.snapshot); setFailure(null); } else setFailure({ kind: decoded.kind, message: decoded.message, at });
+      if (decoded.ok) { setSnapshotRec({ source, value: decoded.snapshot }); setFailureRec(null); } else setFailureRec({ source, value: { kind: decoded.kind, message: decoded.message, at } });
     } catch {
-      if (!controller.signal.aborted) setFailure({ kind: 'unreachable', message: 'The read did not complete.', at: nowRef.current() });
+      if (!controller.signal.aborted) setFailureRec({ source, value: { kind: 'unreachable', message: 'The read did not complete.', at: nowRef.current() } });
     } finally {
       if (inFlight.current === controller) { inFlight.current = null; if (!controller.signal.aborted) setLoading(false); }
     }
   }, [source]);
+
+  // A removed or replaced source never leaves its data, failure or drill-down behind.
+  useEffect(() => { setSnapshotRec(null); setFailureRec(null); setNav({ project: null, item: null }); setLoading(false); }, [source]);
 
   // Read once on activation; stop (and cancel) the moment the view is hidden or the source goes away.
   useEffect(() => {
@@ -78,9 +85,13 @@ export function StudioProjectionView({ source, active, refreshMs, now = Date.now
     const tick = window.setInterval(() => setClock(nowRef.current()), 15_000);
     const poll = refreshMs ? window.setInterval(() => { if (document.visibilityState !== 'hidden') void load(); }, Math.max(MIN_REFRESH_MS, refreshMs)) : null;
     setClock(nowRef.current());
-    return () => { window.clearInterval(tick); if (poll !== null) window.clearInterval(poll); };
+    // A document that was hidden at activation reads as soon as it becomes visible.
+    const onVisible = () => { if (document.visibilityState === 'visible' && !snapshotRef.current && !failureRef.current) void load(); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { window.clearInterval(tick); if (poll !== null) window.clearInterval(poll); document.removeEventListener('visibilitychange', onVisible); };
   }, [active, source, refreshMs, load]);
 
+  snapshotRef.current = snapshot; failureRef.current = failure;
   const project = useMemo(() => snapshot?.projects.find((p) => p.id === nav.project) ?? null, [snapshot, nav.project]);
   const item = useMemo(() => project?.work.find((w) => w.id === nav.item) ?? null, [project, nav.item]);
   // A refresh can remove what was open; fall back to the nearest level that still exists.
@@ -277,7 +288,7 @@ function ProjectPage({ project, open }: Readonly<{ project: Project; open: (item
       )}
       {project.unlinkedPrs.length > 0 && (
         <details className="spv-more"><summary>Open PRs not linked to an open issue ({project.unlinkedPrs.length})</summary>
-          <ul className="spv-plan">{project.unlinkedPrs.map((pr) => <li key={pr.id}><Link url={pr.links[0]!.url}>{pr.id} {pr.title}</Link>{pr.draft ? ' (draft)' : ''}<br />{CI_LABEL[pr.ci]} · {REVIEW_LABEL(pr.review)}</li>)}</ul>
+          <ul className="spv-plan">{project.unlinkedPrs.map((pr) => <li key={pr.id}><Link url={pr.links[0]?.url ?? ''}>{pr.id} {pr.title}</Link>{pr.draft ? ' (draft)' : ''}<br />{CI_LABEL[pr.ci]} · {REVIEW_LABEL(pr.review)}</li>)}</ul>
         </details>
       )}
     </>
@@ -297,7 +308,7 @@ function MergedRecord({ record }: Readonly<{ record: Delivery }>) {
   return (
     <li><Link url={record.url}>{record.id} {record.title}</Link><br />
       Merged {record.mergedAt ? formatTime(record.mergedAt) : 'at unknown time'}{record.mergeSha ? ` · ${record.mergeSha}` : ''}<br />
-      <span className="muted small">{RELEASE_LABEL(record.release)}. Merged is not released.</span></li>
+      <span className="muted small">{RELEASE_LABEL(record.release)}. A merge alone does not show release or deployment.</span></li>
   );
 }
 
@@ -305,7 +316,7 @@ function ItemPage({ project, item }: Readonly<{ project: Project; item: WorkItem
   const o = item.owner;
   return (
     <>
-      <p className="spv-lede"><span className={`spv-chip spv-lane-${item.lane}`}>{LANE_LABEL[item.lane]}</span> <Link url={item.evidence[0]!.url}>{item.id}</Link> · {project.displayName}</p>
+      <p className="spv-lede"><span className={`spv-chip spv-lane-${item.lane}`}>{LANE_LABEL[item.lane]}</span> <Link url={item.evidence[0]?.url ?? ''}>{item.id}</Link> · {project.displayName}</p>
       <dl className="spv-facts">
         <dt>Plan milestone</dt><dd>{item.milestone ?? 'Not reported'}</dd>
         <dt>Last update</dt><dd>{item.updatedAt && item.ageSeconds !== null ? `${formatTime(item.updatedAt)} (${formatAge(item.ageSeconds)} before snapshot)${item.stale ? ' · stale' : ''}` : 'Not reported'}</dd>

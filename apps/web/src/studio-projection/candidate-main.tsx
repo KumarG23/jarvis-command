@@ -12,13 +12,18 @@ import type { ProjectionReadResult } from './studioProjectionSource';
 const scenario = new URLSearchParams(window.location.search).get('fixture') ?? 'healthy';
 const label = `SYNTHETIC candidate fixture “${scenario}” (not Studio data)`;
 const doc = () => JSON.parse(golden);
-const responders: Record<string, () => Promise<ProjectionReadResult> | ProjectionReadResult> = {
+const responders: Record<string, (signal: AbortSignal) => Promise<ProjectionReadResult> | ProjectionReadResult> = {
   healthy: () => ({ status: 200, body: golden }),
   malformed: () => ({ status: 200, body: JSON.stringify({ ...doc(), surprise: true }) }),
   version: () => ({ status: 200, body: JSON.stringify({ ...doc(), version: 2 }) }),
   unreachable: () => Promise.reject(new Error('fixture unreachable')),
   loading: () => new Promise<ProjectionReadResult>(() => undefined),
-  lastknown: (() => { let calls = 0; return () => (++calls === 1 ? { status: 200, body: golden } : Promise.reject(new Error('fixture unreachable'))); })(),
+  // Succeeds once, then fails. A read aborted by StrictMode's double effect run must not consume the success.
+  lastknown: (() => { let served = false; return (signal: AbortSignal) => new Promise<ProjectionReadResult>((resolve, reject) => setTimeout(() => {
+    if (signal.aborted) return reject(new Error('aborted'));
+    if (served) return reject(new Error('fixture unreachable'));
+    served = true; return resolve({ status: 200, body: golden });
+  }, 0)); })(),
 };
 const respond = responders[scenario];
 const source = scenario === 'disabled' || !respond ? null : fixtureSource(label, respond);

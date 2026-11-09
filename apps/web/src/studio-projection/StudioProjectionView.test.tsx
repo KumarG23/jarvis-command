@@ -122,7 +122,8 @@ describe('snapshot rendering', () => {
     const user = await open();
     await user.click(screen.getByRole('button', { name: /Dev Studio/ }));
     expect(screen.getByText(/Scheduler release 1234567890ab/)).toBeVisible();
-    expect(screen.getAllByText(/Merged is not released/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/A merge alone does not show release or deployment/).length).toBeGreaterThan(0);
+    expect(document.body.textContent).not.toMatch(/Merged is not released|not yet released/);
     expect(screen.getByText(/In the live scheduler release 1234567890ab/)).toBeVisible();
     expect(screen.getByText(/Plan-reported status/)).toBeVisible();
     expect(screen.getByText('live unavailable; phone check pending')).toBeVisible();
@@ -222,6 +223,67 @@ describe('freshness and failure states', () => {
     render(<StudioProjectionView source={source(() => ({ status: 503, body: golden }))} active now={at(5)} />);
     expect(await screen.findByText('Jarvis Command')).toBeVisible();
     expect(document.querySelector('[data-state="partial"]')).not.toBeNull();
+  });
+});
+
+describe('source lifecycle', () => {
+  it('shows no data after the source is removed, and none under a replacement source until it reads', async () => {
+    const first = source(() => ok());
+    const view = render(<StudioProjectionView source={first} active now={at(5)} />);
+    await screen.findByText('Jarvis Command');
+    view.rerender(<StudioProjectionView source={null} active now={at(5)} />);
+    expect(screen.queryByText('Jarvis Command')).toBeNull();
+    expect(screen.getByText('Studio view is disabled.')).toBeVisible();
+    view.rerender(<StudioProjectionView source={first} active now={at(5)} />);
+    await screen.findByText('Jarvis Command');
+    const slow = Object.assign(fixtureSource('SYNTHETIC second fixture', () => new Promise<ProjectionReadResult>(() => undefined)), {});
+    view.rerender(<StudioProjectionView source={slow} active now={at(5)} />);
+    expect(screen.queryByText('Jarvis Command')).toBeNull();
+    expect(screen.getByText(/Source: SYNTHETIC second fixture/)).toBeVisible();
+  });
+
+  it('makes no read while the document is hidden and recovers when it becomes visible', async () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    const s = source(() => ok());
+    render(<StudioProjectionView source={s} active now={at(5)} />);
+    expect(s.read).not.toHaveBeenCalled();
+    visibility.mockReturnValue('visible');
+    act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+    await screen.findByText('Jarvis Command');
+    expect(s.read).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('integrated lane and release labels', () => {
+  it('keeps the lane neutral and shows unknown and proven scheduler receipts without inferring deployment', async () => {
+    const user = userEvent.setup();
+    render(<StudioProjectionView source={source(() => ok())} active now={at(5)} />);
+    await user.click(await screen.findByRole('button', { name: /Jarvis Command/ }));
+    await user.click(screen.getByText('Other states'));
+    expect(screen.getByRole('heading', { level: 3, name: /Merged \(release shown separately\)/ })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: /#7 SYNTHETIC merged awaiting release/ }));
+    expect(screen.getByText(/Release unknown \(no read-only release receipt/)).toBeVisible();
+    cleanup();
+    await user.click(await (async () => { render(<StudioProjectionView source={source(() => ok())} active now={at(5)} />); return screen.findByRole('button', { name: /Dev Studio/ }); })());
+    await user.click(screen.getByText('Other states'));
+    await user.click(screen.getByRole('button', { name: /#10 SYNTHETIC queued/ }));
+    expect(screen.getByText(/In the live scheduler release 1234567890ab/)).toBeVisible();
+    expect(document.body.textContent).not.toMatch(/not yet released|Merged is not released|deployed/i);
+  });
+});
+
+describe('malformed evidence links', () => {
+  it('rejects empty canonical link lists instead of crashing navigation', async () => {
+    const doc = JSON.parse(golden);
+    doc.projects[0].work[0].evidence = [];
+    render(<StudioProjectionView source={source(() => ok(JSON.stringify(doc)))} active now={at(5)} />);
+    expect(await screen.findByText('Studio data was rejected as untrustworthy.')).toBeVisible();
+    cleanup();
+    const unlinked = JSON.parse(golden);
+    unlinked.projects[0].unlinked_prs = [{ ...unlinked.projects[0].work[1].prs[0], id: 'Example/command-synth#99', number: 99, links: [] }];
+    delete unlinked.projects[0].unlinked_prs[0].updated_at;
+    render(<StudioProjectionView source={source(() => ok(JSON.stringify(unlinked)))} active now={at(5)} />);
+    expect(await screen.findByText('Studio data was rejected as untrustworthy.')).toBeVisible();
   });
 });
 

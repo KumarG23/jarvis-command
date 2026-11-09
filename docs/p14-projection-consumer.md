@@ -47,7 +47,7 @@ Rejection is whole-document and typed (`not_json`, `oversized`, `unsupported_ver
   into counts. `readBoundedText` enforces the same bound on a streamed body and `Content-Length`.
 - **Dates.** ISO-8601 with a zone, real calendar days, years 2000–2100. `age_seconds` must agree with its timestamp and
   `observed_at` (±2 s); `stale` must agree with a 24 h age.
-- **Links/identity.** ids are `owner/repo#N` and must equal repo+number; issue/PR/merged URLs must equal the rebuilt
+- **Links/identity.** the producer's canonical first issue/PR link is mandatory (an empty list rejects); ids are `owner/repo#N` and must equal repo+number; issue/PR/merged URLs must equal the rebuilt
   `https://github.com/<repo>/…` URL; check links must be path-only `https://github.com` URLs whose repo is registered
   (a repo named by the document itself; in a per-project scoped document any well-formed slug, because other repos cannot
   be known). Dependencies must name a registered repo. Hrefs are re-checked at render, with `rel="noopener noreferrer"`.
@@ -66,8 +66,7 @@ Rejection is whole-document and typed (`not_json`, `oversized`, `unsupported_ver
 Overview: five stage tiles (Needs attention, Building, Checking, Review, Ready to test) from `totals`, showing **Unknown**
 (never 0) when coverage is incomplete, plus one card per project (goal, current/ambiguous milestone, progress statement,
 per-stage counts, dispatch pause, latest event with source and age). Project: facts, plan-reported status verbatim with
-source, stage sections (other states under "Other states"), recently merged with scheduler-release state ("merged is not
-released"), unlinked PRs. Work detail: milestone, update age, process observation ("process presence is not progress"),
+source, stage sections (other states under "Other states"), recently merged with scheduler-release state (a merge alone is never shown as release or deployment), unlinked PRs. Work detail: milestone, update age, process observation ("process presence is not progress"),
 configured owner + unknown executed route, blocker (reason, owner, next action, qualified dependency links), then
 separate Checks / Review / Merged / Scheduler release / Ready-to-test evidence and allowlisted links.
 
@@ -79,7 +78,7 @@ under a "Last known data" label and a banner that it is **not current**. HTTP 50
 "no project online" case) is decoded and shown as partial; other non-200 statuses are errors.
 
 Polling: the view reads once when `active` becomes true, cancels on deactivation, and (only if `refreshMs` is given, ≥30 s)
-polls while active and the document is visible, never overlapping reads. Hidden/unfocused views make no request.
+polls while active and the document is visible, never overlapping reads. Hidden/unfocused views make no request, and a document hidden at activation reads when it becomes visible. Data is keyed to its source: removing or replacing the source clears the snapshot, failure and drill-down.
 
 ## Transport — what is actually established
 
@@ -114,8 +113,11 @@ parameter, forwarding or `fetch` in this code.
   dates, unregistered/non-GitHub links, id/count/total/age conflicts, oversized, full-capacity 16×100 document, scoped
   document), `StudioProjectionView.test.tsx` (states, drill-down, focus/Escape, link allowlist, inert markup, no polling
   while hidden), `studioProjectionSource.test.ts`.
-- Browser captures (desktop / 360 px / short height, keyboard): the spec exists but **has not been run**. The task requires
-  the Studio browser wrapper with an existing configured endpoint, and none was available to this worktree (no environment
-  value, no private git metadata, no documented source); an endpoint was deliberately not guessed or probed, and no browser
-  was launched outside the wrapper. Layout at 360 px and short height is therefore **unverified** here.
+- Candidate browser proof (fixtures only): `e2e/studio-projection.spec.ts` ran through the Studio browser wrapper
+  (task `command#issue-141`) in task-owned contexts at 1280×720, 360×740 and 360×360: 6/6 passed (keyboard
+  overview → project → detail → Escape/Back with focus return, ≥44px targets, no horizontal overflow, and the disabled,
+  loading, unreachable, malformed, unsupported-version, stale and last-known states). A context-level egress guard aborts
+  (never forwards) any non-harness request and the spec asserts none was attempted. Named captures were inspected
+  (phone overview, 360×360 detail, desktop last-known). Observation: at 360×360 the status banners occupy most of the first
+  screen; content is reachable by scroll, unclipped. This is fixture evidence only — not authenticated readback.
 - Not claimed: authenticated readback, protected production, physical phone, any live Studio data.

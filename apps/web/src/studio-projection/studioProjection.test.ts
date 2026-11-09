@@ -146,6 +146,12 @@ describe('bounds and hostile content', () => {
 });
 
 describe('links and identities', () => {
+  it('requires the canonical first link on work items and PRs', () => {
+    const empty = fresh(); work(empty).evidence = []; rejected(empty, 'malformed', /canonical first link/);
+    const pr = fresh(); work(pr, 0, 0).prs[0].links = []; rejected(pr, 'malformed', /canonical first link/);
+    const unlinked = fresh(); unlinked.projects[0].unlinked_prs = [{ id: 'Example/command-synth#99', number: 99, title: 'x', draft: false, ci: 'unknown', review: null, links: [] }];
+    unlinked.projects[0].counts.open_prs += 1; rejected(unlinked, 'malformed', /canonical first link/);
+  });
   it('only accepts rebuilt github.com links for registered repos', () => {
     for (const url of ['http://github.com/Example/command-synth/issues/1', 'https://evil.example/Example/command-synth/issues/2', 'javascript:alert(1)', 'https://github.com.evil.example/Example/command-synth/issues/2', 'https://github.com/Other/repo/issues/2']) {
       const doc = fresh(); work(doc).evidence[0].url = url; rejected(doc, 'malformed', /link|allowed/);

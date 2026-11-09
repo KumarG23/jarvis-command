@@ -2,7 +2,7 @@ import type { CiState, Lane, ReleaseState, ReviewState, RunObservation, StudioSn
 
 export const LANE_LABEL: Record<Lane, string> = {
   attention: 'Needs attention', building: 'Building', checking: 'Checking', review: 'Review', ready_to_test: 'Ready to test',
-  integrated: 'Merged, not yet released', unverified: 'Unverified', queued: 'Queued', open: 'Open',
+  integrated: 'Merged (release shown separately)', unverified: 'Unverified', queued: 'Queued', open: 'Open',
 };
 export const CI_LABEL: Record<CiState, string> = { passed: 'Checks passed', failed: 'Checks failing', pending: 'Checks running', unknown: 'Checks not reported' };
 export const REVIEW_LABEL = (review: ReviewState): string => review === null ? 'Review not reported'

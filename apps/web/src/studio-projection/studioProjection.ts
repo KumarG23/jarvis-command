@@ -173,7 +173,10 @@ function link(url: unknown, path: string, ctx: Ctx, exact?: string): string {
   return text;
 }
 function links(v: unknown, path: string, ctx: Ctx, max: number, firstExact?: string): EvidenceLink[] {
-  return arr(v, path, max).map((raw, i) => {
+  const list = arr(v, path, max);
+  // The producer always rebuilds the canonical issue/PR link first; an empty list is malformed, not "no links".
+  if (firstExact !== undefined && list.length === 0) fail(path, 'missing the canonical first link');
+  return list.map((raw, i) => {
     const o = obj(raw, `${path}[${i}]`, ['label', 'url']);
     const url = i === 0 && firstExact !== undefined ? link(o.url, `${path}[${i}].url`, ctx, firstExact) : link(o.url, `${path}[${i}].url`, ctx);
     return { label: str(o.label, `${path}[${i}].label`, 60), url };

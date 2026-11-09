@@ -1,4 +1,4 @@
-import { expect, test as base, type Page } from '@playwright/test';
+import { expect, test as base, type BrowserContext, type Page } from '@playwright/test';
 
 // SYNTHETIC candidate fixtures in task-owned contexts of Studio's already configured browser. No login, no authenticated
 // read, no Studio/GitHub/Hermes request. Original tabs, storage and Chrome are left untouched.
@@ -13,9 +13,22 @@ const test = base.extend({
 const sizes = [{ name: 'desktop', width: 1280, height: 720 }, { name: 'phone360', width: 360, height: 740 }, { name: 'short360', width: 360, height: 360 }] as const;
 const origin = 'http://127.0.0.1:3198';
 
+// Egress guard: installed on the context BEFORE any navigation. Anything that is not the loopback harness is aborted
+// (never forwarded) and recorded, so a fixture miss cannot reach a live API.
+const guards = new WeakMap<Page, string[]>();
+async function guard(context: BrowserContext, page: Page) {
+  const blocked: string[] = [];
+  guards.set(page, blocked);
+  await context.route('**/*', (route) => {
+    const url = route.request().url();
+    if (url.startsWith(`${origin}/`) || url.startsWith('data:') || url.startsWith('blob:')) return route.continue();
+    blocked.push(new URL(url).protocol + '//<other-origin>');
+    return route.abort();
+  });
+}
+
 async function open(page: Page, fixture: string, extra = '') {
-  const foreign: string[] = [];
-  page.on('request', (request) => { if (!request.url().startsWith(origin) && !request.url().startsWith('data:') && !request.url().startsWith('blob:')) foreign.push(request.url()); });
+  const foreign = guards.get(page)!;
   await page.goto(`/studio-projection-candidate.html?fixture=${fixture}${extra}`);
   return foreign;
 }
@@ -26,6 +39,7 @@ for (const size of sizes) {
     test('overview → project → work detail by keyboard, with ≥44px targets and no overflow', async ({ browser }, info) => {
       const context = await browser.newContext({ viewport: { width: size.width, height: size.height } });
       const page = await context.newPage();
+      await guard(context, page);
       try {
         const foreign = await open(page, 'healthy', '&age=30');
         await expect(page.getByRole('heading', { level: 2, name: 'Studio projects' })).toBeVisible();
@@ -51,13 +65,14 @@ for (const size of sizes) {
         await expect(item).toBeFocused();
         await page.getByRole('button', { name: 'All projects' }).click();
         await expect(card).toBeFocused();
-        expect(foreign, 'fixtures must not reach any other origin').toEqual([]);
+        expect(foreign, 'fixtures must not attempt any other origin').toEqual([]);
       } finally { await context.close(); }
     });
 
     test('states: disabled, loading, unreachable, malformed, unsupported version, last known, stale', async ({ browser }, info) => {
       const context = await browser.newContext({ viewport: { width: size.width, height: size.height } });
       const page = await context.newPage();
+      await guard(context, page);
       try {
         const expectations: Array<[string, string, string]> = [
           ['disabled', '', 'Studio view is disabled.'], ['loading', '', 'Loading Studio projection…'], ['unreachable', '', 'Studio is unreachable.'],
@@ -76,6 +91,7 @@ for (const size of sizes) {
         await expect(page.getByText('not current')).toBeVisible();
         await expect(page.getByText('Last known data')).toBeVisible();
         await page.screenshot({ path: info.outputPath(`${size.name}-lastknown.png`) });
+        expect(guards.get(page), 'fixtures must not attempt any other origin').toEqual([]);
       } finally { await context.close(); }
     });
   });
