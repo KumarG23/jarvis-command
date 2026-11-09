@@ -1,4 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { test } from './candidate-test';
+import { handleThreadState } from './thread-state-route';
+import { expect } from '@playwright/test';
 import { emptyInbox } from './empty-inbox';
 import { handlePresence } from './presence-route';
 
@@ -19,7 +21,7 @@ test('draft recovery, 250 canonical IDs, narrow code/table scrolling and ten one
   let latestRun = '';
   const unexpected: string[] = [];
   await page.route('**/api/**', async route => {
-    if (handlePresence(route)) return;
+    if (handlePresence(route) || handleThreadState(route, [sessionId, newId])) return;
     const req = route.request(); const url = new URL(req.url()); const path = url.pathname;
     if (path === '/api/live/sessions' && req.method() === 'POST') { creates++; return route.fulfill({ json: { session: newSession } }); }
     if (path === '/api/live/runs' && req.method() === 'POST') {

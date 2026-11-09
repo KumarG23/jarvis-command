@@ -1,4 +1,6 @@
-import { expect, test } from '@playwright/test';
+import { test } from './candidate-test';
+import { handleThreadState } from './thread-state-route';
+import { expect } from '@playwright/test';
 import { handlePresence } from './presence-route';
 
 // Owned local fixtures only. Every API is intercepted; no Hermes or inference.
@@ -11,7 +13,7 @@ test('requested picker, unavailable panels, drawer Back and readable responsive 
   test.setTimeout(90000);
   const unexpected: string[] = [];
   await page.route('**/api/**', route => {
-    if (handlePresence(route)) return;
+    if (handlePresence(route) || handleThreadState(route, [sessionId])) return;
     const req = route.request(), url = new URL(req.url()), path = url.pathname;
     if (req.method() !== 'GET') { unexpected.push(req.method() + ' ' + path); return route.abort(); }
     if (path.endsWith('/messages')) {
@@ -64,6 +66,7 @@ test('requested picker, unavailable panels, drawer Back and readable responsive 
       await page.emulateMedia({ reducedMotion: 'reduce' });
       await composer.focus(); await expect(composer).toBeInViewport();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+      expect((await page.locator('.command-header').boundingBox())!.height, 'compact chat header').toBeLessThanOrEqual(width < 761 ? 120 : 100);
       for (const selector of ['.menu-button', '.header-inference > summary', '.health-button', '.attach-image', '.turn-composer .primary-button']) {
         const control = page.locator(selector);
         if (await control.isVisible()) { const box = await control.boundingBox(); expect(box!.height, selector).toBeGreaterThanOrEqual(44); expect(box!.width, selector).toBeGreaterThanOrEqual(44); }
@@ -73,7 +76,7 @@ test('requested picker, unavailable panels, drawer Back and readable responsive 
       for (const control of headerControls) if (await control.isVisible()) boxes.push((await control.boundingBox())!);
       for (let i = 0; i < boxes.length; i++) for (const other of boxes.slice(i + 1)) {
         const box = boxes[i]!;
-        expect(box.x < other.x + other.width && box.x + box.width > other.x && box.y < other.y + other.height && box.y + box.height > other.y, 'Header controls must not overlap').toBe(false);
+        expect(box.x < other.x + other.width && box.x + box.width > other.x && box.y < other.y + other.height && box.y + box.height > other.y, `Header controls must not overlap ${JSON.stringify({ width, height, box, other })}`).toBe(false);
       }
       await chip.click(); await expect(model).toBeVisible();
       const box = await model.boundingBox(); expect(box!.x).toBeGreaterThanOrEqual(0); expect(box!.x + box!.width).toBeLessThanOrEqual(width);

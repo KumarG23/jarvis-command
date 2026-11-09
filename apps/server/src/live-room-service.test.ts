@@ -616,7 +616,7 @@ it.each([
   const service = createLiveRoomService({ client, ledger, createPublicRunId: () => publicRunId });
   await service.submitRun('owner', request);
   const before = await readFile(path);
-  expect(await service.getRosterStatus('other-actor', sessionId)).toEqual({ status: 'idle', runUpdatedAt: null });
+  expect(await service.getRosterStatus('other-actor', sessionId)).toEqual({ status: 'unknown', runUpdatedAt: null });
   expect(client.getRun).not.toHaveBeenCalled();
   expect(await service.getRosterStatus('owner', sessionId)).toEqual({ status: expected, runUpdatedAt: '2026-10-31T18:00:00Z' });
   expect(await readFile(path)).toEqual(before);
@@ -626,7 +626,7 @@ it('roster rejects mismatched authenticated status and reports no inferred exter
   const { ledger } = await createLedger();
   const client = fakeClient({ getRun: vi.fn(async () => ({ runId: upstreamRunId, sessionId: 'foreign', status: 'running' }) as never) });
   const service = createLiveRoomService({ client, ledger, createPublicRunId: () => publicRunId });
-  expect(await service.getRosterStatus('owner', 'external:session')).toEqual({ status: 'idle', runUpdatedAt: null });
+  expect(await service.getRosterStatus('owner', 'external:session')).toEqual({ status: 'unknown', runUpdatedAt: null });
   await service.submitRun('owner', request);
   await expect(service.getRosterStatus('owner', sessionId)).rejects.toBeInstanceOf(LiveRoomNotFoundError);
 });

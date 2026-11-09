@@ -1,3 +1,4 @@
+import { useLatestMessageView } from './useLatestMessageView';
 import { MessageReactions } from './MessageReactions';
 import type { MessageReactionClient } from './useMessageReactions';
 import { SessionMessagesPageSchema, type SessionMessage, type SessionSummary } from '@jarvis-command/contracts';
@@ -16,7 +17,7 @@ const FOCUS_NOTICE = {
   unavailable: 'Exact reply unavailable: it could not be located or displayed right now. Nothing else was highlighted.',
 } as const;
 
-export function LiveRoom({ session, onHistory, reactions, reactionsAvailable = false, reactionsUnavailableReason, turns = [], renderTurn, onSaveResponse, threadProjectId, threadProjectSessionIds, onThreadLink, focusMessageId = null, onFocusSettled, reportPresence = false }: Readonly<{ focusMessageId?: string | null; onFocusSettled?: (() => void) | undefined; reportPresence?: boolean; session: SessionSummary; reactions?: MessageReactionClient | undefined; reactionsAvailable?: boolean | undefined; reactionsUnavailableReason?: string | undefined; onHistory: (sessionId: string, messages: SessionMessage[], complete: boolean) => void; turns?: Turn[]; renderTurn?: (turn: Turn) => ReactNode; onSaveResponse?: ((message: SessionMessage) => void) | undefined; threadProjectId?: string | null; threadProjectSessionIds?: readonly string[] | undefined; onThreadLink?: ((projectId: string, sessionId: string) => void) | undefined }>) {
+export function LiveRoom({ session, onHistory, reactions, reactionsAvailable = false, reactionsUnavailableReason, turns = [], renderTurn, onSaveResponse, threadProjectId, threadProjectSessionIds, onThreadLink, focusMessageId = null, onFocusSettled, reportPresence = false, readObservation, onLatestViewed }: Readonly<{ readObservation?: string | undefined; onLatestViewed?: ((sessionId: string, messageId: string, position: number) => void) | undefined; focusMessageId?: string | null; onFocusSettled?: (() => void) | undefined; reportPresence?: boolean; session: SessionSummary; reactions?: MessageReactionClient | undefined; reactionsAvailable?: boolean | undefined; reactionsUnavailableReason?: string | undefined; onHistory: (sessionId: string, messages: SessionMessage[], complete: boolean) => void; turns?: Turn[]; renderTurn?: (turn: Turn) => ReactNode; onSaveResponse?: ((message: SessionMessage) => void) | undefined; threadProjectId?: string | null; threadProjectSessionIds?: readonly string[] | undefined; onThreadLink?: ((projectId: string, sessionId: string) => void) | undefined }>) {
   const reactionSessionWritable = session.ownership === 'command' && /^jc_[a-f0-9]{32}$/.test(session.id);
   const report = useRef(onHistory);
   report.current = onHistory;
@@ -96,6 +97,9 @@ export function LiveRoom({ session, onHistory, reactions, reactionsAvailable = f
     return () => controller.abort();
   }, [session.id, offset, attempt]);
 
+  const latestMessage = !loading && !error && !hasMore ? messages.at(-1) : null;
+  const latestMarker = useLatestMessageView(session.id, latestMessage?.id ?? null, messages.length - 1, readObservation, onLatestViewed);
+
   // Derive handoff from the very snapshot being rendered, not a prior mount's
   // effect. Loading/failed/partial history must not remove the only local reply.
   const projected = projectTurns(turns.filter((turn) => turn.intent.sessionId === session.id), messages, !loading && !error && !hasMore);
@@ -118,6 +122,7 @@ export function LiveRoom({ session, onHistory, reactions, reactionsAvailable = f
         {message.role === 'tool' ? <details className="saved-tool-disclosure"><summary>{message.toolName ?? 'Tool activity'}</summary><p>{message.content || 'No text was saved.'}</p></details> : <>{message.toolName ? <h2>{message.toolName}</h2> : null}{message.role === 'assistant' ? <MessageContent text={message.content || 'Assistant activity record — no text was saved.'} threadProjectId={threadProjectId} threadProjectSessionIds={threadProjectSessionIds} onThreadLink={onThreadLink} /> : <p>{message.content || 'No text was saved.'}</p>}</>}
         {reactionsAvailable && reactions && reactionSessionWritable && message.sessionId === session.id && (message.role === 'user' || message.role === 'assistant') && !message.toolName && !message.displayKind && messageOffsets.current.has(message.id) ? <MessageReactions key={`${session.id}:${message.id}`} client={reactions} target={{ sessionId: session.id, messageId: message.id, offset: messageOffsets.current.get(message.id)! }} /> : null}
         {message.role === 'assistant' && message.content ? <CopyResponse text={message.content} limited={false} onSave={onSaveResponse ? () => onSaveResponse(message) : undefined} /> : null}
+        {message.id === latestMessage?.id ? <span ref={latestMarker} className="latest-message-view" aria-hidden="true" /> : null}
       </div>
     </article>}{liveAfter(index)}</Fragment>)}
     {!loading && !error && messages.length > 0 && session.ownership === 'command' && !(renderTurn && turns.some(turn => turn.intent.sessionId === session.id && (!turn.done || turn.usage?.execution))) ? <HistoryReceipt key={session.id} sessionId={session.id} refreshKey={JSON.stringify(messages.map(message => message.id))} /> : null}
