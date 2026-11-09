@@ -496,7 +496,13 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
       setPreflighting(false);
     }
   };
-  const inferencePicker = (<details ref={picker} onToggle={event => setPickerOpen(event.currentTarget.open)} className={`inference-control${inferenceTarget ? ' header-inference' : ''}`} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }} onKeyDown={event => {
+  const inferencePicker = (<details ref={picker} onToggle={event => {
+        const open = event.currentTarget.open;
+        // A focused control near the bottom can scroll this panel. Each reopen
+        // starts at the prompt choices without moving focus or the chat viewport.
+        if (open) { const panel = event.currentTarget.querySelector<HTMLElement>('.inference-fields'); if (panel) panel.scrollTop = 0; }
+        setPickerOpen(open);
+      }} className={`inference-control${inferenceTarget ? ' header-inference' : ''}`} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }} onKeyDown={event => {
         if (event.key === 'Escape') { event.stopPropagation(); if (picker.current) picker.current.open = false; picker.current?.querySelector('summary')?.focus(); }
       }}>
         <summary title={`Requested · ${selection === 'inherit' ? saved.opted ? 'Saved defaults' : 'Inherit' : selection === 'invalid' ? 'Selection unavailable' : `${selectedOption?.label ?? selection.model} · ${effortLabel}`}`}><span className="requested-label">Requested · </span><span className="requested-choice">{selection === 'inherit' ? saved.opted ? 'Saved defaults' : 'Inherit' : selection === 'invalid' ? 'Selection unavailable' : `${selectedOption?.label ?? selection.model} · ${effortLabel}`}</span></summary>
@@ -522,9 +528,9 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
               </>}
           </select></label>
           <p>Preflight request for this chat, saved only in this browser. Offered efforts are requests; execution is confirmed only by the current run receipt. Inherit uses session routing without a guaranteed effort.</p>
+          <button className="secondary-button" type="button" disabled={inventoryBusy || preflighting || busy} onClick={() => { setPreflightError(''); setInventoryRetry(value => value + 1); }}>Retry model choices</button>
           <SavedRoutingControls saved={saved} selection={typeof selection === 'string' || problem ? null : selection} disabled={busy || preflighting || inventoryBusy} />
           {inferenceOptions?.catalog ? <ModelCatalogView catalog={inferenceOptions.catalog} options={inferenceOptions.options} disabled={busy || preflighting || inventoryBusy} onSelect={chooseModel} /> : null}
-          <button className="secondary-button" type="button" disabled={inventoryBusy || preflighting || busy} onClick={() => { setPreflightError(''); setInventoryRetry(value => value + 1); }}>Retry model choices</button>
         </div>
       </details>);
   return <>

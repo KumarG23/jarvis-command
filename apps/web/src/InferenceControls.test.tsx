@@ -250,3 +250,19 @@ it('preserves a recovery edit made while a fresh preflight is pending', async ()
   await act(async () => resolve(Response.json(inventory)));
   expect(p.send).not.toHaveBeenCalled(); expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('Keep draft\nRecovered draft');
 });
+
+it('reopens the picker at the prompt controls after scrolling to retry or saved defaults', async () => {
+  setup(); render(<TurnComposer {...props()} />); await ready();
+  const details = document.querySelector('details.inference-control') as HTMLDetailsElement;
+  const panel = details.querySelector('.inference-fields') as HTMLElement;
+  details.open = true; fireEvent(details, new Event('toggle'));
+  const summary = details.querySelector('summary')!; summary.focus();
+  panel.scrollTop = 600;
+  details.open = false; fireEvent(details, new Event('toggle'));
+  details.open = true; fireEvent(details, new Event('toggle'));
+  expect(panel.scrollTop).toBe(0);
+  expect(summary).toHaveFocus(); // Reset panel scroll without stealing keyboard focus.
+  const retry = screen.getByRole('button', { name: 'Retry model choices' });
+  const saved = screen.getByRole('group', { name: 'Saved requested defaults' });
+  expect(retry.compareDocumentPosition(saved) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});

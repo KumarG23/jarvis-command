@@ -1,3 +1,5 @@
+import { handleDefaultRead } from './routing-defaults-route';
+import type { RoutingDefaultTarget } from '@jarvis-command/contracts';
 import { test } from './candidate-test';
 import { handleThreadState } from './thread-state-route';
 import { expect } from '@playwright/test';
@@ -11,9 +13,10 @@ const markdown = '**SYNTHETIC shell proof**\n\nA calm workspace keeps the conver
 
 test('requested picker, unavailable panels, drawer Back and readable responsive history', async ({ page }, testInfo) => {
   test.setTimeout(90000);
-  const unexpected: string[] = [];
+  const unexpected: string[] = [], defaultReads: RoutingDefaultTarget[] = [];
   await page.route('**/api/**', route => {
     if (handlePresence(route) || handleThreadState(route, [sessionId])) return;
+    if (handleDefaultRead(route, [{ scope: 'thread', sessionId, projectId: null }], defaultReads)) return;
     const req = route.request(), url = new URL(req.url()), path = url.pathname;
     if (req.method() !== 'GET') { unexpected.push(req.method() + ' ' + path); return route.abort(); }
     if (path.endsWith('/messages')) {
@@ -119,5 +122,7 @@ test('requested picker, unavailable panels, drawer Back and readable responsive 
   const largePicker = await model.boundingBox(); expect(largePicker!.x).toBeGreaterThanOrEqual(0); expect(largePicker!.x + largePicker!.width).toBeLessThanOrEqual(320);
   await model.press('Escape'); await expect(chip).toBeFocused();
   await expect(composer).toHaveValue('SYNTHETIC unsent draft');
+  expect(defaultReads.length).toBeGreaterThan(0);
+  expect(defaultReads.every(target => target.scope === 'thread' && target.sessionId === sessionId && target.projectId === null)).toBe(true);
   expect(unexpected).toEqual([]);
 });
