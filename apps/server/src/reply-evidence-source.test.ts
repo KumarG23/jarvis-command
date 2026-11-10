@@ -28,12 +28,13 @@ const env = { WEB_PUSH_MODE: 'enabled', WEB_PUSH_VAPID_PUBLIC_KEY: keys.publicKe
 const cleanup: Array<() => Promise<unknown>> = [];
 afterEach(async () => { await Promise.all(cleanup.splice(0).reverse().map(fn => fn())); });
 
+type Page = { session_id: string; data: Array<Record<string, unknown>>; pagination: Record<string, unknown> };
 type Row = { id: number; role: string; content: string; session_id?: string };
 async function harness() {
   const directory = await mkdtemp(join(tmpdir(), 'jc-evidence-')); await chmod(directory, 0o700);
   cleanup.push(() => rm(directory, { recursive: true, force: true }));
   const counts = { posts: 0, runGets: 0, pageGets: 0, other: 0 };
-  const state: { rows: Row[]; runs: Record<string, Record<string, unknown>>; pageOffsets: number[]; tamper?: (body: Record<string, any>) => Record<string, any> } = { rows: [], runs: {}, pageOffsets: [] };
+  const state: { rows: Row[]; runs: Record<string, Record<string, unknown>>; pageOffsets: number[]; tamper?: (body: Page) => Page } = { rows: [], runs: {}, pageOffsets: [] };
   const hermes = Fastify();
   hermes.addHook('onRequest', async (request, reply) => { if (request.headers.authorization !== 'Bearer ' + 'h'.repeat(32)) return reply.code(401).send({}); });
   hermes.get('/api/sessions/:id/messages', async (request) => {
@@ -187,11 +188,11 @@ describe('reply evidence source (disabled factory, fixtures only)', () => {
   it('returns null for malformed or foreign pagination and page rows', async () => {
     const h = await harness();
     h.state.rows = turns(); h.status(0, h.bind(1, 2));
-    const tampers: Array<[string, (body: Record<string, any>) => Record<string, any>]> = [
+    const tampers: Array<[string, (body: Page) => Page]> = [
       ['wrong offset', body => ({ ...body, pagination: { ...body.pagination, offset: 7 } })],
       ['wrong returned', body => ({ ...body, pagination: { ...body.pagination, returned: 1 } })],
       ['foreign page session', body => ({ ...body, session_id: otherSession })],
-      ['foreign row session', body => ({ ...body, data: body.data.map((row: Record<string, unknown>) => ({ ...row, session_id: otherSession })) })],
+      ['foreign row session', body => ({ ...body, data: body.data.map(row => ({ ...row, session_id: otherSession })) })],
     ];
     for (const [name, tamper] of tampers) {
       h.state.tamper = tamper;
