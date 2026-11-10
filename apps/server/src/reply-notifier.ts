@@ -21,12 +21,10 @@ export type ReplyEvidence = Readonly<{
 export type ReplyEvidenceSource = (run: ReplyRun) => Promise<ReplyEvidence | null>;
 
 /**
- * No production source exists: the installed Hermes contract does not provide an exact
- * message<->run binding (accepted #9 Unsupported, BFF never sets `historyBinding`). Wiring a
- * verified source here is the only change needed once that contract exists.
+ * No source is composed by default: bootstrap builds one after onReady only when the server-only
+ * REPLY_EVIDENCE_MODE=enabled opt-in is set. A configured source is not proof of installed Hermes
+ * support, delivery or device acceptance.
  */
-export const REPLY_EVIDENCE_SOURCE: ReplyEvidenceSource | undefined = undefined;
-
 export type ReplyState = 'disabled' | 'unsupported' | 'available';
 export const replyState = (enabled: boolean, source: ReplyEvidenceSource | undefined): ReplyState => (
   !enabled ? 'disabled' : source ? 'available' : 'unsupported'

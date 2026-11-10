@@ -1,6 +1,6 @@
 import { ProjectRoomStore } from './project-room-store';
 import { ReactionStore } from './reaction-store';
-import { createPushService } from './push-service';
+import { createPushService, type PushTransport } from './push-service';
 import { AuditLedger } from './audit-ledger';
 import { createCommandProxyClient } from './command-client';
 import { createLiveRoomService } from './live-room-service';
@@ -12,12 +12,15 @@ import { ArtifactStore, versionType } from './artifact-store';
 import { dirname } from 'node:path';
 import { NotificationStore } from './notification-store';
 import { createRunNotifier } from './run-notifier';
-import { createPresence, createReplyNotifier, REPLY_EVIDENCE_SOURCE } from './reply-notifier';
+import { createPresence, createReplyNotifier, type ReplyEvidenceSource } from './reply-notifier';
+import { createReplyEvidenceSource } from './reply-evidence-source';
 
 export type CompositionOverrides = Readonly<{
   hermes?: Readonly<{
     readSnapshot: () => Promise<HermesSnapshot>;
   }>;
+  /** Composition-time seam for disposable fixtures only; never reachable from a request or the environment. */
+  pushTransport?: PushTransport;
 }>;
 
 const CHAT_IMAGE_MIMES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp']);
@@ -71,9 +74,10 @@ export function createCommandServer(
       })
     : undefined;
   const notifications = config.command ? new NotificationStore(dirname(config.command.auditLogPath)) : undefined;
-  const push = notifications && config.push ? createPushService(config.push, notifications) : undefined;
+  const push = notifications && config.push ? createPushService(config.push, notifications, overrides.pushTransport) : undefined;
   const presence = createPresence();
   let ledger: AuditLedger | undefined;
+  let replyEvidence: ReplyEvidenceSource | undefined;
   let liveRoom: ReturnType<typeof createLiveRoomService> | undefined;
   const app = buildApp({
     config,
@@ -83,6 +87,7 @@ export function createCommandServer(
     notifications,
     presence,
     get liveRoom() { return liveRoom; },
+    get replyEvidence() { return replyEvidence; },
     checkLiveRoom: async () => {
       if (!ledger || !client) throw new Error('Live Room unavailable');
       await ledger.verifyStorage();
@@ -92,12 +97,14 @@ export function createCommandServer(
   app.addHook('onReady', async () => {
     if (!config.command || !client) return;
     ledger = await AuditLedger.open(config.command.auditLogPath);
+    // Server-only opt-in; the same client and opened ledger feed both the notifier and capability reporting.
+    replyEvidence = config.replyEvidenceEnabled === true ? createReplyEvidenceSource({ client, ledger }) : undefined;
     liveRoom = createLiveRoomService({
       client,
       ledger,
       rooms: new ProjectRoomStore(dirname(config.command.auditLogPath)),
       notify: notifications ? createRunNotifier(notifications) : undefined,
-      notifyReply: notifications ? createReplyNotifier({ store: notifications, push, enabled: config.push?.replies === true, source: REPLY_EVIDENCE_SOURCE, presence }) : undefined,
+      notifyReply: notifications ? createReplyNotifier({ store: notifications, push, enabled: config.push?.replies === true, source: replyEvidence, presence }) : undefined,
       reactions: new ReactionStore(dirname(config.command.auditLogPath)),
       reactionsEnabled: config.reactionsEnabled,
       resolveImages: artifactStore

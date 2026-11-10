@@ -14,7 +14,7 @@ type Dependencies = Readonly<{
 }>;
 
 /**
- * Server-only resolver for #170. NOT wired into production: `REPLY_EVIDENCE_SOURCE` stays undefined.
+ * Server-only resolver for #170. Composed by bootstrap only behind the server-only REPLY_EVIDENCE_MODE opt-in (default disabled).
  * `run.actor` is already the actor fingerprint. The same admitted ledger record must match actor,
  * public run and session before any upstream read. The one assistant message is then found by the
  * run's own exact binding id in that session's paginated history; never by text, order or time.

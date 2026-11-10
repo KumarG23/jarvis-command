@@ -20,6 +20,7 @@ const EnvironmentSchema = z.object({
   HERMES_API_BASE_URL: z.url().default('http://127.0.0.1:18642'),
   HERMES_READ_PROXY_KEY: z.string().min(32),
   REACTIONS_MODE: z.enum(['disabled', 'enabled']).default('disabled'),
+  REPLY_EVIDENCE_MODE: z.enum(['disabled', 'enabled']).default('disabled'),
   PROJECT_DELETION_MODE: z.enum(['disabled', 'enabled']).default('disabled'),
   COMMAND_MODE: z.enum(['disabled', 'enabled']).default('disabled'),
   PUBLIC_ORIGIN: z.url().optional(),
@@ -37,6 +38,7 @@ const EnvironmentSchema = z.object({
 export type AppConfig = Readonly<{
   projectDeletionEnabled?: boolean;
   reactionsEnabled?: boolean;
+  replyEvidenceEnabled?: boolean;
   push?: PushConfig;
   nodeEnv: 'development' | 'test' | 'production';
   host: string;
@@ -178,6 +180,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv): AppConfig {
 
   return Object.freeze({
     reactionsEnabled: parsed.REACTIONS_MODE === 'enabled',
+    replyEvidenceEnabled: parsed.REPLY_EVIDENCE_MODE === 'enabled',
     projectDeletionEnabled: parsed.PROJECT_DELETION_MODE === 'enabled',
     push: pushConfig(environment),
     nodeEnv: parsed.NODE_ENV,
