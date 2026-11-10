@@ -18,6 +18,7 @@ const config: CommandProxyConfig = Object.freeze({
   maxStreamSeconds: 1_800,
   anthropicRoutesEnabled: false,
   openRouterFreeRoutesEnabled: false,
+  historyBindingEnabled: false,
 });
 
 const apps: ReturnType<typeof buildCommandProxy>[] = [];

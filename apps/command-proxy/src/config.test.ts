@@ -22,6 +22,7 @@ describe('loadCommandProxyConfig', () => {
       maxStreamSeconds: 1_800,
       anthropicRoutesEnabled: false,
       openRouterFreeRoutesEnabled: false,
+  historyBindingEnabled: false,
     });
   });
 
@@ -46,6 +47,9 @@ describe('loadCommandProxyConfig', () => {
       expect(loadCommandProxyConfig({ ...valid, COMMAND_OPENROUTER_FREE_ROUTES_ENABLED: value }).openRouterFreeRoutesEnabled).toBe(false);
     }
     expect(() => loadCommandProxyConfig({ ...valid, COMMAND_OPENROUTER_FREE_ROUTES_ENABLED: 'yes' })).toThrow();
+    expect(loadCommandProxyConfig(valid).historyBindingEnabled).toBe(false);
+    expect(loadCommandProxyConfig({ ...valid, COMMAND_HISTORY_BINDING_ENABLED: 'true' }).historyBindingEnabled).toBe(true);
+    expect(() => loadCommandProxyConfig({ ...valid, COMMAND_HISTORY_BINDING_ENABLED: 'yes' })).toThrow();
   });
 
   it.each([

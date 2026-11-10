@@ -16,6 +16,11 @@ const EnvironmentSchema = z.object({
   // an approved release enables this flag.
   COMMAND_OPENROUTER_FREE_ROUTES_ENABLED: z.enum(['true', 'false', '1', '0']).default('false')
     .transform(value => value === 'true' || value === '1'),
+  // Disabled unless explicitly enabled. Gates only the optional validated `historyBinding`
+  // projection on run status; installed Hermes support is unknown. Server-only: never
+  // request- or browser-controlled.
+  COMMAND_HISTORY_BINDING_ENABLED: z.enum(['true', 'false', '1', '0']).default('false')
+    .transform(value => value === 'true' || value === '1'),
 });
 
 export type CommandProxyConfig = Readonly<{
@@ -27,6 +32,7 @@ export type CommandProxyConfig = Readonly<{
   maxStreamSeconds: number;
   anthropicRoutesEnabled: boolean;
   openRouterFreeRoutesEnabled: boolean;
+  historyBindingEnabled: boolean;
 }>;
 
 export function loadCommandProxyConfig(environment: NodeJS.ProcessEnv): CommandProxyConfig {
@@ -54,5 +60,6 @@ export function loadCommandProxyConfig(environment: NodeJS.ProcessEnv): CommandP
     maxStreamSeconds: parsed.MAX_STREAM_SECONDS,
     anthropicRoutesEnabled: parsed.COMMAND_ANTHROPIC_ROUTES_ENABLED,
     openRouterFreeRoutesEnabled: parsed.COMMAND_OPENROUTER_FREE_ROUTES_ENABLED,
+    historyBindingEnabled: parsed.COMMAND_HISTORY_BINDING_ENABLED,
   });
 }
