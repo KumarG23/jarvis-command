@@ -67,6 +67,10 @@ const InternalRunStatusSchema = z.object({
   compaction: LiveCompactionSchema.nullable().optional(),
   kind: z.literal('context_compaction').optional(),
   result: ContextCompactionResultSchema.nullable().optional(),
+  historyBinding: z.object({
+    userMessageId: OpaqueIdentifierSchema,
+    assistantMessageId: OpaqueIdentifierSchema,
+  }).strict().refine(value => value.userMessageId !== value.assistantMessageId).optional(),
 }).strict();
 
 const InternalApprovalResponseSchema = z.object({

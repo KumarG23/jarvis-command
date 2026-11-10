@@ -13,6 +13,7 @@ const config: CommandProxyConfig = {
   maxStreamSeconds: 1800,
   anthropicRoutesEnabled: false,
   openRouterFreeRoutesEnabled: false,
+  historyBindingEnabled: false,
 };
 const encode = (text: string) => new TextEncoder().encode(text);
 async function until(check: () => boolean, milliseconds = 500) {

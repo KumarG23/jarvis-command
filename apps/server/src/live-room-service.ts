@@ -180,6 +180,9 @@ export function createLiveRoomService({
       pendingSteer: upstream.pendingSteer,
       usage: upstream.usage,
       ...(upstream.compaction !== undefined ? { compaction: upstream.compaction } : {}),
+      // Only a completed, non-compaction run may carry a binding; the run/session were checked above.
+      ...(upstream.historyBinding && upstream.status === 'completed' && upstream.kind === undefined
+        ? { historyBinding: upstream.historyBinding } : {}),
     });
   };
 
