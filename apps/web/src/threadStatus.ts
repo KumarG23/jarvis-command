@@ -30,6 +30,16 @@ export function mergeThreadState(old: ThreadState | undefined, next: ThreadState
   if (!old) return next;
   if (old.latest && next.latest && next.latest.position < old.latest.position) return old;
   if ((next.latest?.position ?? -1) <= (old.latest?.position ?? -1) && Date.parse(next.observedAt) < Date.parse(old.observedAt)) return old;
-  const lastRead = (old.lastRead?.position ?? -1) > (next.lastRead?.position ?? -1) ? old.lastRead : next.lastRead;
+  let lastRead = (old.lastRead?.position ?? -1) > (next.lastRead?.position ?? -1) ? old.lastRead : next.lastRead;
+  if (old.historyComplete && next.historyComplete && old.latest && next.latest
+    && old.latest.messageId === next.latest.messageId && old.latest.position === next.latest.position) {
+    // The server only lowers an excluded marker after an exact eligible view.
+    if (old.unread === true && old.lastRead && old.lastRead.position > old.latest.position
+      && next.unread === false && next.lastRead?.messageId === next.latest.messageId && next.lastRead.position === next.latest.position
+      && Date.parse(next.observedAt) > Date.parse(old.observedAt)) lastRead = next.lastRead;
+    // Delayed/tied excluded-tail responses cannot undo an established clear.
+    if (old.unread === false && old.lastRead?.messageId === old.latest.messageId && old.lastRead.position === old.latest.position
+      && next.lastRead && next.lastRead.position > next.latest.position) lastRead = old.lastRead;
+  }
   return { ...next, lastRead, unread: !next.historyComplete ? null : next.latest ? !(lastRead?.messageId === next.latest.messageId && lastRead.position === next.latest.position) : false };
 }
