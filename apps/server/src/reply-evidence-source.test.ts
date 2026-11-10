@@ -175,13 +175,14 @@ describe('reply evidence source (disabled factory, fixtures only)', () => {
     const h = await harness();
     const wide = '€'.repeat(20_000); // 3 bytes per character
     const rows: Row[] = [{ id: 1, role: 'user', content: 'q' }, { id: 2, role: 'assistant', content: 'a' }];
-    for (let id = 3; id <= 50; id++) rows.push({ id, role: 'tool', content: wide });
+    for (let id = 3; id <= 20; id++) rows.push({ id, role: 'tool', content: wide });
     h.state.rows = rows; h.status(0, h.bind(1, 2));
     const bytes = rows.reduce((total, row) => total + Buffer.byteLength(row.content), 0);
     expect(bytes).toBeGreaterThan(REPLY_HISTORY_MAX_CONTENT_BYTES); // under the limit by char count, over by bytes
     expect(rows.reduce((total, row) => total + row.content.length, 0)).toBeLessThan(REPLY_HISTORY_MAX_CONTENT_BYTES);
     expect(await h.source(h.run(0))).toBeNull();
-    h.state.rows = rows.slice(0, 18); // 16 * 60k bytes is under the cap
+    expect(h.counts.pageGets).toBe(1); // the page itself was valid and read; only the resolver's byte cap refused it
+    h.state.rows = rows.slice(0, 12); // 10 * 60k bytes is under the cap
     expect(await h.source(h.run(0))).not.toBeNull();
   });
 
