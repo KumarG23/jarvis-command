@@ -28,3 +28,31 @@ reuses accepted #35; no new probe, endpoint, global memory or delegated threads.
 
 Sol acceptance remains pending: one owned project chat/context round trip, artifact
 readback and recoverable release. Synthetic worker proof does not mark P4.5 Done.
+
+## Internal project metadata recovery (#164)
+
+`ProjectRoomStore.recover(roomId, { basename, sha256 })` is an explicitly invoked,
+source-only prerequisite exercised only in disposable fixtures. Supply the exact
+room id, retained `.project-rooms-snapshot-<room-id>-<32 lowercase hex>.json`
+basename and SHA-256 of its bytes; there is no discovery or latest-snapshot choice.
+The bounded strict snapshot must be a private 0600, singly linked, current-owner
+regular file in the existing private store directory. Its selected room must exist
+in the snapshot and be absent with a matching deletion tombstone in the current
+registry. A repeat or current-room conflict returns 409 without overwriting it;
+a missing snapshot target returns 404. Unsafe/changed sources fail without commit.
+
+Recovery appends only that recorded metadata/links and removes only its tombstone,
+preserving all unrelated current records and tombstones. The retained snapshot is
+unchanged. Existing serialization, atomic replacement and uncertain-commit poisoning
+apply: after a post-rename failure, use a new store for authoritative readback;
+never blindly retry or rewind the whole registry. The audit ledger is untouched.
+
+There is no HTTP, startup, retry, configuration or live operator integration.
+Removing the tombstone would also re-expose retained artifact project ids through
+the existing API projection; recorded chat links may refer to externally changed
+sessions. This fixture proof establishes neither current ownership/authorization
+nor session/history/artifact-byte recovery. Public enablement still needs a
+lead-approved actor/target authorization, confirmation, audit and admission contract,
+verified upstream/retained-content state, recoverable release/rollback and isolated
+production/operator readback. Contents deletion/recovery remains unavailable;
+P9.6 live recovery, authenticated acceptance and phone acceptance are not proven.
