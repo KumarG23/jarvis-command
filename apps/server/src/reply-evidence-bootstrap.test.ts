@@ -68,25 +68,33 @@ async function harness() {
   return { state, sent, open };
 }
 
-it('keeps every partial combination inert and reports each state distinctly', async () => {
-  const h = await harness();
-  const cases: Array<[Record<string, string>, string]> = [
-    [{}, 'disabled'],
-    [{ REPLY_EVIDENCE_MODE: 'enabled' }, 'disabled'],
-    [{ ...push, REPLY_NOTIFICATIONS_MODE: 'enabled' }, 'unsupported'],
-    [{ ...push, REPLY_EVIDENCE_MODE: 'enabled' }, 'disabled'],
-    [{ REPLY_NOTIFICATIONS_MODE: 'enabled', REPLY_EVIDENCE_MODE: 'enabled' }, 'available'],
+it('keeps every partial combination inert through a counted completion, and without Web Push only the in-app item exists', async () => {
+  // [environment, reported state, expected durable reply items]; each case gets its own stores and fixtures.
+  const cases: Array<[Record<string, string>, string, number]> = [
+    [{}, 'disabled', 0],
+    [{ REPLY_EVIDENCE_MODE: 'enabled' }, 'disabled', 0],
+    [{ ...push, REPLY_NOTIFICATIONS_MODE: 'enabled' }, 'unsupported', 0],
+    [{ ...push, REPLY_EVIDENCE_MODE: 'enabled' }, 'disabled', 0],
+    // Configured, not inert: evidence + replies without Web Push yields the item but never a push.
+    [{ REPLY_NOTIFICATIONS_MODE: 'enabled', REPLY_EVIDENCE_MODE: 'enabled' }, 'available', 1],
   ];
-  for (const [extra, replies] of cases) {
+  for (const [extra, replies, items] of cases) {
+    const h = await harness();
     const s = h.open(extra);
     await s.app.ready();
-    const before = await s.inbox();
-    expect(before.delivery.replies).toBe(replies);
-    expect(before.push.capability.state === 'available').toBe('WEB_PUSH_MODE' in extra);
+    expect((await s.inbox()).delivery.replies).toBe(replies);
+    if ('WEB_PUSH_MODE' in extra) expect((await s.post('/api/notifications/push/devices', subscription)).statusCode).toBe(200);
+    const run = await s.submit(1);
+    await s.observe(run); await s.observe(run);
+    expect((await s.post('/api/notifications/reconcile')).statusCode).toBe(200);
+    const inbox = await s.inbox();
+    expect(inbox.delivery.replies).toBe(replies);
+    expect(inbox.items.filter((item: { category?: string }) => item.category === 'assistant-reply')).toHaveLength(items);
+    expect(h.state.posts).toBe(1);
+    expect(h.state.historyGets).toBeGreaterThanOrEqual(items);
+    if (!items) expect(h.state.historyGets).toBe(0);
+    expect(h.sent).toEqual([]);
   }
-  // Only the last case (no push transport configured, so no send) reads evidence; inert cases never read history.
-  expect(h.state.historyGets).toBe(0);
-  expect(h.sent).toEqual([]);
 });
 
 it('real factory binds exact evidence after onReady and yields one item and one push across repeats, reconcile and restart', async () => {
