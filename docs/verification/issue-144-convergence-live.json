@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "issue": 144,
+  "kind": "authenticated P13 new-output/read convergence attempt",
+  "date": "2026-11-10",
+  "priorAcceptedPhase": {
+    "pr": 158,
+    "head": "db590c24224a147c91d2a28d09b0431317f28747",
+    "mergedBase": "f8597e3acf561f21e02866d681b882e2c7f7c113",
+    "receipt": "issue-144-defaults-live.json",
+    "unchanged": true
+  },
+  "browserQa": {
+    "wrapperInvocations": 1,
+    "task": "command#issue-144",
+    "preflight": "configured-browser-unavailable-at-loopback-cdp-endpoint",
+    "loopbackProbeAttempts": 1,
+    "loopbackProbeResponses": 0,
+    "automationChildStarted": false,
+    "taskOwnedPagesCreated": 0
+  },
+  "commandRequests": {
+    "attempted": 0,
+    "forwarded": 0,
+    "blockedBeforeEgress": 0,
+    "external": 0,
+    "sessionOrRunLookups": 0,
+    "readPosts": 0,
+    "runAdmissions": 0
+  },
+  "captures": [],
+  "newRunIntentPersisted": false,
+  "readMarkerChanged": false,
+  "preferenceChanged": false,
+  "convergenceAcceptance": "unverified",
+  "limitations": [
+    "The wrapper failed its configured loopback CDP preflight before starting browser automation.",
+    "No new-output unread interval, second-view read, reload convergence, or viewport proof was observed.",
+    "The reviewed #159 read-marker correction remains unmerged and unreleased.",
+    "Physical phone check pending."
+  ]
+}
