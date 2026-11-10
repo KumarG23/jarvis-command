@@ -1,0 +1,819 @@
+{
+  "version": 1,
+  "issue": 144,
+  "kind": "authenticated enabled-defaults acceptance",
+  "date": "2026-11-09",
+  "release": {
+    "source": "da662edc408e10a53ea62515ae718e517fc0d1fd",
+    "buildSha256": "44c227a1e4fe069a83f8e7fc55bd4ca4852244de0f5c5be14f5c35525ec20953",
+    "deployedPinSha256": "6d75d5a01f61e584f3f55d43d6a37d64f651f572d8f1a3c1bc9ec5e74f1d51f9",
+    "rollback": "release-app-1794260052449091341",
+    "compatibleRollbackPinSha256": "48f0adf2c03ed0d1e7ec71975c0586d3ac5b3e611f02f1ac90150a94ba764774"
+  },
+  "sessionSha256": "7918b130a537e2fa2d52d0b26649dbf0f68141f235b1b25fee8359301c9f9564",
+  "globalProjectScope": null,
+  "ownershipVerified": true,
+  "assets": {
+    "documentStatus": 200,
+    "htmlSha256": "7839d8e8e8471620a1d66569d540e112ad68f565bd0a2a56cc9ff5ec9ba37dbe",
+    "scriptAssets": [
+      "/assets/index-hiYLyvev.js",
+      "/registerSW.js"
+    ]
+  },
+  "initialDefault": {
+    "status": 200,
+    "cacheControl": "no-store",
+    "revision": 0,
+    "selection": null,
+    "writesAvailable": true
+  },
+  "preferenceMutations": [
+    {
+      "revision": 1,
+      "selection": {
+        "provider": "openai-codex",
+        "model": "gpt-6-luna",
+        "reasoningEffort": "low"
+      },
+      "requestIdSha256": "4f394bc516827092ae62f9321a70f2bd2874c0fa7bd4fcf1cf7215095e1f4584",
+      "targetExact": true,
+      "status": 200
+    },
+    {
+      "revision": 2,
+      "selection": null,
+      "requestIdSha256": "1deb154bc5821e1a772f242bec665c6af4247c19263cabc80ca110da92246b9a",
+      "targetExact": true,
+      "status": 200
+    },
+    {
+      "revision": 3,
+      "selection": {
+        "provider": "openai-codex",
+        "model": "gpt-6-luna",
+        "reasoningEffort": "low"
+      },
+      "requestIdSha256": "895e9a31cc77c30cfeeeb62fa855eff505e629c639f04ed337e31a95db92303d",
+      "targetExact": true,
+      "status": 200
+    },
+    {
+      "revision": 4,
+      "selection": null,
+      "requestIdSha256": "27c44e08bbdbb91fa992e847c8aa4cb2cbe0e9d0dca0900b42465073e68c57a2",
+      "targetExact": true,
+      "status": 200,
+      "restoredOriginal": true
+    }
+  ],
+  "history": {
+    "complete": true,
+    "count": 7,
+    "records": [
+      {
+        "position": 0,
+        "role": "user",
+        "displayKind": "internal_notification",
+        "tool": false,
+        "empty": false,
+        "idSha256": "addc598ce00e88510319ba722f2911447e8d4f5edb6af0f596310e9e659e4759"
+      },
+      {
+        "position": 1,
+        "role": "assistant",
+        "displayKind": null,
+        "tool": false,
+        "empty": false,
+        "idSha256": "605db792be11b2f3a82bbc503ad81f3b4d389ec1dcfbe1aebd7bb5f6f720ae52"
+      },
+      {
+        "position": 2,
+        "role": "system",
+        "displayKind": null,
+        "tool": false,
+        "empty": false,
+        "idSha256": "04d0644f3345ae5a1aa85f0d3871b98d7691ba8b4ce9a3f7a43f6aea7b7245ad"
+      },
+      {
+        "position": 3,
+        "role": "user",
+        "displayKind": "internal_notification",
+        "tool": false,
+        "empty": false,
+        "idSha256": "411a9a06feb04c2311e199448b402438e565c216d3644157d38abaf8882c73c6"
+      },
+      {
+        "position": 4,
+        "role": "assistant",
+        "displayKind": null,
+        "tool": false,
+        "empty": false,
+        "idSha256": "5de96eabbcd7fa34618c0fd6ab1e267f95f37a1fd5fcc962903eaf517cfb5c58"
+      },
+      {
+        "position": 5,
+        "role": "user",
+        "displayKind": "internal_notification",
+        "tool": false,
+        "empty": false,
+        "idSha256": "66f381058f4abda29f394a57700d89aa7ad7cc06d575f6953489d64284840391"
+      },
+      {
+        "position": 6,
+        "role": "assistant",
+        "displayKind": null,
+        "tool": false,
+        "empty": false,
+        "idSha256": "98843f8980482a7e7b13a1fdde4bda935be5738a30d88f18c846c6a171e8be38"
+      }
+    ],
+    "latestEligible": {
+      "position": 6,
+      "role": "assistant",
+      "idSha256": "98843f8980482a7e7b13a1fdde4bda935be5738a30d88f18c846c6a171e8be38"
+    }
+  },
+  "viewports": [
+    {
+      "width": 1280,
+      "height": 720,
+      "inputVisible": true,
+      "sendReachable": true,
+      "sendHit": true,
+      "draftRetained": true,
+      "selectorFocused": true,
+      "escapeRestoresFocus": true,
+      "capture": "AUTHENTICATED-defaults-desktop-1280x720.png"
+    },
+    {
+      "width": 360,
+      "height": 740,
+      "inputVisible": true,
+      "sendReachable": true,
+      "sendHit": true,
+      "draftRetained": true,
+      "selectorFocused": true,
+      "escapeRestoresFocus": true,
+      "capture": "AUTHENTICATED-defaults-mobile-360x740.png"
+    },
+    {
+      "width": 360,
+      "height": 360,
+      "inputVisible": true,
+      "sendReachable": true,
+      "sendHit": true,
+      "draftRetained": true,
+      "selectorFocused": true,
+      "escapeRestoresFocus": true,
+      "capture": "AUTHENTICATED-defaults-short-360x360.png"
+    }
+  ],
+  "captures": [
+    {
+      "name": "AUTHENTICATED-defaults-desktop-1280x720.png",
+      "sha256": "4e750b6fad868d8932a209fe2d7e57b3db05287b535b8e7f7385819441f659f2"
+    },
+    {
+      "name": "AUTHENTICATED-defaults-mobile-360x740.png",
+      "sha256": "bf50326dd5a2769079ab0a8a1eb9dd36c4c14bbcfcb30ede56233b4f41ba950e"
+    },
+    {
+      "name": "AUTHENTICATED-defaults-short-360x360.png",
+      "sha256": "d0d9361472c2ccc4b42e8ef2e771cfa7cbceaaa32619b4fcf9d920ca3ca94c65"
+    }
+  ],
+  "requestAccounting": {
+    "attempted": {
+      "GET": 42,
+      "POST": 11,
+      "other": 0
+    },
+    "forwarded": {
+      "GET": 25,
+      "POST": 11,
+      "other": 0
+    },
+    "blockedBeforeEgress": {
+      "GET": 17,
+      "POST": 0,
+      "other": 0
+    },
+    "responsesObserved": {
+      "HTTP 200": 36
+    },
+    "externalBlocked": 0,
+    "categories": {
+      "bootstrap": {
+        "attempted": 4,
+        "forwarded": 4,
+        "blockedBeforeEgress": 0,
+        "responses": {
+          "200": 4
+        }
+      },
+      "health": {
+        "attempted": 1,
+        "forwarded": 1,
+        "blockedBeforeEgress": 0,
+        "responses": {
+          "200": 1
+        }
+      },
+      "rooms-index": {
+        "attempted": 3,
+        "forwarded": 3,
+        "blockedBeforeEgress": 0,
+        "responses": {
+          "200": 3
+        }
+      },
+      "other-api": {
+        "attempted": 17,
+        "forwarded": 0,
+        "blockedBeforeEgress": 17,
+        "responses": {}
+      },
+      "owned-session": {
+        "attempted": 2,
+        "forwarded": 2,
+        "blockedBeforeEgress": 0,
+        "responses": {
+          "200": 2
+        }
+      },
+      "model-options": {
+        "attempted": 2,
+        "forwarded": 2,
+        "blockedBeforeEgress": 0,
+        "responses": {
+          "200": 2
+        }
+      },
+      "thread-state": {
+        "attempted": 2,
+        "forwarded": 2,
+        "blockedBeforeEgress": 0,
+        "responses": {
+          "200": 2
+        }
+      },
+      "owned-history": {
+        "attempted": 4,
+        "forwarded": 4,
+        "blockedBeforeEgress": 0,
+        "responses": {
+          "200": 4
+        }
+      },
+      "default-read": {
+        "attempted": 8,
+        "forwarded": 8,
+        "blockedBeforeEgress": 0,
+        "responses": {
+          "200": 8
+        }
+      },
+      "run-admission": {
+        "attempted": 1,
+        "forwarded": 1,
+        "blockedBeforeEgress": 0,
+        "responses": {
+          "200": 1
+        }
+      },
+      "run-events": {
+        "attempted": 1,
+        "forwarded": 1,
+        "blockedBeforeEgress": 0,
+        "responses": {
+          "200": 1
+        }
+      },
+      "run-lookup": {
+        "attempted": 2,
+        "forwarded": 2,
+        "blockedBeforeEgress": 0,
+        "responses": {
+          "200": 2
+        }
+      },
+      "run-status": {
+        "attempted": 4,
+        "forwarded": 4,
+        "blockedBeforeEgress": 0,
+        "responses": {
+          "200": 4
+        }
+      },
+      "thread-read": {
+        "attempted": 1,
+        "forwarded": 1,
+        "blockedBeforeEgress": 0,
+        "responses": {
+          "200": 1
+        }
+      },
+      "default-set": {
+        "attempted": 1,
+        "forwarded": 1,
+        "blockedBeforeEgress": 0,
+        "responses": {
+          "200": 1
+        }
+      }
+    }
+  },
+  "completed": true,
+  "limitations": [],
+  "invocations": [
+    {
+      "attempted": {
+        "GET": 20,
+        "POST": 8,
+        "PUT": 0,
+        "PATCH": 0,
+        "DELETE": 0,
+        "other": 0
+      },
+      "forwarded": {
+        "GET": 12,
+        "POST": 8,
+        "PUT": 0,
+        "PATCH": 0,
+        "DELETE": 0,
+        "other": 0
+      },
+      "blocked": {
+        "GET": 8,
+        "POST": 0,
+        "PUT": 0,
+        "PATCH": 0,
+        "DELETE": 0,
+        "other": 0
+      },
+      "responses": {
+        "200": 20,
+        "other": null
+      },
+      "categories": {
+        "bootstrap": {
+          "attempted": 3,
+          "forwarded": 3,
+          "blockedBeforeEgress": 0,
+          "responses": {
+            "200": 3
+          }
+        },
+        "health": {
+          "attempted": 1,
+          "forwarded": 1,
+          "blockedBeforeEgress": 0,
+          "responses": {
+            "200": 1
+          }
+        },
+        "rooms-index": {
+          "attempted": 2,
+          "forwarded": 2,
+          "blockedBeforeEgress": 0,
+          "responses": {
+            "200": 2
+          }
+        },
+        "thread-state": {
+          "attempted": 3,
+          "forwarded": 3,
+          "blockedBeforeEgress": 0,
+          "responses": {
+            "200": 3
+          }
+        },
+        "other-api": {
+          "attempted": 8,
+          "forwarded": 0,
+          "blockedBeforeEgress": 8,
+          "responses": {}
+        },
+        "owned-session": {
+          "attempted": 1,
+          "forwarded": 1,
+          "blockedBeforeEgress": 0,
+          "responses": {
+            "200": 1
+          }
+        },
+        "model-options": {
+          "attempted": 1,
+          "forwarded": 1,
+          "blockedBeforeEgress": 0,
+          "responses": {
+            "200": 1
+          }
+        },
+        "owned-history": {
+          "attempted": 1,
+          "forwarded": 1,
+          "blockedBeforeEgress": 0,
+          "responses": {
+            "200": 1
+          }
+        },
+        "default-read": {
+          "attempted": 5,
+          "forwarded": 5,
+          "blockedBeforeEgress": 0,
+          "responses": {
+            "200": 5
+          }
+        },
+        "default-set": {
+          "attempted": 3,
+          "forwarded": 3,
+          "blockedBeforeEgress": 0,
+          "responses": {
+            "200": 3
+          }
+        }
+      },
+      "runAdmissionsForwarded": 0,
+      "defaultWritesForwarded": 3,
+      "externalBlocked": 0,
+      "stop": "independent preference readback harness race after confirmed third mutation response"
+    },
+    {
+      "attempted": {
+        "GET": 42,
+        "POST": 11,
+        "other": 0
+      },
+      "forwarded": {
+        "GET": 25,
+        "POST": 11,
+        "other": 0
+      },
+      "blocked": {
+        "GET": 17,
+        "POST": 0,
+        "other": 0
+      },
+      "responses": {
+        "200": 36
+      },
+      "categories": {
+        "bootstrap": {
+          "attempted": 4,
+          "forwarded": 4,
+          "blockedBeforeEgress": 0,
+          "responses": {
+            "200": 4
+          }
+        },
+        "health": {
+          "attempted": 1,
+          "forwarded": 1,
+          "blockedBeforeEgress": 0,
+          "responses": {
+            "200": 1
+          }
+        },
+        "rooms-index": {
+          "attempted": 3,
+          "forwarded": 3,
+          "blockedBeforeEgress": 0,
+          "responses": {
+            "200": 3
+          }
+        },
+        "other-api": {
+          "attempted": 17,
+          "forwarded": 0,
+          "blockedBeforeEgress": 17,
+          "responses": {}
+        },
+        "owned-session": {
+          "attempted": 2,
+          "forwarded": 2,
+          "blockedBeforeEgress": 0,
+          "responses": {
+            "200": 2
+          }
+        },
+        "model-options": {
+          "attempted": 2,
+          "forwarded": 2,
+          "blockedBeforeEgress": 0,
+          "responses": {
+            "200": 2
+          }
+        },
+        "thread-state": {
+          "attempted": 2,
+          "forwarded": 2,
+          "blockedBeforeEgress": 0,
+          "responses": {
+            "200": 2
+          }
+        },
+        "owned-history": {
+          "attempted": 4,
+          "forwarded": 4,
+          "blockedBeforeEgress": 0,
+          "responses": {
+            "200": 4
+          }
+        },
+        "default-read": {
+          "attempted": 8,
+          "forwarded": 8,
+          "blockedBeforeEgress": 0,
+          "responses": {
+            "200": 8
+          }
+        },
+        "run-admission": {
+          "attempted": 1,
+          "forwarded": 1,
+          "blockedBeforeEgress": 0,
+          "responses": {
+            "200": 1
+          }
+        },
+        "run-events": {
+          "attempted": 1,
+          "forwarded": 1,
+          "blockedBeforeEgress": 0,
+          "responses": {
+            "200": 1
+          }
+        },
+        "run-lookup": {
+          "attempted": 2,
+          "forwarded": 2,
+          "blockedBeforeEgress": 0,
+          "responses": {
+            "200": 2
+          }
+        },
+        "run-status": {
+          "attempted": 4,
+          "forwarded": 4,
+          "blockedBeforeEgress": 0,
+          "responses": {
+            "200": 4
+          }
+        },
+        "thread-read": {
+          "attempted": 1,
+          "forwarded": 1,
+          "blockedBeforeEgress": 0,
+          "responses": {
+            "200": 1
+          }
+        },
+        "default-set": {
+          "attempted": 1,
+          "forwarded": 1,
+          "blockedBeforeEgress": 0,
+          "responses": {
+            "200": 1
+          }
+        }
+      },
+      "externalBlocked": 0
+    },
+    {
+      "attempted": {
+        "GET": 7,
+        "POST": 0
+      },
+      "forwarded": {
+        "GET": 4,
+        "POST": 0
+      },
+      "blocked": {
+        "GET": 3,
+        "POST": 0
+      },
+      "responsesObserved": {
+        "HTTP 200": 3,
+        "forwardedGetWithoutObservedResponseBeforeClose": 1
+      },
+      "externalBlocked": 0,
+      "purpose": "exact protected read-after-run thread-state verification"
+    },
+    {
+      "attempted": {
+        "GET": 13,
+        "POST": 0
+      },
+      "forwarded": {
+        "GET": 6,
+        "POST": 0
+      },
+      "blocked": {
+        "GET": 7,
+        "POST": 0
+      },
+      "responsesObserved": "not collected",
+      "externalBlocked": 0,
+      "purpose": "first status UI check; identified short-height near-edge Send geometry"
+    },
+    {
+      "attempted": {
+        "GET": 13,
+        "POST": 0
+      },
+      "forwarded": {
+        "GET": 6,
+        "POST": 0
+      },
+      "blocked": {
+        "GET": 7,
+        "POST": 0
+      },
+      "responsesObserved": "not collected",
+      "externalBlocked": 0,
+      "purpose": "status UI check after normal Send scrollIntoViewIfNeeded"
+    },
+    {
+      "attempted": {
+        "GET": 13,
+        "POST": 0
+      },
+      "forwarded": {
+        "GET": 6,
+        "POST": 0
+      },
+      "blocked": {
+        "GET": 7,
+        "POST": 0
+      },
+      "responsesObserved": "not collected",
+      "externalBlocked": 0,
+      "purpose": "read-only geometry/status follow-up; no writes"
+    }
+  ],
+  "recovery": {
+    "exactOwner": true,
+    "protectedDefaultRead": {
+      "status": 200,
+      "cacheControl": "no-store",
+      "writesAvailable": true,
+      "revision": 3,
+      "selection": {
+        "provider": "openai-codex",
+        "model": "gpt-6-luna",
+        "reasoningEffort": "low"
+      }
+    },
+    "afterHarnessRepair": "Third mutation had already returned 200/revision 3; this exact GET reconciled the readback race; no preference was replayed."
+  },
+  "preferenceRestored": true,
+  "run": {
+    "acceptanceStatus": 200,
+    "request": {
+      "clientRequestIdSha256": "08f5f41a254d95de2b7e1bacf65ef384639408867d19ed18da36d868be81b5c4",
+      "inputSha256": "167855ddacf7b902feaa62524a46003d84ad6aec8e2e2c4c2c6214c74fe59dc8",
+      "sessionVerified": true,
+      "routing": {
+        "mode": "defaults",
+        "projectId": null
+      },
+      "hasPromptOverride": false
+    },
+    "lookup": {
+      "status": 200,
+      "exactIdentityMatches": true
+    },
+    "status": {
+      "status": 200,
+      "state": "completed",
+      "requested": {
+        "provider": "openai-codex",
+        "model": "gpt-6-luna",
+        "reasoningEffort": "low"
+      },
+      "executed": {
+        "provider": "openai-codex",
+        "model": "gpt-6-luna",
+        "reasoningEffort": "low",
+        "reasoningEffortSource": "wire"
+      },
+      "exact": true,
+      "fallbackUsed": false,
+      "routeSource": "unknown",
+      "apiCalls": 1,
+      "outputSha256": "f40e50eb03dff5326ab27e838caffe5e30f3a78c794080e2bafdebc9dee745f4"
+    },
+    "reload": {
+      "lookupStatus": 200,
+      "statusStatus": 200,
+      "exactIdentityMatches": true
+    }
+  },
+  "runAdmissionsForwarded": 1,
+  "preferenceWritesForwarded": 4,
+  "readAfterRun": {
+    "status": 200,
+    "exactLatestMarkerMatches": true,
+    "lastReadPosition": 6,
+    "lastReadMessageIdSha256": "98843f8980482a7e7b13a1fdde4bda935be5738a30d88f18c846c6a171e8be38",
+    "unread": false,
+    "requestAccounting": {
+      "attempted": {
+        "GET": 7,
+        "POST": 0
+      },
+      "forwarded": {
+        "GET": 4,
+        "POST": 0
+      },
+      "blocked": {
+        "GET": 3,
+        "POST": 0
+      },
+      "responsesObserved": {
+        "HTTP 200": 3,
+        "forwardedGetWithoutObservedResponseBeforeClose": 1
+      },
+      "externalBlocked": 0
+    },
+    "nativeReadPost": {
+      "forwarded": true,
+      "status": 200,
+      "eligibleMessageIdMatchesCanonicalLatest": true,
+      "absolutePositionMatchesCanonicalLatest": true,
+      "visibleFocusedClippedHitChecksPassed": true
+    }
+  },
+  "totalRequestAccounting": {
+    "attempted": {
+      "GET": 108,
+      "POST": 19,
+      "other": 0
+    },
+    "forwarded": {
+      "GET": 59,
+      "POST": 19,
+      "other": 0
+    },
+    "blockedBeforeEgress": {
+      "GET": 49,
+      "POST": 0,
+      "other": 0
+    },
+    "responsesObserved": {
+      "HTTP 200": 59,
+      "forwardedGetWithoutObservedResponseBeforeClose": 1,
+      "statusNotCollectedByThreeLaterReadOnlyUiDiagnostics": "18 forwarded GET attempts"
+    },
+    "externalBlocked": 0,
+    "forwardedPostCategories": {
+      "routingDefaultRead": 13,
+      "routingDefaultSetOrClear": 4,
+      "defaultsModeRunAdmission": 1,
+      "eligibleLatestReadMarker": 1,
+      "presenceOrOtherMutation": 0
+    },
+    "serverAuditTotals": "unknown"
+  },
+  "uiStatusReadback": {
+    "exactOwnedSessionVerified": true,
+    "viewports": [
+      {
+        "width": 1280,
+        "height": 720,
+        "status": "Idle",
+        "labelMatchesText": true,
+        "historyRecordCount": 7,
+        "sendReachable": true,
+        "sendHit": true
+      },
+      {
+        "width": 360,
+        "height": 740,
+        "status": "Idle",
+        "labelMatchesText": true,
+        "historyRecordCount": 7,
+        "sendReachable": true,
+        "sendHit": true
+      },
+      {
+        "width": 360,
+        "height": 360,
+        "status": "Idle",
+        "labelMatchesText": true,
+        "historyRecordCount": 7,
+        "sendReachableInDefaultsRun": true,
+        "sendHit": true,
+        "readOnlyDiagnosticBounds": {
+          "width": 44,
+          "height": 44,
+          "bottom": 360.1875
+        },
+        "note": "The latest read-only diagnostic measured the bottom edge 0.1875 CSS px beyond the viewport after scrollIntoViewIfNeeded; its center remained hit-testable. The defaults-run viewport check recorded the button fully reachable."
+      }
+    ]
+  }
+}
