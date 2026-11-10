@@ -222,6 +222,8 @@ const UpstreamRunStatusSchema = z.object({
   compaction: UpstreamCompactionSchema.nullable().optional(),
   kind: z.literal('context_compaction').optional(),
   result: UpstreamContextCompactionResultSchema.nullable().optional(),
+  // Validated separately (and only when enabled) so malformed evidence can never fail ordinary status.
+  history_binding: z.unknown().optional(),
 }).passthrough();
 
 const UpstreamApprovalResponseSchema = z.object({
@@ -573,7 +575,7 @@ export function buildCommandProxy({
         fetcher,
       }));
       if (upstream.run_id !== runId) throw new UpstreamProtocolError();
-      return projectRunStatus(upstream, now());
+      return projectRunStatus(upstream, now(), config.historyBindingEnabled);
     } catch (error) {
       return sendProxyError(error, reply);
     }
@@ -999,7 +1001,7 @@ function projectMessage(message: z.infer<typeof UpstreamMessageSchema>): Session
   if (message.role === 'session_meta' && message.content !== null) throw new UpstreamProtocolError();
   if (message.role !== 'session_meta' && message.content === null) throw new UpstreamProtocolError();
   return {
-    id: String(message.id),
+    id: projectHistoryMessageId(message.id),
     sessionId: message.session_id,
     role: message.role === 'session_meta' ? 'system' : message.role,
     content: message.role === 'session_meta' ? 'Session setup record (not a chat message).' : message.content!,
@@ -1011,11 +1013,37 @@ function projectMessage(message: z.infer<typeof UpstreamMessageSchema>): Session
   };
 }
 
-function projectRunStatus(upstream: z.infer<typeof UpstreamRunStatusSchema>, observedAt: Date) {
+/** The single lossless native-message-ID conversion shared by session history and run binding. */
+function projectHistoryMessageId(id: string | number): string {
+  return String(id);
+}
+
+const UpstreamHistoryBindingSchema = z.object({
+  version: z.literal(1),
+  user_message_id: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  assistant_message_id: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+}).strict().refine(value => value.user_message_id !== value.assistant_message_id);
+
+/**
+ * Fail closed to "no binding": absent, unsupported, malformed, non-completed or compaction
+ * evidence yields undefined and never alters the rest of the status.
+ */
+function projectHistoryBinding(upstream: z.infer<typeof UpstreamRunStatusSchema>, status: string, enabled: boolean) {
+  if (!enabled || status !== 'completed' || upstream.kind !== undefined) return undefined;
+  const parsed = UpstreamHistoryBindingSchema.safeParse(upstream.history_binding);
+  if (!parsed.success) return undefined;
+  return {
+    userMessageId: projectHistoryMessageId(parsed.data.user_message_id),
+    assistantMessageId: projectHistoryMessageId(parsed.data.assistant_message_id),
+  };
+}
+
+function projectRunStatus(upstream: z.infer<typeof UpstreamRunStatusSchema>, observedAt: Date, historyBindingEnabled = false) {
   const status = normalizeRunState(upstream.status);
   const usageUnavailable = upstream.usage !== undefined && upstream.usage !== null && Object.keys(upstream.usage).length === 0;
   // An empty usage object means "no counters yet" for an active run; a finished run must report them.
   if (usageUnavailable && TERMINAL_RUN_STATES.has(status)) throw new UpstreamProtocolError();
+  const historyBinding = projectHistoryBinding(upstream, status, historyBindingEnabled);
   return {
     runId: upstream.run_id,
     sessionId: upstream.session_id,
@@ -1033,6 +1061,7 @@ function projectRunStatus(upstream: z.infer<typeof UpstreamRunStatusSchema>, obs
       startedAt: toIsoTimestamp(upstream.compaction.started_at),
       updatedAt: toIsoTimestamp(upstream.compaction.updated_at),
     } : null,
+    ...(historyBinding ? { historyBinding } : {}),
     ...(upstream.kind ? { kind: upstream.kind } : {}),
     ...(upstream.result ? { result: {
       outcome: upstream.result.outcome,
