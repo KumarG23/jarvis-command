@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -127,4 +128,144 @@ it.each([{ projectIcon: 'x'.repeat(33) }, { projectColor: 'x'.repeat(33) }, { pr
   await expect(store.list()).rejects.toMatchObject({ statusCode: 503 });
   await expect(store.update(rooms => rooms)).rejects.toMatchObject({ statusCode: 503 });
   expect(await fs.readFile(path)).toEqual(before);
+});
+
+async function recoveryFixture() {
+  const f = await fixture();
+  await f.store.remove(room.id, async () => {});
+  const basename = (await fs.readdir(f.root)).find(name => name.startsWith('.project-rooms-snapshot-'))!;
+  const bytes = await fs.readFile(join(f.root, basename));
+  return { ...f, source: { basename, sha256: createHash('sha256').update(bytes).digest('hex') }, snapshotBytes: bytes };
+}
+it('recovers only selected metadata after unrelated edits, creation and deletion, surviving restart', async () => {
+  const { root, path, store } = await fixture();
+  const sessionId = `jc_${'a'.repeat(32)}`;
+  const a = { ...room, instructions: 'Exact standing instructions', projectIcon: 'orbit', projectColor: 'violet',
+    sessionIds: [sessionId, 'discord:fixture'], lastSessionId: sessionId, leadSessionId: sessionId,
+    threads: [{ sessionId, title: 'Retained lead', archived: false, createdAt: '2026-11-10T13:00:00Z' }] };
+  const b = { ...room, id: `room_${'b'.repeat(32)}` };
+  const c = { ...room, id: `room_${'c'.repeat(32)}` };
+  await store.update(() => [a, b, c]);
+  await store.remove(a.id, async () => {});
+  const basename = (await fs.readdir(root)).find(name => name.startsWith(`.project-rooms-snapshot-${a.id}-`))!;
+  const bytes = await fs.readFile(join(root, basename));
+  const source = { basename, sha256: createHash('sha256').update(bytes).digest('hex') };
+  const editedB = { ...b, name: 'Later edit', instructions: 'Keep later state' };
+  const d = { ...room, id: `room_${'d'.repeat(32)}`, name: 'New after snapshot' };
+  await store.update(() => [editedB, c, d]);
+  await store.remove(c.id, async () => {});
+  const unrelatedBefore = JSON.parse(await fs.readFile(path, 'utf8'));
+  await store.recover(a.id, source);
+  const restarted = new ProjectRoomStore(root);
+  expect(await restarted.list()).toEqual([editedB, d, a]);
+  expect(await restarted.deletedIds()).toEqual([c.id]);
+  const after = JSON.parse(await fs.readFile(path, 'utf8'));
+  expect(JSON.stringify(after.rooms.filter((item: { id: string }) => item.id !== a.id))).toBe(JSON.stringify(unrelatedBefore.rooms));
+  expect(await fs.readFile(join(root, basename))).toEqual(bytes);
+  const committed = await fs.readFile(path);
+  await expect(restarted.recover(a.id, source)).rejects.toMatchObject({ statusCode: 409 });
+  expect(await fs.readFile(path)).toEqual(committed);
+  await restarted.update(rooms => rooms.map(item => item.id === a.id ? { ...item, name: 'New A' } : item));
+  const edited = await fs.readFile(path);
+  await expect(store.recover(a.id, source)).rejects.toMatchObject({ statusCode: 409 });
+  expect(await fs.readFile(path)).toEqual(edited);
+});
+
+it.each(['invalid-id', 'traversal', 'absolute', 'binding', 'hash', 'missing', 'missing-target', 'no-tombstone', 'malformed', 'schema', 'oversized', 'symlink', 'hardlink', 'mode', 'owner', 'replaced'])('refuses unsafe recovery source %s without writes', async kind => {
+  const { root, path, store, source, snapshotBytes } = await recoveryFixture();
+  const snapshotPath = join(root, source.basename);
+  if (kind === 'traversal') source.basename = `../${source.basename}`;
+  if (kind === 'absolute') source.basename = snapshotPath;
+  if (kind === 'binding') source.basename = source.basename.replace(room.id, `room_${'b'.repeat(32)}`);
+  if (kind === 'hash') source.sha256 = '0'.repeat(64);
+  if (kind === 'missing') await fs.unlink(snapshotPath);
+  if (kind === 'no-tombstone') await fs.writeFile(path, JSON.stringify({ version: 1, rooms: [] }));
+  if (['malformed', 'schema', 'missing-target', 'oversized'].includes(kind)) {
+    const bytes = kind === 'malformed' ? '{' : kind === 'schema' ? JSON.stringify({ version: 1, rooms: [{ ...room, unknown: true }] })
+      : kind === 'oversized' ? ' '.repeat(1_048_577) : JSON.stringify({ version: 1, rooms: [] });
+    await fs.writeFile(snapshotPath, bytes);
+    source.sha256 = createHash('sha256').update(bytes).digest('hex');
+  }
+  if (kind === 'symlink') { await fs.rename(snapshotPath, join(root, 'saved')); await fs.symlink(join(root, 'saved'), snapshotPath); }
+  if (kind === 'hardlink') await fs.link(snapshotPath, join(root, 'second-link'));
+  if (kind === 'mode') await fs.chmod(snapshotPath, 0o640);
+  if (kind === 'owner') {
+    const original = fs.open;
+    vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+      const handle = await original(...args);
+      if (String(args[0]).endsWith(source.basename)) {
+        const stat = await handle.stat(); vi.spyOn(handle, 'stat').mockResolvedValue(Object.assign(stat, { uid: process.getuid!() + 10000 }));
+      }
+      return handle;
+    });
+  }
+  if (kind === 'replaced') {
+    const original = fs.open;
+    vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+      if (String(args[0]).endsWith('.tmp')) {
+        await fs.rename(snapshotPath, join(root, 'saved'));
+        await fs.writeFile(snapshotPath, snapshotBytes, { mode: 0o600 });
+      }
+      return original(...args);
+    });
+  }
+  const before = await fs.readFile(path);
+  const sourceBefore = await fs.readFile(snapshotPath).catch(() => null);
+  await expect(store.recover(kind === 'invalid-id' ? '../room' : room.id, source)).rejects.toMatchObject({
+    statusCode: ['invalid-id', 'traversal', 'absolute', 'binding'].includes(kind) ? 400 : kind === 'missing-target' ? 404 : kind === 'no-tombstone' ? 409 : 503,
+  });
+  expect(await fs.readFile(path)).toEqual(before);
+  expect(await store.list()).toEqual([]);
+  if (sourceBefore) expect(await fs.readFile(snapshotPath)).toEqual(sourceBefore);
+  expect((await fs.readdir(root)).filter(name => name.endsWith('.tmp'))).toEqual([]);
+});
+
+it.each(['write', 'file-sync', 'rename', 'directory-sync'])('recovery preserves uncertain-state/readback semantics on %s failure', async kind => {
+  const { root, path, store, source, snapshotBytes } = await recoveryFixture();
+  const before = await fs.readFile(path);
+  const original = fs.open;
+  if (kind === 'rename') vi.spyOn(fs, 'rename').mockRejectedValueOnce(Error('injected rename failure'));
+  else vi.spyOn(fs, 'open').mockImplementation(async (...args) => {
+    const handle = await original(...args);
+    if (String(args[0]).endsWith('.tmp')) {
+      if (kind === 'write') vi.spyOn(handle, 'writeFile').mockRejectedValueOnce(Error('injected recovery write failure'));
+      if (kind === 'file-sync') vi.spyOn(handle, 'sync').mockRejectedValueOnce(Error('injected recovery file sync failure'));
+    }
+    if (String(args[0]) === root && kind === 'directory-sync') vi.spyOn(handle, 'sync').mockRejectedValueOnce(Error('injected recovery directory sync failure'));
+    return handle;
+  });
+  await expect(store.recover(room.id, source)).rejects.toMatchObject({ statusCode: 503 });
+  vi.restoreAllMocks();
+  expect(await fs.readFile(join(root, source.basename))).toEqual(snapshotBytes);
+  if (kind === 'directory-sync') {
+    await expect(store.list()).rejects.toMatchObject({ statusCode: 503 });
+    await expect(store.recover(room.id, source)).rejects.toMatchObject({ statusCode: 503 });
+    const restarted = new ProjectRoomStore(root);
+    expect(await restarted.list()).toEqual([room]);
+    expect(await restarted.deletedIds()).toEqual([]);
+    const committed = await fs.readFile(path);
+    await expect(restarted.recover(room.id, source)).rejects.toMatchObject({ statusCode: 409 });
+    expect(await fs.readFile(path)).toEqual(committed);
+  } else {
+    expect(await fs.readFile(path)).toEqual(before);
+    expect(await store.deletedIds()).toEqual([room.id]);
+    await store.recover(room.id, source);
+    expect(await store.list()).toEqual([room]);
+  }
+  expect((await fs.readdir(root)).filter(name => name.endsWith('.tmp'))).toEqual([]);
+});
+
+it('serializes explicit recovery behind active read admission across store instances', async () => {
+  const { root, store, source } = await recoveryFixture();
+  let enter!: () => void, release!: () => void;
+  const started = new Promise<void>(resolve => { enter = resolve; });
+  const pending = new Promise<void>(resolve => { release = resolve; });
+  const admission = store.readLocked(async rooms => { expect(rooms).toEqual([]); enter(); await pending; });
+  await started;
+  let recovered = false;
+  const recovering = new ProjectRoomStore(root).recover(room.id, source).then(() => { recovered = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  expect(recovered).toBe(false);
+  release(); await admission; await recovering;
+  expect(await store.list()).toEqual([room]);
 });

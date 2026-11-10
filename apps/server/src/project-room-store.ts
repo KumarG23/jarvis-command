@@ -1,12 +1,16 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, open, rename, unlink, type FileHandle } from 'node:fs/promises';
 import { KeyedSerialQueue } from './keyed-serial-queue';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { ProjectRoomsSchema, type ProjectRoom } from '@jarvis-command/contracts';
+import { ProjectRoomIdSchema, ProjectRoomsSchema, type ProjectRoom } from '@jarvis-command/contracts';
 
 const transactions = new KeyedSerialQueue();
 const MAX_BYTES = 1_048_576;
+type RecoverySource = { basename: string; sha256: string };
+function recoveryError(statusCode: 400 | 404 | 409, message: string) {
+  return Object.assign(new Error(message), { statusCode });
+}
 export class RoomStorageError extends Error {
   readonly statusCode = 503;
   constructor() { super('Project room storage unavailable'); }
@@ -35,7 +39,12 @@ export class ProjectRoomStore {
     }, id);
   }
   update(change: (rooms: ProjectRoom[]) => ProjectRoom[]) { return this.#transaction(change); }
-  #transaction(change?: (rooms: ProjectRoom[]) => ProjectRoom[] | Promise<ProjectRoom[]>, deleting?: string, observe?: (ids: string[]) => void, read?: (rooms: ProjectRoom[]) => Promise<void>): Promise<ProjectRoom[]> {
+  // Internal fixture-only prerequisite. No HTTP/operator authorization or audit
+  // contract is implied. Callers must name the retained preimage, never "latest".
+  recover(id: string, source: RecoverySource) {
+    return this.#transaction(undefined, undefined, undefined, undefined, { ...source, id });
+  }
+  #transaction(change?: (rooms: ProjectRoom[]) => ProjectRoom[] | Promise<ProjectRoom[]>, deleting?: string, observe?: (ids: string[]) => void, read?: (rooms: ProjectRoom[]) => Promise<void>, recovery?: RecoverySource & { id: string }): Promise<ProjectRoom[]> {
     const operation = this.#queue.then(() => transactions.run(this.directory, async () => {
       if (this.#poisoned) throw new RoomStorageError();
       let directory: FileHandle | undefined;
@@ -84,8 +93,42 @@ export class ProjectRoomStore {
           try { await read(rooms); } catch (error) { readFailure = true; throw error; }
           await bound();
         }
-        if (!change) return rooms;
-        const changed = await change(rooms);
+        if (!change && !recovery) return rooms;
+        let checkSnapshot: (() => Promise<void>) | undefined;
+        let changed: ProjectRoom[];
+        if (recovery) {
+          const { id, basename, sha256 } = recovery;
+          if (!ProjectRoomIdSchema.safeParse(id).success
+            || !new RegExp(`^\\.project-rooms-snapshot-${id}-[a-f0-9]{32}\\.json$`).test(basename)
+            || !/^[a-f0-9]{64}$/.test(sha256)) throw recoveryError(400, 'Exact room and retained snapshot identity required');
+          const snapshotPath = join(root, basename);
+          const snapshot = await open(snapshotPath, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+          let selected: ProjectRoom | undefined;
+          try {
+            const stat = await snapshot.stat();
+            if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== process.getuid!()
+              || (stat.mode & 0o777) !== 0o600 || stat.size > MAX_BYTES) throw new RoomStorageError();
+            const bytes = Buffer.alloc(MAX_BYTES + 1);
+            const { bytesRead } = await snapshot.read(bytes, 0, bytes.length, 0);
+            if (bytesRead !== stat.size || bytesRead > MAX_BYTES
+              || createHash('sha256').update(bytes.subarray(0, bytesRead)).digest('hex') !== sha256) throw new RoomStorageError();
+            const state = ProjectRoomsSchema.parse(JSON.parse(bytes.subarray(0, bytesRead).toString('utf8')));
+            selected = state.rooms.find(room => room.id === id);
+            checkSnapshot = async () => {
+              const current = await lstat(snapshotPath);
+              if (current.dev !== stat.dev || current.ino !== stat.ino || current.mode !== stat.mode
+                || current.uid !== stat.uid || current.nlink !== 1 || current.size !== stat.size
+                || current.mtimeMs !== stat.mtimeMs || current.ctimeMs !== stat.ctimeMs) throw new RoomStorageError();
+            };
+            await checkSnapshot();
+          } finally { await snapshot.close(); }
+          if (!selected) throw recoveryError(404, 'Selected room missing from retained snapshot');
+          if (rooms.some(room => room.id === id) || !deletedRoomIds.includes(id)) {
+            throw recoveryError(409, 'Recovery requires an absent room with its current deletion tombstone');
+          }
+          changed = [...rooms, selected];
+          deletedRoomIds = deletedRoomIds.filter(deleted => deleted !== id);
+        } else changed = await change!(rooms);
         if (deleting && !rooms.some(room => room.id === deleting)) return rooms;
         if (deleting) {
           // Retained private preimage; never delete it as temporary trash. Failure
@@ -102,6 +145,7 @@ export class ProjectRoomStore {
         const handle = await open(staging, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
         try { await handle.writeFile(bytes); await handle.sync(); } finally { await handle.close(); }
         await bound();
+        await checkSnapshot?.();
         await rename(staging, path); renamed = true; staging = undefined;
         await directory.sync();
         await bound();
