@@ -1,5 +1,18 @@
 # P13 status/unread: accepted source and authenticated scope
 
+## Client merge source repair (issue #159, November 10)
+
+The shared merge now accepts a lower read marker only from a strictly newer,
+complete server observation that clears the exact same eligible latest identity and
+position, replacing an old marker beyond that complete tail. The existing server
+contract permits that correction only after an actual eligible view. Older or tied
+observations cannot authorize a lower marker; a subsequent newer observation can.
+An established exact clear also survives delayed/tied excluded-tail responses.
+Valid read markers and newer output retain their monotonic guards; partial/unknown
+history cannot clear unread, and no marker is synthesized. Focused source regressions
+cover correction and reversed delivery. This adds no browser/candidate or authenticated
+proof, release, or whole-P13 acceptance; live race/restart and phone check remain pending.
+
 ## Current authenticated readback (November 9)
 
 PR145's read-target repair and PR148's saved-session recovery are reviewed,
