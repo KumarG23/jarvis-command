@@ -94,7 +94,7 @@ milestones:
     title: Delete projects
     acceptance:
       - Confirm exact project/counts with delete-only default, optional owned contents deletion, external unlink-only, active-run refusal and snapshot/audit; preserve scope/recovery/restart consistency (§10 P9.6).
-# P13 current status: see the authoritative [§11 P13 row](MASTER_PLAN.md#p13-current-status), including linked prior acceptance and the new-output convergence attempt result.
+# P13 current status: see the authoritative [§11 P13 row](MASTER_PLAN.md#p13-current-status); accepted authenticated and separate synthetic receipts are linked there.
   - id: P13
     title: Thread status, unread and per-thread model choice
     acceptance:
