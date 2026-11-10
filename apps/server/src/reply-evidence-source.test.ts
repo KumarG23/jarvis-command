@@ -11,7 +11,7 @@ import { createCommandProxyClient } from './command-client';
 import { NotificationStore } from './notification-store';
 import { createPushService, pushConfig, type PushRequest } from './push-service';
 import { createReplyNotifier, replyNotificationId, type ReplyRun } from './reply-notifier';
-import { createReplyEvidenceSource, REPLY_HISTORY_MAX_PAGES } from './reply-evidence-source';
+import { createReplyEvidenceSource, REPLY_HISTORY_MAX_CONTENT_BYTES, REPLY_HISTORY_MAX_PAGES } from './reply-evidence-source';
 
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
 const alice = hash('alice'), bob = hash('bob');
@@ -33,14 +33,15 @@ async function harness() {
   const directory = await mkdtemp(join(tmpdir(), 'jc-evidence-')); await chmod(directory, 0o700);
   cleanup.push(() => rm(directory, { recursive: true, force: true }));
   const counts = { posts: 0, runGets: 0, pageGets: 0, other: 0 };
-  const state: { rows: Row[]; runs: Record<string, Record<string, unknown>>; pageOffsets: number[] } = { rows: [], runs: {}, pageOffsets: [] };
+  const state: { rows: Row[]; runs: Record<string, Record<string, unknown>>; pageOffsets: number[]; tamper?: (body: Record<string, any>) => Record<string, any> } = { rows: [], runs: {}, pageOffsets: [] };
   const hermes = Fastify();
   hermes.addHook('onRequest', async (request, reply) => { if (request.headers.authorization !== 'Bearer ' + 'h'.repeat(32)) return reply.code(401).send({}); });
   hermes.get('/api/sessions/:id/messages', async (request) => {
     const { limit, offset } = request.query as { limit: string; offset: string };
     counts.pageGets++; state.pageOffsets.push(Number(offset));
     const data = state.rows.slice(Number(offset), Number(offset) + Number(limit)).map(row => ({ session_id: sessionId, timestamp: 1_788_530_400 + row.id, ...row }));
-    return { session_id: sessionId, data, pagination: { limit: Number(limit), offset: Number(offset), returned: data.length, order: 'oldest' } };
+    const body = { session_id: sessionId, data, pagination: { limit: Number(limit), offset: Number(offset), returned: data.length, order: 'oldest' } };
+    return state.tamper ? state.tamper(body) : body;
   });
   hermes.get('/v1/runs/:id', async (request) => { counts.runGets++; return state.runs[(request.params as { id: string }).id]; });
   hermes.post('/*', async () => { counts.posts++; return {}; });
@@ -116,7 +117,7 @@ describe('reply evidence source (disabled factory, fixtures only)', () => {
     h.state.rows = Array.from({ length: 300 }, (_, index) => ({ id: index + 1, role: index % 2 ? 'assistant' : 'user', content: `row ${index + 1}` }));
     h.status(0, h.bind(101, 102));
     expect(await h.source(h.run(0))).toMatchObject({ message: { id: '102', content: 'row 102' } });
-    expect(h.state.pageOffsets).toEqual([0, 50, 100]);
+    expect(h.state.pageOffsets).toEqual([0, 50, 100, 150]);
     h.state.pageOffsets.length = 0; h.counts.pageGets = 0;
     h.status(1, h.bind(251, 252));
     expect(await h.source(h.run(1))).toBeNull();
@@ -155,6 +156,48 @@ describe('reply evidence source (disabled factory, fixtures only)', () => {
     }
     expect(h.reads()).toEqual(before);
     expect(await h.source(h.run(0))).not.toBeNull();
+  });
+
+  it('rejects a conflicting duplicate of the bound id on a later page inside the bounded window', async () => {
+    const h = await harness();
+    const rows: Row[] = Array.from({ length: 50 }, (_, index) => ({ id: index + 1, role: index % 2 ? 'assistant' : 'user', content: `row ${index + 1}` }));
+    h.state.rows = [...rows, { id: 2, role: 'assistant', content: 'conflicting answer' }];
+    h.status(0, h.bind(1, 2));
+    expect(await h.source(h.run(0))).toBeNull();
+    expect(h.counts.pageGets).toBe(2);
+    expect(h.counts.posts).toBe(0);
+    h.state.rows = rows; // same window without the conflict resolves
+    expect(await h.source(h.run(0))).toMatchObject({ message: { id: '2', content: 'row 2' } });
+  });
+
+  it('bounds content by UTF-8 bytes, not string length', async () => {
+    const h = await harness();
+    const wide = '€'.repeat(20_000); // 3 bytes per character
+    const rows: Row[] = [{ id: 1, role: 'user', content: 'q' }, { id: 2, role: 'assistant', content: 'a' }];
+    for (let id = 3; id <= 50; id++) rows.push({ id, role: 'tool', content: wide });
+    h.state.rows = rows; h.status(0, h.bind(1, 2));
+    const bytes = rows.reduce((total, row) => total + Buffer.byteLength(row.content), 0);
+    expect(bytes).toBeGreaterThan(REPLY_HISTORY_MAX_CONTENT_BYTES); // under the limit by char count, over by bytes
+    expect(rows.reduce((total, row) => total + row.content.length, 0)).toBeLessThan(REPLY_HISTORY_MAX_CONTENT_BYTES);
+    expect(await h.source(h.run(0))).toBeNull();
+    h.state.rows = rows.slice(0, 18); // 16 * 60k bytes is under the cap
+    expect(await h.source(h.run(0))).not.toBeNull();
+  });
+
+  it('returns null for malformed or foreign pagination and page rows', async () => {
+    const h = await harness();
+    h.state.rows = turns(); h.status(0, h.bind(1, 2));
+    const tampers: Array<[string, (body: Record<string, any>) => Record<string, any>]> = [
+      ['wrong offset', body => ({ ...body, pagination: { ...body.pagination, offset: 7 } })],
+      ['wrong returned', body => ({ ...body, pagination: { ...body.pagination, returned: 1 } })],
+      ['foreign page session', body => ({ ...body, session_id: otherSession })],
+      ['foreign row session', body => ({ ...body, data: body.data.map((row: Record<string, unknown>) => ({ ...row, session_id: otherSession })) })],
+    ];
+    for (const [name, tamper] of tampers) {
+      h.state.tamper = tamper;
+      expect(await h.source(h.run(0)), name).toBeNull();
+    }
+    expect(h.counts.posts).toBe(0);
   });
 
   it('preserves the notifier unsupported/failure behavior: an unreachable upstream resolves null without throwing', async () => {
