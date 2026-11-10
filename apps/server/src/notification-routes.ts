@@ -16,7 +16,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { createLiveRoomService } from './live-room-service';
 import { notificationId } from './run-notifier';
-import { REPLY_EVIDENCE_SOURCE, replyState, type Presence } from './reply-notifier';
+import { replyState, type Presence, type ReplyEvidenceSource } from './reply-notifier';
 import { NotificationNotFoundError, NotificationStorageError, type ActorView, type NotificationStore } from './notification-store';
 
 const RECONCILE_LIMIT = 10;
@@ -30,7 +30,7 @@ function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   return result.data;
 }
 
-const toInbox = (value: ActorView, push: PushConfig | undefined, devices: PushView | null): NotificationInbox => NotificationInboxSchema.parse({
+const toInbox = (value: ActorView, push: PushConfig | undefined, devices: PushView | null, replyEvidence: ReplyEvidenceSource | undefined): NotificationInbox => NotificationInboxSchema.parse({
   version: 1,
   push: { capability: push?.capability.state === 'available' && !devices ? { state: 'unavailable', reason: 'storage' } : push?.capability.state === 'available' && devices?.full ? { state: 'unavailable', reason: 'capacity' } : push?.capability ?? { state: 'unavailable', reason: 'disabled' }, devices: devices?.devices ?? [] },
   items: value.items,
@@ -38,7 +38,7 @@ const toInbox = (value: ActorView, push: PushConfig | undefined, devices: PushVi
   preferences: value.preferences,
   // First-use, 100-item retention, terminal replay boundary, 24h/50-terminal/10-active
   // recovery and unobserved transient approvals prevent a complete-delivery promise.
-  delivery: { inApp: 'incomplete', approvals: value.approvalsUnavailable ? 'unavailable' : 'available', push: push?.capability.state === 'available' && devices && !devices.full ? 'available' : 'unavailable', externalSurfaces: 'unavailable', replies: replyState(push?.replies === true, REPLY_EVIDENCE_SOURCE) },
+  delivery: { inApp: 'incomplete', approvals: value.approvalsUnavailable ? 'unavailable' : 'available', push: push?.capability.state === 'available' && devices && !devices.full ? 'available' : 'unavailable', externalSurfaces: 'unavailable', replies: replyState(push?.replies === true, replyEvidence) },
 });
 
 /**
@@ -52,6 +52,8 @@ export function registerNotificationRoutes(
     store: NotificationStore | undefined;
     push?: PushConfig | undefined;
     presence?: Presence | undefined;
+    /** Read per request: the source only exists after onReady, and only when the server-side opt-in is set. */
+    replyEvidence?: ReplyEvidenceSource | undefined;
     liveRoom: ReturnType<typeof createLiveRoomService>;
     subjects: WeakMap<FastifyRequest, string>;
   }>,
@@ -59,7 +61,7 @@ export function registerNotificationRoutes(
   const store = () => { if (!dependencies.store) throw new NotificationStorageError(); return dependencies.store; };
   const actorOf = (request: FastifyRequest) => createHash('sha256').update(dependencies.subjects.get(request)!).digest('hex');
 
-  const inbox = async (value: ActorView, actor: string) => toInbox(value, dependencies.push, await store().readPush(actor).catch(() => null));
+  const inbox = async (value: ActorView, actor: string) => toInbox(value, dependencies.push, await store().readPush(actor).catch(() => null), dependencies.replyEvidence);
   routes.get('/api/notifications/push', { exposeHeadRoute: false }, async request => {
     try { return (await inbox(await store().read(actorOf(request)), actorOf(request))).push; }
     catch { return { capability: { state: 'unavailable', reason: 'storage' }, devices: [] }; }

@@ -129,8 +129,16 @@ One category, `assistant-reply`, for a verified final assistant message. Off unl
 actual push). Even when enabled it stays **unsupported**: no existing contract gives an
 exact run → message binding (accepted #9 Unsupported; `LiveRunStatus.historyBinding` is
 declared but never set by the proxy or BFF). The inbox reports `delivery.replies` as
-`disabled` / `unsupported` / `available` and the UI says so. Wiring a verified source is a
-single assignment of `REPLY_EVIDENCE_SOURCE` in `reply-notifier.ts`; it must return the exact
+`disabled` / `unsupported` / `available` and the UI says so. A server-only opt-in, `REPLY_EVIDENCE_MODE=enabled` (default disabled; no request, browser
+storage or upstream advertisement can set it), composes `createReplyEvidenceSource` after
+`onReady` with the same proxy client and opened audit ledger, and feeds both the notifier and
+the inbox's `delivery.replies`. Delivery needs all three independent flags: `REPLY_EVIDENCE_MODE`,
+`REPLY_NOTIFICATIONS_MODE` and (for push) `WEB_PUSH_MODE` with VAPID. `available` only means a
+source is configured; it does not prove the installed Hermes provides the native binding
+(#166, installed support UNKNOWN), delivery or device acceptance. A missing, invalid or foreign
+binding creates no item or push. Proven by `reply-evidence-bootstrap.test.ts` (real
+`createCommandServer`, synthetic proxy, fake push transport) only; no flag is enabled in any
+deployment. The source must return the exact
 session/user/assistant message ids, the persisted message read from that session, and the
 executed model (or null). Text is never taken from run output, the latest row, receipts,
 requested routes, timestamps or adjacency.

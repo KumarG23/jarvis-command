@@ -31,6 +31,7 @@ describe('loadConfig', () => {
 
     expect(config).toEqual({
       reactionsEnabled: false,
+      replyEvidenceEnabled: false,
       projectDeletionEnabled: false,
       push: { capability: { state: 'unavailable', reason: 'disabled' }, replies: false },
       nodeEnv: 'production',
