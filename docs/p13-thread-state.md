@@ -1,6 +1,10 @@
 # P13 status/unread: accepted source and authenticated scope
 
-## Current authenticated readback (November 9)
+## Current enabled-defaults acceptance
+
+The later enabled-writer acceptance is recorded in [p13-defaults-live.md](p13-defaults-live.md) and [its sanitized receipt](verification/issue-144-defaults-live.json). The bridge evidence below is preserved as historical acceptance; it was not overwritten by the new run.
+
+## Historical compatible-reader bridge readback (November 9)
 
 PR145's read-target repair and PR148's saved-session recovery are reviewed,
 gate-merged and app-only released. PR148 validates the saved canonical identity
