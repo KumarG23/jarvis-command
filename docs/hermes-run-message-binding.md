@@ -7,9 +7,12 @@ It does not complete either product outcome.
 
 Source candidate: [KumarG23/hermes-agent PR #1](https://github.com/KumarG23/hermes-agent/pull/1),
 against actual source `main` at `4a3e5c4094d96c2e184dead99bccb4f4aabb2e1b`.
-Candidate head: `b5d4529297106a9c8fa6bfe73bf6998445f3ba5a`.
+Candidate head: `7664508ed6327379f313977c7c0ea2903c8f93c3`.
 [Raw diff](https://github.com/KumarG23/hermes-agent/pull/1.diff).
-Source review is pending; no merge, deployment or runtime activation is claimed.
+Lead scoped inspection accepted identity capture/recovery on the prior head,
+then required the [SQLite contention repair](https://github.com/KumarG23/hermes-agent/pull/1#issuecomment-6771227650).
+The revised source candidate awaits exact-head re-review; no merge, deployment
+or runtime activation is claimed.
 **Current installed Hermes version/patch/support: UNKNOWN.** Source main is not
 production evidence. The older #9 installed-contract finding remains historical
 evidence and is not replaced by this candidate.
@@ -62,21 +65,40 @@ a selected answer. Legacy/incomplete status can become 404 after memory expiry.
 GET/reconnect/recovery never admits or replays work. This candidate adds **no POST
 deduplication or client-request-key recovery**: lost POST acknowledgements must
 not cause blind resends. Existing Command admission/audit recovery remains required.
-The small synchronous confirmation uses existing transcript-write patience;
-SQLite contention can delay completion, preserving an unsplit cancellation boundary.
+Completion confirmation runs in the existing executor, keeping the API loop
+responsive under real SQLite contention without changing transcript-write patience.
+A process-local Future arbitrates stop/cancel against the transaction's completion
+claim inside `BEGIN IMMEDIATE`, after the write lock is acquired. Before that claim,
+stop/cancel prevents binding; the wrapper drains the worker before publishing
+`cancelled`. After the claim, the actual commit/failure wins: late stop returns 409
+(`run_completing`), and repeated wrapper cancellation cannot abandon the worker or
+publish cancelled over a committed pair. Terminal status and `run.completed` wait
+for the write outcome. This adds no durable admission or execution state.
 
 ## Validation and consumer boundary
 
 Source-only disposable-home fixtures exercise real imported agent prologue,
 conversation loop, finalizer, SessionDB and aiohttp handlers with deterministic
-local SDK responses. Seventeen new cases plus 35 affected existing tests passed;
-Ruff and diff checks passed. Initial exact-ID regressions failed before the
+local SDK responses. The original 17 binding cases remain accepted. This repair
+adds nine contention/cancellation cases: the canonical runner passed 51 changed-path
+tests (26 binding/completion plus 25 existing Runs API cases); reuse the unchanged
+four finalizer and six identity-flush passes. **61 unique tests passed** across the
+candidate and repair. Ruff and diff checks passed. Initial exact-ID regressions failed before the
 patch; a subsequent real insert-failure regression reproduced `completed` where
 `failed` was required and now passes. Tests cover repeated identical turns,
 older/newer pairs, exact history IDs, tool/intermediate rejection, missing and
 conflicting evidence, cross-session/profile isolation, auth, rollback, cancellation,
 repeated reads/flushes/recreation without extra rows or calls, rewrites/rewinds,
 native copy/replace and nullable-column reconciliation without backfill.
+
+The adapted lead regression first failed on `b5d4529` with “SQLite binding write
+stalled the API event loop.” Its independent connection holds `BEGIN IMMEDIATE`
+while an asyncio heartbeat must run; the repaired test passes. Event barriers also
+prove HTTP status/stop responsiveness while SQLite is locked, cancellation before
+the transaction claim, repeated cancellation after claim and after commit but
+before publication, commit failure under cancellation, no premature completed
+event/status, replay-free recovery, unchanged row/provider-call counts and eventual
+ownership cleanup. The nine repair cases passed again after the final guard change.
 
 These are offline candidate proofs, not installed-contract or authenticated
 readback evidence. The minimal test venv was not the full lockfile environment;
