@@ -9,10 +9,12 @@ Source candidate: [KumarG23/hermes-agent PR #1](https://github.com/KumarG23/herm
 against actual source `main` at `4a3e5c4094d96c2e184dead99bccb4f4aabb2e1b`.
 Candidate head: `7664508ed6327379f313977c7c0ea2903c8f93c3`.
 [Raw diff](https://github.com/KumarG23/hermes-agent/pull/1.diff).
-Lead scoped inspection accepted identity capture/recovery on the prior head,
-then required the [SQLite contention repair](https://github.com/KumarG23/hermes-agent/pull/1#issuecomment-6771227650).
-The revised source candidate awaits exact-head re-review; no merge, deployment
-or runtime activation is claimed.
+[Lead exact-head implementation review](https://github.com/KumarG23/hermes-agent/pull/1#issuecomment-6771806219)
+accepted `7664508`, including the SQLite contention repair. The original independent
+lead regression now passes (canonical runner, retries disabled, 1 passed in 4.5s);
+accepted worker tests are reused. Source CI is **not green**: [check-attribution](https://github.com/KumarG23/hermes-agent/actions/runs/42845402164/job/129931564716)
+failed at this head for the unmapped machine author `sol@jarvis-command.local`.
+No merge, deployment or runtime activation is claimed.
 **Current installed Hermes version/patch/support: UNKNOWN.** Source main is not
 production evidence. The older #9 installed-contract finding remains historical
 evidence and is not replaced by this candidate.
@@ -119,10 +121,20 @@ proof. Push/reaction enablement and prompt markers remain separate lead decision
 
 ## Exact next owner action
 
-1. Lead reviews the source PR's exact head, especially commit timing, identity
-   conversion, profile/session scope, cancellation, SQLite failure and rewrite
-   paths. No Hermes merge/release gate is registered for this worker assignment;
-   any upstream merge must be separately assigned to the source owner.
+1. **Source-owner attribution action remains unresolved.** The repository's
+   `python3 scripts/audit_pr_attribution.py` exits 1 for the machine author.
+   No mapping exists in the contributor directory or legacy map; GitHub email
+   search returned zero matches, and the source commit's GitHub author is null.
+   The PR account/owner does not establish ownership of that machine email.
+   Source commits remain unchanged; no identity was fabricated, check bypassed
+   or history rewritten. The source owner must establish and record the verified
+   contributor login, then run
+   `python3 scripts/add_contributor.py sol@jarvis-command.local <verified-login>`,
+   rerun the attribution audit, and commit only the mapping on the preserved
+   source branch. Lead reviews that new SHA/delta and observes its actual CI
+   result; this note does not predict green CI. Implementation review at
+   `7664508` is accepted. No Hermes merge/release gate is registered for this
+   worker assignment; any upstream merge must be separately assigned.
 2. Runtime owner identifies the installed commit and applied patches through
    existing authorized access, checks compatibility against the accepted source,
    and prepares a pinned recoverable deployment with retained prior code/artifact,
