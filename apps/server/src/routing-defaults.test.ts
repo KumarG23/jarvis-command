@@ -18,6 +18,7 @@ const command: InferenceOverride = { provider: 'openrouter', model: 'fixture/mod
 const thread: RoutingDefaultTarget = { scope: 'thread', sessionId, projectId };
 const project: RoutingDefaultTarget = { scope: 'project', projectId };
 const actor = createHash('sha256').update('alice').digest('hex');
+const fixtureNow = () => new Date('2026-11-09T18:45:00Z');
 const open: AuditLedger[] = [];
 const apps: ReturnType<typeof buildApp>[] = [];
 afterEach(async () => { await Promise.all(apps.splice(0).map(app => app.close())); await Promise.all(open.splice(0).map(ledger => ledger.close())); });
@@ -27,7 +28,7 @@ function inventory(): InferenceOptionsResponse {
 }
 async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'command-routing-SYNTHETIC-')); await chmod(directory, 0o700);
-  const path = join(directory, 'audit.jsonl'); let ledger = await AuditLedger.open(path, { now: () => new Date('2026-11-09T18:45:00Z') }); open.push(ledger);
+  const path = join(directory, 'audit.jsonl'); let ledger = await AuditLedger.open(path, { now: fixtureNow }); open.push(ledger);
   const rooms = new ProjectRoomStore(directory);
   const room: ProjectRoom = { id: projectId, name: 'SYNTHETIC route scope', goal: 'Synthetic only', instructions: '', archived: false, repository: '', notes: [], sessionIds: [sessionId], lastSessionId: sessionId };
   await rooms.update(() => [room]);
@@ -38,10 +39,10 @@ async function fixture() {
   const getRun = vi.fn().mockResolvedValue({ runId: 'run_' + 'c'.repeat(32), sessionId, status: 'running', updatedAt: '2026-11-09T15:00:00Z', approval: null, output: '', error: null, pendingSteer: null, usage: null });
   const client = { getSession, getInferenceOptions, startRun, getRun } as unknown as CommandProxyClient;
   const resolveImages = vi.fn().mockResolvedValue([{ mime: 'image/png', bytes: Buffer.from('SYNTHETIC image') }]);
-  let service = createLiveRoomService({ ledger, client, rooms, resolveImages, now: () => new Date('2026-11-09T18:45:00Z') });
-  return { path, directory, rooms, room, options, getSession, getInferenceOptions, startRun, getRun, resolveImages,
+  let service = createLiveRoomService({ ledger, client, rooms, resolveImages, now: fixtureNow });
+  return { path, directory, rooms, room, options, getSession, getInferenceOptions, startRun, getRun, resolveImages, now: fixtureNow,
     client, get ledger() { return ledger; }, get service() { return service; },
-    async restart() { await ledger.close(); open.splice(open.indexOf(ledger), 1); ledger = await AuditLedger.open(path, { now: () => new Date('2026-11-09T18:45:00Z') }); open.push(ledger); service = createLiveRoomService({ ledger, client, rooms: new ProjectRoomStore(directory), resolveImages, now: () => new Date('2026-11-09T18:45:00Z') }); },
+    async restart() { await ledger.close(); open.splice(open.indexOf(ledger), 1); ledger = await AuditLedger.open(path, { now: fixtureNow }); open.push(ledger); service = createLiveRoomService({ ledger, client, rooms: new ProjectRoomStore(directory), resolveImages, now: fixtureNow }); },
     set(selection: InferenceOverride | null, target = thread, expectedRevision = 0, clientRequestId = randomUUID(), subject = 'alice') { return service.setRoutingDefault(subject, { selection, target, expectedRevision, clientRequestId }); },
   };
 }
@@ -221,11 +222,12 @@ it.each(['pending', 'accepted'])('replays a real pre-change f37537d %s ledger fi
 it('freezes reaction claims with resolved inference across lost ACK/restart/default edits', async () => {
   const f = await fixture(), store = new ReactionStore(f.directory);
   await store.mutate(actor, { sessionId, messageId: 'SYNTHETIC-message', offset: 0, emoji: '👍', action: 'add', clientRequestId: randomUUID() }, 'assistant');
-  let service = createLiveRoomService({ ledger: f.ledger, client: f.client, rooms: f.rooms, reactions: store, reactionsEnabled: true });
+  let service = createLiveRoomService({ ledger: f.ledger, client: f.client, rooms: f.rooms, reactions: store, reactionsEnabled: true, now: f.now });
   await f.set(a); f.startRun.mockRejectedValueOnce(Error('ACK lost')); const req = request();
   await expect(service.submitRun('alice', req)).rejects.toThrow();
+  expect(f.ledger.findRunByClientRequest(actor, req.clientRequestId)?.requestedAt).toBe(f.now().toISOString());
   await f.set(b, thread, 1); await f.restart();
-  service = createLiveRoomService({ ledger: f.ledger, client: f.client, rooms: f.rooms, reactions: new ReactionStore(f.directory), reactionsEnabled: true });
+  service = createLiveRoomService({ ledger: f.ledger, client: f.client, rooms: f.rooms, reactions: new ReactionStore(f.directory), reactionsEnabled: true, now: f.now });
   await service.submitRun('alice', req);
   expect(f.startRun.mock.calls[0]![0]).toEqual(f.startRun.mock.calls[1]![0]);
   expect(f.startRun.mock.calls[1]![0].input).toContain('SYNTHETIC-message');
