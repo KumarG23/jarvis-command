@@ -13,8 +13,8 @@ const start = async () => {
   const app = buildSessionHostApp(manager);
   await app.listen({ host: config.bind, port: config.port });
   const mcp = config.mcpPort === 0 ? null : buildMcpApp(manager);
-  if (mcp) await mcp.listen({ host: config.bind, port: config.mcpPort });
-  console.log(`Jarvis Command session host on ${config.bind}:${config.port}${mcp ? `, MCP on :${config.mcpPort}` : ''} (${config.hostName})`);
+  if (mcp) await mcp.listen({ host: config.mcpBind, port: config.mcpPort });
+  console.log(`Jarvis Command session host on ${config.bind}:${config.port}${mcp ? `, MCP on ${config.mcpBind}:${config.mcpPort}` : ''} (${config.hostName})`);
   return { app, mcp, manager };
 };
 

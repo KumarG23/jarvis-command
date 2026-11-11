@@ -19,6 +19,7 @@ Status: slice 1, part 1. Built and tested in a sandbox with real tmux and bash. 
 | `SESSION_HOST_KEY` | required, 32+ chars | Bearer key for the main API. Only the Command BFF holds it. |
 | `SESSION_HOST_MCP_KEY` | required unless MCP is off | Bearer key for the MCP listener. Only the Hermes project-lead profile holds it. Must differ from `SESSION_HOST_KEY`. |
 | `SESSION_HOST_BIND` | `127.0.0.1` | Listen address for both listeners. Use the LAN IP or `0.0.0.0` if the Command BFF and Hermes connect from other machines. |
+| `SESSION_HOST_MCP_BIND` | `SESSION_HOST_BIND` | Listen address for the MCP listener only. On VM118, keep `SESSION_HOST_BIND=127.0.0.1` for the same-host BFF and set this to the LAN IP that the Dell reaches. |
 | `SESSION_HOST_PORT` | `8650` | Main API and terminal WebSocket. |
 | `SESSION_HOST_MCP_PORT` | `8651` | MCP endpoint at `POST /mcp`. `0` disables it. |
 | `SESSION_HOST_NAME` | hostname | Shown to Neal as where code runs. |

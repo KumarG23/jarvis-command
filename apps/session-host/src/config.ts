@@ -7,6 +7,8 @@ const flag = z.enum(['true', 'false', '1', '0']).transform(value => value === 't
 
 const EnvironmentSchema = z.object({
   SESSION_HOST_BIND: z.string().min(1).default('127.0.0.1'),
+  // Lets the main API stay on loopback for a same-host BFF while MCP listens for the lead's machine.
+  SESSION_HOST_MCP_BIND: z.string().min(1).optional(),
   SESSION_HOST_PORT: z.coerce.number().int().min(0).max(65_535).default(8650),
   // 0 disables the MCP listener.
   SESSION_HOST_MCP_PORT: z.coerce.number().int().min(0).max(65_535).default(8651),
@@ -25,6 +27,7 @@ const EnvironmentSchema = z.object({
 
 export type SessionHostConfig = Readonly<{
   bind: string;
+  mcpBind: string;
   port: number;
   mcpPort: number;
   key: string;
@@ -60,6 +63,7 @@ export function loadSessionHostConfig(environment: NodeJS.ProcessEnv): SessionHo
   }
   return Object.freeze({
     bind: parsed.SESSION_HOST_BIND,
+    mcpBind: parsed.SESSION_HOST_MCP_BIND ?? parsed.SESSION_HOST_BIND,
     port: parsed.SESSION_HOST_PORT,
     mcpPort: parsed.SESSION_HOST_MCP_PORT,
     key: parsed.SESSION_HOST_KEY,

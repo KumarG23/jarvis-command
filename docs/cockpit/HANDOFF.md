@@ -10,7 +10,7 @@ Keep this short and current. It is what a new conversation (Claude, Jarvis or Ne
 
 | Piece | Where | Notes |
 | --- | --- | --- |
-| Command BFF + web | to confirm with Neal (VM113 is retired) | Cloudflare Access in front; relays the terminal WebSocket to the session host |
+| Command BFF + web | VM118, beside the session host (VM113 retired) | Cloudflare Access in front; relays the terminal WebSocket to the session host on loopback. Deploy steps: [DEPLOY-VM118.md](DEPLOY-VM118.md) |
 | Jarvis / Hermes (lead chat, project-lead profile) | its own dedicated Dell PC | older repo docs still say VM108 |
 | Session host + agent CLIs | VM118 (`cockpit-dev`) on Proxmox | owned and maintained by Jarvis; `apps/session-host` |
 
@@ -28,7 +28,7 @@ Keep this short and current. It is what a new conversation (Claude, Jarvis or Ne
 
 - Session host passes with tmux 3.4 and Node 22 in a sandbox. Note that `set -g window-size manual` in a tmux config crashes tmux 3.4 on detached start, so the cockpit uses `latest` plus explicit `resize-window`. tmux also rewrites tab characters in `-F` formats to `_`.
 - cockpit-dev (from Jarvis, 2026-11-11): reachable by IP over SSH, Node 22, ports 8650/8651 free, hostname does not resolve from the Dell yet.
-- VM113 is retired (Neal, 2026-11-11). Older deployment docs that describe it are history. Wherever the Command BFF now runs needs a network path to the session host on port 8650, which Jarvis owns.
+- VM113 is retired (Neal, 2026-11-11). Older deployment docs that describe it are history. The BFF runs on VM118 and reaches the session host on 127.0.0.1:8650. MCP binds separately (`SESSION_HOST_MCP_BIND`) for the Dell lead.
 
 ## Turning the cockpit on (Command BFF)
 
