@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { storageReason } from './storage-reason';
 import { constants } from 'node:fs';
 import { lstat, open, rename, unlink, type FileHandle } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
@@ -201,7 +202,7 @@ export class ReactionStore {
       } catch (error) {
         if (renamed) this.#poisoned = true; // Commit may have landed: require restart/readback, never silently retry.
         if (error instanceof ReactionConflictError || error instanceof ReactionBoundsError) throw error;
-        throw new ReactionStorageError();
+        throw new ReactionStorageError(storageReason(error));
       } finally {
         if (staging) await unlink(staging).catch(() => undefined);
         await directory?.close();

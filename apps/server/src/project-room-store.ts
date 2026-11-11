@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { storageReason } from './storage-reason';
 import { constants } from 'node:fs';
 import { lstat, open, rename, unlink, type FileHandle } from 'node:fs/promises';
 import { KeyedSerialQueue } from './keyed-serial-queue';
@@ -155,7 +156,7 @@ export class ProjectRoomStore {
         if (readFailure) throw error;
         if (renamed) this.#poisoned = true; // Commit may have landed: require readback/restart, never silently retry.
         if (error instanceof Error && 'statusCode' in error && [400, 404, 409].includes(error.statusCode as number)) throw error;
-        throw new RoomStorageError();
+        throw new RoomStorageError(storageReason(error));
       } finally {
         if (staging) await unlink(staging).catch(() => undefined);
         await directory?.close();

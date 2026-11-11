@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { storageReason } from './storage-reason';
 import { constants } from 'node:fs';
 import { lstat, open, rename, unlink, type FileHandle } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
@@ -158,7 +159,7 @@ export class PushStore {
       } catch (error) {
         if (renamed) this.#poisoned = true; // Commit may have landed: require restart/readback, never silently retry.
         if (error instanceof NotificationNotFoundError || (error instanceof Error && 'statusCode' in error && error.statusCode === 400)) throw error;
-        throw new NotificationStorageError();
+        throw new NotificationStorageError(storageReason(error));
       } finally {
         if (staging) await unlink(staging).catch(() => undefined);
         await directory?.close();

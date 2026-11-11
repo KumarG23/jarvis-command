@@ -1,4 +1,5 @@
 import { NotificationStorageError, NotificationNotFoundError } from './notification-errors';
+import { storageReason } from './storage-reason';
 export { NotificationStorageError, NotificationNotFoundError } from './notification-errors';
 import { PushStore } from './push-store';
 import type { PushSubscription } from '@jarvis-command/contracts';
@@ -286,7 +287,7 @@ export class NotificationStore {
       } catch (error) {
         if (renamed) this.#poisoned = true; // Commit may have landed: require restart/readback, never silently retry.
         if (error instanceof NotificationNotFoundError) throw error;
-        throw new NotificationStorageError();
+        throw new NotificationStorageError(storageReason(error));
       } finally {
         if (staging) await unlink(staging).catch(() => undefined);
         await directory?.close();

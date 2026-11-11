@@ -58,17 +58,35 @@ Preserve file modes: directories are 0700 and files 0600, owned by the user that
 
 ## 5. Run
 
-Run the BFF as a user unit beside the session host, for example `~/.config/systemd/user/jarvis-command.service`:
+Run the BFF as a **system** unit that runs as the `cockpit` user: `/etc/systemd/system/jarvis-command.service`. The session host stays a `--user` service.
 
 ```
+[Unit]
+Description=Jarvis Command BFF
+After=network-online.target
+Wants=network-online.target
+
 [Service]
-WorkingDirectory=%h/jarvis-command/apps/server
-EnvironmentFile=%h/.config/cockpit/command.env
+User=cockpit
+Group=cockpit
+WorkingDirectory=/home/cockpit/jarvis-command/apps/server
+EnvironmentFile=/home/cockpit/.config/cockpit/command.env
 ExecStart=/usr/bin/env node dist/index.js
 Restart=on-failure
+PrivateTmp=yes
+PrivateUsers=no
+NoNewPrivileges=yes
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target
 ```
 
-The containerized release pipeline in `deploy/` (compose, supervisor, nftables egress) was built for VM113. It can be adapted later. A plain unit is enough to bring the cockpit up, and it matches the permissive posture.
+Don't run the BFF as a user unit. In a user manager, `PrivateTmp` puts the process in a user namespace. There, `/` and `/home` appear owned by the overflow UID 65534, so the strict storage checks refuse to start with `unsafe_ancestor_directory`. That is correct: never treat UID 65534 as a trusted owner, and never loosen the validators to work around it.
+
+The old user unit `~/.config/systemd/user/jarvis-command.service` is masked on VM118. Leave it masked, and deploy by restarting the system unit: `sudo systemctl restart jarvis-command`.
+
+The containerized release pipeline in `deploy/` (compose, supervisor, nftables egress) was built for VM113. It can be adapted later.
 
 ## 6. Upstreams and ingress
 
