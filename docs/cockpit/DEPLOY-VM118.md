@@ -81,3 +81,14 @@ The containerized release pipeline in `deploy/` (compose, supervisor, nftables e
 2. Without an Access JWT, `curl -s 127.0.0.1:3000/api/cockpit/status` returns 401. In the browser through Access it returns `{"enabled":true}`.
 3. Open a project and click **Terminals**. Start a Shell, type `echo hi`, and confirm the output. Then try Hand to lead, Take over and Stop.
 4. `cockpit-audit.jsonl` shows the session create and stop with the Access subject.
+
+## 8. Rollback baseline
+
+Commit `a4f978e` widened the Codex/xAI model id contract from a fixed list to a shape check. That is what lets the BFF read dynamic ids such as `gpt-6.1-sol`. Once the ledger holds a run or a saved default with such an id:
+
+- **Safe rollback:** any commit at or after `a4f978e`. Prefer `9a10948` or later, which also understands `routing_refused` and `COMMAND_DEFAULT_INFERENCE`.
+- **Not safe:** `490589d` or anything older. Its strict reader rejects the new frozen routing records, and the audit store refuses to load.
+- **Before new admissions:** if the ledger has no dynamic ids yet, an older rollback is fine.
+- **If an older build is truly required:** roll forward with a fix instead of editing the ledger. Never strip or rewrite audit records.
+
+Rolling back the command proxy is independent of the BFF. An older proxy image simply stops offering the dynamic ids, and sends that use them are refused with `model_not_offered`.
