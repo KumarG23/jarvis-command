@@ -21,7 +21,7 @@ export class RoutingRefusedError extends Error {
     this.name = 'RoutingRefusedError';
   }
 }
-export function createRoutingDefaults(ledger: AuditLedger, client: CommandProxyClient, rooms: Pick<ProjectRoomStore, 'list' | 'readLocked'> | undefined) {
+export function createRoutingDefaults(ledger: AuditLedger, client: CommandProxyClient, rooms: Pick<ProjectRoomStore, 'list' | 'readLocked'> | undefined, commandDefault?: InferenceOverride) {
   const session = async (id: string) => {
     const result = SessionMutationResponseSchema.parse(await client.getSession(id));
     if (result.session.id !== id || result.session.ownership !== 'command' || !/^jc_[a-f0-9]{32}$/.test(id)) throw new RoutingUnavailableError('session_not_command_owned');
@@ -74,7 +74,8 @@ export function createRoutingDefaults(ledger: AuditLedger, client: CommandProxyC
       await scope(request.sessionId, request.routing.projectId);
       const thread = ledger.routingDefault(actor, { scope: 'thread', sessionId: request.sessionId, projectId: request.routing.projectId });
       const project = request.routing.projectId ? ledger.routingDefault(actor, { scope: 'project', projectId: request.routing.projectId }) : null;
-      const selected = request.inference ?? thread.selection ?? project?.selection;
+      // The configured Command default carries an explicit effort, so it needs no provider-default guess.
+      const selected = request.inference ?? thread.selection ?? project?.selection ?? commandDefault;
       let inference: InferenceOverride;
       if (selected) inference = await eligible(selected);
       else {

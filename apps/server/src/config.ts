@@ -2,6 +2,7 @@ import { pushConfig, type PushConfig } from './push-service';
 import { tmpdir } from 'node:os';
 import { isAbsolute, resolve } from 'node:path';
 import { z } from 'zod';
+import { InferenceOverrideSchema, type InferenceOverride } from '@jarvis-command/contracts';
 
 const EnvironmentSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -25,6 +26,9 @@ const EnvironmentSchema = z.object({
   COMMAND_MODE: z.enum(['disabled', 'enabled']).default('disabled'),
   PUBLIC_ORIGIN: z.url().optional(),
   HERMES_COMMAND_API_BASE_URL: z.url().optional(),
+  // provider/model[/effort], e.g. openai-codex/gpt-6.1-sol/medium. Used when no prompt, thread or
+  // project default applies; still checked against the live inventory on every run.
+  COMMAND_DEFAULT_INFERENCE: z.string().max(240).optional(),
   HERMES_COMMAND_PROXY_KEY: z.string().min(32).optional(),
   COMMAND_AUDIT_LOG_PATH: z.string().min(1).optional(),
   WEB_DIST_DIR: z.string().min(1).optional(),
@@ -64,6 +68,7 @@ export type AppConfig = Readonly<{
     commandProxyKey: string;
     auditLogPath: string;
     publicOrigin: string;
+    defaultInference?: InferenceOverride;
   }> | null;
   webDistDir: string | undefined;
   cockpit?: Readonly<{
@@ -145,11 +150,13 @@ export function loadConfig(environment: NodeJS.ProcessEnv): AppConfig {
         if (commandProxyKey === parsed.HERMES_READ_PROXY_KEY || baseUrl.origin === hermesBridgeUrl.origin) {
           throw new Error('Command and read bridges require distinct credentials and origins');
         }
+        const defaultInference = parseDefaultInference(parsed.COMMAND_DEFAULT_INFERENCE);
         return Object.freeze({
           baseUrl: baseUrl.origin,
           commandProxyKey,
           auditLogPath,
           publicOrigin: publicUrl.origin,
+          ...(defaultInference ? { defaultInference } : {}),
         });
       })()
     : null;
@@ -238,4 +245,17 @@ function requireValue(name: string, value: string | undefined): string {
     throw new Error(`${name} is required for this configuration`);
   }
   return value;
+}
+
+export function parseDefaultInference(value: string | undefined): InferenceOverride | undefined {
+  if (!value?.trim()) return undefined;
+  const parts = value.trim().split('/');
+  const [provider, ...rest] = parts;
+  // OpenRouter ids contain slashes and carry no effort; Codex/xAI end with an effort segment.
+  const candidate = provider === 'openrouter' || provider === 'anthropic'
+    ? { provider, model: rest.join('/') }
+    : { provider, model: rest.slice(0, -1).join('/'), reasoningEffort: rest.at(-1) };
+  const result = InferenceOverrideSchema.safeParse(candidate);
+  if (!result.success) throw new Error('COMMAND_DEFAULT_INFERENCE must be provider/model/effort (Codex, xAI) or provider/model (Anthropic, OpenRouter :free)');
+  return result.data;
 }

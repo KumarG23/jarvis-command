@@ -107,6 +107,7 @@ export function createCommandServer(
       notifyReply: notifications ? createReplyNotifier({ store: notifications, push, enabled: config.push?.replies === true, source: replyEvidence, presence }) : undefined,
       reactions: new ReactionStore(dirname(config.command.auditLogPath)),
       reactionsEnabled: config.reactionsEnabled,
+      ...(config.command.defaultInference ? { defaultInference: config.command.defaultInference } : {}),
       resolveImages: artifactStore
         ? createArtifactImageResolver(artifactStore)
         : async () => { throw Object.assign(new Error('Artifact storage unavailable'), { statusCode: 503 }); },

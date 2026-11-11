@@ -39,6 +39,7 @@ COMMAND_AUDIT_LOG_PATH=<data>/audit/events.jsonl
 ARTIFACTS_MODE=enabled
 ARTIFACT_STORAGE_PATH=<data>/artifacts
 COCKPIT_MODE=enabled
+COMMAND_DEFAULT_INFERENCE=openai-codex/gpt-6.1-sol/medium   # used when no prompt, thread or project default is saved
 SESSION_HOST_BASE_URL=http://127.0.0.1:8650
 SESSION_HOST_KEY=<same value as the session host's SESSION_HOST_KEY; never the MCP key>
 CF_ACCESS_JWKS_FILE=<path refreshed by the JWKS timer>

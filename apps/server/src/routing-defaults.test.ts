@@ -356,3 +356,28 @@ it.each(['preference', 'routing'])('audit dedupe includes immutable %s fields in
   const changed = kind === 'preference' ? { ...draft, defaultChange: { ...draft.defaultChange, selection: b } } : { ...draft, routing: { ...draft.routing, inference: b } };
   await expect(f.ledger.appendOnce(entry.dedupeKey, changed)).rejects.toThrow('different event');
 });
+it('uses the configured Command default (with its explicit effort) when nothing else applies, still checked live', async () => {
+  const f = await fixture(); f.options.default = { provider: a.provider, model: a.model };
+  const configured = createLiveRoomService({ ledger: f.ledger, client: f.client, rooms: f.rooms, resolveImages: f.resolveImages, now: fixtureNow, defaultInference: a });
+  const req = request(); await configured.submitRun('alice', req);
+  expect(f.ledger.findRunByClientRequest(actor, req.clientRequestId)!.routing).toMatchObject({ source: 'command', inference: a });
+  // An unavailable configured default is refused, never replaced.
+  const g = await fixture(); g.options.options = g.options.options.filter(option => option.model !== a.model);
+  const strict = createLiveRoomService({ ledger: g.ledger, client: g.client, rooms: g.rooms, resolveImages: g.resolveImages, now: fixtureNow, defaultInference: a });
+  await expect(strict.submitRun('alice', request())).rejects.toMatchObject({ name: 'RoutingRefusedError', reason: 'model_not_offered' });
+  expect(g.startRun).not.toHaveBeenCalled();
+});
+it('a saved project default wins over the configured Command default', async () => {
+  const f = await fixture(); await f.set(b, project);
+  const configured = createLiveRoomService({ ledger: f.ledger, client: f.client, rooms: f.rooms, resolveImages: f.resolveImages, now: fixtureNow, defaultInference: a });
+  const req = request(); await configured.submitRun('alice', req);
+  expect(f.ledger.findRunByClientRequest(actor, req.clientRequestId)!.routing).toMatchObject({ source: 'project', inference: b });
+});
+it('parses COMMAND_DEFAULT_INFERENCE', async () => {
+  const { parseDefaultInference } = await import('./config');
+  expect(parseDefaultInference('openai-codex/gpt-6.1-sol/medium')).toEqual({ provider: 'openai-codex', model: 'gpt-6.1-sol', reasoningEffort: 'medium' });
+  expect(parseDefaultInference('openrouter/meta/llama-5:free')).toEqual({ provider: 'openrouter', model: 'meta/llama-5:free' });
+  expect(parseDefaultInference(undefined)).toBeUndefined();
+  expect(() => parseDefaultInference('openai-codex/gpt-6.1-sol')).toThrow(/COMMAND_DEFAULT_INFERENCE/);
+  expect(() => parseDefaultInference('openai-api/gpt-6.1-sol/medium')).toThrow(/COMMAND_DEFAULT_INFERENCE/);
+});

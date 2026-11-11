@@ -2,7 +2,7 @@ import { requireRoutingWrites } from './routing-write-state';
 import { createRoutingDefaults, RoutingRefusedError, RoutingUnavailableError } from './routing-defaults';
 import { KeyedSerialQueue } from './keyed-serial-queue';
 import type { ProjectRoomStore } from './project-room-store';
-import type { FrozenRouting, RoutingDefaultSet } from '@jarvis-command/contracts';
+import type { FrozenRouting, InferenceOverride, RoutingDefaultSet } from '@jarvis-command/contracts';
 import { ReactionTargetSchema, ReactionMutationSchema, SessionMessagesPageSchema, SessionMutationResponseSchema, type ReactionTarget, type ReactionMutation } from '@jarvis-command/contracts';
 import { type ReactionStore, ReactionUnavailableError } from './reaction-store';
 import { ProjectRosterStatusSchema } from '@jarvis-command/contracts';
@@ -66,6 +66,7 @@ const TERMINAL_STATES = new Set<LiveRunState>([
 ]);
 
 type LiveRoomServiceOptions = Readonly<{
+  defaultInference?: InferenceOverride;
   rooms?: Pick<ProjectRoomStore, 'list' | 'readLocked'>;
   client: CommandProxyClient;
   ledger: AuditLedger;
@@ -110,9 +111,10 @@ export function createLiveRoomService({
   notifyReply,
   reactions,
   reactionsEnabled = false,
+  defaultInference,
 }: LiveRoomServiceOptions) {
   const routingRequests = new KeyedSerialQueue();
-  const defaults = createRoutingDefaults(ledger, client, rooms);
+  const defaults = createRoutingDefaults(ledger, client, rooms, defaultInference);
   const submissions = new Map<string, { fingerprint: string; operation: Promise<LiveRunSubmissionResponse> }>();
   const compactionSubmissions = new Map<string, { fingerprint: string; operation: Promise<ContextCompactionSubmissionResponse> }>();
 
