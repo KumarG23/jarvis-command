@@ -16,6 +16,18 @@
 3. **When the plan is ambiguous, Sol's reasonable reading is authoritative.** Record the reading in one line on the issue and keep going. Do not stop to ask.
 4. Dev Studio's [standing policy](https://github.com/KumarG23/dev-studio/blob/main/docs/STANDING_POLICY.md) still applies. Section 0.3 below says exactly how each of its human-only boundaries is handled **without stopping the plan**.
 
+### 0.0 Direction change — project cockpit (Neal, 2026-11-11)
+This section overrides anything below that conflicts with it. Neal paused Dev Studio's autonomous work and set a new direction: Jarvis Command becomes a **project cockpit**. A project has a lead chat on a Hermes model Neal picks, and threads that are real PTY-backed terminals running official agent CLIs (Claude Code, Codex, Gemini CLI, OpenCode), Hermes conversations or plain shells. Working plan and handoff: [docs/cockpit/HANDOFF.md](docs/cockpit/HANDOFF.md).
+
+What changes:
+- **Terminals are in scope.** The §1 non-goal "No IDE/browser workbench" no longer excludes cockpit terminals. Still no IDE, plugin framework or generic proxy.
+- **PTYs live on a separate execution host** (`cockpit-dev`, owned and maintained by Jarvis), run by `apps/session-host`. P14's "No PTY, shell, tmux … on VM113" still holds for VM113 itself, which only relays an authenticated WebSocket.
+- **The lead may launch, observe, message, interrupt and close cockpit sessions** through explicit tools, only while it holds input ownership, and never answers a permission prompt or approval for Neal. This supersedes P9's "never writes into a thread from the lead" for cockpit sessions only; Hermes-session threads keep P9's rules.
+- **Execution is by ordinary PRs reviewed by Neal.** Sol/Dev Studio scheduling (§0.4, §9) is paused; do not reactivate Studio schedulers or workers. Jarvis handles homelab and host work, including deploys, when Neal asks.
+- **Mobile** gets a usable terminal (thread switching, readable viewport, key bar, takeover/stop); dense split panes stay desktop-only.
+- **Access posture:** start permissive and tighten only when a real problem appears. Agents get normal developer abilities (sudo, Docker, network, no exact-file cages or turn limits). Two lines hold from day one: the browser terminal sits behind Cloudflare Access and the BFF's identity check, and no agent is silently moved onto a paid API or given extracted subscription credentials.
+- **Open P6.1, P9.6, P10.4/P10.5, P12, P13, P14 and P14.1 work is frozen as-is** (no reverts, WIP and drafts preserved) until Neal reorders it.
+
 ### 0.2 The finish line — owner reopening, 2026-11-09
 Authority: [Neal's exact directive on #20](https://github.com/KumarG23/jarvis-command/issues/20#issuecomment-6741080803), folded into this plan through #139 under §0.1.2.
 

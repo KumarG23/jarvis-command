@@ -8,7 +8,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build -w @jarvis-command/web && npm run build -w @jarvis-command/server && npm run build -w @jarvis-command/read-proxy && npm run build -w @jarvis-command/command-proxy",
+    "build": "npm run build -w @jarvis-command/web && npm run build -w @jarvis-command/server && npm run build -w @jarvis-command/read-proxy && npm run build -w @jarvis-command/command-proxy && npm run build -w @jarvis-command/session-host",
     "dev": "node scripts/dev.mjs",
     "lint": "eslint . --max-warnings=0",
     "test": "node --test deploy/*.test.mjs && npm run test --workspaces --if-present",
