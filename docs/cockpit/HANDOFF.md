@@ -1,45 +1,65 @@
 # Project cockpit — handoff
 
-Keep this short and current. It is what a new conversation (Claude, Jarvis or Neal) reads to resume the cockpit work.
+Keep this short and current. A new conversation (Claude, Jarvis or Neal) reads it to resume the cockpit work.
 
-- **Direction:** [MASTER_PLAN.md §0.0](../../MASTER_PLAN.md). Full plan with architecture, phases and risks: [Jarvis Command project cockpit plan](https://claude.ai/artifact/638FmFCYYVRhQEdQDswB74).
-- **Branch:** work lands on `release/gpt6-sol-luna` by PRs that Neal reviews. `main` is obsolete.
-- **Claude ↔ Jarvis channel:** the pinned GitHub issue titled "Cockpit: Claude ↔ Jarvis channel" holds status, commit SHAs and requests between the two sides. Discussion specific to a PR goes on that PR.
+- **Direction:** [MASTER_PLAN.md §0.0](../../MASTER_PLAN.md). The finish line is that Command completely replaces Discord and is better than it (Neal, 2026-11-11). Full cockpit plan: [Jarvis Command project cockpit plan](https://claude.ai/artifact/638FmFCYYVRhQEdQDswB74).
+- **Branch:** `cockpit/session-host` (PR #177) on top of `release/gpt6-sol-luna`. `main` is obsolete.
+- **Coordination:** Jarvis comments on the current cockpit PR with `@claude-cockpit`. Issue #178 is the status mailbox. Neal does not relay routine tickets.
+- **Owners:** Claude owns Command source. Jarvis owns Hermes integration, homelab qualification and deploys. Neal owns logins, spending, Cloudflare Access, deletion and product decisions.
 
-## Topology
+## Topology (live, 2026-11-11)
 
-| Piece | Where | Notes |
+| Piece | Where | How it runs |
 | --- | --- | --- |
-| Command BFF + web | VM118, beside the session host (VM113 retired) | Cloudflare Access in front; relays the terminal WebSocket to the session host on loopback. Deploy steps: [DEPLOY-VM118.md](DEPLOY-VM118.md) |
-| Jarvis / Hermes (lead chat, project-lead profile) | its own dedicated Dell PC | older repo docs still say VM108 |
-| Session host + agent CLIs | VM118 (`cockpit-dev`) on Proxmox | owned and maintained by Jarvis; `apps/session-host` |
+| Command BFF + web | VM118 (`cockpit-dev`) | **System** unit `jarvis-command.service`, `User=cockpit`. The old user unit is masked. See [DEPLOY-VM118.md](DEPLOY-VM118.md). |
+| Session host + agent CLIs | VM118 | User service `cockpit-session-host`. Main API on 127.0.0.1:8650; MCP on the LAN at 8651, reachable from the Dell only. |
+| Public ingress | Cloudflare tunnel connector on VM118 | Existing hostname, Access policy unchanged. |
+| Hermes (Jarvis Prime, `project-lead` profile) | The Dell | Default route `openai-codex/gpt-6.1-sol`, medium. Anthropic API routes off. |
+| Command proxy | The Dell, immutable container | Image built from `9a10948`. Advertised-subscription and OpenRouter `:free` routes on, Anthropic off. See [UPGRADE-COMMAND-PROXY.md](UPGRADE-COMMAND-PROXY.md). |
+| VM113 | Retired | Data originals kept until Neal approves deletion. |
 
-## Status
+## Built and deployed so far
 
-| Slice | State |
-| --- | --- |
-| Phase 0: plan amendment, this doc | in the session-host PR |
-| Phase 1a: `apps/session-host` (tmux sessions, registry, ownership, WebSocket terminal, MCP lead tools, worktrees, diff/check) | built; 10 tests pass against real tmux and bash in a sandbox; not deployed |
-| Phase 1b: BFF WebSocket relay + web terminal thread view (xterm.js, mobile key bar) | built; BFF tests plus a browser check (desktop and iPhone 13) against a real session host in a sandbox; not deployed |
-| Phase 2: Claude Code live qualification on cockpit-dev, lead profile wired, slice 1 acceptance | after 1b and Jarvis deploy |
-| Phase 3+: Codex/Gemini qualification, parallel workers, integration flow | later |
+States mean: **built** = source with tests; **deployed** = running on VM118/Dell; **accepted** = exercised for real by Neal or Jarvis.
 
-## Facts verified so far
+| Slice | State | Evidence |
+| --- | --- | --- |
+| Session host (tmux PTYs, ownership, worktrees, diff/check, MCP tools) | deployed | Jarvis, PR #177 comments 6803171736 and 6803980369. Hermes connects and discovers the 12 tools, configured for `project-lead` only. `run_check` was re-enabled after the ownership-gate regressions passed. |
+| BFF relay + web Terminals pane | deployed, **browser acceptance pending** | Built in `19a9543`. Part of the VM118 web build since `be38a9f`. |
+| Lead chat on VM118 | deployed, **one real chat accepted** | Neal's chat completed after the system-unit repair (Jarvis, comment 6809584673; audit has `run.completed`). |
+| Model routing: subscription catalog, Sol 6.1 default, definite refusals | deployed | `9a10948`. Jarvis read-only check: Inherit resolves to Sol 6.1/medium with source `command` (comment 6807882442). |
+| Storage reason codes in logs | built, not deployed | `1fb7363`. Ships with the next functional deploy. |
 
-- Session host passes with tmux 3.4 and Node 22 in a sandbox. Note that `set -g window-size manual` in a tmux config crashes tmux 3.4 on detached start, so the cockpit uses `latest` plus explicit `resize-window`. tmux also rewrites tab characters in `-F` formats to `_`.
-- cockpit-dev (from Jarvis, 2026-11-11): reachable by IP over SSH, Node 22, ports 8650/8651 free, hostname does not resolve from the Dell yet.
-- VM113 is retired (Neal, 2026-11-11). Older deployment docs that describe it are history. The BFF runs on VM118 and reaches the session host on 127.0.0.1:8650. MCP binds separately (`SESSION_HOST_MCP_BIND`) for the Dell lead.
+## Remaining work
+
+Ordered by dependency. Each line gives the state, the owner and the next concrete action. Earlier receipts for P6.1–P14.1 are kept in MASTER_PLAN §11.
+
+1. **Chat acceptance on desktop and phone.** Picker, history, streaming, run receipt, retry and recovery. State: deployed, partly accepted. Owner: Jarvis/Neal exercise it, Claude fixes. Next: authenticated desktop + phone pass that records the receipt route.
+2. **Terminals acceptance.** In the browser: Shell, `echo hi`, Hand to lead, Take over, Stop; then check `cockpit-audit.jsonl`. State: deployed. Owner: Jarvis or Neal. Next: run [DEPLOY-VM118.md](DEPLOY-VM118.md) §7.3–7.4.
+3. **Official CLI qualification on VM118.** Claude Code, Codex, agy (already logged in), Gemini, OpenCode as real interactive sessions. State: adapters built; real logins not exercised except agy. Owner: Neal logs in himself through a Terminals shell (owner-only); Claude fixes adapters. Next: start each kind once and report what the adapters need.
+4. **Lead chat runs as the project lead with project continuity.**
+   - The BFF sends Hermes `/p/project-lead/v1/runs` a stable `session_id` per project and server-built `instructions`: goal, instructions, decisions, artifacts, and session/worktree lineage.
+   - State: not built.
+   - Owner: Claude (source). Jarvis confirms the Runs request schema for `instructions`/`session_id` and the profile routing.
+   - Next: Claude builds it behind a flag once the schema answer lands.
+5. **Lead drives terminals end to end.** From the project lead chat: create a session, send, read output, `run_check`, and show tool approvals and results in Command. State: MCP deployed; the Command UI for lead tool calls and approvals is unverified. Owner: Claude (UI), Jarvis (profile). Next: depends on item 4.
+6. **agy conversation-ID capture** for lineage and resume. State: not built. Owner: Claude.
+7. **Discord parity inventory.** List every Prime capability used through Discord (commands, attachments/images, voice, reactions, notifications, scheduled or proactive messages, multi-channel) and map each to Command: present, gap or better. State: not started. Owner: Jarvis lists the Discord surface, Claude maps the gaps and adds them here. Next: Jarvis posts the list on the cockpit PR.
+8. **P13 thread status, unread, per-thread model.** State: source merged and now on VM118. Convergence, reload, restart and phone acceptance outstanding (MASTER_PLAN §11). Owner: Claude; acceptance Jarvis/Neal.
+9. **P12 reactions and P6.1 reply notifications.** State: source merged and on VM118 behind disabled flags. The exact-message binding (#166, Hermes PR1) is unmerged and installed support is unknown. Owner: Jarvis (Hermes source and install), then Claude (enable and verify). VAPID/egress/push enablement is an owner boundary.
+10. **P9.6 delete projects and recovery.** State: retained-snapshot recovery merged; deletion enablement and contents recovery outstanding. Owner: Claude. Live deletion needs Neal.
+11. **P10.5 OpenRouter free routes.** State: deployed, `:free` only. Owner: Jarvis/Neal accept it in the picker. **P10.4 Anthropic:** disabled by owner decision (2026-11-11), not a gap.
+12. **P14 Studio crew view and P14.1 steering.** State: blocked. They depend on Dev Studio's shared projection (Studio #93), and Dev Studio is paused. Owner: Neal decides whether to resume Studio or retarget the view onto cockpit sessions.
+13. **Ops follow-ups.** Dev/build `npm audit` (20 advisories, none high or critical); port the containerized release pipeline to VM118 (optional); VM113 deletion (Neal only).
+
+## Verified facts
+
+- tmux 3.4: `set -g window-size manual` crashes on detached start, so the cockpit uses `latest` plus explicit `resize-window`. tmux rewrites tabs in `-F` formats to `_`.
+- A BFF user unit with `PrivateTmp=yes` runs in a user namespace where `/` and `/home` appear owned by UID 65534. The storage validators correctly refuse that, so the BFF runs as a system unit.
+- xterm.js style tags conflict with the CSP (`style-src 'self'`). `Cockpit.tsx` turns them into inert elements and mirrors their text into a constructable stylesheet. xterm's replies to terminal queries go to the viewer's own read-only tmux client as `report` frames, never into the agent.
+- agy 1.5.5 on cockpit-dev: `--prompt-interactive`, `--conversation <id>`, `--continue`; settings in `~/.gemini/antigravity-cli/settings.json`. Neal prefers agy over Gemini for Google workers.
+- Rollback: the BFF must stay at or after `a4f978e` once dynamic model ids are in the ledger. See [DEPLOY-VM118.md](DEPLOY-VM118.md) §8.
 
 ## Turning the cockpit on (Command BFF)
 
-Set `COCKPIT_MODE=enabled`, `SESSION_HOST_BASE_URL` (for example `http://127.0.0.1:8650` if the BFF runs on VM118) and `SESSION_HOST_KEY` (the same value as the session host's). This also needs `COMMAND_MODE=enabled`. Bootstrap then advertises `project_cockpit`, and a **Terminals** button appears in a project's header. Routes live under `/api/cockpit/*`, and writes are audited to `cockpit-audit.jsonl` next to the command audit log.
-
-- xterm.js writes its CSS into `<style>` tags, which the app's CSP (`style-src 'self'`) blocks. `Cockpit.tsx` turns those tags into inert elements and mirrors their text into a constructable stylesheet, so the CSP stays as it is.
-- xterm's replies to tmux's terminal queries (device attributes, colours, cursor position) are sent as `report` frames to the viewer's own read-only tmux client. They are never typed into the agent.
-
-## Not yet verified
-
-- Interactive Claude Code, Codex, Gemini or OpenCode under the cockpit with Neal's real logins.
-- Whether the installed Hermes loads MCP servers per profile (Jarvis prompt 2).
-- agy 1.5.5 on cockpit-dev (Jarvis): `--prompt-interactive`, `--conversation <id>`, `--continue`; settings in `~/.gemini/antigravity-cli/settings.json`. Adapter added; capturing its conversation ID for lineage is not wired yet. Neal prefers agy over Gemini for Google workers.
-- Prompt flags for Gemini (`--prompt-interactive`) and OpenCode (`--prompt`) on the installed versions.
+Set `COCKPIT_MODE=enabled`, `SESSION_HOST_BASE_URL=http://127.0.0.1:8650` and `SESSION_HOST_KEY` (the session host's value). This also needs `COMMAND_MODE=enabled`. Bootstrap then advertises `project_cockpit`, and a **Terminals** button appears in a project's header. Routes are under `/api/cockpit/*`, and writes are audited to `cockpit-audit.jsonl`.
