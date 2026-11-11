@@ -1252,3 +1252,29 @@ it('keeps an authorized unsent draft when reselecting the same chat', async () =
   await chooseChat(session.title);
   expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('Retain selected draft');
 });
+
+it('shows a definite routing refusal as not sent, clears recovery and hands the text back', async () => {
+  const fetchMock = vi.fn(async () => new Response(JSON.stringify({ error: 'routing_refused', message: 'Command refused this model. Nothing was sent.' }), { status: 422, headers: { 'content-type': 'application/json' } }));
+  vi.stubGlobal('fetch', fetchMock);
+  const { result, unmount } = readyHook();
+  act(() => result.current.send(session.id, 'keep this text', 100));
+  await waitFor(() => expect(result.current.turn?.phase).toBe('Not sent — pick an eligible model'));
+  expect(result.current.turn).toMatchObject({ done: true, refused: true, error: 'Command refused this model. Nothing was sent.' });
+  expect(sessionStorage.getItem(recoveryKey)).toBeNull();
+  expect(result.current.recoveries).toEqual([expect.objectContaining({ input: 'keep this text', kind: 'refused' })]);
+  // History refreshes do not turn the refusal into an unconfirmed turn that fills the backlog.
+  act(() => result.current.history(session.id, [], true));
+  expect(result.current.turn?.historyMatched).toBe(true);
+  act(() => { result.current.send(session.id, 'next try', 100); });
+  expect(result.current.completedTurns).toHaveLength(0);
+  unmount();
+});
+
+it('keeps an ambiguous 503 routing failure as admission uncertain', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'routing_unavailable', message: 'x' }), { status: 503 })));
+  const { result, unmount } = readyHook();
+  act(() => result.current.send(session.id, 'replayed text', 100));
+  await waitFor(() => expect(result.current.turn?.phase).toMatch(/Admission uncertain/));
+  expect(result.current.recoveries).toEqual([]);
+  unmount();
+});

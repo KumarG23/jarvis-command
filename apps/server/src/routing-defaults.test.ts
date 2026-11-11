@@ -133,9 +133,12 @@ it('cleared thread falls through to project; unknown Command effort fails rather
   const req = request(); await f.service.submitRun('alice', req);
   expect(f.ledger.findRunByClientRequest(actor, req.clientRequestId)!.routing).toMatchObject({ source: 'project', threadRevision: 2, inference: b });
   const other = await fixture(); other.options.default = { provider: a.provider, model: a.model };
-  await expect(other.service.submitRun('alice', request())).rejects.toThrow(/Routing selection is unavailable/); expect(other.startRun).not.toHaveBeenCalled();
+  // Refused before anything is recorded or sent, so the client is told definitely (422), not "uncertain".
+  const refused = request();
+  await expect(other.service.submitRun('alice', refused)).rejects.toThrow(/Nothing was sent/); expect(other.startRun).not.toHaveBeenCalled();
+  expect(other.ledger.findRunByClientRequest(actor, refused.clientRequestId)).toBeNull();
   // The log reason names exactly why: the Command default route needs an explicit effort.
-  await expect(other.service.submitRun('alice', request())).rejects.toMatchObject({ name: 'RoutingUnavailableError', reason: 'default_needs_explicit_effort', statusCode: 503 });
+  await expect(other.service.submitRun('alice', request())).rejects.toMatchObject({ name: 'RoutingRefusedError', reason: 'default_needs_explicit_effort', statusCode: 422 });
   const unauthenticated = await fixture(); unauthenticated.options.catalog!.entries.find(entry => entry.model === command.model)!.authenticated = false;
   await expect(unauthenticated.service.submitRun('alice', request())).rejects.toMatchObject({ reason: 'model_not_authenticated' });
 });

@@ -344,7 +344,7 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
   useEffect(() => {
     if (!allowed || !draftsAuthorized || !sessionId) return;
     for (const recovery of recoveries) {
-      if (recovery.kind === 'terminal' && recovery.intent.sessionId === sessionId && !offered.current.has(recovery)) {
+      if ((recovery.kind === 'terminal' || recovery.kind === 'refused') && recovery.intent.sessionId === sessionId && !offered.current.has(recovery)) {
         offered.current.add(recovery);
         if (!(draftsRef.current[sessionId] ?? '')) {
           setRoomDraft(sessionId, recovery.input);
@@ -535,6 +535,7 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
       </details>);
   return <>
     {busy && turn && !turn.done ? <p className="composer-feedback" role="status">{turn.phase}</p> : null}
+    {turn?.refused && turn.error ? <p className="composer-feedback" role="alert">{turn.error}</p> : null}
     {turn?.phase === 'Admission uncertain — retry the same intent' ? <button className="primary-button" type="button" onClick={retry}>Retry same intent</button> : null}
     {turn && !turn.done && !turn.publicRunId && turn.phase.startsWith('Admission unknown') ? <button className="primary-button" type="button" onClick={resume}>Check admission status</button> : null}
     {turn && !turn.done && turn.publicRunId && turn.phase.startsWith('Disconnected') ? <button className="primary-button" type="button" onClick={resume}>Resume status check</button> : null}
@@ -544,7 +545,7 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
       <p>Queue guidance for this run; acknowledgement does not mean execution.</p>
     </form> : null}
     {allowed && draftsAuthorized ? recoveries.filter((item) => item.intent.sessionId === sessionId).map((item, index) => <section key={index} aria-label="Recover steer draft">
-      <p>{item.kind === 'terminal' ? 'Unconsumed terminal steer' : 'Unconfirmed steer — may already be queued; no automatic retry'}</p><pre>{item.input}</pre>
+      <p>{item.kind === 'refused' ? 'Not sent — model refused' : item.kind === 'terminal' ? 'Unconsumed terminal steer' : 'Unconfirmed steer — may already be queued; no automatic retry'}</p><pre>{item.input}</pre>
       <button type="button" disabled={!!draft} onClick={() => handoff(item, false)}>Restore to empty draft</button>
       <button type="button" onClick={() => handoff(item, true)}>Append to draft</button>
     </section>) : null}

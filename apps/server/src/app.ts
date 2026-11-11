@@ -1,5 +1,5 @@
 import { RoutingWritesUnavailableError } from './routing-write-state';
-import { RoutingUnavailableError } from './routing-defaults';
+import { RoutingRefusedError, RoutingUnavailableError } from './routing-defaults';
 import { ThreadReadStorageError } from './thread-read-store';
 import { ThreadObservationUnavailableError } from './thread-state';
 import { ReactionStorageError, ReactionUnavailableError, ReactionConflictError, ReactionBoundsError } from './reaction-store';
@@ -63,7 +63,13 @@ export function buildApp(dependencies: AppDependencies) {
 
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof RoutingWritesUnavailableError) return reply.code(503).send({ error: 'routing_writes_unavailable', message: error.message });
-    if (error instanceof RoutingUnavailableError) return reply.code(503).send({ error: 'routing_unavailable', message: error.message });
+    if (error instanceof RoutingRefusedError || error instanceof RoutingUnavailableError) {
+      // reason is a fixed code-defined value, never input or identity.
+      request.log.warn({ errorType: error.name, route: request.routeOptions.url ?? null, method: request.method, reason: error.reason }, 'routing refused');
+      return error instanceof RoutingRefusedError
+        ? reply.code(422).send({ error: 'routing_refused', message: error.message })
+        : reply.code(503).send({ error: 'routing_unavailable', message: error.message });
+    }
     // Many custom errors keep the default name "Error"; the class name says which store or
     // check failed. Only fixed, code-defined values are logged: never messages, input or identity.
     const errorName = error instanceof Error ? (error.name !== 'Error' ? error.name : error.constructor?.name ?? 'Error') : 'UnknownError';

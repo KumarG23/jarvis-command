@@ -7,6 +7,11 @@ const eventNames = ['message.delta', 'tool.started', 'tool.completed', 'subagent
 const terminal = (status: string) => ['completed', 'failed', 'cancelled', 'interrupted'].includes(status);
 const MAX_UNCONFIRMED_TURNS = 8;
 
+// The server refused the routing before recording or sending anything: definitely not admitted.
+export class RoutingRefusedResponseError extends Error {
+  constructor(message: string) { super(message); this.name = 'RoutingRefusedResponseError'; }
+}
+const REFUSED_FALLBACK = 'Command refused this model, effort or project for this message. Nothing was sent; pick an eligible model and send again.';
 // Own the reader: transport cancellation must not depend on cooperative JSON parsing.
 export async function boundedJson(url: string, init: RequestInit, controller: AbortController): Promise<unknown> {
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
@@ -27,7 +32,7 @@ export async function boundedJson(url: string, init: RequestInit, controller: Ab
       const response = await fetch(url, { ...init, signal: controller.signal });
       if (controller.signal.aborted) { void response.body?.cancel().catch(() => {}); throw new Error('late response'); }
       reader = response.body?.getReader();
-      if (!response.ok || response.redirected || !reader) throw new Error('response');
+      if ((!response.ok && response.status !== 422) || response.redirected || !reader) throw new Error('response');
       const decoder = new TextDecoder();
       let text = '';
       let bytes = 0;
@@ -39,7 +44,13 @@ export async function boundedJson(url: string, init: RequestInit, controller: Ab
         if (bytes > 2_097_152) throw new Error('response limit');
         text += decoder.decode(chunk.value, { stream: true });
       }
-      return JSON.parse(text + decoder.decode()) as unknown;
+      const parsed = JSON.parse(text + decoder.decode()) as unknown;
+      if (response.status === 422) {
+        const body = typeof parsed === 'object' && parsed !== null ? parsed as { error?: unknown; message?: unknown } : {};
+        if (body.error !== 'routing_refused') throw new Error('response');
+        throw new RoutingRefusedResponseError(typeof body.message === 'string' && body.message.length <= 300 ? body.message : REFUSED_FALLBACK);
+      }
+      return parsed;
     })();
     return await Promise.race([work, aborted]);
   } finally {
@@ -68,11 +79,13 @@ export type Turn = {
   usage?: LiveRunStatus['usage'];
   compaction?: LiveRunStatus['compaction'];
   error?: string | null;
+  // Refused before admission: never in history, so it is never matched or retained.
+  refused?: boolean;
   activityUnavailable?: boolean;
   statusObservedAt?: string;
   telemetry?: { admissionAttempts: number; streamConnections: number; statusChecks: number };
 };
-export type DraftRecovery = { intent: TurnIntent; input: string; kind: 'terminal' | 'uncertain' };
+export type DraftRecovery = { intent: TurnIntent; input: string; kind: 'terminal' | 'uncertain' | 'refused' };
 
 export function useLiveTurn(sessionScope?: string, foreground = true) {
   const foregroundRef = useRef(foreground); foregroundRef.current = foreground;
@@ -351,7 +364,20 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
       try { writeStored(bound, stored.current); stored.current = bound; }
       catch { setRecoveryError('Reload recovery degraded — keep this tab open. In-memory supervision continues.'); }
       supervise(current.current!);
-    } catch { if (!cancelled && alive.current && current.current?.intent === intent) update({ phase: 'Admission uncertain — retry the same intent' }); }
+    } catch (error) {
+      if (cancelled || !alive.current || current.current?.intent !== intent) return;
+      if (!(error instanceof RoutingRefusedResponseError)) { update({ phase: 'Admission uncertain — retry the same intent' }); return; }
+      // A definite refusal: nothing was recorded, so drop the pending recovery identity and hand the
+      // text back to the composer instead of offering a same-intent retry.
+      try {
+        if (stored.current) { clearStored(stored.current); stored.current = null; }
+      } catch { recoveryBlocked.current = true; setRecoveryError('Local reload recovery could not be cleared safely — writer locked. Trusted operator reconciliation required.'); }
+      update({ phase: 'Not sent — pick an eligible model', error: error.message, done: true, historyMatched: true, refused: true });
+      if (intent.input !== null) {
+        const input = intent.input;
+        setRecoveries((items) => [...items, { intent, input, kind: 'refused' }]);
+      }
+    }
   }
   function send(
     sessionId: string,
@@ -429,7 +455,7 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
       if (matched.size) retain(completed.current.filter((item) => !matched.has(item.intent)));
     }
     const run = current.current;
-    if (run && run.intent.sessionId === sessionId) {
+    if (run && run.intent.sessionId === sessionId && !run.refused) {
       const match = matchTurn(run, messages, complete);
       update({ historyMatched: !!match.assistant, userHistoryMatched: !!match.user });
     }

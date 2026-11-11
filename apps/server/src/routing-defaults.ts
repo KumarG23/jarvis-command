@@ -12,6 +12,15 @@ export class RoutingUnavailableError extends Error {
     this.name = 'RoutingUnavailableError';
   }
 }
+// A refusal before anything was recorded or sent: the run definitely does not exist, so the
+// client can say so instead of offering a same-intent retry.
+export class RoutingRefusedError extends Error {
+  readonly statusCode = 422;
+  constructor(readonly reason: string) {
+    super('Command refused this model, effort or project for this message. Nothing was sent; pick an eligible model and send again.');
+    this.name = 'RoutingRefusedError';
+  }
+}
 export function createRoutingDefaults(ledger: AuditLedger, client: CommandProxyClient, rooms: Pick<ProjectRoomStore, 'list' | 'readLocked'> | undefined) {
   const session = async (id: string) => {
     const result = SessionMutationResponseSchema.parse(await client.getSession(id));

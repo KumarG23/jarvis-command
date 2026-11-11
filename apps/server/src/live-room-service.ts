@@ -1,5 +1,5 @@
 import { requireRoutingWrites } from './routing-write-state';
-import { createRoutingDefaults } from './routing-defaults';
+import { createRoutingDefaults, RoutingRefusedError, RoutingUnavailableError } from './routing-defaults';
 import { KeyedSerialQueue } from './keyed-serial-queue';
 import type { ProjectRoomStore } from './project-room-store';
 import type { FrozenRouting, RoutingDefaultSet } from '@jarvis-command/contracts';
@@ -276,7 +276,10 @@ export function createLiveRoomService({
         }
       }
 
-      const routing: FrozenRouting | undefined = request.routing ? await defaults.resolve(actor, request, payloadFingerprint) : undefined;
+      // Nothing is recorded or sent before this point, so a routing refusal here is definite.
+      const routing: FrozenRouting | undefined = request.routing ? await defaults.resolve(actor, request, payloadFingerprint).catch((error: unknown) => {
+        throw error instanceof RoutingUnavailableError ? new RoutingRefusedError(error.reason) : error;
+      }) : undefined;
       const resolvedRequest = routing ? { ...request, inference: routing.inference } : request;
       const { prepared, requestFingerprint } = await prepareReactionContext(resolvedRequest, actor, payloadFingerprint, reactionsEnabled);
       const publicRunId = createPublicRunId();
