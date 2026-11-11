@@ -62,6 +62,25 @@ const agyPreflight = async (_cwd: string, env: NodeJS.ProcessEnv) => {
   return null;
 };
 
+// agy can also spend paid AI credits once the subscription quota runs out. The read-only
+// `/config` command in print mode starts no agent turn and uses no quota (verified in Dev
+// Studio's launcher), so it is safe to run before every launch.
+const agyCreditsPreflight = async (cwd: string, env: NodeJS.ProcessEnv) => {
+  const result = await exec(['agy', '--output-format', 'json', '-p', '/config'], { cwd, env, timeoutMs: 20_000 });
+  if (result.code !== 0) return null; // logged out or older CLI: the interactive login handles it
+  try {
+    const payload = JSON.parse(result.stdout) as { status?: unknown; command?: { data?: { config?: Record<string, unknown> } } };
+    const config = payload.command?.data?.config;
+    if (payload.status !== 'SUCCESS' || !config || typeof config !== 'object') return null;
+    if (config.useG1Credits === true || config.useAiCredits === true || config.use_ai_credits === true) {
+      return 'agy is set to spend paid AI credits when your plan runs out. Turn that off in agy (/config, credits: Never) first.';
+    }
+  } catch {
+    // Unrecognized output: do not block the launch on a parser.
+  }
+  return null;
+};
+
 export const ADAPTERS: Record<CockpitKind, AdapterDefinition> = {
   shell: {
     kind: 'shell', label: 'Shell', binary: shell => shell, billing: 'No model usage',
@@ -83,7 +102,7 @@ export const ADAPTERS: Record<CockpitKind, AdapterDefinition> = {
   agy: {
     kind: 'agy', label: 'Antigravity (agy)', binary: () => 'agy', billing: 'Google account (official Antigravity CLI)',
     argv: ({ prompt, resume }) => ['agy', ...(resume ? ['--conversation', resume] : []), ...(prompt ? ['--prompt-interactive', prompt] : [])],
-    promptViaArgv: true, preflight: agyPreflight,
+    promptViaArgv: true, preflight: async (cwd, env) => await agyPreflight(cwd, env) ?? await agyCreditsPreflight(cwd, env),
     note: 'Conversation IDs are not captured yet; resume by ID once lineage is wired.',
   },
   gemini: {
