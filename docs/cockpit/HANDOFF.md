@@ -10,9 +10,9 @@ Keep this short and current. It is what a new conversation (Claude, Jarvis or Ne
 
 | Piece | Where | Notes |
 | --- | --- | --- |
-| Command BFF + web | VM113 | Cloudflare Access in front; relays the terminal WebSocket (not built yet) |
-| Hermes (lead chat, project-lead profile) | dedicated Dell PC | repo docs still say VM108; Neal moved it off the Proxmox box |
-| Session host + agent CLIs | `cockpit-dev` VM on Proxmox | owned and maintained by Jarvis; `apps/session-host` |
+| Command BFF + web | to confirm with Neal (VM113 is retired) | Cloudflare Access in front; relays the terminal WebSocket to the session host |
+| Jarvis / Hermes (lead chat, project-lead profile) | its own dedicated Dell PC | older repo docs still say VM108 |
+| Session host + agent CLIs | VM118 (`cockpit-dev`) on Proxmox | owned and maintained by Jarvis; `apps/session-host` |
 
 ## Status
 
@@ -20,7 +20,7 @@ Keep this short and current. It is what a new conversation (Claude, Jarvis or Ne
 | --- | --- |
 | Phase 0: plan amendment, this doc | in the session-host PR |
 | Phase 1a: `apps/session-host` (tmux sessions, registry, ownership, WebSocket terminal, MCP lead tools, worktrees, diff/check) | built; 10 tests pass against real tmux and bash in a sandbox; not deployed |
-| Phase 1b: BFF WebSocket relay + web terminal thread view (xterm.js, mobile key bar) | next |
+| Phase 1b: BFF WebSocket relay + web terminal thread view (xterm.js, mobile key bar) | built; BFF tests plus a browser check (desktop and iPhone 13) against a real session host in a sandbox; not deployed |
 | Phase 2: Claude Code live qualification on cockpit-dev, lead profile wired, slice 1 acceptance | after 1b and Jarvis deploy |
 | Phase 3+: Codex/Gemini qualification, parallel workers, integration flow | later |
 
@@ -28,7 +28,14 @@ Keep this short and current. It is what a new conversation (Claude, Jarvis or Ne
 
 - Session host passes with tmux 3.4 and Node 22 in a sandbox. Note that `set -g window-size manual` in a tmux config crashes tmux 3.4 on detached start, so the cockpit uses `latest` plus explicit `resize-window`. tmux also rewrites tab characters in `-F` formats to `_`.
 - cockpit-dev (from Jarvis, 2026-11-11): reachable by IP over SSH, Node 22, ports 8650/8651 free, hostname does not resolve from the Dell yet.
-- VM113 app egress only allows its existing loopback services. Connecting it to the session host needs a deliberate network change, which Jarvis owns.
+- VM113 is retired (Neal, 2026-11-11). Older deployment docs that describe it are history. Wherever the Command BFF now runs needs a network path to the session host on port 8650, which Jarvis owns.
+
+## Turning the cockpit on (Command BFF)
+
+Set `COCKPIT_MODE=enabled`, `SESSION_HOST_BASE_URL` (for example `http://127.0.0.1:8650` if the BFF runs on VM118) and `SESSION_HOST_KEY` (the same value as the session host's). This also needs `COMMAND_MODE=enabled`. Bootstrap then advertises `project_cockpit`, and a **Terminals** button appears in a project's header. Routes live under `/api/cockpit/*`, and writes are audited to `cockpit-audit.jsonl` next to the command audit log.
+
+- xterm.js writes its CSS into `<style>` tags, which the app's CSP (`style-src 'self'`) blocks. `Cockpit.tsx` turns those tags into inert elements and mirrors their text into a constructable stylesheet, so the CSP stays as it is.
+- xterm's replies to tmux's terminal queries (device attributes, colours, cursor position) are sent as `report` frames to the viewer's own read-only tmux client. They are never typed into the agent.
 
 ## Not yet verified
 

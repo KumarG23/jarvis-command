@@ -325,3 +325,12 @@ describe('per-prompt inference contracts', () => {
     })).toThrow();
   });
 });
+
+describe('cockpit terminal reports', () => {
+  it('recognizes terminal query replies but never keystrokes', async () => {
+    const { isTerminalReport, CockpitTerminalClientFrameSchema } = await import('./cockpit');
+    for (const reply of ['\x1b[?1;2c', '\x1b[>0;276;0c', '\x1b]11;rgb:0d0d/1010/0f0f\x07', '\x1b]10;rgb:f1f1/eeee/e7e7\x1b\\', '\x1b[12;40R', '\x1b[I']) expect(isTerminalReport(reply)).toBe(true);
+    for (const key of ['ls\r', '\x1b', '\x1b[A', '\x03', 'rm -rf /\r', '\x1b[?1;2cls\r']) expect(isTerminalReport(key)).toBe(false);
+    expect(CockpitTerminalClientFrameSchema.safeParse({ type: 'report', data: 'echo pwned\r' }).success).toBe(false);
+  });
+});

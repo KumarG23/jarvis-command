@@ -9,6 +9,7 @@ import Fastify from 'fastify';
 
 import { registerLiveRoomRoutes, type LiveStreamLimits } from './live-room-routes';
 import { registerArtifactRoutes } from './artifact-routes';
+import { registerCockpitRoutes } from './cockpit-routes';
 import type { createLiveRoomService } from './live-room-service';
 import { AuditIntegrityError } from './audit-ledger';
 import { ArtifactConflictError, ArtifactDeletedError, ArtifactNotFoundError, ArtifactStorageError, ArtifactStore } from './artifact-store';
@@ -174,6 +175,7 @@ export function buildApp(dependencies: AppDependencies) {
     const capabilities = [...new Set([
       ...snapshot.capabilities.filter(capability => capability !== 'message_reactions'),
       ...(dependencies.config.artifacts.enabled ? ['artifact_studio'] : []),
+      ...(dependencies.config.cockpit && dependencies.config.command ? ['project_cockpit'] : []),
     ])];
     // An optional UI capability must not overflow the existing bootstrap contract.
     if (liveRoomEnabled && dependencies.config.reactionsEnabled && capabilities.length < 100) capabilities.push('message_reactions');
@@ -211,6 +213,7 @@ export function buildApp(dependencies: AppDependencies) {
   // after onReady. Spreading here would freeze that getter before startup.
   registerLiveRoomRoutes(app, dependencies, artifactStore);
   registerArtifactRoutes(app, { ...dependencies, artifactStore });
+  registerCockpitRoutes(app, dependencies);
   app.addHook('onReady', async () => {
     await artifactStore?.init();
   });

@@ -33,6 +33,10 @@ const EnvironmentSchema = z.object({
   ARTIFACT_MAX_FILE_BYTES: z.coerce.number().int().min(1).max(52_428_800).default(10_485_760),
   ARTIFACT_MAX_TOTAL_BYTES: z.coerce.number().int().min(1).max(10_737_418_240).default(268_435_456),
   ARTIFACT_MAX_COUNT: z.coerce.number().int().min(1).max(100_000).default(10_000),
+  // Project cockpit: relays real agent terminals from the session host (apps/session-host).
+  COCKPIT_MODE: z.enum(['disabled', 'enabled']).default('disabled'),
+  SESSION_HOST_BASE_URL: z.url().optional(),
+  SESSION_HOST_KEY: z.string().min(32).optional(),
 });
 
 export type AppConfig = Readonly<{
@@ -62,6 +66,10 @@ export type AppConfig = Readonly<{
     publicOrigin: string;
   }> | null;
   webDistDir: string | undefined;
+  cockpit?: Readonly<{
+    sessionHostUrl: string;
+    sessionHostKey: string;
+  }> | null;
   artifacts: Readonly<{
     enabled: boolean;
     root: string | null;
@@ -178,7 +186,23 @@ export function loadConfig(environment: NodeJS.ProcessEnv): AppConfig {
         maxArtifacts: parsed.ARTIFACT_MAX_COUNT,
       });
 
+  const cockpit = parsed.COCKPIT_MODE === 'enabled'
+    ? (() => {
+        if (!command) throw new Error('COCKPIT_MODE requires COMMAND_MODE=enabled (projects and PUBLIC_ORIGIN)');
+        const url = new URL(requireValue('SESSION_HOST_BASE_URL', parsed.SESSION_HOST_BASE_URL));
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('SESSION_HOST_BASE_URL must be http(s)');
+        if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+          throw new Error('SESSION_HOST_BASE_URL must be an uncredentialed origin');
+        }
+        return Object.freeze({
+          sessionHostUrl: url.origin,
+          sessionHostKey: requireValue('SESSION_HOST_KEY', parsed.SESSION_HOST_KEY),
+        });
+      })()
+    : null;
+
   return Object.freeze({
+    cockpit,
     reactionsEnabled: parsed.REACTIONS_MODE === 'enabled',
     replyEvidenceEnabled: parsed.REPLY_EVIDENCE_MODE === 'enabled',
     projectDeletionEnabled: parsed.PROJECT_DELETION_MODE === 'enabled',

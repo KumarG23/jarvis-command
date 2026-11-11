@@ -102,8 +102,16 @@ export const CockpitAdapterSchema = z.object({
 export type CockpitAdapter = z.infer<typeof CockpitAdapterSchema>;
 
 // Browser/BFF -> host terminal control frames (text frames). Terminal output is sent as binary frames.
+// Replies a terminal emulator sends back to queries from the attached tmux client
+// (device attributes, colour reports, cursor position, mode reports, focus). They
+// belong to that viewer's tmux client, never to the agent as typed input.
+// eslint-disable-next-line no-control-regex -- matching terminal escape sequences is the point
+export const TERMINAL_REPORT_PATTERN = /^(?:\x1b\[[?>=]?[\d;]*[cnRIO]|\x1b\[\??[\d;]*\$y|\x1b\][\d]+;[^\x07\x1b]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\)+$/;
+export const isTerminalReport = (data: string) => TERMINAL_REPORT_PATTERN.test(data);
+
 export const CockpitTerminalClientFrameSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('input'), data: z.string().min(1).max(65_536) }).strict(),
+  z.object({ type: z.literal('report'), data: z.string().min(1).max(4_096).refine(isTerminalReport) }).strict(),
   z.object({ type: z.literal('resize'), cols: z.number().int().min(20).max(500), rows: z.number().int().min(5).max(200) }).strict(),
 ]);
 export type CockpitTerminalClientFrame = z.infer<typeof CockpitTerminalClientFrameSchema>;

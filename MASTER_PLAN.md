@@ -21,7 +21,7 @@ This section overrides anything below that conflicts with it. Neal paused Dev St
 
 What changes:
 - **Terminals are in scope.** The §1 non-goal "No IDE/browser workbench" no longer excludes cockpit terminals. Still no IDE, plugin framework or generic proxy.
-- **PTYs live on a separate execution host** (`cockpit-dev`, owned and maintained by Jarvis), run by `apps/session-host`. P14's "No PTY, shell, tmux … on VM113" still holds for VM113 itself, which only relays an authenticated WebSocket.
+- **PTYs live on a separate execution host** (VM118, `cockpit-dev`, owned and maintained by Jarvis), run by `apps/session-host`. The Command BFF only relays an authenticated WebSocket to it. VM113 is retired; Jarvis/Hermes runs on its own Dell PC. References to VM113 and VM108 elsewhere in this plan describe the old topology.
 - **The lead may launch, observe, message, interrupt and close cockpit sessions** through explicit tools, only while it holds input ownership, and never answers a permission prompt or approval for Neal. This supersedes P9's "never writes into a thread from the lead" for cockpit sessions only; Hermes-session threads keep P9's rules.
 - **Execution is by ordinary PRs reviewed by Neal.** Sol/Dev Studio scheduling (§0.4, §9) is paused; do not reactivate Studio schedulers or workers. Jarvis handles homelab and host work, including deploys, when Neal asks.
 - **Mobile** gets a usable terminal (thread switching, readable viewport, key bar, takeover/stop); dense split panes stay desktop-only.

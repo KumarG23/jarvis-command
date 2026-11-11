@@ -30,6 +30,7 @@ describe('loadConfig', () => {
     });
 
     expect(config).toEqual({
+      cockpit: null,
       reactionsEnabled: false,
       replyEvidenceEnabled: false,
       projectDeletionEnabled: false,
@@ -65,6 +66,16 @@ describe('loadConfig', () => {
       },
     });
     expect(config).not.toHaveProperty('SOME_UNRELATED_SECRET');
+  });
+
+  it('enables the cockpit only with a session host origin and key', () => {
+    const key = 'k'.repeat(40);
+    expect(loadConfig({ ...productionEnvironment, COCKPIT_MODE: 'enabled', SESSION_HOST_BASE_URL: 'http://10.0.0.5:8650', SESSION_HOST_KEY: key }).cockpit)
+      .toEqual({ sessionHostUrl: 'http://10.0.0.5:8650', sessionHostKey: key });
+    expect(() => loadConfig({ ...productionEnvironment, COCKPIT_MODE: 'enabled', SESSION_HOST_KEY: key })).toThrow(/SESSION_HOST_BASE_URL/);
+    expect(() => loadConfig({ ...productionEnvironment, COCKPIT_MODE: 'enabled', SESSION_HOST_BASE_URL: 'http://u:p@10.0.0.5:8650', SESSION_HOST_KEY: key })).toThrow(/uncredentialed/);
+    expect(() => loadConfig({ ...productionEnvironment, COCKPIT_MODE: 'enabled', SESSION_HOST_BASE_URL: 'http://10.0.0.5:8650', SESSION_HOST_KEY: 'short' })).toThrow();
+    expect(() => loadConfig({ ...productionEnvironment, COMMAND_MODE: 'disabled', COCKPIT_MODE: 'enabled', SESSION_HOST_BASE_URL: 'http://10.0.0.5:8650', SESSION_HOST_KEY: key })).toThrow();
   });
 
   it('refuses development authentication in production', () => {

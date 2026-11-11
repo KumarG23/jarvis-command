@@ -189,6 +189,11 @@ export function buildSessionHostApp(manager: SessionManager) {
           void manager.resize(id, projectId, frame.cols, frame.rows).catch(() => undefined);
           return;
         }
+        if (frame.type === 'report') {
+          // Answers this viewer's own read-only tmux client; it cannot type into the pane.
+          viewer.write(frame.data);
+          return;
+        }
         manager.input(id, projectId, 'human', frame.data).catch((error: unknown) => {
           send({ type: 'input_refused', reason: error instanceof Error ? error.message : 'Input refused' });
         });

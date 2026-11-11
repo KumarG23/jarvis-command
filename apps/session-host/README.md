@@ -1,6 +1,6 @@
 # Cockpit session host
 
-Runs the project cockpit's working sessions on the execution host (`cockpit-dev`): official agent CLIs (Claude Code, Codex, Gemini CLI, OpenCode) and plain shells, each in a real terminal owned by tmux. The Command BFF on VM113 relays the browser terminal to it, and the Hermes project lead drives it through MCP tools.
+Runs the project cockpit's working sessions on the execution host (`cockpit-dev`): official agent CLIs (Claude Code, Codex, Gemini CLI, OpenCode) and plain shells, each in a real terminal owned by tmux. The Command BFF relays the browser terminal to it, and the Hermes project lead drives it through MCP tools.
 
 Status: slice 1, part 1. Built and tested in a sandbox with real tmux and bash. No real subscription CLI has been qualified on cockpit-dev yet.
 
@@ -18,7 +18,7 @@ Status: slice 1, part 1. Built and tested in a sandbox with real tmux and bash. 
 | --- | --- | --- |
 | `SESSION_HOST_KEY` | required, 32+ chars | Bearer key for the main API. Only the Command BFF holds it. |
 | `SESSION_HOST_MCP_KEY` | required unless MCP is off | Bearer key for the MCP listener. Only the Hermes project-lead profile holds it. Must differ from `SESSION_HOST_KEY`. |
-| `SESSION_HOST_BIND` | `127.0.0.1` | Listen address for both listeners. Use the LAN IP or `0.0.0.0` if VM113 and Hermes connect directly. |
+| `SESSION_HOST_BIND` | `127.0.0.1` | Listen address for both listeners. Use the LAN IP or `0.0.0.0` if the Command BFF and Hermes connect from other machines. |
 | `SESSION_HOST_PORT` | `8650` | Main API and terminal WebSocket. |
 | `SESSION_HOST_MCP_PORT` | `8651` | MCP endpoint at `POST /mcp`. `0` disables it. |
 | `SESSION_HOST_NAME` | hostname | Shown to Neal as where code runs. |
@@ -57,7 +57,7 @@ Every session route requires `projectId`. A session in another project returns 4
 - `POST /v1/sessions/:id/interrupt` and `/stop` with `{projectId}`
 - `GET /v1/sessions/:id/tail?projectId=&lines=`, `GET /v1/sessions/:id/diff?projectId=`
 - `POST /v1/sessions/:id/check` with `{projectId, command, timeoutSeconds?}`
-- `GET /v1/sessions/:id/terminal?projectId=&cols=&rows=` (WebSocket). Binary frames carry terminal output. Text frames are JSON: from the client `{type:"input",data}` or `{type:"resize",cols,rows}`, and from the server `{type:"session"}`, `{type:"input_refused",reason}` or `{type:"closed",reason}`.
+- `GET /v1/sessions/:id/terminal?projectId=&cols=&rows=` (WebSocket). Binary frames carry terminal output. Text frames are JSON: from the client `{type:"input",data}`, `{type:"resize",cols,rows}` or `{type:"report",data}` (a terminal query reply, written to this viewer's read-only tmux client only), and from the server `{type:"session"}`, `{type:"input_refused",reason}` or `{type:"closed",reason}`.
 
 Contracts live in `packages/contracts/src/cockpit.ts`.
 

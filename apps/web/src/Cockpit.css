@@ -1,0 +1,63 @@
+.cockpit { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.cockpit-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cockpit-header h2 { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 0; font-size: 15px; }
+.cockpit-header h2 small { color: var(--muted); font-weight: 400; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cockpit-header-actions { display: flex; align-items: center; }
+.cockpit-notice { margin: 6px 12px; }
+.cockpit-body { display: flex; flex: 1; min-height: 0; }
+.cockpit-sessions { flex: 0 0 210px; display: flex; flex-direction: column; gap: 8px; padding: 10px; border-right: 1px solid var(--border); overflow-y: auto; }
+.cockpit-sessions ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.cockpit-new { width: 100%; }
+.cockpit-session-item { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 44px; padding: 6px 8px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); text-align: left; }
+.cockpit-session-item:hover { background: #222a25; color: var(--text); }
+.cockpit-session-item[aria-current] { background: #293c32; color: var(--text); }
+.cockpit-session-text { display: flex; flex-direction: column; min-width: 0; }
+.cockpit-session-text strong { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cockpit-session-text small { font-size: 11px; color: var(--subtle); }
+.cockpit-dot { flex: 0 0 8px; height: 8px; border-radius: 50%; background: var(--subtle); }
+.cockpit-dot.state-running, .cockpit-dot.state-connecting { background: var(--green); }
+.cockpit-dot.state-waiting_for_input { background: var(--amber); }
+.cockpit-dot.state-failed, .cockpit-dot.state-lost { background: var(--red); }
+.cockpit-main { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+.cockpit-empty { margin: auto; max-width: 340px; padding: 24px; text-align: center; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.cockpit-create { display: flex; flex-direction: column; gap: 12px; padding: 16px; max-width: 520px; overflow-y: auto; }
+.cockpit-create h3 { margin: 0; font-size: 15px; }
+.cockpit-create label { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--muted); }
+.cockpit-create input:not([type="checkbox"]), .cockpit-create select, .cockpit-create textarea { min-height: 40px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); font: inherit; font-size: 14px; }
+.cockpit-create .cockpit-check { flex-direction: row; align-items: center; gap: 8px; min-height: 44px; }
+.cockpit-create .small { margin: -4px 0 0; font-size: 12px; }
+.cockpit-create-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.cockpit-session { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.cockpit-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.cockpit-meta { display: flex; flex-direction: column; min-width: 0; }
+.cockpit-meta strong { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cockpit-meta small { font-size: 11px; color: var(--subtle); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cockpit-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cockpit-actions .secondary-button, .cockpit-actions .danger-button { min-height: 36px; padding: 6px 10px; font-size: 12px; }
+.cockpit-owner { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border-radius: 999px; font-size: 11px; background: var(--surface); color: var(--muted); }
+.cockpit-owner.owner-human { background: #22382e; color: var(--cyan); }
+.cockpit-owner.owner-lead { background: #3a3220; color: var(--amber); }
+.cockpit-terminal { flex: 1; min-height: 0; padding: 6px 4px 0 8px; background: #0d100f; overflow: hidden; }
+.cockpit-terminal .xterm { height: 100%; }
+.cockpit-keys { display: none; gap: 4px; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); border-top: 1px solid var(--border); background: var(--panel); overflow-x: auto; }
+.cockpit-keys button { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 40px; padding: 0 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); font: 500 12px/1 'JetBrains Mono', monospace; }
+.cockpit-keys button[aria-pressed="true"] { background: var(--cyan); color: #0b1017; border-color: transparent; }
+@media (pointer: coarse), (max-width: 760px) { .cockpit-keys { display: flex; } }
+.cockpit.is-docked .cockpit-body { flex-direction: column; }
+.cockpit.is-docked .cockpit-sessions, .cockpit.is-docked .cockpit-sessions ul { flex: 0 0 auto; flex-direction: row; align-items: center; border-right: 0; border-bottom: 1px solid var(--border); overflow-x: auto; overflow-y: hidden; }
+.cockpit.is-docked .cockpit-sessions ul { border: 0; }
+.cockpit.is-docked .cockpit-new { width: auto; flex: 0 0 auto; }
+.cockpit.is-docked .cockpit-session-item { width: auto; max-width: 180px; }
+@media (max-width: 760px) {
+  .cockpit-body { flex-direction: column; }
+  .cockpit-sessions, .cockpit-sessions ul { flex: 0 0 auto; flex-direction: row; align-items: center; border-right: 0; overflow-x: auto; overflow-y: hidden; }
+  .cockpit-sessions { border-bottom: 1px solid var(--border); }
+  .cockpit-new { width: auto; flex: 0 0 auto; }
+  .cockpit-session-item { width: auto; max-width: 180px; }
+  .cockpit-toolbar { padding: 6px 8px; flex-wrap: nowrap; }
+  .cockpit-label { display: none; }
+  .cockpit-actions { flex-wrap: nowrap; }
+  .cockpit-actions .secondary-button { min-width: 40px; min-height: 40px; padding: 6px; }
+  .cockpit-owner { padding: 6px; }
+}
+x-term-style { display: none !important; }

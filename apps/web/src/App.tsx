@@ -8,7 +8,7 @@ import { ThreadConversation } from './ThreadConversation';
 import { PushLink } from './PushLink';
 import { composeProjectInput, projectContext, readProjectForSend, readProjectThreadTarget } from './projectInput';
 import { ArtifactListResponseSchema, SessionMutationResponseSchema, ArtifactTypeSchema, CommandBootstrapSchema, type NotificationTarget, type ProjectRoom, type ArtifactType, type CommandBootstrap, type SessionSummary } from '@jarvis-command/contracts';
-import { Command, ShieldCheck, Menu, X, Settings2, PanelRight, ChevronRight, MessageSquare, Files, Users, MessagesSquare, Bell, Clapperboard } from 'lucide-react';
+import { Command, ShieldCheck, Menu, X, Settings2, PanelRight, ChevronRight, MessageSquare, Files, Users, MessagesSquare, Bell, Clapperboard, TerminalSquare } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import './styles.css';
@@ -26,6 +26,7 @@ import { NotificationsPane, useNotifications } from './Notifications';
 import { StudioProjectionView } from './studio-projection/StudioProjectionView';
 import { STUDIO_PROJECTION_SOURCE } from './studio-projection/studioProjectionConfig';
 
+const Cockpit = lazy(() => import('./Cockpit').then(module => ({ default: module.Cockpit })));
 const ArtifactStudio = lazy(() => import('./ArtifactStudio').then(module => ({ default: module.ArtifactStudio })));
 
 type LoadBootstrap = () => Promise<CommandBootstrap>;
@@ -307,8 +308,9 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
   const studioEntry = useRef(crypto.randomUUID()), studioVisible = useRef(false), studioDismissed = useRef(false), studioReturnFocus = useRef(false);
   const studioRegion = useRef<HTMLElement | null>(null), studioNav = useRef<HTMLButtonElement | null>(null), studioMenu = useRef<HTMLButtonElement | null>(null);
   const [draftAuthorizedSession, setDraftAuthorizedSession] = useState<string | null>(null);
-  const [pane, setPane] = useState<'project' | 'runtime' | 'settings' | 'artifacts' | 'agents' | 'collaboration' | 'notifications' | null>(null);
+  const [pane, setPane] = useState<'project' | 'runtime' | 'settings' | 'artifacts' | 'agents' | 'collaboration' | 'notifications' | 'cockpit' | null>(null);
   const [artifactPaneFullScreen, setArtifactPaneFullScreen] = useState(false);
+  const [cockpitFullScreen, setCockpitFullScreen] = useState(true);
   const [associatedArtifacts, setAssociatedArtifacts] = useState<number | null>(null);
   const [artifactRefresh, setArtifactRefresh] = useState(0);
   const [pendingGeneration, setPendingGeneration] = useState<PendingArtifactGeneration | null>(() => readPendingGeneration());
@@ -363,6 +365,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     if (element) element.scrollTop = element.scrollHeight;
   }, [selectedSession?.id]);
   const artifactStudioEnabled = bootstrap.hermes.capabilities.includes('artifact_studio');
+  const cockpitOn = bootstrap.hermes.capabilities.includes('project_cockpit');
   useEffect(() => {
     if (!artifactStudioEnabled) return;
     if (!selectedSession?.id && !projectId) {
@@ -645,7 +648,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
   function setProjectScope(name: string | null) {
     setProjectName(name);
   }
-  function openPanel(kind: 'runtime' | 'settings' | 'artifacts' | 'agents' | 'collaboration' | 'notifications', element: HTMLElement) {
+  function openPanel(kind: 'runtime' | 'settings' | 'artifacts' | 'agents' | 'collaboration' | 'notifications' | 'cockpit', element: HTMLElement) {
     pauseSavedRecovery();
     leaveStudio();
     if (kind !== 'artifacts') setSaveActive(false);
@@ -845,6 +848,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
         {projectId ? <button className="secondary-button project-threads-button" type="button" aria-label="Threads" aria-expanded={pane === 'project'} onClick={event => projects.current?.openThreads(event.currentTarget)}>Threads</button> : null}
         <div ref={setInferenceTarget} className="requested-route-slot" />
         <div className="header-actions"><SessionContextMeter enabled={bootstrap.command.liveRoom.enabled && selectedSession?.ownership === 'command'} sessionId={selectedSession?.id ?? null} liveUsage={latestUsage} compaction={live.turn && live.turn.intent.sessionId === selectedSession?.id ? live.turn.compaction ?? null : null} refreshVersion={contextRevision} compactedContext={compactedContext} /><SessionLifecycleControls enabled={bootstrap.command.liveRoom.enabled && selectedSession?.ownership === 'command'} session={selectedSession} blocked={!writeAllowed || !!(live.turn && !live.turn.done)} onCompacted={status => { if (status.result) setCompactedContext({ sessionId: status.result.resultSessionId, usedTokens: status.result.afterTokens }); setContextRevision(value => value + 1); }} onSession={async session => { if (projects.current) await projects.current.adoptSession(session); else selectSession(session); }} />{projectName ? <button className={`icon-button${pane === 'project' ? ' active' : ''}`} type="button" aria-label="Open project details" title="Project details" aria-expanded={pane === 'project'} onClick={event => { if (pane === 'project') projects.current?.closeDetails(); else projects.current?.openDetails(event.currentTarget); }}><PanelRight size={19} /></button> : null}
+          {cockpitOn && projectId ? <button className={`artifact-context-button${pane === 'cockpit' ? ' active' : ''}`} type="button" aria-label="Open project terminals" title="Agent terminals for this project" aria-expanded={pane === 'cockpit'} onClick={event => openPanel('cockpit', event.currentTarget)}><TerminalSquare size={17} /><span>Terminals</span></button> : null}
           {artifactStudioEnabled ? <button className={`artifact-context-button${pane === 'artifacts' ? ' active' : ''}`} type="button" aria-label="Open Artifact Studio" title="Artifacts for this context" aria-expanded={pane === 'artifacts'} onClick={event => openPanel('artifacts', event.currentTarget)}><Files size={17} /><span>Artifacts</span><strong>{associatedArtifacts ?? '...'}</strong></button> : null}
           <button className={`health-button ${bootstrap.hermes.state}`} type="button" aria-label={health} title={health} onClick={event => openPanel('runtime', event.currentTarget)}><span className="status-dot" /><span>Hermes</span></button></div>
       </header>
@@ -895,7 +899,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     </section> : null}
     {secondSession && threads.ready(secondSession.id) ? <ThreadConversation threadState={statusStates[secondSession.id]} statusClock={threadState.clock} onLatestViewed={threadState.viewed} hidden={studioOpen} reactions={reactions} reportPresence={!!notifications.inbox && splitVisible && !studioOpen} session={secondSession} live={threads.get(secondSession.id)} project={project && project.id === projectId && project.sessionIds.includes(secondSession.id) && !project.archived ? project : null} bootstrap={bootstrap} onClose={() => selectSecondPane(null)} onFocus={() => { if (project) projects.current?.openLinkedChat(project, secondSession); }} onProjectReadback={room => { setProject(room); projects.current?.readback(room); }} onThreadLink={(id, sessionId) => { void openThreadLink(id, sessionId, 'second'); }} onSave={(text, runId) => { selectSession(secondSession); saveResponseArtifact(text, runId, projectId, secondSession.id); }} /> : null}
     </div>
-    <ContextPane open={pane !== null} fullScreen={pane === 'artifacts' && artifactPaneFullScreen}>
+    <ContextPane open={pane !== null} fullScreen={(pane === 'artifacts' && artifactPaneFullScreen) || (pane === 'cockpit' && cockpitFullScreen)}>
       <div ref={setContextTarget} hidden={pane !== 'project'} />
       {pane === 'artifacts' ? <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {saveRecovery.error ? <p className="notice error" role="alert" style={{ flexShrink: 0 }}>{saveRecovery.error}</p> : null}
@@ -918,6 +922,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
         setPendingGeneration(previous => previous?.sourceRequestId === key ? null : previous);
       }} onSendPrompt={sendArtifactPrompt} onCreateWithJarvis={createArtifactWithJarvis} generation={generationStatus} onRetryGeneration={retryArtifactGeneration} onCancelGeneration={cancelArtifactGeneration} onClose={closePanel} fullScreen={artifactPaneFullScreen} onToggleFullScreen={() => setArtifactPaneFullScreen(value => !value)} onLibraryChanged={() => setArtifactRefresh(value => value + 1)} /></Suspense>
       </div> : null}
+      {pane === 'cockpit' && projectId ? <Suspense fallback={<p className="pane-loading" role="status">Loading terminals…</p>}><Cockpit key={projectId} projectId={projectId} projectName={projectName ?? 'Project'} onClose={closePanel} fullScreen={cockpitFullScreen} onToggleFullScreen={() => setCockpitFullScreen(value => !value)} /></Suspense> : null}
       {pane === 'agents' || pane === 'collaboration' || pane === 'notifications' ? <div className="runtime-details" onKeyDown={event => { if (event.key === 'Escape') closePanel(); }}>
         <header className="pane-header"><h2>{pane === 'agents' ? 'Agents' : pane === 'collaboration' ? 'Collaboration rooms' : 'Notifications'}</h2><button ref={panelClose} className="icon-button" type="button" aria-label="Close context" onClick={closePanel}><X size={20} /></button></header>
         {pane === 'notifications' && liveEnabled ? <NotificationsPane state={notifications} onOpen={openNotificationTarget} /> : <div className="pane-body unavailable-capability"><p className="eyebrow">Unavailable</p><h3>{pane === 'notifications' ? 'Not available in this connection' : 'Not available on this installation'}</h3>
