@@ -64,14 +64,17 @@ export function buildApp(dependencies: AppDependencies) {
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof RoutingWritesUnavailableError) return reply.code(503).send({ error: 'routing_writes_unavailable', message: error.message });
     if (error instanceof RoutingUnavailableError) return reply.code(503).send({ error: 'routing_unavailable', message: error.message });
-    const errorName = error instanceof Error ? error.name : 'UnknownError';
+    // Many custom errors keep the default name "Error"; the class name says which store or
+    // check failed. Only fixed, code-defined values are logged: never messages, input or identity.
+    const errorName = error instanceof Error ? (error.name !== 'Error' ? error.name : error.constructor?.name ?? 'Error') : 'UnknownError';
+    const reason = typeof error === 'object' && error !== null && 'reason' in error && typeof error.reason === 'string' && /^[a-z_]{1,64}$/.test(error.reason) ? error.reason : undefined;
     const candidateStatusCode = typeof error === 'object'
       && error !== null
       && 'statusCode' in error
       && typeof error.statusCode === 'number'
       ? error.statusCode
       : undefined;
-    request.log.error({ errorType: errorName }, 'request failed');
+    request.log.error({ errorType: errorName, route: request.routeOptions.url ?? null, method: request.method, ...(reason ? { reason } : {}) }, 'request failed');
     if (error instanceof ThreadReadStorageError || error instanceof ThreadObservationUnavailableError) return reply.code(503).send({ error: 'thread_state_unavailable' });
     if (error instanceof ReactionUnavailableError) return reply.code(409).send({ error: 'reactions_unavailable' });
     if (error instanceof ReactionConflictError) return reply.code(409).send({ error: 'reaction_conflict' });

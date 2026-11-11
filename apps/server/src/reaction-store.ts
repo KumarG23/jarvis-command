@@ -42,7 +42,7 @@ const StateSchema = z.object({
 type State = z.infer<typeof StateSchema>;
 export class ReactionStorageError extends Error {
   readonly statusCode = 503;
-  constructor() { super('Reaction storage unavailable'); }
+  constructor(readonly reason: string = 'unspecified') { super('Reaction storage unavailable'); this.name = 'ReactionStorageError'; }
 }
 export class ReactionUnavailableError extends Error {
   readonly statusCode = 409;
@@ -156,15 +156,15 @@ export class ReactionStore {
         for (let path = this.directory; ; path = dirname(path)) {
           const stat = await lstat(path);
           if (!stat.isDirectory() || stat.isSymbolicLink() || (stat.uid !== 0 && stat.uid !== process.getuid!())
-            || ((stat.mode & 0o022) !== 0 && (stat.mode & 0o1000) === 0)) throw new ReactionStorageError();
+            || ((stat.mode & 0o022) !== 0 && (stat.mode & 0o1000) === 0)) throw new ReactionStorageError('unsafe_ancestor_directory');
           if (path === '/') break;
         }
         directory = await open(this.directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
         const identity = await directory.stat();
-        if (identity.uid !== process.getuid!() || (identity.mode & 0o777) !== 0o700) throw new ReactionStorageError();
+        if (identity.uid !== process.getuid!() || (identity.mode & 0o777) !== 0o700) throw new ReactionStorageError('directory_owner_or_mode');
         const bound = async () => {
           const current = await lstat(this.directory);
-          if (current.dev !== identity.dev || current.ino !== identity.ino || current.mode !== identity.mode || current.uid !== identity.uid) throw new ReactionStorageError();
+          if (current.dev !== identity.dev || current.ino !== identity.ino || current.mode !== identity.mode || current.uid !== identity.uid) throw new ReactionStorageError('directory_changed');
         };
         const root = `/proc/self/fd/${directory.fd}`;
         const path = join(root, FILE);
@@ -173,7 +173,7 @@ export class ReactionStore {
           const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
           try {
             const stat = await handle.stat();
-            if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== process.getuid!() || (stat.mode & 0o777) !== 0o600 || stat.size > MAX_BYTES) throw new ReactionStorageError();
+            if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== process.getuid!() || (stat.mode & 0o777) !== 0o600 || stat.size > MAX_BYTES) throw new ReactionStorageError('file_owner_mode_links_or_size');
             const bytes = Buffer.alloc(MAX_BYTES + 1);
             const { bytesRead } = await handle.read(bytes, 0, bytes.length, 0);
             if (bytesRead !== stat.size || bytesRead > MAX_BYTES) throw new ReactionStorageError();

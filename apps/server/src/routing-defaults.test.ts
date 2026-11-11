@@ -134,6 +134,10 @@ it('cleared thread falls through to project; unknown Command effort fails rather
   expect(f.ledger.findRunByClientRequest(actor, req.clientRequestId)!.routing).toMatchObject({ source: 'project', threadRevision: 2, inference: b });
   const other = await fixture(); other.options.default = { provider: a.provider, model: a.model };
   await expect(other.service.submitRun('alice', request())).rejects.toThrow(/Routing selection is unavailable/); expect(other.startRun).not.toHaveBeenCalled();
+  // The log reason names exactly why: the Command default route needs an explicit effort.
+  await expect(other.service.submitRun('alice', request())).rejects.toMatchObject({ name: 'RoutingUnavailableError', reason: 'default_needs_explicit_effort', statusCode: 503 });
+  const unauthenticated = await fixture(); unauthenticated.options.catalog!.entries.find(entry => entry.model === command.model)!.authenticated = false;
+  await expect(unauthenticated.service.submitRun('alice', request())).rejects.toMatchObject({ reason: 'model_not_authenticated' });
 });
 it('freezes the pre-edit tuple/revision when a default changes during inventory validation', async () => {
   const f = await fixture(); await f.set(a); let release!: () => void;
