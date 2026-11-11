@@ -17,6 +17,7 @@ const config: CommandProxyConfig = Object.freeze({
   hermesApiKey: hermesKey,
   maxStreamSeconds: 1_800,
   anthropicRoutesEnabled: false,
+  advertisedSubscriptionRoutes: false,
   openRouterFreeRoutesEnabled: false,
   historyBindingEnabled: false,
 });
@@ -673,6 +674,38 @@ describe('run creation and control', () => {
     expect(Buffer.byteLength(response.payload)).toBeLessThan(400_000);
   });
 
+  it('offers every advertised subscription model only when advertised subscription routes are enabled', async () => {
+    const inventory = () => {
+      const fixture = upstreamModelOptionsWithAnthropic();
+      fixture.provider = 'anthropic'; fixture.model = 'claude-sonnet-5-5';
+      fixture.providers[0]!.models.push('gpt-6.1-sol', 'gpt-6.1-terra');
+      fixture.providers.push({ slug: 'openai-api', authenticated: true, models: ['gpt-6.1-sol'] });
+      return fixture;
+    };
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => jsonResponse(inventory()));
+    const app = createApp(fetcher, undefined, { advertisedSubscriptionRoutes: true });
+    const body = (await app.inject({ url: '/api/model/options', headers: authHeaders() })).json();
+    const keys = body.options.map((option: { provider: string; model: string }) => `${option.provider}:${option.model}`);
+    // Curated, labelled routes first; then the rest of what the logged-in provider advertises.
+    expect(keys.slice(0, 6)).toEqual(['openai-codex:gpt-6-astra', 'openai-codex:gpt-6-sol', 'openai-codex:gpt-6-luna', 'openai-codex:gpt-5.6-sol', 'openai-codex:gpt-5.6-terra', 'openai-codex:gpt-5.6-luna']);
+    expect(keys).toEqual(expect.arrayContaining(['openai-codex:gpt-6.1-sol', 'openai-codex:gpt-6.1-terra', 'openai-codex:unapproved-model', 'xai-oauth:grok-4.7']));
+    expect(body.options.find((option: { model: string }) => option.model === 'gpt-6.1-sol')).toMatchObject({ label: 'gpt-6.1-sol', reasoningEfforts: ['minimal', 'low', 'medium', 'high', 'xhigh'] });
+    // A paid API provider and Claude (its own flag is off) stay unselectable.
+    expect(keys.some((key: string) => key.startsWith('openai-api:') || key.startsWith('anthropic:'))).toBe(false);
+    const entry = (provider: string, model: string) => body.catalog.entries.find((item: { provider: string; model: string }) => item.provider === provider && item.model === model);
+    expect(entry('openai-codex', 'gpt-6.1-sol')).toMatchObject({ selectable: true, unavailableReason: null });
+    expect(entry('openai-api', 'gpt-6.1-sol')).toMatchObject({ selectable: false, unavailableReason: 'not_approved_allowlist' });
+    expect(entry('anthropic', 'claude-sonnet-5-5')).toMatchObject({ selectable: false, unavailableReason: 'not_approved_allowlist' });
+
+    // With the Claude flag on too, every advertised Claude model becomes selectable with provider-default effort.
+    const both = createApp(fetcher, undefined, { advertisedSubscriptionRoutes: true, anthropicRoutesEnabled: true });
+    const bothBody = (await both.inject({ url: '/api/model/options', headers: authHeaders() })).json();
+    expect(bothBody.options).toEqual(expect.arrayContaining([{ provider: 'anthropic', model: 'claude-opus-5-6', label: 'claude-opus-5-6', reasoningEfforts: [] }]));
+    expect(bothBody.catalog.entries.find((item: { model: string; provider: string }) => item.provider === 'anthropic' && item.model === 'claude-sonnet-5-5')).toMatchObject({ selectable: true });
+
+    // Run admission keeps checking the exact route against this same live inventory (supportsInference).
+  });
+
   it('reports absent and unauthenticated inventory without enabling selection', async () => {
     const absent = createApp(vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({
       provider: 'openai-codex', model: 'gpt-5.6-sol', providers: [],
@@ -913,7 +946,8 @@ describe('run creation and control', () => {
   it('fails closed for forged, unadvertised, unauthenticated and extra-effort Claude selections', async () => {
     const app = createApp(vi.fn<typeof fetch>(), undefined, { anthropicRoutesEnabled: true });
     for (const inference of [
-      { provider: 'anthropic', model: 'claude-opus-5-6' },
+      // An unadvertised Claude id now passes the shape check and is refused against the
+      // live inventory instead (409 inference_unavailable, covered below).
       { provider: 'anthropic', model: 'claude-opus-5-5', reasoningEffort: 'high' },
       { provider: 'anthropic', model: 'gpt-6-sol' },
     ]) {

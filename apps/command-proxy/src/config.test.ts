@@ -21,6 +21,7 @@ describe('loadCommandProxyConfig', () => {
       hermesApiKey: valid.HERMES_API_KEY,
       maxStreamSeconds: 1_800,
       anthropicRoutesEnabled: false,
+      advertisedSubscriptionRoutes: false,
       openRouterFreeRoutesEnabled: false,
   historyBindingEnabled: false,
     });

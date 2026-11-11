@@ -14,6 +14,10 @@ const EnvironmentSchema = z.object({
   // Separate disabled default for OpenRouter zero-spend routes. The bounded set of
   // advertised/authenticated ids ending exactly in `:free` stays unavailable until
   // an approved release enables this flag.
+  // true: every model the authenticated subscription providers (openai-codex, xai-oauth,
+  // and anthropic when its flag is on) advertise is selectable, not only the curated list.
+  COMMAND_ADVERTISED_SUBSCRIPTION_ROUTES: z.enum(['true', 'false', '1', '0']).default('false')
+    .transform(value => value === 'true' || value === '1'),
   COMMAND_OPENROUTER_FREE_ROUTES_ENABLED: z.enum(['true', 'false', '1', '0']).default('false')
     .transform(value => value === 'true' || value === '1'),
   // Disabled unless explicitly enabled. Gates only the optional validated `historyBinding`
@@ -31,6 +35,7 @@ export type CommandProxyConfig = Readonly<{
   hermesApiKey: string;
   maxStreamSeconds: number;
   anthropicRoutesEnabled: boolean;
+  advertisedSubscriptionRoutes: boolean;
   openRouterFreeRoutesEnabled: boolean;
   historyBindingEnabled: boolean;
 }>;
@@ -59,6 +64,7 @@ export function loadCommandProxyConfig(environment: NodeJS.ProcessEnv): CommandP
     hermesApiKey: parsed.HERMES_API_KEY,
     maxStreamSeconds: parsed.MAX_STREAM_SECONDS,
     anthropicRoutesEnabled: parsed.COMMAND_ANTHROPIC_ROUTES_ENABLED,
+    advertisedSubscriptionRoutes: parsed.COMMAND_ADVERTISED_SUBSCRIPTION_ROUTES,
     openRouterFreeRoutesEnabled: parsed.COMMAND_OPENROUTER_FREE_ROUTES_ENABLED,
     historyBindingEnabled: parsed.COMMAND_HISTORY_BINDING_ENABLED,
   });

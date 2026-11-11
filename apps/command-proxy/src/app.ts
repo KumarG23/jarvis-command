@@ -84,6 +84,33 @@ function enabledCuratedInferenceOptions(config: CommandProxyConfig) {
     : CURATED_INFERENCE_OPTIONS;
 }
 
+// By default only the curated, labelled routes are eligible. With
+// COMMAND_ADVERTISED_SUBSCRIPTION_ROUTES, subscription-billed providers (ChatGPT via
+// Codex, xAI OAuth) are eligible for every model their authenticated login currently
+// advertises, so a new model (e.g. a 6.1 release) is selectable without a Command release. Anthropic stays behind its explicit
+// flag because its route can be API-key billed. Paid API providers are never eligible.
+const SUBSCRIPTION_PROVIDERS = new Set(['openai-codex', 'xai-oauth']);
+const MODEL_ID = /^[a-z0-9][a-z0-9._-]{0,79}$/;
+const CLAUDE_MODEL_ID = /^claude-[a-z0-9][a-z0-9.-]{0,72}$/;
+const MAX_DYNAMIC_OPTIONS_PER_PROVIDER = 24;
+function eligibleInferenceOptions(providers: ReadonlyMap<string, ProviderInventory>, config: CommandProxyConfig) {
+  const labels = new Map<string, string>(KNOWN_CURATED_INFERENCE_OPTIONS.map(option => [catalogKey(option.provider, option.model), option.label]));
+  const result: { provider: 'openai-codex' | 'xai-oauth' | 'anthropic'; model: string; label: string }[] = [];
+  const add = (provider: 'openai-codex' | 'xai-oauth' | 'anthropic', pattern: RegExp) => {
+    const inventory = providers.get(provider);
+    if (inventory?.authenticated !== true) return;
+    // Curated (labelled) models first, in curated order, then the rest by id.
+    const curated = enabledCuratedInferenceOptions(config).filter(option => option.provider === provider && inventory.models.has(option.model)).map((option): string => option.model);
+    const rest = config.advertisedSubscriptionRoutes ? [...inventory.models].filter(model => !curated.includes(model)).sort() : [];
+    for (const model of [...curated, ...rest].filter(model => pattern.test(model)).slice(0, MAX_DYNAMIC_OPTIONS_PER_PROVIDER)) {
+      result.push({ provider, model, label: labels.get(catalogKey(provider, model)) ?? model });
+    }
+  };
+  for (const provider of SUBSCRIPTION_PROVIDERS) add(provider as 'openai-codex' | 'xai-oauth', MODEL_ID);
+  if (config.anthropicRoutesEnabled) add('anthropic', CLAUDE_MODEL_ID);
+  return result;
+}
+
 // Deduplicated by the canonical provider inventory, sorted by model id for a stable
 // read, and capped by count. Only an authenticated `openrouter` provider contributes.
 function openRouterFreeOptions(
@@ -728,10 +755,7 @@ async function readInferenceOptions(
     path: '/api/model/options', method: 'GET', config, fetcher, cache: 'no-store',
   }));
   const providers = canonicalProviderInventory(upstream);
-  const curatedOptions = enabledCuratedInferenceOptions(config).filter((candidate) => {
-    const provider = providers.get(candidate.provider);
-    return provider?.authenticated === true && provider.models.has(candidate.model);
-  }).map(option => option.provider === 'anthropic'
+  const curatedOptions = eligibleInferenceOptions(providers, config).map(option => option.provider === 'anthropic'
     ? { ...option, reasoningEfforts: [] }
     : { ...option, reasoningEfforts: [...REASONING_EFFORTS] });
   const freeOptions = openRouterFreeOptions(providers, config);
@@ -739,7 +763,7 @@ async function readInferenceOptions(
   return InferenceOptionsResponseSchema.parse({
     default: { provider: upstream.provider, model: upstream.model },
     options,
-    catalog: projectModelCatalog(providers, config, freeOptions),
+    catalog: projectModelCatalog(providers, config, [...curatedOptions, ...freeOptions]),
   });
 }
 
@@ -784,11 +808,12 @@ type CatalogCandidate = Readonly<{
 function projectModelCatalog(
   providers: ReadonlyMap<string, ProviderInventory>,
   config: CommandProxyConfig,
-  freeOptions: readonly InferenceOption[],
+  eligibleOptions: readonly { provider: string; model: string }[],
 ): ModelCatalog {
+  // Curated routes stay marked eligible even while unadvertised (policy, not availability).
   const eligibleKeys = new Set([
     ...enabledCuratedInferenceOptions(config).map(option => catalogKey(option.provider, option.model)),
-    ...freeOptions.map(option => catalogKey(option.provider, option.model)),
+    ...eligibleOptions.map(option => catalogKey(option.provider, option.model)),
   ]);
   const advertised = new Map<string, CatalogCandidate>();
   for (const [slug, provider] of providers) {

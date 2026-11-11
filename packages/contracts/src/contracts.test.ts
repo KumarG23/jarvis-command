@@ -172,15 +172,20 @@ describe('per-prompt inference contracts', () => {
       inference: { provider: 'xai-oauth', model: 'grok-4.7', reasoningEffort: 'xhigh' },
     }).inference?.model).toBe('grok-4.7');
 
+    // Model ids are shape-checked only; which provider/model pairs are real is decided by
+    // the command proxy against the authenticated provider's live inventory.
+    expect(LiveRunSubmissionRequestSchema.parse({ ...request, inference: { provider: 'openai-codex', model: 'gpt-6.1-sol', reasoningEffort: 'high' } }).inference?.model).toBe('gpt-6.1-sol');
     for (const inference of [
-      { provider: 'xai-oauth', model: 'gpt-5.6-sol', reasoningEffort: 'high' },
-      { provider: 'openai-codex', model: 'grok-4.6', reasoningEffort: 'high' },
-      { provider: 'openai-codex', model: 'private-model', reasoningEffort: 'high' },
+      { provider: 'openai-codex', model: 'GPT-6-SOL', reasoningEffort: 'high' },
+      { provider: 'openai-codex', model: 'gpt 6', reasoningEffort: 'high' },
+      { provider: 'openai-codex', model: '../gpt', reasoningEffort: 'high' },
+      { provider: 'openai-codex', model: 'gpt-5.6-sol' },
       { provider: 'openai-codex', model: 'gpt-5.6-sol', reasoningEffort: 'ultra' },
+      { provider: 'openai-api', model: 'gpt-5.6-sol', reasoningEffort: 'high' },
     ]) expect(() => LiveRunSubmissionRequestSchema.parse({ ...request, inference })).toThrow();
   });
 
-  it('accepts only the three exact Claude routes with provider-default effort', () => {
+  it('accepts well-formed Claude routes with provider-default effort only', () => {
     for (const model of ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5']) {
       expect(LiveRunSubmissionRequestSchema.parse({
         ...request,
@@ -188,9 +193,9 @@ describe('per-prompt inference contracts', () => {
       }).inference).toEqual({ provider: 'anthropic', model });
     }
     for (const inference of [
-      { provider: 'anthropic', model: 'claude-opus-5-6' },
       { provider: 'anthropic', model: 'claude-opus-5-5', reasoningEffort: 'high' },
       { provider: 'anthropic', model: 'gpt-6-sol' },
+      { provider: 'anthropic', model: 'Claude-Opus' },
       { provider: 'openai-codex', model: 'claude-opus-5-5' },
     ]) expect(() => LiveRunSubmissionRequestSchema.parse({ ...request, inference })).toThrow();
   });
