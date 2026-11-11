@@ -41,4 +41,5 @@ Set `COCKPIT_MODE=enabled`, `SESSION_HOST_BASE_URL` (for example `http://127.0.0
 
 - Interactive Claude Code, Codex, Gemini or OpenCode under the cockpit with Neal's real logins.
 - Whether the installed Hermes loads MCP servers per profile (Jarvis prompt 2).
+- agy 1.5.5 on cockpit-dev (Jarvis): `--prompt-interactive`, `--conversation <id>`, `--continue`; settings in `~/.gemini/antigravity-cli/settings.json`. Adapter added; capturing its conversation ID for lineage is not wired yet. Neal prefers agy over Gemini for Google workers.
 - Prompt flags for Gemini (`--prompt-interactive`) and OpenCode (`--prompt`) on the installed versions.

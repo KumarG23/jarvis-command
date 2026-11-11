@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { CockpitAdapter, CockpitKind } from '@jarvis-command/contracts';
 import { exec } from './exec';
 
@@ -47,6 +49,19 @@ const codexPreflight = async (cwd: string, env: NodeJS.ProcessEnv) => {
   return null;
 };
 
+// agy bills the Gemini API only when a Google API key is supplied. Keys are stripped from the
+// worker environment, so the remaining route is a key written into agy's own settings file.
+const agyPreflight = async (_cwd: string, env: NodeJS.ProcessEnv) => {
+  const home = env.HOME;
+  if (!home) return null;
+  let text: string;
+  try { text = await readFile(join(home, '.gemini', 'antigravity-cli', 'settings.json'), 'utf8'); } catch { return null; }
+  if (/AIza[0-9A-Za-z_-]{35}/.test(text)) {
+    return 'agy has a Google API key in ~/.gemini/antigravity-cli/settings.json, which bills the Gemini API. Remove it and use your Google account login instead.';
+  }
+  return null;
+};
+
 export const ADAPTERS: Record<CockpitKind, AdapterDefinition> = {
   shell: {
     kind: 'shell', label: 'Shell', binary: shell => shell, billing: 'No model usage',
@@ -64,6 +79,12 @@ export const ADAPTERS: Record<CockpitKind, AdapterDefinition> = {
     kind: 'codex', label: 'Codex', binary: () => 'codex', billing: 'ChatGPT subscription (official Codex CLI)',
     argv: ({ prompt, resume }) => (resume ? ['codex', 'resume', resume] : ['codex', ...(prompt ? [prompt] : [])]),
     promptViaArgv: true, preflight: codexPreflight, note: null,
+  },
+  agy: {
+    kind: 'agy', label: 'Antigravity (agy)', binary: () => 'agy', billing: 'Google account (official Antigravity CLI)',
+    argv: ({ prompt, resume }) => ['agy', ...(resume ? ['--conversation', resume] : []), ...(prompt ? ['--prompt-interactive', prompt] : [])],
+    promptViaArgv: true, preflight: agyPreflight,
+    note: 'Conversation IDs are not captured yet; resume by ID once lineage is wired.',
   },
   gemini: {
     kind: 'gemini', label: 'Gemini CLI', binary: () => 'gemini', billing: 'Google account (official Gemini CLI)',

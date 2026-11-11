@@ -36,7 +36,7 @@ export const TOOLS: Tool[] = [
   tool('list_sessions', 'List the cockpit sessions (threads) in a project with their state and who has input.',
     z.object({ projectId }).strict(), async (manager, args) => manager.list(args.projectId).map(summary)),
   tool('create_session',
-    'Start a new working session in the project: an official agent CLI (claude, codex, gemini, opencode) or a shell, in its own git worktree when a repository is given. The task text is given to the agent as its first message. Reusing a requestId returns the same session instead of starting another. You get input ownership of sessions you start.',
+    'Start a new working session in the project: an official agent CLI (claude, codex, agy, gemini, opencode) or a shell, in its own git worktree when a repository is given. The task text is given to the agent as its first message. Reusing a requestId returns the same session instead of starting another. You get input ownership of sessions you start.',
     z.object({
       projectId, requestId: CockpitRequestIdSchema, title: z.string().min(1).max(120), kind: CockpitKindSchema,
       repository: CockpitRepositorySchema.optional(), worktree: z.boolean().optional(), task: z.string().max(16_000).optional(),

@@ -96,7 +96,7 @@ function CreateForm({ adapters, base, onCancel, onCreated }: Readonly<{ adapters
   const requestId = useRef(newRequestId());
   const adapter = adapters.find(item => item.kind === kind);
   const options: { kind: CockpitKind; label: string }[] = adapters.length ? adapters.map(item => ({ kind: item.kind, label: item.label }))
-    : [{ kind: 'claude', label: 'Claude Code' }, { kind: 'codex', label: 'Codex' }, { kind: 'gemini', label: 'Gemini CLI' }, { kind: 'opencode', label: 'OpenCode' }, { kind: 'shell', label: 'Shell' }];
+    : [{ kind: 'claude', label: 'Claude Code' }, { kind: 'codex', label: 'Codex' }, { kind: 'agy', label: 'Antigravity (agy)' }, { kind: 'gemini', label: 'Gemini CLI' }, { kind: 'opencode', label: 'OpenCode' }, { kind: 'shell', label: 'Shell' }];
   const submit = async () => {
     setBusy(true); setError(null);
     try {

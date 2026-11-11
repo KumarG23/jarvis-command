@@ -8,7 +8,7 @@ export const CockpitSessionIdSchema = z.string().regex(/^cs_[a-f0-9]{24}$/);
 export const CockpitProjectIdSchema = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
 export const CockpitRequestIdSchema = z.string().regex(/^[A-Za-z0-9_-]{8,128}$/);
 
-export const CockpitKindSchema = z.enum(['shell', 'claude', 'codex', 'gemini', 'opencode']);
+export const CockpitKindSchema = z.enum(['shell', 'claude', 'codex', 'agy', 'gemini', 'opencode']);
 export type CockpitKind = z.infer<typeof CockpitKindSchema>;
 
 export const CockpitActorSchema = z.enum(['human', 'lead']);

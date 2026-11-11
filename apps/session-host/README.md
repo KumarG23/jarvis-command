@@ -1,6 +1,6 @@
 # Cockpit session host
 
-Runs the project cockpit's working sessions on the execution host (`cockpit-dev`): official agent CLIs (Claude Code, Codex, Gemini CLI, OpenCode) and plain shells, each in a real terminal owned by tmux. The Command BFF relays the browser terminal to it, and the Hermes project lead drives it through MCP tools.
+Runs the project cockpit's working sessions on the execution host (`cockpit-dev`): official agent CLIs (Claude Code, Codex, Antigravity `agy`, Gemini CLI, OpenCode) and plain shells, each in a real terminal owned by tmux. The Command BFF relays the browser terminal to it, and the Hermes project lead drives it through MCP tools.
 
 Status: slice 1, part 1. Built and tested in a sandbox with real tmux and bash. No real subscription CLI has been qualified on cockpit-dev yet.
 
