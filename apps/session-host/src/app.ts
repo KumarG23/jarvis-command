@@ -133,7 +133,7 @@ export function buildSessionHostApp(manager: SessionManager) {
     try {
       const { id } = SessionParams.parse(request.params);
       const body = CheckBody.parse(request.body);
-      return { check: await manager.check(id, body.projectId, body.command, body.timeoutSeconds) };
+      return { check: await manager.check(id, body.projectId, 'human', body.command, body.timeoutSeconds) };
     } catch (error) { return sendError(reply, error); }
   });
 

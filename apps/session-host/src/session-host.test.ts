@@ -204,6 +204,20 @@ describe.skipIf(!hasTmux)('session host (real tmux)', () => {
     const check = (await call('run_check', { projectId: 'proj1', sessionId: worker.id, command: 'bash test.sh' })).json();
     expect(check).toMatchObject({ exitCode: 0 });
     expect(String(check.output)).toContain('PASS');
+
+    // Once Neal takes over, the lead can no longer run commands there, even after the session stops.
+    expect((await app.inject({ method: 'POST', url: `/v1/sessions/${worker.id}/ownership`, headers: auth, payload: { projectId: 'proj1', action: 'take' } })).statusCode).toBe(200);
+    const blocked = await call('run_check', { projectId: 'proj1', sessionId: worker.id, command: 'touch lead-ran-this' });
+    expect(blocked.isError).toBe(true);
+    expect(blocked.text).toContain('Neal has input');
+    expect((await app.inject({ method: 'POST', url: `/v1/sessions/${worker.id}/stop`, headers: auth, payload: { projectId: 'proj1' } })).statusCode).toBe(200);
+    expect((await call('run_check', { projectId: 'proj1', sessionId: worker.id, command: 'touch lead-ran-this' })).isError).toBe(true);
+    // Neal can still verify the finished worktree himself.
+    const human = await app.inject({ method: 'POST', url: `/v1/sessions/${worker.id}/check`, headers: auth, payload: { projectId: 'proj1', command: 'test ! -e lead-ran-this' } });
+    expect(human.json<{ check: { exitCode: number } }>().check.exitCode).toBe(0);
+    // A shell Neal started is never the lead's to run commands in.
+    const { session: mine } = (await create({ requestId: 'req-human-check' })).json<{ session: { id: string } }>();
+    expect((await call('run_check', { projectId: 'proj1', sessionId: mine.id, command: 'true' })).isError).toBe(true);
   });
 
   it('streams the real terminal over a WebSocket and refuses typing without ownership', async () => {

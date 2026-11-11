@@ -76,7 +76,7 @@ export const TOOLS: Tool[] = [
     z.object({ projectId, sessionId }).strict(), async (manager, args) => manager.diff(args.sessionId, args.projectId)),
   tool('run_check', 'Run a verification command (tests, build, lint) in a session\'s working directory and return its exit code and output.',
     z.object({ projectId, sessionId, command: z.string().min(1).max(4_000), timeoutSeconds: z.number().int().min(1).max(3_600).optional() }).strict(),
-    async (manager, args) => manager.check(args.sessionId, args.projectId, args.command, args.timeoutSeconds)),
+    async (manager, args) => manager.check(args.sessionId, args.projectId, 'lead', args.command, args.timeoutSeconds)),
 ];
 
 const RpcSchema = z.object({

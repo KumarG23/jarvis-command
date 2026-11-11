@@ -232,8 +232,15 @@ export class SessionManager extends EventEmitter {
     return diffWorkspace(session.cwd, this.env);
   }
 
-  async check(id: string, projectId: string, command: string, timeoutSeconds = 600) {
+  // A check runs a command in the session's working directory, so it follows the same
+  // ownership line as typing: the lead may run one only while it holds input, or on a
+  // session it started that nobody holds. Neal (human) always may. Finished sessions are
+  // allowed on purpose: verifying a worktree after its agent exits is the integration step.
+  async check(id: string, projectId: string, actor: CockpitActor, command: string, timeoutSeconds = 600) {
     const session = this.get(id, projectId);
+    if (actor === 'lead' && !(session.owner === 'lead' || (session.owner === 'none' && session.createdBy === 'lead'))) {
+      throw new ConflictError(session.owner === 'human' ? 'Neal has input on this session. The lead cannot run checks in it until he hands it back.' : 'The lead can only run checks in sessions it controls', 'not_owner', session.owner);
+    }
     const result = await runCheck(session.cwd, command, this.env, Math.min(Math.max(timeoutSeconds, 1), 3_600) * 1_000);
     return { ...result, output: redact(result.output) };
   }
