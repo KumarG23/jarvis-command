@@ -86,6 +86,10 @@ type LiveRoomServiceOptions = Readonly<{
 
 type AdmittedRunRecord = AuditRunRecord & Readonly<{ upstreamRunId: string }>;
 
+/** Server-configured actor for scheduled runs. Never derived from a request body or header. */
+export type ActorSubject = Readonly<{ actor: string }>;
+export type Subject = string | ActorSubject;
+
 export class LiveRoomConflictError extends Error {
   public readonly statusCode = 409;
 
@@ -126,9 +130,11 @@ export function createLiveRoomService({
 
   const submittingSessions = new Set<string>();
 
-  const actorFingerprint = (subject: string): string => sha256(subject);
+  // A string is an authenticated Access subject. An ActorSubject is a server-configured actor
+  // fingerprint (scheduled runs); it is never built from request input.
+  const actorFingerprint = (subject: Subject): string => typeof subject === 'string' ? sha256(subject) : subject.actor;
 
-  const findRun = (subject: string, publicRunId: string): AdmittedRunRecord => {
+  const findRun = (subject: Subject, publicRunId: string): AdmittedRunRecord => {
     const record = ledger.findRunByPublicId(actorFingerprint(subject), publicRunId);
     if (!record || !record.upstreamRunId) throw new LiveRoomNotFoundError();
     return record as AdmittedRunRecord;
@@ -223,7 +229,7 @@ export function createLiveRoomService({
   };
 
   const submitRun = async (
-    subject: string,
+    subject: Subject,
     rawRequest: LiveRunSubmissionRequest,
   ): Promise<LiveRunSubmissionResponse> => {
     const request = LiveRunSubmissionRequestSchema.parse(rawRequest);
@@ -679,7 +685,7 @@ export function createLiveRoomService({
         .slice(0, limit).map(record => record.publicRunId);
     },
 
-    async getRun(subject: string, publicRunId: string): Promise<LiveRunStatus> {
+    async getRun(subject: Subject, publicRunId: string): Promise<LiveRunStatus> {
       const record = findRun(subject, publicRunId);
       return projectStatus(record, await client.getRun(record.upstreamRunId!));
     },

@@ -31,6 +31,7 @@ describe('loadConfig', () => {
 
     expect(config).toEqual({
       cockpit: null,
+      scheduledRuns: null,
       reactionsEnabled: false,
       replyEvidenceEnabled: false,
       projectDeletionEnabled: false,
@@ -76,6 +77,18 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...productionEnvironment, COCKPIT_MODE: 'enabled', SESSION_HOST_BASE_URL: 'http://u:p@10.0.0.5:8650', SESSION_HOST_KEY: key })).toThrow(/uncredentialed/);
     expect(() => loadConfig({ ...productionEnvironment, COCKPIT_MODE: 'enabled', SESSION_HOST_BASE_URL: 'http://10.0.0.5:8650', SESSION_HOST_KEY: 'short' })).toThrow();
     expect(() => loadConfig({ ...productionEnvironment, COMMAND_MODE: 'disabled', COCKPIT_MODE: 'enabled', SESSION_HOST_BASE_URL: 'http://10.0.0.5:8650', SESSION_HOST_KEY: key })).toThrow();
+  });
+
+  it('enables scheduled runs only with a key and owner actor on a separate port', () => {
+    const key = 'k'.repeat(40);
+    const owner = 'a'.repeat(64);
+    expect(loadConfig(productionEnvironment).scheduledRuns).toBeNull();
+    expect(loadConfig({ ...productionEnvironment, SCHEDULED_RUNS_MODE: 'enabled', SCHEDULED_RUNS_HOST: '0.0.0.0', SCHEDULED_RUNS_KEY: key, SCHEDULED_RUNS_OWNER_ACTOR: owner }).scheduledRuns)
+      .toEqual({ host: '0.0.0.0', port: 8652, key, ownerActor: owner });
+    expect(() => loadConfig({ ...productionEnvironment, SCHEDULED_RUNS_MODE: 'enabled', SCHEDULED_RUNS_OWNER_ACTOR: owner })).toThrow(/SCHEDULED_RUNS_KEY/);
+    expect(() => loadConfig({ ...productionEnvironment, SCHEDULED_RUNS_MODE: 'enabled', SCHEDULED_RUNS_KEY: key })).toThrow(/SCHEDULED_RUNS_OWNER_ACTOR/);
+    expect(() => loadConfig({ ...productionEnvironment, SCHEDULED_RUNS_MODE: 'enabled', SCHEDULED_RUNS_KEY: key, SCHEDULED_RUNS_OWNER_ACTOR: 'not-a-hash' })).toThrow();
+    expect(() => loadConfig({ ...productionEnvironment, SCHEDULED_RUNS_MODE: 'enabled', SCHEDULED_RUNS_KEY: key, SCHEDULED_RUNS_OWNER_ACTOR: owner, SCHEDULED_RUNS_PORT: productionEnvironment.PORT ?? '8650' })).toThrow(/differ/);
   });
 
   it('refuses development authentication in production', () => {

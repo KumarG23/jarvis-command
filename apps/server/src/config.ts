@@ -43,6 +43,13 @@ const EnvironmentSchema = z.object({
   COCKPIT_MODE: z.enum(['disabled', 'enabled']).default('disabled'),
   SESSION_HOST_BASE_URL: z.url().optional(),
   SESSION_HOST_KEY: z.string().min(32).optional(),
+  // Scheduled runs: a separate bearer-key listener (never the Access-protected app port) that lets a
+  // Hermes cron script start a run in a Command chat as the configured owner.
+  SCHEDULED_RUNS_MODE: z.enum(['disabled', 'enabled']).default('disabled'),
+  SCHEDULED_RUNS_HOST: z.string().min(1).max(255).default('127.0.0.1'),
+  SCHEDULED_RUNS_PORT: z.coerce.number().int().min(1).max(65_535).default(8652),
+  SCHEDULED_RUNS_KEY: z.string().min(32).max(512).optional(),
+  SCHEDULED_RUNS_OWNER_ACTOR: z.string().regex(/^[a-f0-9]{64}$/).optional(),
 });
 
 export type AppConfig = Readonly<{
@@ -77,6 +84,13 @@ export type AppConfig = Readonly<{
   cockpit?: Readonly<{
     sessionHostUrl: string;
     sessionHostKey: string;
+  }> | null;
+  scheduledRuns?: Readonly<{
+    host: string;
+    port: number;
+    key: string;
+    /** Audit-ledger actor fingerprint (sha256 of the owner's Access subject). */
+    ownerActor: string;
   }> | null;
   artifacts: Readonly<{
     enabled: boolean;
@@ -211,8 +225,22 @@ export function loadConfig(environment: NodeJS.ProcessEnv): AppConfig {
       })()
     : null;
 
+  const scheduledRuns = parsed.SCHEDULED_RUNS_MODE === 'enabled'
+    ? (() => {
+        if (!command) throw new Error('SCHEDULED_RUNS_MODE requires COMMAND_MODE=enabled');
+        if (parsed.SCHEDULED_RUNS_PORT === parsed.PORT) throw new Error('SCHEDULED_RUNS_PORT must differ from PORT');
+        return Object.freeze({
+          host: parsed.SCHEDULED_RUNS_HOST,
+          port: parsed.SCHEDULED_RUNS_PORT,
+          key: requireValue('SCHEDULED_RUNS_KEY', parsed.SCHEDULED_RUNS_KEY),
+          ownerActor: requireValue('SCHEDULED_RUNS_OWNER_ACTOR', parsed.SCHEDULED_RUNS_OWNER_ACTOR),
+        });
+      })()
+    : null;
+
   return Object.freeze({
     cockpit,
+    scheduledRuns,
     reactionsEnabled: parsed.REACTIONS_MODE === 'enabled',
     ...(parsed.PROJECT_CONTEXT_MODE === 'enabled' ? { projectContextEnabled: true } : {}),
     replyEvidenceEnabled: parsed.REPLY_EVIDENCE_MODE === 'enabled',

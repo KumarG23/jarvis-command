@@ -15,6 +15,7 @@ import { NotificationStore } from './notification-store';
 import { createRunNotifier } from './run-notifier';
 import { createPresence, createReplyNotifier, type ReplyEvidenceSource } from './reply-notifier';
 import { createReplyEvidenceSource } from './reply-evidence-source';
+import { createScheduledRunsServer } from './scheduled-runs';
 
 export type CompositionOverrides = Readonly<{
   hermes?: Readonly<{
@@ -80,6 +81,10 @@ export function createCommandServer(
   let ledger: AuditLedger | undefined;
   let replyEvidence: ReplyEvidenceSource | undefined;
   let liveRoom: ReturnType<typeof createLiveRoomService> | undefined;
+  let rooms: ProjectRoomStore | undefined;
+  const scheduled = config.scheduledRuns && config.command ? createScheduledRunsServer({
+    config: config.scheduledRuns, liveRoom: () => liveRoom, rooms: () => rooms,
+  }) : undefined;
   const app = buildApp({
     config,
     verifyAccess,
@@ -103,7 +108,7 @@ export function createCommandServer(
     liveRoom = createLiveRoomService({
       client,
       ledger,
-      rooms: new ProjectRoomStore(dirname(config.command.auditLogPath)),
+      rooms: rooms = new ProjectRoomStore(dirname(config.command.auditLogPath)),
       notify: notifications ? createRunNotifier(notifications) : undefined,
       notifyReply: notifications ? createReplyNotifier({ store: notifications, push, enabled: config.push?.replies === true, source: replyEvidence, presence }) : undefined,
       reactions: new ReactionStore(dirname(config.command.auditLogPath)),
@@ -116,6 +121,10 @@ export function createCommandServer(
         : async () => { throw Object.assign(new Error('Artifact storage unavailable'), { statusCode: 503 }); },
     });
   });
-  app.addHook('onClose', async () => { await ledger?.close(); });
+  // The scheduled-runs listener opens only once the live room exists, and closes with the app.
+  app.addHook('onReady', async () => {
+    if (scheduled && config.scheduledRuns) await scheduled.listen({ host: config.scheduledRuns.host, port: config.scheduledRuns.port });
+  });
+  app.addHook('onClose', async () => { await scheduled?.close(); await ledger?.close(); });
   return app;
 }
