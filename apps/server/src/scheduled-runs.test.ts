@@ -24,7 +24,6 @@ function setup(options: { rooms?: ProjectRoom[]; submit?: ReturnType<typeof vi.f
     config: { host: '127.0.0.1', port: 0, key: KEY, ownerActor: OWNER },
     liveRoom: () => ({ submitRun, getRun }) as never,
     rooms: () => ({ list: async () => options.rooms ?? [room()] }),
-    pollMs: 5, watchMs: 1_000,
     log: fields => { logs.push(fields); },
   });
   return { app, submitRun, getRun, logs };
@@ -53,8 +52,6 @@ describe('scheduled runs', () => {
     expect(ctx.submitRun).toHaveBeenCalledWith({ actor: OWNER }, {
       sessionId: LEAD, clientRequestId: ID, input: scheduledInput(body), routing: { mode: 'defaults', projectId: ROOM },
     });
-    // The server-side watcher polls until the run is terminal, which drives inbox and push.
-    await vi.waitFor(() => expect(ctx.getRun).toHaveBeenCalledWith({ actor: OWNER }, `jcr_${'4'.repeat(32)}`));
     expect(JSON.stringify(ctx.logs)).not.toContain('disk');
   });
 

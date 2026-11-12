@@ -639,3 +639,40 @@ it('keeps uncertain latest admission unknown without re-driving or guessing a ru
   expect(client.startRun).toHaveBeenCalledTimes(1);
   expect(client.getRun).not.toHaveBeenCalled();
 });
+
+describe('server-side run watching', () => {
+  it('polls an admitted run to its terminal state so notifications fire with no browser open', async () => {
+    const { ledger, path } = await createLedger();
+    const running = { runId: upstreamRunId, sessionId, status: 'running', updatedAt: '2026-09-04T14:00:01.000Z', approval: null, output: null, error: null, pendingSteer: null, usage: null };
+    const getRun = vi.fn()
+      .mockResolvedValueOnce(running)
+      .mockResolvedValue({ ...running, status: 'completed', updatedAt: '2026-09-04T14:00:05.000Z', output: 'done' });
+    const notify = vi.fn().mockResolvedValue(true);
+    const service = createLiveRoomService({ client: fakeClient({ getRun }), ledger, notify, watchRuns: { pollMs: 5, watchMs: 2_000 } });
+    const admitted = await service.submitRun('operator', request);
+    await vi.waitFor(() => expect(notify).toHaveBeenCalledWith(expect.objectContaining({ category: 'run-completed', publicRunId: admitted.publicRunId })));
+    expect(await readFile(path, 'utf8')).toContain('"action":"run.completed"');
+    const calls = getRun.mock.calls.length;
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect(getRun.mock.calls.length).toBe(calls); // stops after the terminal state
+    service.closeWatchers();
+  });
+
+  it('does not watch without configuration and stops on close', async () => {
+    const { ledger } = await createLedger();
+    const client = fakeClient();
+    const idle = createLiveRoomService({ client, ledger });
+    await idle.submitRun('operator', request);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(client.getRun).not.toHaveBeenCalled();
+    const second = await createLedger();
+    const watchedClient = fakeClient();
+    const watching = createLiveRoomService({ client: watchedClient, ledger: second.ledger, watchRuns: { pollMs: 5, watchMs: 2_000 } });
+    await watching.submitRun('operator', request);
+    await vi.waitFor(() => expect(watchedClient.getRun).toHaveBeenCalled());
+    watching.closeWatchers();
+    const calls = (watchedClient.getRun as ReturnType<typeof vi.fn>).mock.calls.length;
+    await new Promise(resolve => setTimeout(resolve, 30));
+    expect((watchedClient.getRun as ReturnType<typeof vi.fn>).mock.calls.length).toBe(calls);
+  });
+});

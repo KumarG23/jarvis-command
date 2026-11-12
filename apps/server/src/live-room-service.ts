@@ -71,6 +71,11 @@ type LiveRoomServiceOptions = Readonly<{
   projectContext?: boolean;
   // Reads the project's cockpit sessions for the lead's context; null when unavailable.
   listTerminals?: (projectId: string) => Promise<CockpitSession[] | null>;
+  /**
+   * Server-side status polling after admission, so the terminal audit, inbox entry and reply push
+   * happen even when no browser is watching (the phone app was closed). Off unless configured.
+   */
+  watchRuns?: Readonly<{ pollMs: number; watchMs: number; maxWatched?: number }>;
   rooms?: Pick<ProjectRoomStore, 'list' | 'readLocked'>;
   client: CommandProxyClient;
   ledger: AuditLedger;
@@ -122,6 +127,7 @@ export function createLiveRoomService({
   defaultInference,
   projectContext = false,
   listTerminals,
+  watchRuns,
 }: LiveRoomServiceOptions) {
   const routingRequests = new KeyedSerialQueue();
   const defaults = createRoutingDefaults(ledger, client, rooms, defaultInference);
@@ -132,6 +138,36 @@ export function createLiveRoomService({
 
   // A string is an authenticated Access subject. An ActorSubject is a server-configured actor
   // fingerprint (scheduled runs); it is never built from request input.
+  const watched = new Set<string>();
+  const watchTimers = new Set<NodeJS.Timeout>();
+  let watchClosed = false;
+  // Polls through projectStatus, which records the terminal audit and fires the inbox entry and
+  // reply push. Status reads are idempotent, so a browser watching too only duplicates reads.
+  const watch = (actor: string, publicRunId: string) => {
+    if (!watchRuns || watchClosed || watched.has(publicRunId) || watched.size >= (watchRuns.maxWatched ?? 64)) return;
+    watched.add(publicRunId);
+    const deadline = Date.now() + watchRuns.watchMs;
+    const schedule = () => {
+      const timer = setTimeout(() => { watchTimers.delete(timer); void tick(); }, watchRuns.pollMs);
+      timer.unref?.();
+      watchTimers.add(timer);
+    };
+    const tick = async () => {
+      if (watchClosed) { watched.delete(publicRunId); return; }
+      let done = Date.now() >= deadline;
+      try {
+        const record = ledger.findRunByPublicId(actor, publicRunId);
+        if (!record?.upstreamRunId) done = true;
+        else {
+          const status = await projectStatus(record as AdmittedRunRecord, await client.getRun(record.upstreamRunId));
+          if (TERMINAL_STATES.has(status.status)) done = true;
+        }
+      } catch { /* transient upstream or storage fault: keep polling until the deadline */ }
+      if (done || watchClosed) watched.delete(publicRunId); else schedule();
+    };
+    schedule();
+  };
+
   const actorFingerprint = (subject: Subject): string => typeof subject === 'string' ? sha256(subject) : subject.actor;
 
   const findRun = (subject: Subject, publicRunId: string): AdmittedRunRecord => {
@@ -332,7 +368,9 @@ export function createLiveRoomService({
 
     submissions.set(submissionKey, { fingerprint: payloadFingerprint, operation });
     try {
-      return await operation;
+      const result = await operation;
+      watch(actor, result.publicRunId);
+      return result;
     } finally {
       submissions.delete(submissionKey);
       submittingSessions.delete(request.sessionId);
@@ -643,6 +681,8 @@ export function createLiveRoomService({
     },
 
     submitRun,
+    /** Stops server-side run watching (app shutdown). */
+    closeWatchers() { watchClosed = true; for (const timer of watchTimers) clearTimeout(timer); watchTimers.clear(); watched.clear(); },
     readRoutingDefault: (subject: string, target: unknown) => defaults.read(actorFingerprint(subject), target),
     setRoutingDefault: (subject: string, raw: RoutingDefaultSet) => routingRequests.run(`${actorFingerprint(subject)}\0${raw.clientRequestId}`, () => defaults.set(actorFingerprint(subject), raw)),
     submitContextCompaction,

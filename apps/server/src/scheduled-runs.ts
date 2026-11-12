@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { LiveRunStatus, ProjectRoom } from '@jarvis-command/contracts';
+import type { ProjectRoom } from '@jarvis-command/contracts';
 import type { ActorSubject, createLiveRoomService } from './live-room-service';
 import type { AppConfig } from './config';
 
@@ -10,7 +10,7 @@ import type { AppConfig } from './config';
  *
  * A cron script on the Hermes host POSTs a prompt with its own bearer key. Command admits it as an
  * ordinary run in the target project's chat, as the configured owner, so the result appears in
- * chat history and the existing inbox and reply-push paths announce it. The script's `id` is the
+ * chat history and the live room's server-side run watcher fires the inbox entry and reply push. The script's `id` is the
  * run's client request ID, so a retried POST replays the same run instead of starting another.
  *
  * This listener is separate from the Access-protected app port and serves only these routes.
@@ -36,8 +36,6 @@ export const ScheduledRunRequestSchema = z.object({
 }).strict();
 export type ScheduledRunRequest = z.infer<typeof ScheduledRunRequestSchema>;
 
-const TERMINAL = new Set<LiveRunStatus['status']>(['completed', 'failed', 'cancelled', 'interrupted']);
-
 /** The chat a project's scheduled runs land in: its lead chat, else its most recent chat. */
 export function projectChat(room: ProjectRoom): string | null {
   return room.leadSessionId ?? room.lastSessionId ?? null;
@@ -59,49 +57,14 @@ export type ScheduledRunsOptions = Readonly<{
   config: NonNullable<AppConfig['scheduledRuns']>;
   liveRoom: () => LiveRoom | undefined;
   rooms: () => Rooms | undefined;
-  /** Status poll cadence and limit for the server-side watcher that drives notifications. */
-  pollMs?: number;
-  watchMs?: number;
   log?: (fields: Readonly<Record<string, string | number>>) => void;
 }>;
 
 export function createScheduledRunsServer(options: ScheduledRunsOptions): FastifyInstance {
   const owner: ActorSubject = Object.freeze({ actor: options.config.ownerActor });
-  const pollMs = options.pollMs ?? 5_000;
-  const watchMs = options.watchMs ?? 30 * 60_000;
   // Never logs the key, prompt, label, identity or output: route, status and error type only.
   const log = options.log ?? (fields => console.info(JSON.stringify({ event: 'scheduled-run', ...fields })));
-  const watching = new Set<string>();
-  const timers = new Set<NodeJS.Timeout>();
-  let closed = false;
-
-  // Polling status is what records the terminal audit and fires the inbox entry and reply push,
-  // because no browser may be watching when a scheduled run finishes.
-  const watch = (publicRunId: string) => {
-    if (watching.has(publicRunId) || watching.size >= 64) return;
-    watching.add(publicRunId);
-    const deadline = Date.now() + watchMs;
-    const tick = async () => {
-      if (closed) return;
-      let done = Date.now() >= deadline;
-      try {
-        const status = await options.liveRoom()?.getRun(owner, publicRunId);
-        if (status && TERMINAL.has(status.status)) done = true;
-      } catch { /* transient: keep polling until the deadline */ }
-      if (done || closed) { watching.delete(publicRunId); return; }
-      const timer = setTimeout(() => { timers.delete(timer); void tick(); }, pollMs);
-      timers.add(timer);
-    };
-    const timer = setTimeout(() => { timers.delete(timer); void tick(); }, pollMs);
-    timers.add(timer);
-  };
-
   const app = Fastify({ logger: false, bodyLimit: 32_768 });
-  app.addHook('onClose', async () => {
-    closed = true;
-    for (const timer of timers) clearTimeout(timer);
-    timers.clear();
-  });
   app.addHook('onRequest', async (request, reply) => {
     if (!keyMatches(request.headers.authorization, options.config.key)) {
       log({ route: request.routeOptions.url ?? 'unknown', status: 401 });
@@ -153,7 +116,6 @@ export function createScheduledRunsServer(options: ScheduledRunsOptions): Fastif
         input: scheduledInput(body),
         routing: { mode: 'defaults', projectId: room.id },
       });
-      if (!TERMINAL.has(result.status)) watch(result.publicRunId);
       log({ route: '/v1/scheduled-runs', status: 200, replayed: result.replayed ? 1 : 0 });
       return reply.send({ publicRunId: result.publicRunId, projectId: room.id, sessionId: result.sessionId, status: result.status, replayed: result.replayed });
     } catch (error) {

@@ -114,6 +114,8 @@ export function createCommandServer(
       reactions: new ReactionStore(dirname(config.command.auditLogPath)),
       reactionsEnabled: config.reactionsEnabled,
       projectContext: config.projectContextEnabled === true,
+      // Without this, a run finished while no browser is open never reaches the inbox or push.
+      watchRuns: { pollMs: 5_000, watchMs: 30 * 60_000 },
       ...(config.cockpit ? { listTerminals: createTerminalLister(config.cockpit) } : {}),
       ...(config.command.defaultInference ? { defaultInference: config.command.defaultInference } : {}),
       resolveImages: artifactStore
@@ -125,6 +127,6 @@ export function createCommandServer(
   app.addHook('onReady', async () => {
     if (scheduled && config.scheduledRuns) await scheduled.listen({ host: config.scheduledRuns.host, port: config.scheduledRuns.port });
   });
-  app.addHook('onClose', async () => { await scheduled?.close(); await ledger?.close(); });
+  app.addHook('onClose', async () => { liveRoom?.closeWatchers(); await scheduled?.close(); await ledger?.close(); });
   return app;
 }
