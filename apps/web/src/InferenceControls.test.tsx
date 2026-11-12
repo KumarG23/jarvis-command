@@ -73,6 +73,15 @@ it('does not turn missing executed fields or exact=false into a mismatch', () =>
   expect(screen.getAllByText(/Route verification unavailable/).length).toBeGreaterThan(0);
 });
 
+it('labels an Inherit run as the default route instead of unverifiable', () => {
+  const usage = { inputTokens: 0, outputTokens: 0, totalTokens: 0, execution: { requested: { provider: null, model: null, reasoningEffort: null }, executed: { provider: 'openai-codex', model: 'gpt-6.1-sol', reasoningEffort: 'medium', reasoningEffortSource: 'wire' }, exact: false, fallbackUsed: false, routeSource: 'unknown' } };
+  const turn = { intent: { sessionId: 'jc_one', input: null, clientRequestId: 'test' }, publicRunId: 'test', phase: 'Run completed', done: true, events: [], usage } as unknown as Turn;
+  render(<TurnView turn={turn} allowed={false} approve={vi.fn()} stop={vi.fn()} />);
+  expect(screen.queryByText(/Route verification unavailable/)).not.toBeInTheDocument();
+  expect(screen.getByText(/Activity \/ Usage/).closest('summary') ?? document.body).not.toHaveTextContent('Default route');
+  expect(screen.getByRole('region', { name: 'Execution receipt' })).toHaveTextContent('Default route · effort captured at provider wire');
+});
+
 it('shows supplied counters without optional execution metadata', () => {
   const turn = { intent: { sessionId: 'jc_one', input: null, clientRequestId: 'test' }, publicRunId: 'test', phase: 'Run completed', done: true, events: [], usage: { inputTokens: 0, outputTokens: 2, totalTokens: 2 } } as unknown as Turn;
   render(<TurnView turn={turn} allowed={false} approve={vi.fn()} stop={vi.fn()} />);

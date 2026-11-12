@@ -84,7 +84,7 @@ function RunInspector({ turn }: Readonly<{ turn: Turn }>) {
       <span className="run-status-line"><span role="status" aria-label="Run status"><span>{runStatus(turn)}</span>
         {failedTool ? ' · Tool failure reported' : ''}{handoff ? ' · Agent handoff reported' : ''}
         {turn.activityUnavailable ? ' · Activity incomplete' : ''}
-        {decision && decision !== 'Exact route' ? ` · ${decision}` : turn.usage && !execution ? ' · Executed route unavailable' : ''}
+        {decision && decision !== 'Exact route' && decision !== 'Default route' ? ` · ${decision}` : turn.usage && !execution ? ' · Executed route unavailable' : ''}
       </span>{!turn.done ? <ObservationAge /> : null}</span>
       <span className="status-disclosure">Activity / Usage</span>
     </summary>
@@ -185,6 +185,7 @@ export function ExecutionReceipt({ usage }: Readonly<{ usage: NonNullable<Turn['
     {changed ? <p className="receipt-warning">Requested route changed during execution.</p> : null}
     {decision === 'Fallback used' ? <p>Fallback used</p> : null}
     {decision === 'Route verification unavailable' ? <p>Route verification unavailable</p> : null}
+    {decision === 'Default route' && receipt ? <p>Default route · {receipt.executed.reasoningEffortSource === 'wire' ? 'effort captured at provider wire' : 'effort not wire-confirmed'}</p> : null}
     {!changed && receipt?.exact ? <p>Exact route · {receipt.executed.reasoningEffortSource === 'wire' ? 'effort captured at provider wire' : 'effort not wire-confirmed'}</p> : null}
   </section>;
 }
