@@ -85,6 +85,17 @@ export class SessionManager extends EventEmitter {
         this.update(session, { state: 'running', pid: pane.pid });
       }
     }
+    await this.discoverNativeIds();
+  }
+
+  // Records a CLI-chosen native id (agy's conversation) once the CLI has written it.
+  private async discoverNativeIds() {
+    for (const session of this.registry.all()) {
+      const discover = ADAPTERS[session.kind].discoverNativeSessionId;
+      if (!discover || session.nativeSessionId || !session.worktree || session.state === 'failed') continue;
+      const nativeSessionId = await discover(session.cwd, this.env).catch(() => null);
+      if (nativeSessionId && !this.registry.get(session.id)?.nativeSessionId) this.update(session, { nativeSessionId });
+    }
   }
 
   list(projectId: string) {

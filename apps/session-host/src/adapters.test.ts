@@ -36,3 +36,21 @@ it('refuses agy when it would spend paid AI credits, and allows it otherwise', a
     expect(await ADAPTERS.agy.preflight!(home, env)).toBeNull();
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
+
+it('reads agy conversation ids from its per-directory cache, and nothing else', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'agy-cache-'));
+  const discover = ADAPTERS.agy.discoverNativeSessionId!;
+  const cache = join(home, '.gemini', 'antigravity-cli', 'cache');
+  const id = '0f8fad5b-d9cb-469f-a165-70867728950e';
+  try {
+    expect(await discover('/w/one', { HOME: home })).toBeNull();
+    mkdirSync(cache, { recursive: true });
+    writeFileSync(join(cache, 'last_conversations.json'), JSON.stringify({ '/w/one': id, '/w/two': { conversationId: id }, '/w/bad': 'not-a-uuid' }));
+    expect(await discover('/w/one', { HOME: home })).toBe(id);
+    expect(await discover('/w/two', { HOME: home })).toBe(id);
+    expect(await discover('/w/bad', { HOME: home })).toBeNull();
+    expect(await discover('/w/other', { HOME: home })).toBeNull();
+    writeFileSync(join(cache, 'last_conversations.json'), '{broken');
+    expect(await discover('/w/one', { HOME: home })).toBeNull();
+  } finally { rmSync(home, { recursive: true, force: true }); }
+});

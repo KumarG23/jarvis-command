@@ -15,6 +15,9 @@ export type AdapterDefinition = {
   argv: (options: { shell: string; prompt?: string | undefined; resume?: string | undefined; nativeSessionId?: string | undefined }) => string[];
   // Generates a native session id up front when the CLI accepts one, so lineage is known before launch.
   assignNativeSessionId?: () => string;
+  // Reads the CLI's own native id after launch, for CLIs that pick it themselves. Only used
+  // when the session has its own worktree, so the directory identifies one session.
+  discoverNativeSessionId?: (cwd: string, env: NodeJS.ProcessEnv) => Promise<string | null>;
   // Shells read the first message from the keyboard; CLIs take it as an argument.
   promptViaArgv: boolean;
   // Refuses a launch that would bill a paid API instead of the subscription. Login is not
@@ -81,6 +84,28 @@ const agyCreditsPreflight = async (cwd: string, env: NodeJS.ProcessEnv) => {
   return null;
 };
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// agy records the latest conversation for each working directory in a read-only cache file
+// (verified on cockpit-dev, 2026-11-12). The conversation databases themselves are opaque and
+// are never parsed. Unrecognized shapes yield null rather than a guess.
+const agyDiscover = async (cwd: string, env: NodeJS.ProcessEnv) => {
+  if (!env.HOME) return null;
+  let cache: unknown;
+  try {
+    const text = await readFile(join(env.HOME, '.gemini', 'antigravity-cli', 'cache', 'last_conversations.json'), 'utf8');
+    if (text.length > 1_000_000) return null;
+    cache = JSON.parse(text);
+  } catch { return null; }
+  if (!cache || typeof cache !== 'object' || Array.isArray(cache)) return null;
+  const entry = (cache as Record<string, unknown>)[cwd];
+  if (typeof entry === 'string') return UUID.test(entry) ? entry : null;
+  if (entry && typeof entry === 'object') {
+    const candidates = Object.values(entry as Record<string, unknown>).filter((value): value is string => typeof value === 'string' && UUID.test(value));
+    return candidates.length === 1 ? candidates[0]! : null;
+  }
+  return null;
+};
+
 export const ADAPTERS: Record<CockpitKind, AdapterDefinition> = {
   shell: {
     kind: 'shell', label: 'Shell', binary: shell => shell, billing: 'No model usage',
@@ -103,7 +128,8 @@ export const ADAPTERS: Record<CockpitKind, AdapterDefinition> = {
     kind: 'agy', label: 'Antigravity (agy)', binary: () => 'agy', billing: 'Google account (official Antigravity CLI)',
     argv: ({ prompt, resume }) => ['agy', ...(resume ? ['--conversation', resume] : []), ...(prompt ? ['--prompt-interactive', prompt] : [])],
     promptViaArgv: true, preflight: async (cwd, env) => await agyPreflight(cwd, env) ?? await agyCreditsPreflight(cwd, env),
-    note: 'Conversation IDs are not captured yet; resume by ID once lineage is wired.',
+    discoverNativeSessionId: agyDiscover,
+    note: 'The conversation ID is recorded after the first turn when the session has its own worktree.',
   },
   gemini: {
     kind: 'gemini', label: 'Gemini CLI', binary: () => 'gemini', billing: 'Google account (official Gemini CLI)',
