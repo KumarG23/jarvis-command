@@ -1,4 +1,5 @@
 import { requireRoutingWrites } from './routing-write-state';
+import { projectInstructions } from './project-context';
 import { createRoutingDefaults, RoutingRefusedError, RoutingUnavailableError } from './routing-defaults';
 import { KeyedSerialQueue } from './keyed-serial-queue';
 import type { ProjectRoomStore } from './project-room-store';
@@ -67,6 +68,7 @@ const TERMINAL_STATES = new Set<LiveRunState>([
 
 type LiveRoomServiceOptions = Readonly<{
   defaultInference?: InferenceOverride;
+  projectContext?: boolean;
   rooms?: Pick<ProjectRoomStore, 'list' | 'readLocked'>;
   client: CommandProxyClient;
   ledger: AuditLedger;
@@ -112,6 +114,7 @@ export function createLiveRoomService({
   reactions,
   reactionsEnabled = false,
   defaultInference,
+  projectContext = false,
 }: LiveRoomServiceOptions) {
   const routingRequests = new KeyedSerialQueue();
   const defaults = createRoutingDefaults(ledger, client, rooms, defaultInference);
@@ -336,8 +339,13 @@ export function createLiveRoomService({
       ? await resolveImages?.(request.images)
       : undefined;
     if (request.images?.length && !images) throw new Error('Artifact image resolver unavailable');
+    const room = projectContext && rooms
+      ? (await rooms.list()).find(candidate => !candidate.archived && candidate.sessionIds.includes(request.sessionId))
+      : undefined;
+    const instructions = room ? projectInstructions(room, request.sessionId) : undefined;
     const admit = async () => {
       const upstream = await client.startRun({
+        ...(instructions ? { instructions } : {}),
         sessionId: request.sessionId,
         input: request.input,
         idempotencyKey: `jc-v1-${sha256(`${record.actor}\0${record.clientRequestId}`)}`,

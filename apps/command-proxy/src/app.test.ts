@@ -154,6 +154,16 @@ describe('command proxy route boundary', () => {
     expect(JSON.parse(String(fetcher.mock.calls[1]![1]!.body)).input).toBe(input);
   });
 
+  it('forwards bounded per-run instructions and rejects oversized ones', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'jarvis-command'))).mockResolvedValueOnce(jsonResponse({ run_id: runId, status: 'running' }));
+    const app = createApp(fetcher);
+    const response = await app.inject({ method: 'POST', url: '/v1/runs', headers: authHeaders({ 'idempotency-key': 'jc-v1-' + 'b'.repeat(64) }), payload: { sessionId: commandSessionId, input: 'hi', instructions: 'Project: Test' } });
+    expect(response.statusCode).toBe(202);
+    expect(JSON.parse(String(fetcher.mock.calls[1]![1]!.body)).instructions).toBe('Project: Test');
+    const oversized = await createApp(vi.fn<typeof fetch>()).inject({ method: 'POST', url: '/v1/runs', headers: authHeaders({ 'idempotency-key': 'jc-v1-' + 'c'.repeat(64) }), payload: { sessionId: commandSessionId, input: 'hi', instructions: 'x'.repeat(16_001) } });
+    expect(oversized.statusCode).toBe(400);
+  });
+
   it('forwards capability-gated context compaction and projects only bounded measured results', async () => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'api_server')))

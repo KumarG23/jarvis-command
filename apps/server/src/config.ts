@@ -21,6 +21,8 @@ const EnvironmentSchema = z.object({
   HERMES_API_BASE_URL: z.url().default('http://127.0.0.1:18642'),
   HERMES_READ_PROXY_KEY: z.string().min(32),
   REACTIONS_MODE: z.enum(['disabled', 'enabled']).default('disabled'),
+  // Sends saved project metadata to Hermes as per-run instructions for chats in a project.
+  PROJECT_CONTEXT_MODE: z.enum(['disabled', 'enabled']).default('disabled'),
   REPLY_EVIDENCE_MODE: z.enum(['disabled', 'enabled']).default('disabled'),
   PROJECT_DELETION_MODE: z.enum(['disabled', 'enabled']).default('disabled'),
   COMMAND_MODE: z.enum(['disabled', 'enabled']).default('disabled'),
@@ -46,6 +48,7 @@ const EnvironmentSchema = z.object({
 export type AppConfig = Readonly<{
   projectDeletionEnabled?: boolean;
   reactionsEnabled?: boolean;
+  projectContextEnabled?: boolean;
   replyEvidenceEnabled?: boolean;
   push?: PushConfig;
   nodeEnv: 'development' | 'test' | 'production';
@@ -211,6 +214,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv): AppConfig {
   return Object.freeze({
     cockpit,
     reactionsEnabled: parsed.REACTIONS_MODE === 'enabled',
+    ...(parsed.PROJECT_CONTEXT_MODE === 'enabled' ? { projectContextEnabled: true } : {}),
     replyEvidenceEnabled: parsed.REPLY_EVIDENCE_MODE === 'enabled',
     projectDeletionEnabled: parsed.PROJECT_DELETION_MODE === 'enabled',
     push: pushConfig(environment),

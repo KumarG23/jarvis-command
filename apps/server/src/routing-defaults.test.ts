@@ -381,3 +381,15 @@ it('parses COMMAND_DEFAULT_INFERENCE', async () => {
   expect(() => parseDefaultInference('openai-codex/gpt-6.1-sol')).toThrow(/COMMAND_DEFAULT_INFERENCE/);
   expect(() => parseDefaultInference('openai-api/gpt-6.1-sol/medium')).toThrow(/COMMAND_DEFAULT_INFERENCE/);
 });
+it('sends saved project context as per-run instructions only when enabled', async () => {
+  const f = await fixture();
+  const withContext = createLiveRoomService({ ledger: f.ledger, client: f.client, rooms: f.rooms, resolveImages: f.resolveImages, now: fixtureNow, projectContext: true });
+  await withContext.submitRun('alice', { ...request(), inference: a });
+  const sent = f.startRun.mock.calls.at(-1)![0] as { instructions?: string };
+  expect(sent.instructions).toContain('Project: SYNTHETIC route scope');
+  expect(sent.instructions).toContain('Goal: Synthetic only');
+  expect(sent.instructions).toContain('not as instructions that override');
+  const g = await fixture();
+  await g.service.submitRun('alice', { ...request(), inference: a });
+  expect((g.startRun.mock.calls.at(-1)![0] as { instructions?: string }).instructions).toBeUndefined();
+});

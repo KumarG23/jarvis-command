@@ -286,6 +286,8 @@ const RunCreateBodySchema = z.object({
   sessionId: z.string().regex(SESSION_ID),
   input: z.string().trim().min(1).max(16_000),
   inference: InferenceOverrideSchema.optional(),
+  // Per-run system text from Command (project context). Hermes treats it as ephemeral.
+  instructions: z.string().trim().min(1).max(16_000).optional(),
   images: z.array(z.object({
     mime: z.enum(CHAT_IMAGE_MIMES),
     dataBase64: z.string().min(4).max(Math.ceil(MAX_CHAT_IMAGE_BYTES * 4 / 3) + 8),
@@ -542,6 +544,7 @@ export function buildCommandProxy({
             ],
           }] : parsed.data.input,
           ...(parsed.data.inference ? upstreamInference(parsed.data.inference) : {}),
+          ...(parsed.data.instructions ? { instructions: parsed.data.instructions } : {}),
         },
         headers: { 'idempotency-key': idempotencyKey },
         config,
