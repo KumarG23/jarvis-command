@@ -668,7 +668,12 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
       if (occupied) note = 'Opened the chat. Another run is active in this chat, so this run’s live card is not attached here; open it after the active run finishes.';
       else if (!targetLive.adopt({ sessionId: target.sessionId, clientRequestId: target.clientRequestId, publicRunId: target.publicRunId })) note = 'Opened the chat, but this run’s live card could not be attached. Reload the chat to retry.';
     }
-    if (projects.current) { if (project?.sessionIds.includes(target.sessionId)) projects.current.openLinkedChat(project, target.session); else projects.current.selectChat(target.session); } else selectSession(target.session);
+    // Open the chat inside the project that holds it, whichever project is selected now.
+    if (projects.current) {
+      const room = projects.current.roomFor(target.sessionId) ?? (project?.sessionIds.includes(target.sessionId) ? project : null);
+      const opened = room ? projects.current.openLinkedChat(room, target.session) : projects.current.selectChat(target.session);
+      if (!opened) note = 'Project navigation is busy or has an edit draft, so the chat was not opened. Finish the edit and open the notification again.';
+    } else selectSession(target.session);
     if (!note) closePanel();
     return note;
   }
@@ -841,7 +846,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     </aside>
     <div className={`conversation-panes${secondSession ? ' is-split' : ''}`}>
     <main className="command-main" hidden={studioOpen}>
-      <PushLink enabled={liveEnabled} state={notifications} onOpen={openNotificationTarget} />
+      <PushLink enabled={liveEnabled} ready={projectNavigationReady} state={notifications} onOpen={openNotificationTarget} />
       <header className={`command-header${projectId ? ' has-project-threads' : ''}`}><button ref={menu} className="icon-button menu-button" type="button" aria-label="Open chat navigation" aria-expanded={navigationOpen} onClick={openNavigation}><Menu size={21} />{notifications.inbox?.unreadCount ? <span className="notification-dot" aria-hidden="true" /> : null}</button>
         <div className="room-breadcrumb">{projectName ? <><span aria-label="Selected project">{project?.id === projectId ? <ProjectIdentity project={project} /> : null}{projectName}</span><ChevronRight size={14} /></> : null}<strong aria-label="Selected session">{selectedSession?.title ?? (projectName ? 'New conversation' : 'Jarvis Command')}</strong></div>
         {selectedSession || projectName ? <div className="header-thread-states">{projectName ? <span>Project <StatusIcon state={summarizeThreads(project?.sessionIds ?? [], statusStates, threadState.clock)} /></span> : null}{selectedSession ? <span>Chat <StatusIcon state={threadStatus(statusStates[selectedSession.id], threadState.clock)} /></span> : null}</div> : null}

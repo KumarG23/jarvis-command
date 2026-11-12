@@ -24,7 +24,7 @@ async function request(path: string, body?: unknown) {
   if (!response.ok) throw Error('Project operation could not be confirmed. Reload projects before retrying; the change may already have been saved.');
   return response.json() as Promise<unknown>;
 }
-export type ProjectRoomsHandle = { readback: (room: ProjectRoom) => void; openDetails: (opener?: HTMLElement) => void; openThreads: (opener: HTMLElement) => void; focusDetails: () => void; closeDetails: () => void; focusSearch: () => void; selectChat: (session: SessionSummary) => boolean; openLinkedChat: (room: ProjectRoom, session: SessionSummary) => boolean; adoptSession: (session: SessionSummary) => Promise<void> };
+export type ProjectRoomsHandle = { readback: (room: ProjectRoom) => void; openDetails: (opener?: HTMLElement) => void; openThreads: (opener: HTMLElement) => void; focusDetails: () => void; closeDetails: () => void; focusSearch: () => void; selectChat: (session: SessionSummary) => boolean; openLinkedChat: (room: ProjectRoom, session: SessionSummary) => boolean; roomFor: (sessionId: string) => ProjectRoom | null; adoptSession: (session: SessionSummary) => Promise<void> };
 type Props = Readonly<{
   ref?: Ref<ProjectRoomsHandle>;
   sessions: SessionSummary[];
@@ -135,6 +135,9 @@ export function ProjectRooms({ ref, sessions, threadStates = {}, statusClock, se
       callbacks.current.onScope(room.name); callbacks.current.onProjectScope?.(room.id); callbacks.current.onSession(session); callbacks.current.onNavigate?.();
       return true;
     },
+    // The loaded, non-archived project that holds this chat (notification navigation), if any.
+    roomFor: sessionId => rooms.find(room => !room.archived && room.sessionIds.includes(sessionId)
+      && !room.threads?.some(thread => thread.sessionId === sessionId && thread.archived)) ?? null,
     adoptSession: async session => {
       if (draft || working.current) throw Error('Finish the current project operation before switching chats.');
       working.current = true; setBusy(true); setError(null);
