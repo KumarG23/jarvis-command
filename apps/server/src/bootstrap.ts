@@ -1,3 +1,4 @@
+import { createTerminalLister } from './project-context';
 import { ProjectRoomStore } from './project-room-store';
 import { ReactionStore } from './reaction-store';
 import { createPushService, type PushTransport } from './push-service';
@@ -108,6 +109,7 @@ export function createCommandServer(
       reactions: new ReactionStore(dirname(config.command.auditLogPath)),
       reactionsEnabled: config.reactionsEnabled,
       projectContext: config.projectContextEnabled === true,
+      ...(config.cockpit ? { listTerminals: createTerminalLister(config.cockpit) } : {}),
       ...(config.command.defaultInference ? { defaultInference: config.command.defaultInference } : {}),
       resolveImages: artifactStore
         ? createArtifactImageResolver(artifactStore)

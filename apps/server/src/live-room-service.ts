@@ -3,7 +3,7 @@ import { projectInstructions } from './project-context';
 import { createRoutingDefaults, RoutingRefusedError, RoutingUnavailableError } from './routing-defaults';
 import { KeyedSerialQueue } from './keyed-serial-queue';
 import type { ProjectRoomStore } from './project-room-store';
-import type { FrozenRouting, InferenceOverride, RoutingDefaultSet } from '@jarvis-command/contracts';
+import type { CockpitSession, FrozenRouting, InferenceOverride, RoutingDefaultSet } from '@jarvis-command/contracts';
 import { ReactionTargetSchema, ReactionMutationSchema, SessionMessagesPageSchema, SessionMutationResponseSchema, type ReactionTarget, type ReactionMutation } from '@jarvis-command/contracts';
 import { type ReactionStore, ReactionUnavailableError } from './reaction-store';
 import { ProjectRosterStatusSchema } from '@jarvis-command/contracts';
@@ -69,6 +69,8 @@ const TERMINAL_STATES = new Set<LiveRunState>([
 type LiveRoomServiceOptions = Readonly<{
   defaultInference?: InferenceOverride;
   projectContext?: boolean;
+  // Reads the project's cockpit sessions for the lead's context; null when unavailable.
+  listTerminals?: (projectId: string) => Promise<CockpitSession[] | null>;
   rooms?: Pick<ProjectRoomStore, 'list' | 'readLocked'>;
   client: CommandProxyClient;
   ledger: AuditLedger;
@@ -115,6 +117,7 @@ export function createLiveRoomService({
   reactionsEnabled = false,
   defaultInference,
   projectContext = false,
+  listTerminals,
 }: LiveRoomServiceOptions) {
   const routingRequests = new KeyedSerialQueue();
   const defaults = createRoutingDefaults(ledger, client, rooms, defaultInference);
@@ -342,7 +345,8 @@ export function createLiveRoomService({
     const room = projectContext && rooms
       ? (await rooms.list()).find(candidate => !candidate.archived && candidate.sessionIds.includes(request.sessionId))
       : undefined;
-    const instructions = room ? projectInstructions(room, request.sessionId) : undefined;
+    const terminals = room && listTerminals ? await listTerminals(room.id).catch(() => null) : undefined;
+    const instructions = room ? projectInstructions(room, request.sessionId, terminals) : undefined;
     const admit = async () => {
       const upstream = await client.startRun({
         ...(instructions ? { instructions } : {}),

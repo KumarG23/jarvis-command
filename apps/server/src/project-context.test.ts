@@ -23,3 +23,17 @@ it('stays within the size bound', () => {
   const text = projectInstructions(big, lead);
   expect(text.length).toBeLessThanOrEqual(MAX_PROJECT_INSTRUCTIONS);
 });
+
+it('lists the project terminals with state and who has input', () => {
+  const at = '2026-11-12T00:00:00.000Z';
+  const base = { requestId: 'req-00000001', projectId: room.id, createdBy: 'human' as const, host: 'cockpit-dev', cwd: '/w', repository: null, branch: null, worktree: false, nativeSessionId: null, pid: 1, exitCode: null, failure: null, billing: 'sub', createdAt: at, updatedAt: at, stateAt: at };
+  const text = projectInstructions(room, lead, [
+    { ...base, id: 'cs_' + 'a'.repeat(24), title: 'Test', kind: 'claude', owner: 'human', state: 'running' },
+    { ...base, id: 'cs_' + 'b'.repeat(24), title: 'Old', kind: 'codex', owner: 'none', state: 'exited' },
+  ]);
+  expect(text).toContain('- Test · claude · running · Neal has input · id cs_' + 'a'.repeat(24));
+  expect(text).toContain('Recently ended:');
+  expect(projectInstructions(room, lead, null)).toContain('could not be read');
+  expect(projectInstructions(room, lead, [])).toContain('Terminal sessions: none yet.');
+  expect(projectInstructions(room, lead)).not.toContain('Terminal sessions');
+});
