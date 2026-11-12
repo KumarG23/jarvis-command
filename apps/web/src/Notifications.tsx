@@ -11,6 +11,7 @@ import {
 } from '@jarvis-command/contracts';
 import { useEffect, useRef, useState } from 'react';
 import { boundedJson } from './useLiveTurn';
+import { inboxIn, knownItems } from './notificationInbox';
 
 const CATEGORY_LABELS: Record<NotificationCategory, string> = {
   'run-completed': 'Run finished',
@@ -67,11 +68,11 @@ export function useNotifications(enabled: boolean, refreshKey: string) {
     } finally { if (alive.current && ticket === sequence.current) setBusy(false); }
   }
 
-  const refresh = () => run(async c => NotificationInboxSchema.parse(await boundedJson('/api/notifications', read, c)), value => value, 'Notifications could not be loaded. Your other work is unaffected.');
-  const reconcile = () => run(async c => NotificationReconcileResponseSchema.parse(await boundedJson('/api/notifications/reconcile', write({}), c)), value => value.inbox, 'Active runs could not be checked. Showing what was last recorded.');
-  const markRead = (selection: { ids: string[] } | { all: true }) => run(async c => NotificationInboxSchema.parse(await boundedJson('/api/notifications/read', write(selection), c)), value => value, 'Read state was not saved. Try again.');
+  const refresh = () => run(async c => NotificationInboxSchema.parse(knownItems(await boundedJson('/api/notifications', read, c))), value => value, 'Notifications could not be loaded. Your other work is unaffected.');
+  const reconcile = () => run(async c => NotificationReconcileResponseSchema.parse(inboxIn(await boundedJson('/api/notifications/reconcile', write({}), c))), value => value.inbox, 'Active runs could not be checked. Showing what was last recorded.');
+  const markRead = (selection: { ids: string[] } | { all: true }) => run(async c => NotificationInboxSchema.parse(knownItems(await boundedJson('/api/notifications/read', write(selection), c))), value => value, 'Read state was not saved. Try again.');
   const savePreferences = async (preferences: NotificationPreferences) => {
-    const saved = await run(async c => NotificationInboxSchema.parse(await boundedJson('/api/notifications/preferences', write(preferences), c)), value => value, 'Preferences were not saved. Your edits are kept; try again.');
+    const saved = await run(async c => NotificationInboxSchema.parse(knownItems(await boundedJson('/api/notifications/preferences', write(preferences), c))), value => value, 'Preferences were not saved. Your edits are kept; try again.');
     // Authoritative readback: anything other than the requested value is a failed save.
     if (saved && JSON.stringify(saved.preferences) !== JSON.stringify(preferences)) { setError('Preferences were not saved as requested. Your edits are kept; try again.'); return false; }
     return saved !== null;
@@ -84,7 +85,7 @@ export function useNotifications(enabled: boolean, refreshKey: string) {
     return ticket === openSequence.current ? target : null;
   };
   const openRequest = (id: string): Promise<NotificationTarget | null> => run(
-    async c => NotificationTargetSchema.parse(await boundedJson(`/api/notifications/${id}/open`, write({}), c)),
+    async c => NotificationTargetSchema.parse(inboxIn(await boundedJson(`/api/notifications/${id}/open`, write({}), c))),
     value => value.state === 'available' ? value.inbox : null,
     'This notification could not be opened. It may no longer exist.',
   );

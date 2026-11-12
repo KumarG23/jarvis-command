@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { NotificationInboxSchema, type PushState } from '@jarvis-command/contracts';
 import { boundedJson } from './useLiveTurn';
+import { knownItems } from './notificationInbox';
 import type { NotificationsState } from './Notifications';
 
 const write = (body: unknown): RequestInit => ({ method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json', 'x-jarvis-command': '1', accept: 'application/json' }, body: JSON.stringify(body) });
@@ -25,7 +26,7 @@ export function PushSettings({ push, refresh }: Readonly<{ push: PushState | und
     if (!registration?.active) { setNotice('The app worker is not ready. Reopen Command before trying again.'); return; }
     const key = Uint8Array.from(atob(capability.publicKey.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
     const subscription = await registration.pushManager.getSubscription() ?? await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
-    NotificationInboxSchema.parse(await boundedJson('/api/notifications/push/devices', write(subscription.toJSON()), new AbortController()));
+    NotificationInboxSchema.parse(knownItems(await boundedJson('/api/notifications/push/devices', write(subscription.toJSON()), new AbortController())));
     await refresh();
     setNotice('This device is registered. Delivery is best effort; keep using the inbox for current status.');
   }
@@ -36,7 +37,7 @@ export function PushSettings({ push, refresh }: Readonly<{ push: PushState | und
     {push?.devices.length ? <ul aria-label="Registered push devices">{push.devices.map(device => <li key={device.id}>
       <span>Device {device.id.slice(-6)} · expires {new Date(device.expiresAt).toLocaleDateString()}</span>{' '}
       <button type="button" className="secondary-button" disabled={busy} onClick={() => void action(async () => {
-        NotificationInboxSchema.parse(await boundedJson(`/api/notifications/push/devices/${device.id}/revoke`, write({}), new AbortController()));
+        NotificationInboxSchema.parse(knownItems(await boundedJson(`/api/notifications/push/devices/${device.id}/revoke`, write({}), new AbortController())));
         await refresh(); setNotice('Device revoked. Future sends to it are disabled. An already dispatched alert cannot be recalled.');
       })}>Revoke device {device.id.slice(-6)}</button>
     </li>)}</ul> : null}
