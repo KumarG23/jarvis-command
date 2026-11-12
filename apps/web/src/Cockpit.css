@@ -33,6 +33,7 @@
 .cockpit-meta strong { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cockpit-meta small { font-size: 11px; color: var(--subtle); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cockpit-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cockpit-short { display: none; }
 .cockpit-actions .secondary-button, .cockpit-actions .danger-button { min-height: 36px; padding: 6px 10px; font-size: 12px; }
 .cockpit-owner { display: inline-flex; align-items: center; gap: 5px; padding: 4px 8px; border-radius: 999px; font-size: 11px; background: var(--surface); color: var(--muted); }
 .cockpit-owner.owner-human { background: #22382e; color: var(--cyan); }
@@ -61,7 +62,9 @@
   .cockpit-toolbar { padding: 6px 8px; flex-wrap: nowrap; }
   .cockpit-label { display: none; }
   .cockpit-actions { flex-wrap: nowrap; }
-  .cockpit-actions .secondary-button { min-width: 40px; min-height: 40px; padding: 6px; }
-  .cockpit-owner { padding: 6px; }
+  /* Phones: icon with a short caption underneath, so every button says what it does. */
+  .cockpit-short { display: block; font-size: 10px; line-height: 1; white-space: nowrap; }
+  .cockpit-actions .secondary-button, .cockpit-actions .danger-button { flex-direction: column; gap: 3px; min-width: 46px; min-height: 46px; padding: 5px 6px; }
+  .cockpit-owner { flex-direction: column; gap: 3px; padding: 6px 8px; border-radius: 10px; }
 }
 x-term-style { display: none !important; }

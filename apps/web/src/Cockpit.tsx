@@ -13,6 +13,7 @@ const STATE_LABEL: Record<string, string> = {
   connecting: 'Starting', running: 'Running', waiting_for_input: 'Waiting for input', exited: 'Exited', stopped: 'Stopped', failed: 'Failed', lost: 'Lost', unknown: 'Unknown',
 };
 const OWNER_LABEL = { human: 'You have input', lead: 'Lead has input', none: 'Nobody has input' } as const;
+const OWNER_SHORT = { human: 'You', lead: 'Lead', none: 'Nobody' } as const;
 
 export async function cockpitRequest<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(path, {
@@ -277,13 +278,13 @@ function SessionView({ base, session, onSession }: Readonly<{ base: string; sess
         <small>{STATE_LABEL[session.state] ?? session.state}{session.exitCode !== null ? ` (${session.exitCode})` : ''} · {session.host}{session.branch ? ` · ${session.branch}` : ''} · {link === 'open' ? 'live' : link}</small>
       </div>
       <div className="cockpit-actions">
-        <span className={`cockpit-owner owner-${session.owner}`} title={OWNER_LABEL[session.owner]}>{session.owner === 'lead' ? <Bot size={14} /> : <UserRound size={14} />}<span className="cockpit-label">{OWNER_LABEL[session.owner]}</span></span>
-        {active && session.owner !== 'human' ? <button className="secondary-button" type="button" disabled={busy} aria-label="Take over" onClick={() => void act('ownership', { action: 'take' })}><Hand size={15} /><span className="cockpit-label">Take over</span></button> : null}
-        {active && session.owner === 'human' ? <button className="secondary-button" type="button" disabled={busy} aria-label="Hand to lead" onClick={() => void act('ownership', { action: 'hand_to_lead' })}><Bot size={15} /><span className="cockpit-label">Hand to lead</span></button> : null}
-        {active ? <button className="secondary-button" type="button" disabled={busy} title="Send Ctrl-C" aria-label="Interrupt" onClick={() => void act('interrupt')}><OctagonX size={15} /><span className="cockpit-label">Interrupt</span></button> : null}
+        <span className={`cockpit-owner owner-${session.owner}`} title={OWNER_LABEL[session.owner]}>{session.owner === 'lead' ? <Bot size={14} /> : <UserRound size={14} />}<span className="cockpit-label">{OWNER_LABEL[session.owner]}</span><span className="cockpit-short">{OWNER_SHORT[session.owner]}</span></span>
+        {active && session.owner !== 'human' ? <button className="secondary-button" type="button" disabled={busy} aria-label="Take over" onClick={() => void act('ownership', { action: 'take' })}><Hand size={15} /><span className="cockpit-label">Take over</span><span className="cockpit-short">Take over</span></button> : null}
+        {active && session.owner === 'human' ? <button className="secondary-button" type="button" disabled={busy} aria-label="Hand to lead" onClick={() => void act('ownership', { action: 'hand_to_lead' })}><Bot size={15} /><span className="cockpit-label">Hand to lead</span><span className="cockpit-short">To lead</span></button> : null}
+        {active ? <button className="secondary-button" type="button" disabled={busy} title="Send Ctrl-C" aria-label="Interrupt" onClick={() => void act('interrupt')}><OctagonX size={15} /><span className="cockpit-label">Interrupt</span><span className="cockpit-short">Ctrl+C</span></button> : null}
         {active ? confirmStop
           ? <><button className="danger-button" type="button" disabled={busy} onClick={() => { setConfirmStop(false); void act('stop'); }}>Stop it</button><button className="secondary-button" type="button" onClick={() => setConfirmStop(false)}>Keep running</button></>
-          : <button className="secondary-button" type="button" disabled={busy} aria-label="Stop" onClick={() => setConfirmStop(true)}><Square size={14} /><span className="cockpit-label">Stop</span></button> : null}
+          : <button className="secondary-button" type="button" disabled={busy} aria-label="Stop" onClick={() => setConfirmStop(true)}><Square size={14} /><span className="cockpit-label">Stop</span><span className="cockpit-short">Stop</span></button> : null}
       </div>
     </div>
     {session.failure ? <p className="notice error cockpit-notice" role="alert">{session.failure}</p> : null}
