@@ -78,6 +78,12 @@ Logs record only the route, status and error type, never the key, prompt, label 
 3. With Neal's phone locked, the answer arrives as a push notification.
 4. Running the same command again within the minute returns `"replayed": true`, and no second message appears.
 
+## Replacing a job, not transporting a result
+
+A scheduled run **replaces** a Hermes cron job. The migrated job becomes script-only and runs its prompt once, in Command. Don't keep an LLM cron job and then start a second run just to carry its answer into Command; that is two model turns for one job.
+
+Jobs that should keep running inside Hermes cron need a native `command` delivery platform: a Hermes plugin whose `send(chat_id, content)` calls Command (Jarvis, PR #177 comment 6812060339). That needs its own receiving contract in Command, which stores the delivered message in Command and does not append to Hermes session history. It isn't built yet.
+
 ## Not yet
 
 - Reminders the lead creates from chat ("remind me at 5") still use Hermes cron, which delivers to Discord by default. To land them in Command, the lead creates a script-mode job that runs this script. A native Hermes delivery adapter for Command would be cleaner later.
