@@ -162,3 +162,26 @@ it('loads 250 canonical IDs across five pages, retaining identical messages and 
   expect(onHistory).toHaveBeenLastCalledWith(session.id, messages, true);
   expect(fetchMock.mock.calls.filter(([url]) => url.includes('/messages?')).map(([url]) => new URL(url, 'http://fixture').searchParams.get('offset'))).toEqual(['0', '50', '100', '150', '200']);
 }, 15000);
+it('shows delivered reminders in time order between saved messages, only when enabled', async () => {
+  const messages = [
+    { id: 'm1', sessionId: session.id, role: 'user', content: 'remind me at 5', timestamp: '2026-11-12T16:00:00Z', toolName: null, displayKind: null },
+    { id: 'm2', sessionId: session.id, role: 'assistant', content: 'Will do.', timestamp: '2026-11-12T16:00:05Z', toolName: null, displayKind: null },
+    { id: 'm3', sessionId: session.id, role: 'user', content: 'thanks', timestamp: '2026-11-12T18:00:00Z', toolName: null, displayKind: null },
+  ];
+  const delivery = { deliveryId: 'dlv_' + 'b'.repeat(32), sessionId: session.id, kind: 'reminder', title: 'Stretch', content: 'Time to **stretch**.', deliveredAt: '2026-11-12T17:00:00Z' };
+  const fetcher = vi.fn(async (url: string) => url.endsWith('/deliveries')
+    ? Response.json({ sessionId: session.id, deliveries: [delivery] })
+    : Response.json({ sessionId: session.id, messages, pagination: { limit: 50, offset: 0, returned: 3, hasMore: false } }));
+  vi.stubGlobal('fetch', fetcher);
+  const view = render(<LiveRoom session={session} onHistory={vi.fn()} showDeliveries />);
+  const card = await screen.findByRole('article', { name: 'Scheduled message from Jarvis' });
+  expect(card.textContent).toContain('Reminder: Stretch');
+  expect(card.querySelector('strong')?.textContent).toBe('stretch');
+  const order = [...document.querySelectorAll('[data-message-id], [data-delivery-id]')].map(node => node.getAttribute('data-message-id') ?? 'delivery');
+  expect(order).toEqual(['m1', 'm2', 'delivery', 'm3']);
+  view.unmount();
+  fetcher.mockClear();
+  render(<LiveRoom session={session} onHistory={vi.fn()} />);
+  await waitFor(() => expect(document.querySelector('[data-message-id="m3"]')).not.toBeNull());
+  expect(fetcher.mock.calls.some(([url]) => String(url).endsWith('/deliveries'))).toBe(false);
+});

@@ -78,13 +78,48 @@ Logs record only the route, status and error type, never the key, prompt, label 
 3. With Neal's phone locked, the answer arrives as a push notification.
 4. Running the same command again within the minute returns `"replayed": true`, and no second message appears.
 
+## Deliveries: Hermes cron and reminders that stay in Hermes
+
+Jobs that keep running inside Hermes cron (including reminders the lead creates from chat) deliver to Command through a Hermes `command` platform plugin. Its `send(chat_id, content)` POSTs the already composed message here. Command stores it, shows it in the chat, adds an inbox entry and pushes it. It is not a run, and nothing is appended to Hermes session history.
+
+`POST /v1/deliveries`, same listener and bearer key:
+
+```json
+{
+  "id": "stable key, 1-160 chars of [A-Za-z0-9._:-], e.g. <job_id>:<fire_time>",
+  "chatId": "jc_… | room_… | home",
+  "content": "markdown, at most 16000 characters",
+  "title": "optional, at most 80 characters on one line, e.g. the job name",
+  "kind": "cron | reminder"
+}
+```
+
+- `room_…` lands in the project's lead chat, else its latest chat. `jc_…` must exist and must not be in an archived project; a chat outside any project is fine.
+- `home` lands at `SCHEDULED_RUNS_HOME` (a `room_…` or `jc_…` in `command.env`). Unset, it gets `404 home_not_set`.
+- The same `id` with the same body replays (`"replayed": true`, no second inbox entry or push). The same `id` with a different body gets 409.
+
+| Status | Body | Meaning |
+|---|---|---|
+| 200 | `{deliveryId, sessionId, replayed}` | Stored, or replayed. |
+| 400 | `invalid_request` | Malformed body. |
+| 401 | `unauthorized` | Missing or wrong key. |
+| 404 | `target_not_found` / `project_has_no_chat` / `home_not_set` | No such target. |
+| 409 | `conflict` | The `id` was used for different content. |
+| 503 | `unavailable` | Command isn't ready or storage failed. Retry with the same `id`. |
+
+In the chat the message shows as "Jarvis · Reminder: <title>" or "Jarvis · Scheduled: <title>", placed by its delivery time. The inbox entry and push use the title (else "Reminder" or "Scheduled task") and the first line of content, or a generic line when "Show reply text" is off. A push is skipped while that chat is open and focused. Push needs only `WEB_PUSH_MODE=enabled`.
+
+Storage is `deliveries.json` next to the audit ledger, private (0700 directory, 0600 file), keeping the newest 300 deliveries. Logs record only route, status and error type.
+
+**Rollback:** a BFF older than this change can't read an inbox that holds a delivery item and reports notification storage unavailable. Before rolling back past it, move `notifications.json` aside (the inbox then starts empty).
+
 ## Replacing a job, not transporting a result
 
 A scheduled run **replaces** a Hermes cron job. The migrated job becomes script-only and runs its prompt once, in Command. Don't keep an LLM cron job and then start a second run just to carry its answer into Command; that is two model turns for one job.
 
-Jobs that should keep running inside Hermes cron need a native `command` delivery platform: a Hermes plugin whose `send(chat_id, content)` calls Command (Jarvis, PR #177 comment 6812060339). That needs its own receiving contract in Command, which stores the delivered message in Command and does not append to Hermes session history. It isn't built yet.
+Jobs that should keep running inside Hermes cron use the deliveries endpoint above through the Hermes `command` plugin instead.
 
 ## Not yet
 
-- Reminders the lead creates from chat ("remind me at 5") still use Hermes cron, which delivers to Discord by default. To land them in Command, the lead creates a script-mode job that runs this script. A native Hermes delivery adapter for Command would be cleaner later.
+- Reminders the lead creates from chat ("remind me at 5") land in Command once the Hermes `command` plugin is installed and the job delivers to it. Until then they go to Discord.
 - There is no Command UI yet for listing or editing scheduled jobs; they live in Hermes cron.

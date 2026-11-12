@@ -116,6 +116,15 @@ export function createPushService(config: PushConfig, store: NotificationStore, 
       if (item?.category !== 'run-completed') throw new Error('Not a finished run');
       return replyPushPayload({ id: item.id, title: 'Jarvis replied', body: 'Open the chat to read it.' });
     }) : Promise.resolve(),
+    /**
+     * Delivered reminder or cron result. Pushed whenever Web Push is available: unlike a reply, the
+     * owner scheduled it, so it doesn't wait on the reply category flag.
+     */
+    deliverDelivery: (actor: string, id: string) => send(actor, id, () => store.claimDeliveryPush(actor, id), async () => {
+      const item = await store.find(actor, id);
+      if (item?.category !== 'delivery') throw new Error('Not a delivery');
+      return replyPushPayload(item);
+    }),
   };
 }
 export type PushService = ReturnType<typeof createPushService>;

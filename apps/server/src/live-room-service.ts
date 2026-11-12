@@ -604,7 +604,7 @@ export function createLiveRoomService({
       return client.getMessages(sessionId, limit, offset);
     },
 
-    async getSession(_subject: string, sessionId: string): Promise<SessionMutationResponse> {
+    async getSession(_subject: Subject, sessionId: string): Promise<SessionMutationResponse> {
       ledger.assertHealthy();
       return client.getSession(sessionId);
     },

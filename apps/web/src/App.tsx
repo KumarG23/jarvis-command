@@ -658,15 +658,19 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
   // approves or alters the draft, and never displaces a run that is active in this tab.
   function openNotificationTarget(target: Extract<NotificationTarget, { state: 'available' }>): string | null {
     setReplyFocus(target.messageId ? { sessionId: target.sessionId, messageId: target.messageId } : null);
-    const targetLive = threads.get(target.sessionId);
-    if (!threads.ready(target.sessionId)) setNotificationAttachment(target);
-    const settled = ['completed', 'failed', 'cancelled', 'interrupted'].includes(target.runStatus);
-    const sameRun = targetLive.turn?.publicRunId === target.publicRunId;
-    const occupied = !!targetLive.turn && !targetLive.turn.done && !sameRun;
     let note: string | null = null;
-    if (threads.ready(target.sessionId) && !settled && !sameRun) {
-      if (occupied) note = 'Opened the chat. Another run is active in this chat, so this run’s live card is not attached here; open it after the active run finishes.';
-      else if (!targetLive.adopt({ sessionId: target.sessionId, clientRequestId: target.clientRequestId, publicRunId: target.publicRunId })) note = 'Opened the chat, but this run’s live card could not be attached. Reload the chat to retry.';
+    // A delivery target has no run: it only opens its chat.
+    const { publicRunId, clientRequestId, runStatus } = target;
+    if (publicRunId && clientRequestId && runStatus) {
+      const targetLive = threads.get(target.sessionId);
+      if (!threads.ready(target.sessionId)) setNotificationAttachment(target);
+      const settled = ['completed', 'failed', 'cancelled', 'interrupted'].includes(runStatus);
+      const sameRun = targetLive.turn?.publicRunId === publicRunId;
+      const occupied = !!targetLive.turn && !targetLive.turn.done && !sameRun;
+      if (threads.ready(target.sessionId) && !settled && !sameRun) {
+        if (occupied) note = 'Opened the chat. Another run is active in this chat, so this run’s live card is not attached here; open it after the active run finishes.';
+        else if (!targetLive.adopt({ sessionId: target.sessionId, clientRequestId, publicRunId })) note = 'Opened the chat, but this run’s live card could not be attached. Reload the chat to retry.';
+      }
     }
     // Open the chat inside the project that holds it, whichever project is selected now.
     if (projects.current) {
@@ -681,7 +685,8 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     if (!notificationAttachment || !threads.ready(notificationAttachment.sessionId)) return;
     const target = notificationAttachment;
     const handle = threads.get(target.sessionId);
-    if (!['completed', 'failed', 'cancelled', 'interrupted'].includes(target.runStatus) && handle.turn?.publicRunId !== target.publicRunId) handle.adopt({ sessionId: target.sessionId, clientRequestId: target.clientRequestId, publicRunId: target.publicRunId });
+    const { publicRunId, clientRequestId, runStatus } = target;
+    if (publicRunId && clientRequestId && runStatus && !['completed', 'failed', 'cancelled', 'interrupted'].includes(runStatus) && handle.turn?.publicRunId !== publicRunId) handle.adopt({ sessionId: target.sessionId, clientRequestId, publicRunId });
     setNotificationAttachment(null);
   }, [notificationAttachment, threads]);
   function closePanel() { setSaveActive(false); if (pane === 'project') projects.current?.closeDetails(); setPane(null); setArtifactPaneFullScreen(false); if (panelOpener.current?.closest('.room-sidebar') && window.matchMedia?.('(max-width: 760px)').matches) menu.current?.focus(); else panelOpener.current?.focus(); }
@@ -871,7 +876,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
       {!hermesOnline ? <p className="notice error" role="status">{health}. {bootstrap.hermes.state === 'offline' ? 'Check the connection before sending.' : 'Some capabilities may be unavailable.'}</p> : null}
       {activeElsewhere ? <div className="active-run-notice" role="status">Jarvis is working in another chat. <button className="text-button" type="button" onClick={() => { if (activeElsewhere?.turn) void openRetainedThread(activeElsewhere.turn.intent.sessionId, activeElsewhere.turn.projectId); }}>View active chat</button></div> : null}
       <section ref={conversationScroll} className="timeline" aria-label="Conversation" onScroll={event => { const element = event.currentTarget; followLatest.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}><div ref={conversationContent} className="conversation-content">
-        {liveEnabled && selectedSession && threads.ready(selectedSession.id) ? <LiveRoom key={`${selectedSession.id}:${live.refresh?.sessionId === selectedSession.id ? live.refresh.revision : ''}`} session={selectedSession} reactions={reactions} reactionsAvailable={bootstrap.hermes.capabilities.includes('message_reactions') && !project?.archived} reactionsUnavailableReason={project?.archived ? 'Reactions unavailable in archived projects.' : undefined} threadProjectId={project && project.id === projectId && !project.archived ? projectId : null} threadProjectSessionIds={project && project.id === projectId && !project.archived ? project.sessionIds : undefined} onThreadLink={openThreadLink} focusMessageId={replyFocus?.sessionId === selectedSession.id ? replyFocus.messageId : null} onFocusSettled={() => setReplyFocus(null)} reportPresence={!!notifications.inbox && !studioOpen} readObservation={threadState.states[selectedSession.id]?.observedAt} onLatestViewed={threadState.viewed} onHistory={(sessionId, messages, complete) => { live.history(sessionId, messages, complete); setDraftAuthorizedSession(complete ? sessionId : null); }}
+        {liveEnabled && selectedSession && threads.ready(selectedSession.id) ? <LiveRoom key={`${selectedSession.id}:${live.refresh?.sessionId === selectedSession.id ? live.refresh.revision : ''}`} session={selectedSession} reactions={reactions} reactionsAvailable={bootstrap.hermes.capabilities.includes('message_reactions') && !project?.archived} reactionsUnavailableReason={project?.archived ? 'Reactions unavailable in archived projects.' : undefined} threadProjectId={project && project.id === projectId && !project.archived ? projectId : null} threadProjectSessionIds={project && project.id === projectId && !project.archived ? project.sessionIds : undefined} onThreadLink={openThreadLink} focusMessageId={replyFocus?.sessionId === selectedSession.id ? replyFocus.messageId : null} onFocusSettled={() => setReplyFocus(null)} reportPresence={!!notifications.inbox && !studioOpen} showDeliveries={!!notifications.inbox} readObservation={threadState.states[selectedSession.id]?.observedAt} onLatestViewed={threadState.viewed} onHistory={(sessionId, messages, complete) => { live.history(sessionId, messages, complete); setDraftAuthorizedSession(complete ? sessionId : null); }}
           turns={[...live.completedTurns, ...(live.turn ? [live.turn] : [])]} onSaveResponse={artifactStudioEnabled ? message => saveResponseArtifact(message.content, null) : undefined}
           renderTurn={turn => <TurnView turn={turn} threadProjectId={project && project.id === projectId && !project.archived ? projectId : null} threadProjectSessionIds={project && project.id === projectId && !project.archived ? project.sessionIds : undefined} onThreadLink={openThreadLink} allowed={writeAllowed && turn.intent === live.turn?.intent} approve={live.approve} stop={live.stop} onSaveResponse={artifactStudioEnabled ? (text, runId) => saveResponseArtifact(text, runId, turn.projectId ?? projectId) : undefined} />} /> : <div className="welcome"><Command size={39} strokeWidth={1.5} /><p className="eyebrow">YOUR SPACE TO THINK & BUILD</p><h1>{projectName ? `Let’s work on ${projectName}.` : 'What are we working on?'}</h1><p>Start a conversation with Jarvis. Keep related work together in projects.</p><button className="secondary-button welcome-action" type="button" onClick={() => { if (window.matchMedia('(max-width: 760px)').matches) openNavigation(); else projects.current?.focusSearch(); }}>Choose a chat or start a new one <ChevronRight size={17} /></button></div>}
         {!selectedSession ? threads.all.filter(item => item.turn?.intent.input === null).map(item => <TurnView key={item.turn!.intent.sessionId} turn={item.turn!} allowed={false} approve={item.approve} stop={item.stop} />) : null}

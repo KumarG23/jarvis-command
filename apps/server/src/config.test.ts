@@ -84,7 +84,7 @@ describe('loadConfig', () => {
     const owner = 'a'.repeat(64);
     expect(loadConfig(productionEnvironment).scheduledRuns).toBeNull();
     expect(loadConfig({ ...productionEnvironment, SCHEDULED_RUNS_MODE: 'enabled', SCHEDULED_RUNS_HOST: '0.0.0.0', SCHEDULED_RUNS_KEY: key, SCHEDULED_RUNS_OWNER_ACTOR: owner }).scheduledRuns)
-      .toEqual({ host: '0.0.0.0', port: 8652, key, ownerActor: owner });
+      .toEqual({ host: '0.0.0.0', port: 8652, key, ownerActor: owner, home: null });
     expect(() => loadConfig({ ...productionEnvironment, SCHEDULED_RUNS_MODE: 'enabled', SCHEDULED_RUNS_OWNER_ACTOR: owner })).toThrow(/SCHEDULED_RUNS_KEY/);
     expect(() => loadConfig({ ...productionEnvironment, SCHEDULED_RUNS_MODE: 'enabled', SCHEDULED_RUNS_KEY: key })).toThrow(/SCHEDULED_RUNS_OWNER_ACTOR/);
     expect(() => loadConfig({ ...productionEnvironment, SCHEDULED_RUNS_MODE: 'enabled', SCHEDULED_RUNS_KEY: key, SCHEDULED_RUNS_OWNER_ACTOR: 'not-a-hash' })).toThrow();

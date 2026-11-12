@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { ProjectRoom } from '@jarvis-command/contracts';
 import type { ActorSubject, createLiveRoomService } from './live-room-service';
 import type { AppConfig } from './config';
+import { DELIVERY_KEY, type DeliveryInput } from './delivery-store';
 
 /**
  * Scheduled runs: the delivery path for Hermes cron jobs and reminders into Command.
@@ -12,6 +13,10 @@ import type { AppConfig } from './config';
  * ordinary run in the target project's chat, as the configured owner, so the result appears in
  * chat history and the live room's server-side run watcher fires the inbox entry and reply push. The script's `id` is the
  * run's client request ID, so a retried POST replays the same run instead of starting another.
+ *
+ * It also receives deliveries (`POST /v1/deliveries`): a message Hermes already composed, such as a
+ * reminder or a cron job's result, sent by Hermes' `command` platform plugin. Command stores it and
+ * shows it in the target chat; it is not a run and Hermes session history is unchanged.
  *
  * This listener is separate from the Access-protected app port and serves only these routes.
  */
@@ -36,6 +41,18 @@ export const ScheduledRunRequestSchema = z.object({
 }).strict();
 export type ScheduledRunRequest = z.infer<typeof ScheduledRunRequestSchema>;
 
+export const MAX_DELIVERY_CONTENT = 16_000;
+export const DeliveryRequestSchema = z.object({
+  /** Idempotency key chosen by Hermes, e.g. `<job_id>:<fire_time>`. */
+  id: z.string().regex(DELIVERY_KEY),
+  chatId: z.union([z.string().regex(SESSION_ID), z.string().regex(ROOM_ID), z.literal('home')]),
+  content: z.string().trim().min(1).max(MAX_DELIVERY_CONTENT),
+  title: z.string().trim().min(1).max(80).regex(/^[^\r\n]+$/).optional(),
+  kind: z.enum(['cron', 'reminder']),
+}).strict();
+export type DeliveryRequest = z.infer<typeof DeliveryRequestSchema>;
+export type DeliveryResult = Readonly<{ deliveryId: string; sessionId: string; replayed: boolean }>;
+
 /** The chat a project's scheduled runs land in: its lead chat, else its most recent chat. */
 export function projectChat(room: ProjectRoom): string | null {
   return room.leadSessionId ?? room.lastSessionId ?? null;
@@ -58,13 +75,16 @@ export type ScheduledRunsOptions = Readonly<{
   liveRoom: () => LiveRoom | undefined;
   rooms: () => Rooms | undefined;
   log?: (fields: Readonly<Record<string, string | number>>) => void;
+  /** Stores a delivery, records its inbox entry and pushes it. Absent: deliveries are unavailable. */
+  deliver?: (actor: string, input: DeliveryInput) => Promise<DeliveryResult>;
 }>;
 
 export function createScheduledRunsServer(options: ScheduledRunsOptions): FastifyInstance {
   const owner: ActorSubject = Object.freeze({ actor: options.config.ownerActor });
   // Never logs the key, prompt, label, identity or output: route, status and error type only.
   const log = options.log ?? (fields => console.info(JSON.stringify({ event: 'scheduled-run', ...fields })));
-  const app = Fastify({ logger: false, bodyLimit: 32_768 });
+  // 16 000 characters of content can be up to 64 KB of UTF-8, plus JSON escaping.
+  const app = Fastify({ logger: false, bodyLimit: 196_608 });
   app.addHook('onRequest', async (request, reply) => {
     if (!keyMatches(request.headers.authorization, options.config.key)) {
       log({ route: request.routeOptions.url ?? 'unknown', status: 401 });
@@ -125,6 +145,52 @@ export function createScheduledRunsServer(options: ScheduledRunsOptions): Fastif
       log({ route: '/v1/scheduled-runs', status, errorType });
       const code = status === 409 ? 'conflict' : status === 422 ? 'routing_refused' : status === 404 ? 'not_found' : 'unavailable';
       return reply.code(status).send({ error: code });
+    }
+  });
+
+  app.post('/v1/deliveries', async (request, reply) => {
+    reply.header('cache-control', 'no-store');
+    const route = '/v1/deliveries';
+    const parsed = DeliveryRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      log({ route, status: 400 });
+      return reply.code(400).send({ error: 'invalid_request' });
+    }
+    const body = parsed.data;
+    const liveRoom = options.liveRoom();
+    const rooms = await readRooms().catch(() => null);
+    if (!liveRoom || !rooms || !options.deliver) {
+      log({ route, status: 503 });
+      return reply.code(503).send({ error: 'unavailable' });
+    }
+    const target = body.chatId === 'home' ? options.config.home ?? null : body.chatId;
+    if (!target) {
+      log({ route, status: 404 });
+      return reply.code(404).send({ error: 'home_not_set' });
+    }
+    let sessionId: string | null;
+    if (ROOM_ID.test(target)) {
+      const room = rooms.find(item => item.id === target);
+      if (!room) { log({ route, status: 404 }); return reply.code(404).send({ error: 'target_not_found' }); }
+      sessionId = projectChat(room);
+      if (!sessionId) { log({ route, status: 404 }); return reply.code(404).send({ error: 'project_has_no_chat' }); }
+    } else {
+      // A chat in an archived project is refused; a chat outside any project is allowed if it exists.
+      const archived = await options.rooms()?.list().then(all => all.some(room => room.archived && room.sessionIds.includes(target))).catch(() => false);
+      if (archived) { log({ route, status: 404 }); return reply.code(404).send({ error: 'target_not_found' }); }
+      sessionId = target;
+    }
+    try {
+      const { session } = await liveRoom.getSession(owner, sessionId);
+      if (session.id !== sessionId) throw Object.assign(new Error('Session mismatch'), { statusCode: 404 });
+      const result = await options.deliver(owner.actor, { key: body.id, sessionId, kind: body.kind, title: body.title ?? null, content: body.content });
+      log({ route, status: 200, replayed: result.replayed ? 1 : 0 });
+      return reply.send(result);
+    } catch (error) {
+      const statusCode = typeof (error as { statusCode?: unknown }).statusCode === 'number' ? (error as { statusCode: number }).statusCode : 500;
+      const status = statusCode === 404 ? 404 : statusCode === 409 ? 409 : 503;
+      log({ route, status, errorType: error instanceof Error ? error.name : 'unknown' });
+      return reply.code(status).send({ error: status === 404 ? 'target_not_found' : status === 409 ? 'conflict' : 'unavailable' });
     }
   });
 

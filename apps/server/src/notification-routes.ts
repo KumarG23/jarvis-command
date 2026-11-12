@@ -133,11 +133,27 @@ export function registerNotificationRoutes(
     const classify = (error: unknown) => (
       typeof error === 'object' && error !== null && 'statusCode' in error && error.statusCode === 404 ? 'missing' as const : 'unavailable' as const
     );
+    if (item.category === 'delivery' || !item.publicRunId) {
+      // A delivered reminder or cron result has no run: re-check only the chat it landed in.
+      let deliverySession;
+      try { deliverySession = (await dependencies.liveRoom.getSession(subject, item.sessionId)).session; } catch (error) { return { state: classify(error) }; }
+      if (deliverySession.id !== item.sessionId) return { state: 'missing' };
+      const deliveryInbox = await inbox(await store().markRead(actor, { ids: [item.id] }), actor);
+      return NotificationTargetSchema.parse({
+        state: 'available',
+        sessionId: item.sessionId,
+        ...(item.delivery ? { deliveryId: item.delivery.deliveryId } : {}),
+        approvalPending: false,
+        session: deliverySession,
+        inbox: deliveryInbox,
+      });
+    }
+    const publicRunId = item.publicRunId;
     let status: Awaited<ReturnType<typeof dependencies.liveRoom.getRun>>;
     let identity: ReturnType<typeof dependencies.liveRoom.getRunIdentity>;
     try {
-      identity = dependencies.liveRoom.getRunIdentity(subject, item.publicRunId);
-      status = await dependencies.liveRoom.getRun(subject, item.publicRunId);
+      identity = dependencies.liveRoom.getRunIdentity(subject, publicRunId);
+      status = await dependencies.liveRoom.getRun(subject, publicRunId);
       if (identity.sessionId !== item.sessionId || status.sessionId !== item.sessionId) return { state: 'missing' };
     } catch (error) { return { state: classify(error) }; }
     let session;

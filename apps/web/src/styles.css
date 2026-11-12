@@ -602,6 +602,7 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 .reaction-note { color: var(--muted); font-size: 12px; line-height: 1.5; }
 .reaction-picker p { margin: 6px 0; }
 .history-message[data-reply-focus='true'] { outline: 2px solid var(--accent, #7dd3fc); outline-offset: 4px; border-radius: 10px; }
+.scheduled-delivery .event-body { border-left: 2px solid var(--accent, #7dd3fc); padding-left: 10px; }
 
 @media (max-height: 500px) {
   .command-main:has(.reaction-picker) .composer-wrap { max-height: 26dvh; flex-shrink: 1; overflow-y: auto; padding-block: 4px; }

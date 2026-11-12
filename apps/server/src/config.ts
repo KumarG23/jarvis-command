@@ -50,6 +50,8 @@ const EnvironmentSchema = z.object({
   SCHEDULED_RUNS_PORT: z.coerce.number().int().min(1).max(65_535).default(8652),
   SCHEDULED_RUNS_KEY: z.string().min(32).max(512).optional(),
   SCHEDULED_RUNS_OWNER_ACTOR: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  /** Where a delivery addressed to "home" lands: a project (room_…) or a chat (jc_…). */
+  SCHEDULED_RUNS_HOME: z.string().regex(/^(room_[a-f0-9]{32}|jc_[a-f0-9]{32})$/).optional(),
 });
 
 export type AppConfig = Readonly<{
@@ -91,6 +93,8 @@ export type AppConfig = Readonly<{
     key: string;
     /** Audit-ledger actor fingerprint (sha256 of the owner's Access subject). */
     ownerActor: string;
+    /** Target for deliveries addressed to "home"; null when not configured. */
+    home?: string | null;
   }> | null;
   artifacts: Readonly<{
     enabled: boolean;
@@ -234,6 +238,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv): AppConfig {
           port: parsed.SCHEDULED_RUNS_PORT,
           key: requireValue('SCHEDULED_RUNS_KEY', parsed.SCHEDULED_RUNS_KEY),
           ownerActor: requireValue('SCHEDULED_RUNS_OWNER_ACTOR', parsed.SCHEDULED_RUNS_OWNER_ACTOR),
+          home: parsed.SCHEDULED_RUNS_HOME ?? null,
         });
       })()
     : null;

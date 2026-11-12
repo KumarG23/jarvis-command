@@ -16,6 +16,8 @@ import { createRunNotifier } from './run-notifier';
 import { createPresence, createReplyNotifier, type ReplyEvidenceSource } from './reply-notifier';
 import { createReplyEvidenceSource } from './reply-evidence-source';
 import { createScheduledRunsServer } from './scheduled-runs';
+import { DeliveryStore } from './delivery-store';
+import { createDeliverer } from './deliverer';
 
 export type CompositionOverrides = Readonly<{
   hermes?: Readonly<{
@@ -82,8 +84,10 @@ export function createCommandServer(
   let replyEvidence: ReplyEvidenceSource | undefined;
   let liveRoom: ReturnType<typeof createLiveRoomService> | undefined;
   let rooms: ProjectRoomStore | undefined;
+  const deliveries = config.command ? new DeliveryStore(dirname(config.command.auditLogPath)) : undefined;
   const scheduled = config.scheduledRuns && config.command ? createScheduledRunsServer({
     config: config.scheduledRuns, liveRoom: () => liveRoom, rooms: () => rooms,
+    ...(deliveries && notifications ? { deliver: createDeliverer({ deliveries, notifications, push, presence }) } : {}),
   }) : undefined;
   const app = buildApp({
     config,

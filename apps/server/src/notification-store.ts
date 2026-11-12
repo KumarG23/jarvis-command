@@ -74,6 +74,16 @@ export type NotificationEvent = Readonly<{
 export type ReplyRecord = Readonly<{
   id: string; sessionId: string; publicRunId: string; eventAt: string; messageId: string; preview: string; label: string | null;
 }>;
+export type DeliveryRecord = Readonly<{
+  id: string; sessionId: string; deliveryId: string; kind: 'cron' | 'reminder'; title: string | null; content: string;
+}>;
+export const GENERIC_DELIVERY_BODY = 'Open the chat to read it.';
+/** First non-empty line of a delivered message, bounded for the inbox and the push body. */
+export function deliveryPreview(content: string): string {
+  const line = content.split(/\r?\n/).map(part => part.replace(/\s+/g, ' ').trim()).find(part => part.length > 0) ?? '';
+  if (!line) return GENERIC_DELIVERY_BODY;
+  return line.length > 160 ? `${line.slice(0, 159)}…` : line;
+}
 export type ActorView = Readonly<{ items: NotificationItem[]; preferences: NotificationPreferences; since: string; knownIds: ReadonlySet<string>; approvalsUnavailable: boolean }>;
 
 const TEXT: Record<NotificationCategory, { title: string; body: string }> = {
@@ -184,6 +194,27 @@ export class NotificationStore {
     });
   }
 
+  /**
+   * Records one inbox item for a scheduled message Hermes delivered into a chat. Always on: a
+   * reminder is something the owner asked for. Text follows the "Show reply text" setting.
+   */
+  recordDelivery(actor: string, event: DeliveryRecord): Promise<'created' | 'duplicate'> {
+    return this.#transaction(state => {
+      const current = state.actors[actor] ?? this.#emptyActor();
+      if (current.settled.some(entry => entry.id === event.id) || current.items.some(item => item.id === event.id)) return { result: 'duplicate' as const };
+      const at = this.now().toISOString();
+      const { settled, horizon } = settle(current, event.id, at);
+      const item: NotificationItem = {
+        id: event.id, category: 'delivery', observedAt: at, sessionId: event.sessionId,
+        title: event.title ?? (event.kind === 'reminder' ? 'Reminder' : 'Scheduled task'),
+        body: current.preferences.showReplyText === false ? GENERIC_DELIVERY_BODY : deliveryPreview(event.content),
+        readAt: null, delivery: { deliveryId: event.deliveryId },
+      };
+      state.actors[actor] = { ...current, settled, horizon, items: [...current.items, item].slice(-MAX_ITEMS) };
+      return { result: 'created' as const, write: true };
+    });
+  }
+
   markRead(actor: string, selection: Readonly<{ ids: readonly string[] } | { all: true }>): Promise<ActorView> {
     return this.#transaction(state => {
       const current = state.actors[actor] ?? this.#emptyActor();
@@ -234,6 +265,11 @@ export class NotificationStore {
   async claimRunPush(actor: string, id: string) {
     const item = (await this.read(actor)).items.find(item => item.id === id);
     return item?.category === 'run-completed' ? this.#push.claimPush(actor, item) : [];
+  }
+  /** Delivery claim: refuses every item that is not a delivered scheduled message. */
+  async claimDeliveryPush(actor: string, id: string) {
+    const item = (await this.read(actor)).items.find(item => item.id === id);
+    return item?.category === 'delivery' ? this.#push.claimPush(actor, item) : [];
   }
   finishPush(actor: string, id: string, deviceId: string, outcome: 'sent' | 'failed' | 'expired' | 'unknown') {
     return this.#push.finishPush(actor, id, deviceId, outcome);

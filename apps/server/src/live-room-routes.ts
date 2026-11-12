@@ -1,6 +1,8 @@
 import { RoutingDefaultTargetSchema, RoutingDefaultSetSchema } from '@jarvis-command/contracts';
 import { ThreadReadRequestSchema } from '@jarvis-command/contracts';
 import { ThreadReadStore } from './thread-read-store';
+import { DeliveryStore } from './delivery-store';
+import { ScheduledDeliveriesResponseSchema } from '@jarvis-command/contracts';
 import { createThreadState } from './thread-state';
 import { ReactionTargetSchema, ReactionMutationSchema } from '@jarvis-command/contracts';
 import { projectSendSnapshot, type ProjectRoom } from '@jarvis-command/contracts';
@@ -289,6 +291,15 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
       if (!threadState) threadState = createThreadState(dependencies.liveRoom!, new ThreadReadStore(dirname(dependencies.config.command!.auditLogPath)));
       return threadState;
     };
+    // Scheduled messages Hermes delivered into this chat (reminders, cron results), newest last.
+    let deliveries: DeliveryStore | undefined;
+    routes.get('/api/live/sessions/:sessionId/deliveries', { exposeHeadRoute: false }, async (request, reply) => {
+      const { sessionId } = parse(z.object({ sessionId: CommandSessionIdSchema }).strict(), request.params);
+      deliveries ??= new DeliveryStore(dirname(dependencies.config.command!.auditLogPath));
+      const actor = createHash('sha256').update(subjects.get(request)!).digest('hex');
+      const items = (await deliveries.list(actor, sessionId)).slice(-200);
+      return reply.header('cache-control', 'no-store').send(ScheduledDeliveriesResponseSchema.parse({ sessionId, deliveries: items }));
+    });
     routes.get('/api/live/sessions/:sessionId/thread-state', { exposeHeadRoute: false }, async (request, reply) => {
       const { sessionId } = parse(z.object({ sessionId: CommandSessionIdSchema }).strict(), request.params);
       return reply.header('cache-control', 'no-store').send(await threadReader().read(subjects.get(request)!, sessionId));

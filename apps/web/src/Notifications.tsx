@@ -24,6 +24,7 @@ const FILTERS = [
   { key: 'run-failed', label: 'Failed' },
   { key: 'approval', label: 'Approvals' },
   { key: 'assistant-reply', label: 'Replies' },
+  { key: 'delivery', label: 'Reminders' },
 ] as const;
 type FilterKey = (typeof FILTERS)[number]['key'];
 
