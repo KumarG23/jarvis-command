@@ -282,6 +282,8 @@ function SessionView({ base, session, onSession }: Readonly<{ base: string; sess
       <button type="button" aria-label="Left" onClick={() => key('\x1b[D')}><ArrowLeft size={15} /></button>
       <button type="button" aria-label="Right" onClick={() => key('\x1b[C')}><ArrowRight size={15} /></button>
       <button type="button" aria-label="Paste" onClick={() => void paste()}><ClipboardPaste size={15} /></button>
+      <button type="button" aria-label="Page up" onClick={() => key('\x1b[5~')}>PgUp</button>
+      <button type="button" aria-label="Page down" onClick={() => key('\x1b[6~')}>PgDn</button>
     </div> : null}
   </div>;
 }
