@@ -40,7 +40,7 @@ Ordered by dependency. Each line gives the state, the owner and the next concret
 4. **Lead chat runs as the project lead with project continuity.**
    - The BFF sends Hermes `/p/project-lead/v1/runs` a stable `session_id` per project and server-built `instructions`: goal, instructions, decisions, artifacts, and session/worktree lineage.
    - State: built in `9254ff7` behind `PROJECT_CONTEXT_MODE=enabled`. Project chats send the saved project context as run `instructions` on the existing Command session, which is Prime's continuity. Jarvis confirmed `instructions` and `session_id` from the installed source. Not deployed.
-   - Open: Prime has no cockpit MCP tools, because they are configured on `project-lead` only. The choice is to add them to Prime, or to route project chats to `project-lead`.
+   - Decided (Neal, 2026-11-12): project chats stay on the main Jarvis profile (the one the command proxy reaches at `127.0.0.1:8642`), and Jarvis adds the cockpit MCP to it. `project-lead` stays as it is. Open: Jarvis applies the profile change and reports a list-terminals check from a Command project chat.
    - Owner: Claude (source), Jarvis (profile).
 5. **Lead drives terminals end to end.** From the project lead chat: create a session, send, read output, `run_check`, and show tool approvals and results in Command. State: MCP deployed; the Command UI for lead tool calls and approvals is unverified. Owner: Claude (UI), Jarvis (profile). Next: depends on item 4.
 6. **agy conversation-ID capture** for lineage and resume. State: built in `dcf1072`. It reads agy's per-directory cache for sessions with their own worktree, and resume uses `--conversation <id>`. Not deployed. Owner: Claude; Jarvis deploys.
