@@ -84,11 +84,14 @@ describe('loadConfig', () => {
     const owner = 'a'.repeat(64);
     expect(loadConfig(productionEnvironment).scheduledRuns).toBeNull();
     expect(loadConfig({ ...productionEnvironment, SCHEDULED_RUNS_MODE: 'enabled', SCHEDULED_RUNS_HOST: '0.0.0.0', SCHEDULED_RUNS_KEY: key, SCHEDULED_RUNS_OWNER_ACTOR: owner }).scheduledRuns)
-      .toEqual({ host: '0.0.0.0', port: 8652, key, ownerActor: owner, home: null });
+      .toEqual({ host: '0.0.0.0', port: 8652, key, ownerActor: owner, deliveriesKey: null, home: null });
     expect(() => loadConfig({ ...productionEnvironment, SCHEDULED_RUNS_MODE: 'enabled', SCHEDULED_RUNS_OWNER_ACTOR: owner })).toThrow(/SCHEDULED_RUNS_KEY/);
     expect(() => loadConfig({ ...productionEnvironment, SCHEDULED_RUNS_MODE: 'enabled', SCHEDULED_RUNS_KEY: key })).toThrow(/SCHEDULED_RUNS_OWNER_ACTOR/);
     expect(() => loadConfig({ ...productionEnvironment, SCHEDULED_RUNS_MODE: 'enabled', SCHEDULED_RUNS_KEY: key, SCHEDULED_RUNS_OWNER_ACTOR: 'not-a-hash' })).toThrow();
     expect(() => loadConfig({ ...productionEnvironment, SCHEDULED_RUNS_MODE: 'enabled', SCHEDULED_RUNS_KEY: key, SCHEDULED_RUNS_OWNER_ACTOR: owner, SCHEDULED_RUNS_PORT: productionEnvironment.PORT ?? '8650' })).toThrow(/differ/);
+    expect(() => loadConfig({ ...productionEnvironment, SCHEDULED_RUNS_MODE: 'enabled', SCHEDULED_RUNS_KEY: key, SCHEDULED_RUNS_OWNER_ACTOR: owner, SCHEDULED_DELIVERIES_KEY: key })).toThrow(/must differ/);
+    expect(loadConfig({ ...productionEnvironment, SCHEDULED_RUNS_MODE: 'enabled', SCHEDULED_RUNS_KEY: key, SCHEDULED_RUNS_OWNER_ACTOR: owner, SCHEDULED_DELIVERIES_KEY: 'd'.repeat(40), SCHEDULED_RUNS_HOME: `room_${'1'.repeat(32)}` }).scheduledRuns)
+      .toMatchObject({ deliveriesKey: 'd'.repeat(40), home: `room_${'1'.repeat(32)}` });
   });
 
   it('refuses development authentication in production', () => {

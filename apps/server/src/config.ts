@@ -49,6 +49,8 @@ const EnvironmentSchema = z.object({
   SCHEDULED_RUNS_HOST: z.string().min(1).max(255).default('127.0.0.1'),
   SCHEDULED_RUNS_PORT: z.coerce.number().int().min(1).max(65_535).default(8652),
   SCHEDULED_RUNS_KEY: z.string().min(32).max(512).optional(),
+  /** Separate key for POST /v1/deliveries only (the Hermes `command` plugin). It can't start runs. */
+  SCHEDULED_DELIVERIES_KEY: z.string().min(32).max(512).optional(),
   SCHEDULED_RUNS_OWNER_ACTOR: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   /** Where a delivery addressed to "home" lands: a project (room_…) or a chat (jc_…). */
   SCHEDULED_RUNS_HOME: z.string().regex(/^(room_[a-f0-9]{32}|jc_[a-f0-9]{32})$/).optional(),
@@ -93,6 +95,8 @@ export type AppConfig = Readonly<{
     key: string;
     /** Audit-ledger actor fingerprint (sha256 of the owner's Access subject). */
     ownerActor: string;
+    /** Key accepted only by POST /v1/deliveries; null disables deliveries. */
+    deliveriesKey?: string | null;
     /** Target for deliveries addressed to "home"; null when not configured. */
     home?: string | null;
   }> | null;
@@ -233,11 +237,13 @@ export function loadConfig(environment: NodeJS.ProcessEnv): AppConfig {
     ? (() => {
         if (!command) throw new Error('SCHEDULED_RUNS_MODE requires COMMAND_MODE=enabled');
         if (parsed.SCHEDULED_RUNS_PORT === parsed.PORT) throw new Error('SCHEDULED_RUNS_PORT must differ from PORT');
+        if (parsed.SCHEDULED_DELIVERIES_KEY && parsed.SCHEDULED_DELIVERIES_KEY === parsed.SCHEDULED_RUNS_KEY) throw new Error('SCHEDULED_DELIVERIES_KEY must differ from SCHEDULED_RUNS_KEY');
         return Object.freeze({
           host: parsed.SCHEDULED_RUNS_HOST,
           port: parsed.SCHEDULED_RUNS_PORT,
           key: requireValue('SCHEDULED_RUNS_KEY', parsed.SCHEDULED_RUNS_KEY),
           ownerActor: requireValue('SCHEDULED_RUNS_OWNER_ACTOR', parsed.SCHEDULED_RUNS_OWNER_ACTOR),
+          deliveriesKey: parsed.SCHEDULED_DELIVERIES_KEY ?? null,
           home: parsed.SCHEDULED_RUNS_HOME ?? null,
         });
       })()

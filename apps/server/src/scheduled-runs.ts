@@ -43,7 +43,7 @@ export type ScheduledRunRequest = z.infer<typeof ScheduledRunRequestSchema>;
 
 export const MAX_DELIVERY_CONTENT = 16_000;
 export const DeliveryRequestSchema = z.object({
-  /** Idempotency key chosen by Hermes, e.g. `<job_id>:<fire_time>`. */
+  /** Idempotency key: an occurrence UUID Hermes persists once per fire and reuses on every retry. */
   id: z.string().regex(DELIVERY_KEY),
   chatId: z.union([z.string().regex(SESSION_ID), z.string().regex(ROOM_ID), z.literal('home')]),
   content: z.string().trim().min(1).max(MAX_DELIVERY_CONTENT),
@@ -85,8 +85,12 @@ export function createScheduledRunsServer(options: ScheduledRunsOptions): Fastif
   const log = options.log ?? (fields => console.info(JSON.stringify({ event: 'scheduled-run', ...fields })));
   // 16 000 characters of content can be up to 64 KB of UTF-8, plus JSON escaping.
   const app = Fastify({ logger: false, bodyLimit: 196_608 });
+  // Each key is scoped: the scheduled-runs key serves only the run routes, and the deliveries key
+  // serves only POST /v1/deliveries. Without a deliveries key, deliveries refuse every request.
   app.addHook('onRequest', async (request, reply) => {
-    if (!keyMatches(request.headers.authorization, options.config.key)) {
+    const delivery = request.routeOptions.url === '/v1/deliveries';
+    const key = delivery ? options.config.deliveriesKey ?? null : options.config.key;
+    if (!key || !keyMatches(request.headers.authorization, key)) {
       log({ route: request.routeOptions.url ?? 'unknown', status: 401 });
       return reply.code(401).header('cache-control', 'no-store').send({ error: 'unauthorized' });
     }

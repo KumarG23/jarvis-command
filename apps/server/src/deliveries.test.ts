@@ -10,6 +10,7 @@ import { createScheduledRunsServer } from './scheduled-runs';
 
 const ACTOR = 'a'.repeat(64);
 const KEY = 'k'.repeat(40);
+const RUN_KEY = 'r'.repeat(40);
 const ROOM = `room_${'1'.repeat(32)}`;
 const LEAD = `jc_${'2'.repeat(32)}`;
 const LOOSE = `jc_${'3'.repeat(32)}`;
@@ -95,7 +96,7 @@ describe('POST /v1/deliveries', () => {
     });
     const logs: unknown[] = [];
     const app = createScheduledRunsServer({
-      config: { host: '127.0.0.1', port: 0, key: KEY, ownerActor: ACTOR, home },
+      config: { host: '127.0.0.1', port: 0, key: RUN_KEY, deliveriesKey: KEY, ownerActor: ACTOR, home },
       liveRoom: () => ({ getSession }) as never,
       rooms: () => ({ list: async () => rooms }),
       log: fields => { logs.push(fields); },
@@ -104,7 +105,13 @@ describe('POST /v1/deliveries', () => {
     return { app, deliver, logs };
   }
   const headers = { authorization: `Bearer ${KEY}` };
-  const body = { id: 'job1:2026-11-12T17:00', chatId: ROOM, content: 'Secret reminder text', title: 'Stretch', kind: 'reminder' };
+  const body = { id: '6f1c1b8e-3d2a-4c55-9a3e-0b1c2d3e4f50', chatId: ROOM, content: 'Secret reminder text', title: 'Stretch', kind: 'reminder' };
+
+  it('refuses every delivery when no deliveries key is configured', async () => {
+    const app = createScheduledRunsServer({ config: { host: '127.0.0.1', port: 0, key: RUN_KEY, ownerActor: ACTOR }, liveRoom: () => undefined, rooms: () => undefined, log: () => undefined });
+    expect((await app.inject({ method: 'POST', url: '/v1/deliveries', payload: body, headers: { authorization: `Bearer ${RUN_KEY}` } })).statusCode).toBe(401);
+    await app.close();
+  });
 
   it('delivers to a project chat, a loose chat and home, as the owner', async () => {
     const { app, deliver, logs } = setup(LOOSE);
@@ -122,6 +129,10 @@ describe('POST /v1/deliveries', () => {
   it('refuses bad keys, bad bodies, unknown or archived targets and an unset home', async () => {
     const { app, deliver } = setup();
     expect((await app.inject({ method: 'POST', url: '/v1/deliveries', payload: body })).statusCode).toBe(401);
+    // Keys are scoped: the runs key can't deliver, and the deliveries key can't list or start runs.
+    expect((await app.inject({ method: 'POST', url: '/v1/deliveries', payload: body, headers: { authorization: `Bearer ${RUN_KEY}` } })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'GET', url: '/v1/scheduled-runs/targets', headers })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'POST', url: '/v1/scheduled-runs', payload: {}, headers })).statusCode).toBe(401);
     expect((await app.inject({ method: 'POST', url: '/v1/deliveries', payload: { ...body, id: 'has space' }, headers })).statusCode).toBe(400);
     expect((await app.inject({ method: 'POST', url: '/v1/deliveries', payload: { ...body, kind: 'other' }, headers })).statusCode).toBe(400);
     expect((await app.inject({ method: 'POST', url: '/v1/deliveries', payload: { ...body, content: 'x'.repeat(16_001) }, headers })).statusCode).toBe(400);
