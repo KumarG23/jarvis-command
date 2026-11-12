@@ -20,6 +20,9 @@ export type AdapterDefinition = {
   discoverNativeSessionId?: (cwd: string, env: NodeJS.ProcessEnv) => Promise<string | null>;
   // Shells read the first message from the keyboard; CLIs take it as an argument.
   promptViaArgv: boolean;
+  // Type the first message once the CLI's screen has settled, instead of passing it as an
+  // argument (agy 1.5.6 started without it when given --prompt-interactive in the cockpit).
+  promptWhenReady?: boolean;
   // Refuses a launch that would bill a paid API instead of the subscription. Login is not
   // required: a logged-out CLI shows its own official login flow in the terminal.
   preflight?: (cwd: string, env: NodeJS.ProcessEnv) => Promise<string | null>;
@@ -127,7 +130,7 @@ export const ADAPTERS: Record<CockpitKind, AdapterDefinition> = {
   agy: {
     kind: 'agy', label: 'Antigravity (agy)', binary: () => 'agy', billing: 'Google account (official Antigravity CLI)',
     argv: ({ prompt, resume }) => ['agy', ...(resume ? ['--conversation', resume] : []), ...(prompt ? ['--prompt-interactive', prompt] : [])],
-    promptViaArgv: true, preflight: async (cwd, env) => await agyPreflight(cwd, env) ?? await agyCreditsPreflight(cwd, env),
+    promptViaArgv: false, promptWhenReady: true, preflight: async (cwd, env) => await agyPreflight(cwd, env) ?? await agyCreditsPreflight(cwd, env),
     discoverNativeSessionId: agyDiscover,
     note: 'The conversation ID is recorded after the first turn when the session has its own worktree.',
   },

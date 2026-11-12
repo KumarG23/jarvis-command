@@ -150,7 +150,9 @@ export class SessionManager extends EventEmitter {
           state: pane && !pane.dead ? 'running' : pane?.dead ? 'exited' : 'unknown',
           pid: pane && !pane.dead ? pane.pid : null, exitCode: pane?.dead ? pane.status : null, nativeSessionId,
         });
-        if (input.initialInput && !adapter.promptViaArgv) {
+        if (input.initialInput && adapter.promptWhenReady) {
+          void this.typeWhenReady(id, input.initialInput);
+        } else if (input.initialInput && !adapter.promptViaArgv) {
           await this.tmux.sendBytes(id, input.initialInput);
           await this.tmux.sendKey(id, 'Enter');
         }
@@ -160,6 +162,28 @@ export class SessionManager extends EventEmitter {
         return { session: this.update(session, { state: 'failed', failure: failure.slice(0, 500) }), created: true };
       }
     });
+  }
+
+  // Waits until the TUI has drawn something and stopped changing (or 30s pass), then types the
+  // first message as its creator. Skips it if someone else took input in the meantime.
+  private async typeWhenReady(id: string, text: string, settleMs = 1_200, limitMs = 30_000) {
+    const creator = this.registry.get(id)?.owner;
+    const started = Date.now();
+    let last = '', stableSince = Date.now();
+    try {
+      while (Date.now() - started < limitMs) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+        const session = this.registry.get(id);
+        if (!session || !LIVE.has(session.state) || session.owner !== creator) return;
+        const screen = (await this.tmux.capture(id, 0)).trim();
+        if (screen !== last) { last = screen; stableSince = Date.now(); continue; }
+        if (screen && Date.now() - stableSince >= settleMs) break;
+      }
+      const session = this.registry.get(id);
+      if (!session || !LIVE.has(session.state) || session.owner !== creator) return;
+      await this.tmux.sendBytes(id, text);
+      await this.tmux.sendKey(id, 'Enter');
+    } catch { /* the session ended; nothing to type into */ }
   }
 
   private requireLive(session: CockpitSession) {

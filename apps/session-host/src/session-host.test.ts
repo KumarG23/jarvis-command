@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
@@ -58,6 +58,17 @@ describe.skipIf(!hasTmux)('session host (real tmux)', () => {
     spawnSync('tmux', ['-S', join(root, 'state', 'tmux.sock'), 'kill-server']);
     try { rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch (error) { console.warn('leftover', root, String(error)); }
   });
+
+  it('types the first agy message only after its screen settles', async () => {
+    const bin = join(root, 'bin'); mkdirSync(bin);
+    writeFileSync(join(bin, 'agy'), '#!/bin/sh\ncase "$*" in *"-p /config"*) echo "{}"; exit 0;; esac\nsleep 1\necho "AGY READY"\nread line\necho "got:$line"\nsleep 30\n', { mode: 0o755 });
+    const agyManager = new SessionManager(config, { HOME: root, HISTFILE: '/dev/null', PATH: `${bin}:${process.env.PATH ?? ''}` });
+    try {
+      const { session } = await agyManager.create({ requestId: 'req-agy-0001', projectId: 'proj1', title: 'agy', kind: 'agy', initialInput: 'hello agy' }, 'human');
+      const text = await waitFor(async () => { const value = await agyManager.tail(session.id, 'proj1'); return value.includes('got:hello agy') ? value : undefined; }, 15_000);
+      expect(text.indexOf('AGY READY')).toBeLessThan(text.indexOf('got:hello agy'));
+    } finally { agyManager.stop(); }
+  }, 20_000);
 
   const create = (body: Record<string, unknown>) => app.inject({
     method: 'POST', url: '/v1/sessions', headers: auth,
