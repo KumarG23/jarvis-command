@@ -25,7 +25,7 @@ States mean: **built** = source with tests; **deployed** = running on VM118/Dell
 | Slice | State | Evidence |
 | --- | --- | --- |
 | Session host (tmux PTYs, ownership, worktrees, diff/check, MCP tools) | deployed | Jarvis, PR #177 comments 6803171736 and 6803980369. Hermes connects and discovers the 12 tools, configured for `project-lead` only. `run_check` was re-enabled after the ownership-gate regressions passed. |
-| BFF relay + web Terminals pane | deployed, **browser acceptance pending** | Built in `19a9543`. Part of the VM118 web build since `be38a9f`. |
+| BFF relay + web Terminals pane | deployed, **accepted on phone with Claude Code** | Built in `19a9543`. Part of the VM118 web build since `be38a9f`. On 2026-11-12 Neal started a Claude Code session on his Android phone: he accepted the folder-trust prompt with the key bar, sent a message, and the reply streamed back under his subscription login. |
 | Lead chat on VM118 | deployed, **one real chat accepted** | Neal's chat completed after the system-unit repair (Jarvis, comment 6809584673; audit has `run.completed`). |
 | Model routing: subscription catalog, Sol 6.1 default, definite refusals | deployed | `9a10948`. Jarvis read-only check: Inherit resolves to Sol 6.1/medium with source `command` (comment 6807882442). |
 | Storage reason codes in logs | built, not deployed | `1fb7363`. Ships with the next functional deploy. |
@@ -36,7 +36,7 @@ Ordered by dependency. Each line gives the state, the owner and the next concret
 
 1. **Chat acceptance on desktop and phone.** Picker, history, streaming, run receipt, retry and recovery. State: deployed, partly accepted. Owner: Jarvis/Neal exercise it, Claude fixes. Next: authenticated desktop + phone pass that records the receipt route.
 2. **Terminals acceptance.** In the browser: Shell, `echo hi`, Hand to lead, Take over, Stop; then check `cockpit-audit.jsonl`. State: deployed. Owner: Jarvis or Neal. Next: run [DEPLOY-VM118.md](DEPLOY-VM118.md) §7.3–7.4.
-3. **Official CLI qualification on VM118.** Claude Code, Codex, agy (already logged in), Gemini, OpenCode as real interactive sessions. State: adapters built; real logins not exercised except agy. Owner: Neal logs in himself through a Terminals shell (owner-only); Claude fixes adapters. Next: start each kind once and report what the adapters need.
+3. **Official CLI qualification on VM118.** Claude Code, Codex, agy (already logged in), Gemini, OpenCode as real interactive sessions. State: **Claude Code accepted** (Neal, phone, 2026-11-12). Codex, agy, Gemini and OpenCode not yet exercised. Owner: Neal logs in himself through a Terminals shell (owner-only); Claude fixes adapters. Next: start each kind once and report what the adapters need.
 4. **Lead chat runs as the project lead with project continuity.**
    - The BFF sends Hermes `/p/project-lead/v1/runs` a stable `session_id` per project and server-built `instructions`: goal, instructions, decisions, artifacts, and session/worktree lineage.
    - State: not built.
