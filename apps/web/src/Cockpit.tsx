@@ -271,16 +271,17 @@ function SessionView({ base, session, onSession }: Readonly<{ base: string; sess
     {notice ? <p className="notice cockpit-notice" role="status">{notice}</p> : null}
     <div className="cockpit-terminal" ref={host} />
     {active ? <div className="cockpit-keys" role="toolbar" aria-label="Terminal keys">
-      <button type="button" onClick={() => key('\x1b')}>Esc</button>
-      <button type="button" onClick={() => key('\t')}>Tab</button>
-      <button type="button" aria-pressed={ctrlOn} onClick={() => { ctrl.current = !ctrl.current; setCtrlOn(ctrl.current); terminal.current?.focus(); }}>Ctrl</button>
-      <button type="button" onClick={() => key('\x03')}>^C</button>
-      <button type="button" aria-label="Left" onClick={() => key('\x1b[D')}><ArrowLeft size={15} /></button>
+      {/* Most-used keys first: on a phone the bar scrolls, so Enter and the arrows must not be off-screen. */}
+      <button type="button" onClick={() => key('\r')}>Enter</button>
       <button type="button" aria-label="Up" onClick={() => key('\x1b[A')}><ArrowUp size={15} /></button>
       <button type="button" aria-label="Down" onClick={() => key('\x1b[B')}><ArrowDown size={15} /></button>
+      <button type="button" onClick={() => key('\x1b')}>Esc</button>
+      <button type="button" onClick={() => key('\t')}>Tab</button>
+      <button type="button" onClick={() => key('\x03')}>^C</button>
+      <button type="button" aria-pressed={ctrlOn} onClick={() => { ctrl.current = !ctrl.current; setCtrlOn(ctrl.current); terminal.current?.focus(); }}>Ctrl</button>
+      <button type="button" aria-label="Left" onClick={() => key('\x1b[D')}><ArrowLeft size={15} /></button>
       <button type="button" aria-label="Right" onClick={() => key('\x1b[C')}><ArrowRight size={15} /></button>
       <button type="button" aria-label="Paste" onClick={() => void paste()}><ClipboardPaste size={15} /></button>
-      <button type="button" onClick={() => key('\r')}>Enter</button>
     </div> : null}
   </div>;
 }
