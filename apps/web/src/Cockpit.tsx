@@ -2,11 +2,13 @@ import '@xterm/xterm/css/xterm.css';
 import './Cockpit.css';
 import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bot, ClipboardPaste, Hand, Maximize2, Minimize2, OctagonX, Plus, RefreshCw, Square, TerminalSquare, UserRound, X } from 'lucide-react';
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Bot, ClipboardPaste, CornerDownLeft, Hand, Keyboard, Maximize2, Minimize2, OctagonX, Plus, RefreshCw, Square, TerminalSquare, UserRound, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isTerminalReport, type CockpitAdapter, type CockpitKind, type CockpitSession } from '@jarvis-command/contracts';
 
 const ACTIVE = new Set(['connecting', 'running', 'waiting_for_input', 'unknown']);
+// Phones and tablets: the on-screen keyboard opens only from the Keyboard key.
+const TOUCH = typeof window !== 'undefined' && typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
 const STATE_LABEL: Record<string, string> = {
   connecting: 'Starting', running: 'Running', waiting_for_input: 'Waiting for input', exited: 'Exited', stopped: 'Stopped', failed: 'Failed', lost: 'Lost', unknown: 'Unknown',
 };
@@ -164,6 +166,7 @@ function SessionView({ base, session, onSession }: Readonly<{ base: string; sess
   const terminal = useRef<Terminal | null>(null);
   const ctrl = useRef(false);
   const [ctrlOn, setCtrlOn] = useState(false);
+  const [keyboardOn, setKeyboardOn] = useState(false);
   const [link, setLink] = useState<Link>('connecting');
   const [notice, setNotice] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -195,6 +198,10 @@ function SessionView({ base, session, onSession }: Readonly<{ base: string; sess
     const unmirror = mirrorTerminalStyles(element);
     term.open(element);
     terminal.current = term;
+    // On phones a tap in the terminal must not pop the keyboard; the Keyboard key opens it.
+    const area = term.textarea;
+    const keyboardClosed = () => { area?.setAttribute('inputmode', 'none'); setKeyboardOn(false); };
+    if (TOUCH) { area?.setAttribute('inputmode', 'none'); area?.addEventListener('blur', keyboardClosed); }
     try { fit.fit(); } catch { /* not laid out yet */ }
     const decoder = new TextDecoder();
     let disposed = false, attempts = 0, retry: ReturnType<typeof setTimeout> | undefined;
@@ -232,6 +239,7 @@ function SessionView({ base, session, onSession }: Readonly<{ base: string; sess
     observer.observe(element);
     return () => {
       disposed = true; clearTimeout(retry); observer.disconnect(); input.dispose(); resize.dispose();
+      if (TOUCH) area?.removeEventListener('blur', keyboardClosed);
       socket.current?.close(); socket.current = null; term.dispose(); terminal.current = null; unmirror();
     };
   }, [base, send, type]);
@@ -241,14 +249,25 @@ function SessionView({ base, session, onSession }: Readonly<{ base: string; sess
     try {
       const result = await cockpitRequest<{ session?: CockpitSession }>(`${base}/sessions/${session.id}/${path}`, body);
       if (result.session) onSession(result.session);
-      terminal.current?.focus();
+      if (!TOUCH) terminal.current?.focus();
     } catch (cause) { setNotice(cause instanceof Error ? cause.message : 'The action failed.'); } finally { setBusy(false); }
   };
   const active = ACTIVE.has(session.state);
-  const key = (data: string) => { type(data); terminal.current?.focus(); };
+  // Desktop keeps focus in the terminal; on phones focusing would open the keyboard.
+  const refocus = () => { if (!TOUCH || keyboardOn) terminal.current?.focus(); };
+  const key = (data: string) => { type(data); refocus(); };
   const paste = async () => {
     try { const text = await navigator.clipboard.readText(); if (text) terminal.current?.paste(text); } catch { setNotice('Clipboard access was blocked. Long-press in the terminal to paste instead.'); }
-    terminal.current?.focus();
+    refocus();
+  };
+  const toggleKeyboard = () => {
+    const area = terminal.current?.textarea;
+    if (!area) return;
+    const next = !keyboardOn;
+    area.blur();
+    area.setAttribute('inputmode', next ? 'text' : 'none');
+    if (next) terminal.current?.focus();
+    setKeyboardOn(next);
   };
 
   return <div className="cockpit-session">
@@ -271,19 +290,19 @@ function SessionView({ base, session, onSession }: Readonly<{ base: string; sess
     {notice ? <p className="notice cockpit-notice" role="status">{notice}</p> : null}
     <div className="cockpit-terminal" ref={host} />
     {active ? <div className="cockpit-keys" role="toolbar" aria-label="Terminal keys">
-      {/* Most-used keys first: on a phone the bar scrolls, so Enter and the arrows must not be off-screen. */}
-      <button type="button" onClick={() => key('\r')}>Enter</button>
-      <button type="button" aria-label="Up" onClick={() => key('\x1b[A')}><ArrowUp size={15} /></button>
-      <button type="button" aria-label="Down" onClick={() => key('\x1b[B')}><ArrowDown size={15} /></button>
       <button type="button" onClick={() => key('\x1b')}>Esc</button>
       <button type="button" onClick={() => key('\t')}>Tab</button>
+      <button type="button" aria-pressed={ctrlOn} onClick={() => { ctrl.current = !ctrl.current; setCtrlOn(ctrl.current); refocus(); }}>Ctrl</button>
       <button type="button" onClick={() => key('\x03')}>^C</button>
-      <button type="button" aria-pressed={ctrlOn} onClick={() => { ctrl.current = !ctrl.current; setCtrlOn(ctrl.current); terminal.current?.focus(); }}>Ctrl</button>
-      <button type="button" aria-label="Left" onClick={() => key('\x1b[D')}><ArrowLeft size={15} /></button>
-      <button type="button" aria-label="Right" onClick={() => key('\x1b[C')}><ArrowRight size={15} /></button>
-      <button type="button" aria-label="Paste" onClick={() => void paste()}><ClipboardPaste size={15} /></button>
       <button type="button" aria-label="Page up" onClick={() => key('\x1b[5~')}>PgUp</button>
       <button type="button" aria-label="Page down" onClick={() => key('\x1b[6~')}>PgDn</button>
+      <button type="button" aria-label="Paste" onClick={() => void paste()}><ClipboardPaste size={18} /></button>
+      <button type="button" aria-label={keyboardOn ? 'Hide keyboard' : 'Show keyboard'} aria-pressed={keyboardOn} onClick={toggleKeyboard}><Keyboard size={18} /></button>
+      <button type="button" aria-label="Left" onClick={() => key('\x1b[D')}><ArrowLeft size={18} /></button>
+      <button type="button" aria-label="Up" onClick={() => key('\x1b[A')}><ArrowUp size={18} /></button>
+      <button type="button" aria-label="Down" onClick={() => key('\x1b[B')}><ArrowDown size={18} /></button>
+      <button type="button" aria-label="Right" onClick={() => key('\x1b[C')}><ArrowRight size={18} /></button>
+      <button className="cockpit-enter" type="button" aria-label="Enter" onClick={() => key('\r')}><CornerDownLeft size={18} /> Enter</button>
     </div> : null}
   </div>;
 }
