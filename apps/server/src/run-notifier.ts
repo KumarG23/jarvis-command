@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import type { NotificationCategory } from '@jarvis-command/contracts';
 import type { NotificationStore } from './notification-store';
+import type { PushService } from './push-service';
+import type { Presence } from './reply-notifier';
 
 export type RunNotification = Readonly<{
   actor: string;
@@ -11,6 +13,8 @@ export type RunNotification = Readonly<{
   category: NotificationCategory;
   /** Distinguishes repeated events of one category within a run, e.g. an approval request ID. */
   key?: string;
+  /** Also push this run-completed item (generic text) because no reply item was verified for it. */
+  pushFallback?: boolean;
 }>;
 /** Resolves true only when the event is durably accounted for (created, duplicate or suppressed). */
 export type RunNotifier = (event: RunNotification) => Promise<boolean>;
@@ -28,13 +32,17 @@ export function notificationId(event: Pick<RunNotification, 'actor' | 'category'
  * resolves false. The ledger already holds the terminal fact, so the inbox reconcile re-delivers
  * the same deterministic event once storage recovers.
  */
-export function createRunNotifier(store: NotificationStore): RunNotifier {
+export function createRunNotifier(store: NotificationStore, push?: PushService, presence?: Presence): RunNotifier {
   return async event => {
     try {
-      await store.record(event.actor, {
-        id: notificationId(event), category: event.category, sessionId: event.sessionId, publicRunId: event.publicRunId,
+      const id = notificationId(event);
+      const result = await store.record(event.actor, {
+        id, category: event.category, sessionId: event.sessionId, publicRunId: event.publicRunId,
         eventAt: event.eventAt,
       });
+      // Only the call that created the item may push, and never while the chat is on screen.
+      if (result === 'created' && event.pushFallback && event.category === 'run-completed'
+        && !presence?.visible(event.actor, event.sessionId)) await push?.deliverRun(event.actor, id);
       return true;
     } catch { return false; /* surfaced by the inbox read path */ }
   };

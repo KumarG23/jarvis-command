@@ -227,6 +227,14 @@ export class NotificationStore {
     const item = (await this.read(actor)).items.find(item => item.id === id);
     return item?.category === 'assistant-reply' ? this.#push.claimPush(actor, item) : [];
   }
+  /**
+   * Fallback claim for a finished run whose reply text could not be bound (no history binding):
+   * the push carries only the generic "Run finished" text, never output.
+   */
+  async claimRunPush(actor: string, id: string) {
+    const item = (await this.read(actor)).items.find(item => item.id === id);
+    return item?.category === 'run-completed' ? this.#push.claimPush(actor, item) : [];
+  }
   finishPush(actor: string, id: string, deviceId: string, outcome: 'sent' | 'failed' | 'expired' | 'unknown') {
     return this.#push.finishPush(actor, id, deviceId, outcome);
   }

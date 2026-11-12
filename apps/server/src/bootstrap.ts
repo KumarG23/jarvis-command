@@ -109,7 +109,7 @@ export function createCommandServer(
       client,
       ledger,
       rooms: rooms = new ProjectRoomStore(dirname(config.command.auditLogPath)),
-      notify: notifications ? createRunNotifier(notifications) : undefined,
+      notify: notifications ? createRunNotifier(notifications, push, presence) : undefined,
       notifyReply: notifications ? createReplyNotifier({ store: notifications, push, enabled: config.push?.replies === true, source: replyEvidence, presence }) : undefined,
       reactions: new ReactionStore(dirname(config.command.auditLogPath)),
       reactionsEnabled: config.reactionsEnabled,

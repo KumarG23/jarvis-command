@@ -180,12 +180,14 @@ export function createLiveRoomService({
   // is already actor/run/session bound. Context-compaction operations are not runs.
   const notifyStatus = async (record: AuditRunRecord, upstream: CommandRunStatus, terminalAt: string | null): Promise<void> => {
     if (upstream.kind === 'context_compaction') return;
+    let replied = false;
     if (upstream.status === 'completed' && terminalAt) {
-      await notifyReply?.({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, eventAt: terminalAt });
+      replied = await notifyReply?.({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, eventAt: terminalAt }) ?? false;
     }
     if (!notify) return;
     const base = { actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId };
-    if (upstream.status === 'completed' && terminalAt) await notify({ ...base, eventAt: terminalAt, category: 'run-completed' });
+    // Without a verified reply (no history binding), the finished-run item carries the push instead.
+    if (upstream.status === 'completed' && terminalAt) await notify({ ...base, eventAt: terminalAt, category: 'run-completed', ...(replied ? {} : { pushFallback: true }) });
     else if (upstream.status === 'failed' && terminalAt) await notify({ ...base, eventAt: terminalAt, category: 'run-failed' });
     else if (upstream.status === 'waiting_for_approval' && upstream.approval) {
       await notify({ ...base, eventAt: now().toISOString(), category: 'approval', key: upstream.approval.requestId });
@@ -763,8 +765,8 @@ export function createLiveRoomService({
             // cannot be confirmed now, the inbox reconcile re-checks it from the ledger.
             const confirmed = await client.getRun(record.upstreamRunId!).catch(() => null);
             if (confirmed && confirmed.runId === record.upstreamRunId && confirmed.sessionId === record.sessionId && confirmed.kind !== 'context_compaction') {
-              if (event.type === 'run.completed') await notifyReply?.({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, eventAt: terminalAt });
-              await notify?.({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, eventAt: terminalAt, category: event.type === 'run.completed' ? 'run-completed' : 'run-failed' });
+              const replied = event.type === 'run.completed' ? await notifyReply?.({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, eventAt: terminalAt }) ?? false : true;
+              await notify?.({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, eventAt: terminalAt, category: event.type === 'run.completed' ? 'run-completed' : 'run-failed', ...(replied ? {} : { pushFallback: true }) });
             }
           }
         }

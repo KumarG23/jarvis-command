@@ -31,7 +31,7 @@ export function PushSettings({ push, refresh }: Readonly<{ push: PushState | und
   }
   return <section aria-labelledby="push-settings">
     <h4 id="push-settings">Device push alerts</h4>
-    <p className="muted small">Device push is limited to one category: a new final Jarvis reply, when the server enables it. Reply text appears only while “Show reply text in notifications” is on; run, failure and approval events stay in the inbox and are never pushed. Replies are pushed even after you close the app, unless Command is open and focused somewhere. Terminal (CLI) events are not pushed.</p>
+    <p className="muted small">Device push covers one thing: a new Jarvis reply, when the server enables it. If Command can't match the reply text to the run, the alert just says Jarvis replied. Reply text appears only while “Show reply text in notifications” is on; run, failure and approval events stay in the inbox and are never pushed. Replies are pushed even after you close the app, unless Command is open and focused somewhere. Terminal (CLI) events are not pushed.</p>
     {capability.state === 'unavailable' ? <p role="status">{unavailable[capability.reason]} No browser permission is requested.</p> : !supported ? <p role="status">Web Push is unsupported in this browser.</p> : <button type="button" className="secondary-button" disabled={busy} onClick={() => void action(enable)}>Enable push on this device</button>}
     {push?.devices.length ? <ul aria-label="Registered push devices">{push.devices.map(device => <li key={device.id}>
       <span>Device {device.id.slice(-6)} · expires {new Date(device.expiresAt).toLocaleDateString()}</span>{' '}

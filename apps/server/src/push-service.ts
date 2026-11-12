@@ -110,6 +110,12 @@ export function createPushService(config: PushConfig, store: NotificationStore, 
       if (item?.category !== 'assistant-reply') throw new Error('Not a reply');
       return replyPushPayload(item);
     }) : Promise.resolve(),
+    /** Generic finished-run push, used only when no reply item could be verified for the run. */
+    deliverRun: (actor: string, id: string) => config.replies ? send(actor, id, () => store.claimRunPush(actor, id), async () => {
+      const item = await store.find(actor, id);
+      if (item?.category !== 'run-completed') throw new Error('Not a finished run');
+      return replyPushPayload({ id: item.id, title: 'Jarvis replied', body: 'Open the chat to read it.' });
+    }) : Promise.resolve(),
   };
 }
 export type PushService = ReturnType<typeof createPushService>;
