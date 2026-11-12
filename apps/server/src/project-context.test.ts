@@ -24,16 +24,17 @@ it('stays within the size bound', () => {
   expect(text.length).toBeLessThanOrEqual(MAX_PROJECT_INSTRUCTIONS);
 });
 
-it('lists the project terminals with state and who has input', () => {
+it('lists open terminals with only cache-stable fields', () => {
   const at = '2026-11-12T00:00:00.000Z';
   const base = { requestId: 'req-00000001', projectId: room.id, createdBy: 'human' as const, host: 'cockpit-dev', cwd: '/w', repository: null, branch: null, worktree: false, nativeSessionId: null, pid: 1, exitCode: null, failure: null, billing: 'sub', createdAt: at, updatedAt: at, stateAt: at };
-  const text = projectInstructions(room, lead, [
-    { ...base, id: 'cs_' + 'a'.repeat(24), title: 'Test', kind: 'claude', owner: 'human', state: 'running' },
-    { ...base, id: 'cs_' + 'b'.repeat(24), title: 'Old', kind: 'codex', owner: 'none', state: 'exited' },
-  ]);
-  expect(text).toContain('- Test · claude · running · Neal has input · id cs_' + 'a'.repeat(24));
-  expect(text).toContain('Recently ended:');
+  const running = { ...base, id: 'cs_' + 'a'.repeat(24), title: 'Test', kind: 'claude' as const, owner: 'human' as const, state: 'running' as const };
+  const ended = { ...base, id: 'cs_' + 'b'.repeat(24), title: 'Old', kind: 'codex' as const, owner: 'none' as const, state: 'exited' as const };
+  const text = projectInstructions(room, lead, [running, ended]);
+  expect(text).toContain('- Test · claude · id cs_' + 'a'.repeat(24));
+  expect(text).not.toContain('Old');
+  // Handing a terminal over or a state flip must not change the prompt prefix.
+  expect(projectInstructions(room, lead, [{ ...running, owner: 'lead', state: 'waiting_for_input', updatedAt: '2026-11-12T01:00:00.000Z' }, ended])).toBe(text);
   expect(projectInstructions(room, lead, null)).toContain('could not be read');
-  expect(projectInstructions(room, lead, [])).toContain('Terminal sessions: none yet.');
+  expect(projectInstructions(room, lead, [])).toContain('Terminal sessions: none open.');
   expect(projectInstructions(room, lead)).not.toContain('Terminal sessions');
 });

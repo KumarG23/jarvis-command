@@ -25,18 +25,19 @@ export function projectInstructions(room: ProjectRoom, sessionId: string, termin
   return text.length <= MAX_PROJECT_INSTRUCTIONS ? text : `${text.slice(0, MAX_PROJECT_INSTRUCTIONS - 30)}\n[project context truncated]`;
 }
 
-const OWNER = { human: 'Neal has input', lead: 'you (lead) have input', none: 'nobody has input' } as const;
+// Hermes appends run instructions to the system prompt, ahead of the history, so any change
+// here costs a prompt-cache miss for the whole conversation. Only list what changes rarely:
+// which terminals are open. State and who has input change often; the lead reads those
+// through the cockpit tools.
 function terminalLines(terminals: readonly CockpitSession[] | null | undefined): string[] {
   if (terminals === undefined) return [];
   if (terminals === null) return ['Terminal sessions: could not be read right now.'];
-  const live = terminals.filter(session => !['stopped', 'exited', 'failed', 'lost'].includes(session.state));
-  const recent = terminals.filter(session => !live.includes(session)).slice(-5);
-  if (!live.length && !recent.length) return ['Terminal sessions: none yet.'];
-  const line = (session: CockpitSession) => `- ${session.title} · ${session.kind} · ${session.state} · ${OWNER[session.owner]} · id ${session.id}${session.branch ? ` · branch ${session.branch}` : ''}`;
+  const open = terminals.filter(session => !['stopped', 'exited', 'failed', 'lost'].includes(session.state))
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  if (!open.length) return ['Terminal sessions: none open.'];
   return [
-    'Terminal sessions in this project (official CLIs and shells on the cockpit host). You can see all of them; you can only type into one while you have input. Use the cockpit tools to read their output when they are available to you.',
-    ...live.slice(0, 30).map(line),
-    ...(recent.length ? ['Recently ended:', ...recent.map(line)] : []),
+    'Open terminal sessions in this project (official CLIs and shells on the cockpit host). You can see all of them; you can type into one only while you have input. Use the cockpit tools for their current state and output when they are available to you.',
+    ...open.slice(0, 30).map(session => `- ${session.title} · ${session.kind} · id ${session.id}`),
   ];
 }
 
