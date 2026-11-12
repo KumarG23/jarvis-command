@@ -69,7 +69,7 @@ Logs record only the route, status and error type, never the key, prompt, label 
    ```
    command-scheduled-run.sh room_… "Morning homelab check" "Check disk usage on every server and tell me anything over 80%."
    ```
-   The script's id is derived from the project, label, prompt and current minute, so a retry within the same minute replays the same run instead of starting another. It retries a busy chat (409) three times, and exits 3 when refused and 4 when unavailable.
+   Give each timer occurrence a UUID that the scheduler saves before the first attempt, and pass it as `COMMAND_SCHEDULED_OCCURRENCE`. A retry with it replays the same run, even after a restart. Without it, the script derives an id from the project, label, prompt and the minute it started, which only protects retries within that one process. The key goes to curl through a config file, never on the command line, and the response file comes from `mktemp`. It retries a busy chat (409) three times, and exits 3 when refused and 4 when unavailable.
 
 ## Acceptance
 
