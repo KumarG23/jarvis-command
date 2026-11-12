@@ -234,3 +234,21 @@ it('proves local VAPID/encrypted transport → worker display/dedupe/restart →
   await worker()('push', { data: { text: () => next, json: () => JSON.parse(next) } });
   expect(shown).toHaveBeenCalledTimes(1); // bounded receipts never evict/replay
 });
+
+it('puts the run output’s first line in a fallback push only when reply text is shown, and never stores it', async () => {
+  const h = await storeFixture();
+  await h.store.registerDevice(actor, subscription());
+  h.clock.now = new Date(Date.now() + 1000);
+  const bodies: string[] = [];
+  vi.spyOn(webpush, 'generateRequestDetails').mockImplementation(((_subscription: unknown, payload: string) => {
+    bodies.push(JSON.parse(payload).body as string);
+    return { headers: {}, body: Buffer.from('x') } as never;
+  }) as never);
+  const push = createPushService(config, h.store, vi.fn(async () => 201));
+  const notify = createRunNotifier(h.store, push);
+  await notify({ ...event(1), pushFallback: true, preview: 'Disk usage is fine on all servers.' });
+  await h.store.setPreferences(actor, { categories: { 'run-completed': true, 'run-failed': true, approval: true }, showReplyText: false });
+  await notify({ ...event(2), pushFallback: true, preview: 'Hidden answer' });
+  expect(bodies).toEqual(['Disk usage is fine on all servers.', 'Jarvis finished your request. Open the chat to read the answer.']);
+  expect(JSON.stringify((await h.store.read(actor)).items)).not.toMatch(/Disk usage|Hidden/);
+});

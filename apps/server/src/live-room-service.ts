@@ -1,3 +1,4 @@
+import { replyPreview } from './reply-preview';
 import { requireRoutingWrites } from './routing-write-state';
 import { projectInstructions } from './project-context';
 import { createRoutingDefaults, RoutingRefusedError, RoutingUnavailableError } from './routing-defaults';
@@ -113,6 +114,15 @@ export class LiveRoomNotFoundError extends Error {
   }
 }
 
+/**
+ * First line of the run's final output, for a finished-run push that has no verified reply item.
+ * Specific text reads as a real message; Chrome flags vague generic pushes as possible spam.
+ */
+function fallbackPreview(output: string | null | undefined): { preview?: string } {
+  const preview = replyPreview(output ?? '');
+  return preview ? { preview } : {};
+}
+
 export function createLiveRoomService({
   client,
   ledger,
@@ -187,7 +197,7 @@ export function createLiveRoomService({
     if (!notify) return;
     const base = { actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId };
     // Without a verified reply (no history binding), the finished-run item carries the push instead.
-    if (upstream.status === 'completed' && terminalAt) await notify({ ...base, eventAt: terminalAt, category: 'run-completed', ...(replied ? {} : { pushFallback: true }) });
+    if (upstream.status === 'completed' && terminalAt) await notify({ ...base, eventAt: terminalAt, category: 'run-completed', ...(replied ? {} : { pushFallback: true, ...fallbackPreview(upstream.output) }) });
     else if (upstream.status === 'failed' && terminalAt) await notify({ ...base, eventAt: terminalAt, category: 'run-failed' });
     else if (upstream.status === 'waiting_for_approval' && upstream.approval) {
       await notify({ ...base, eventAt: now().toISOString(), category: 'approval', key: upstream.approval.requestId });
@@ -766,7 +776,7 @@ export function createLiveRoomService({
             const confirmed = await client.getRun(record.upstreamRunId!).catch(() => null);
             if (confirmed && confirmed.runId === record.upstreamRunId && confirmed.sessionId === record.sessionId && confirmed.kind !== 'context_compaction') {
               const replied = event.type === 'run.completed' ? await notifyReply?.({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, eventAt: terminalAt }) ?? false : true;
-              await notify?.({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, eventAt: terminalAt, category: event.type === 'run.completed' ? 'run-completed' : 'run-failed', ...(replied ? {} : { pushFallback: true }) });
+              await notify?.({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, eventAt: terminalAt, category: event.type === 'run.completed' ? 'run-completed' : 'run-failed', ...(replied ? {} : { pushFallback: true, ...(event.type === 'run.completed' ? fallbackPreview(confirmed.output) : {}) }) });
             }
           }
         }

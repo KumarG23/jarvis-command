@@ -111,10 +111,13 @@ export function createPushService(config: PushConfig, store: NotificationStore, 
       return replyPushPayload(item);
     }) : Promise.resolve(),
     /** Generic finished-run push, used only when no reply item could be verified for the run. */
-    deliverRun: (actor: string, id: string) => config.replies ? send(actor, id, () => store.claimRunPush(actor, id), async () => {
-      const item = await store.find(actor, id);
+    // `preview` is the run output's first line. It is used only when "Show reply text" is on and
+    // is never stored; specific text also keeps Chrome from flagging a vague push as spam.
+    deliverRun: (actor: string, id: string, preview?: string) => config.replies ? send(actor, id, () => store.claimRunPush(actor, id), async () => {
+      const [item, view] = await Promise.all([store.find(actor, id), store.read(actor)]);
       if (item?.category !== 'run-completed') throw new Error('Not a finished run');
-      return replyPushPayload({ id: item.id, title: 'Jarvis replied', body: 'Open the chat to read it.' });
+      const body = preview && view.preferences.showReplyText !== false ? preview : 'Jarvis finished your request. Open the chat to read the answer.';
+      return replyPushPayload({ id: item.id, title: 'Jarvis replied', body });
     }) : Promise.resolve(),
     /**
      * Delivered reminder or cron result. Pushed whenever Web Push is available: unlike a reply, the

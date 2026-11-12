@@ -15,6 +15,8 @@ export type RunNotification = Readonly<{
   key?: string;
   /** Also push this run-completed item (generic text) because no reply item was verified for it. */
   pushFallback?: boolean;
+  /** Bounded first line of the run's output. Goes only into the encrypted push, never the inbox item. */
+  preview?: string;
 }>;
 /** Resolves true only when the event is durably accounted for (created, duplicate or suppressed). */
 export type RunNotifier = (event: RunNotification) => Promise<boolean>;
@@ -42,7 +44,7 @@ export function createRunNotifier(store: NotificationStore, push?: PushService, 
       });
       // Only the call that created the item may push, and never while the chat is on screen.
       if (result === 'created' && event.pushFallback && event.category === 'run-completed'
-        && !presence?.visible(event.actor, event.sessionId)) await push?.deliverRun(event.actor, id);
+        && !presence?.visible(event.actor, event.sessionId)) await push?.deliverRun(event.actor, id, event.preview);
       return true;
     } catch { return false; /* surfaced by the inbox read path */ }
   };
