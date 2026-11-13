@@ -1,6 +1,6 @@
 # Hermes host admin shell (proposed contract)
 
-Status: built 2026-11-13, not deployed. Neal chose the privilege model: no password for Hermes restarts, a password for every other sudo.
+Status: deployed on the Dell 2026-11-13 (Jarvis, PR #177 comment 6862684459). Neal restarted the gateway from it on his phone, and the shell stayed connected (acceptance 1–2). Acceptance 3 (open a new shell while the gateway is stopped) is still open. Privilege model: no password for Hermes restarts, a password for every other sudo.
 
 ## Requirement (Neal, via Jarvis, PR #177 comment 6861825993)
 
