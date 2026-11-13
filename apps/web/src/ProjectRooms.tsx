@@ -21,6 +21,7 @@ async function request(path: string, body?: unknown) {
     ...(body === undefined ? {} : { method: 'POST', body: JSON.stringify(body) }) });
   if (response.status === 404 && body !== undefined && /^\/api\/rooms\/room_[a-f0-9]{32}$/.test(path)) throw Error('Project editing is unavailable on this server, or this project no longer exists. Your draft is kept here until you reload or cancel. Reload projects to check availability.');
   if (!response.ok && /\/delete$/.test(path)) { const body = await response.json().catch(() => null) as { error?: string } | null; throw Error(body?.error ?? 'Project deletion could not be confirmed.'); }
+  if (!response.ok && /\/deletion$/.test(path)) throw Error('Could not check this project for deletion: Jarvis did not confirm its linked chats. Nothing was changed. Try again shortly.');
   if (!response.ok) throw Error('Project operation could not be confirmed. Reload projects before retrying; the change may already have been saved.');
   return response.json() as Promise<unknown>;
 }
@@ -323,7 +324,8 @@ export function ProjectRooms({ ref, sessions, threadStates = {}, statusClock, se
   async function deleteProject() {
     if (!projectDelete || deleteUncertain) return;
     const target = projectDelete;
-    for (const id of rooms.find(room => room.id === target.roomId)?.sessionIds ?? []) await resolveSession(id);
+    // Keep linked chats in the chat list after unlinking. A chat Hermes no longer has is skipped; the server decides.
+    for (const id of rooms.find(room => room.id === target.roomId)?.sessionIds ?? []) await resolveSession(id).catch(() => undefined);
     // Set before dispatch: an uncertain acknowledgement never permits a resend.
     setDeleteUncertain(true);
     let failure: unknown;
@@ -444,6 +446,7 @@ export function ProjectRooms({ ref, sessions, threadStates = {}, statusClock, se
     })}
     <label className="sidebar-search"><Search size={17} /><input ref={search} type="search" aria-label="Search projects and chats" placeholder="Search" value={query} onChange={event => setQuery(event.target.value)} />{query ? <button className="icon-button" type="button" aria-label="Clear search" onClick={() => setQuery('')}><X size={15} /></button> : null}</label>
     <div className="sidebar-scroll">
+      {error && !open ? <p role="alert" className="notice error sidebar-error">{error} <button className="text-button" type="button" disabled={busy} onClick={() => void perform(() => load(selected?.id))}>Reload projects</button></p> : null}
       <nav aria-label="Projects" className="sidebar-section"><div className="section-heading"><h2>Projects</h2><button className="icon-button" type="button" aria-label="New project" disabled={busy || !!draft} onClick={event => showDetails(event.currentTarget, true)}><Plus size={17} /></button></div>
         {!loaded ? <p className="empty-copy">Loading projects…</p> : !rooms.length ? <p className="empty-copy">No projects yet.</p> : !filtered.length ? <p className="empty-copy">No matching projects.</p> : null}
         {filtered.map((room, index) => <div key={room.id} className="project-nav-group">{room.archived && !filtered[index - 1]?.archived ? <h3 className="section-heading">Archived projects</h3> : null}<div className="project-nav-row"><button type="button" className="sidebar-item project-nav" title={room.name} disabled={busy || !!draft} aria-current={selected?.id === room.id ? 'page' : undefined} aria-expanded={expanded === room.id} onClick={() => {
@@ -456,7 +459,6 @@ export function ProjectRooms({ ref, sessions, threadStates = {}, statusClock, se
         </div> : null}</div>)}
       </nav>
       <nav aria-label="Recent chats" className="sidebar-section"><div className="section-heading"><h2>Recent chats</h2></div>{recent.length ? ordered(recent.map(session => session.id)).map(id => recent.find(session => session.id === id)!).map(session => <div className="recent-chat-row" key={session.id}><button type="button" className="sidebar-item chat-item" aria-label={session.title} disabled={busy || !!draft} aria-current={!selected && selectedSessionId === session.id ? 'page' : undefined} title={session.ownership === 'external' ? `${session.title} · Read-only` : session.title} onClick={() => void perform(() => chooseChat(session))}><MessageSquare size={17} /><span><span className="chat-item-title">{session.title}</span>{icon(session.id)}</span>{session.ownership === 'external' ? <span className="read-only-dot" aria-label="Read-only chat" /> : null}</button><button className="icon-button chat-row-action" type="button" aria-label={`Add ${session.title} to project`} disabled={busy || !rooms.length} onClick={() => { setProjectTarget(session); setTargetRoomId(rooms[0]?.id ?? ''); }}><FolderPlus size={15} /></button>{session.ownership === 'command' ? <button className="icon-button chat-row-action danger" type="button" aria-label={`Delete ${session.title}`} disabled={busy} onClick={() => setDeleteTarget(session)}><Trash2 size={15} /></button> : null}</div>) : <p className="empty-copy">{query ? 'No matching chats.' : 'Your chats will appear here.'}</p>}</nav>
-      {error && !open ? <p role="alert" className="notice error">{error} <button className="text-button" type="button" disabled={busy} onClick={() => void perform(() => load(selected?.id))}>Reload projects</button></p> : null}
     </div>
     {projectTarget ? <div className="action-dialog-backdrop"><section className="action-dialog" role="dialog" aria-modal="true" aria-labelledby="add-chat-title"><h2 id="add-chat-title">Add chat to project</h2><p>{projectTarget.title}</p><label>Project<select value={targetRoomId} disabled={busy} onChange={event => setTargetRoomId(event.target.value)}>{rooms.map(room => <option key={room.id} value={room.id}>{room.name}</option>)}</select></label><div className="button-row"><button className="primary-button" type="button" disabled={busy || !targetRoomId} onClick={() => void perform(async () => { await linkToProject(targetRoomId, projectTarget.id, false); setProjectTarget(null); })}>Add to project</button><button className="secondary-button" type="button" disabled={busy} onClick={() => setProjectTarget(null)}>Cancel</button></div></section></div> : null}
     {projectDelete ? createPortal(<div className="action-dialog-backdrop project-delete-backdrop"><section className="action-dialog project-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-project-title" onKeyDown={event => {

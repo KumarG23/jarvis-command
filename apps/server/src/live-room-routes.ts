@@ -19,7 +19,7 @@ import type { AppConfig } from './config';
 import type { createLiveRoomService } from './live-room-service';
 import { KeyedSerialQueue } from './keyed-serial-queue';
 import { registerNotificationRoutes } from './notification-routes';
-import { LiveRoomConflictError } from './live-room-service';
+import { LiveRoomConflictError, isMissingSession } from './live-room-service';
 import type { ArtifactStore } from './artifact-store';
 import type { NotificationStore } from './notification-store';
 import type { Presence, ReplyEvidenceSource } from './reply-notifier';
@@ -147,7 +147,7 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
       return { roomId: room.id, name: room.name, chats: room.sessionIds.length, artifacts: artifactStore ? ids.length : null,
         token: createHash('sha256').update(JSON.stringify({ room, ids })).digest('hex'),
         enabled: dependencies.config.projectDeletionEnabled === true && !!artifactStore,
-        availabilityReason: !dependencies.config.projectDeletionEnabled ? 'Project deletion is unavailable: disabled on this server.' : 'Project deletion is unavailable: artifact counts cannot be verified.', contentsAvailable: false as const,
+        availabilityReason: !dependencies.config.projectDeletionEnabled ? 'Project deletion is turned off on this server (PROJECT_DELETION_MODE). Nothing was changed.' : 'Project deletion is unavailable because reference file storage is off on this server, so project files cannot be counted. Nothing was changed.', contentsAvailable: false as const,
         reason: 'Deleting contents is unavailable because safe recovery of chats and artifacts is not supported.' };
     };
     routes.get('/api/rooms/:roomId/deletion', { exposeHeadRoute: false }, async (request, reply) => {
@@ -155,8 +155,9 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
       const room = (await rooms!.list()).find(item => item.id === roomId);
       if (!room) throw Object.assign(Error('Project missing'), { statusCode: 404 });
       for (const id of room.sessionIds) {
-        const { session } = await dependencies.liveRoom!.getSession(subjects.get(request)!, id);
-        if (session.id !== id) throw new RoomStorageError();
+        // Chats Hermes no longer has (old test chats) don't block removing the project; they are only unlinked.
+        const read = await dependencies.liveRoom!.getSession(subjects.get(request)!, id).catch((error: unknown) => { if (isMissingSession(error)) return null; throw error; });
+        if (read && read.session.id !== id) throw new RoomStorageError();
       }
       return reply.header('cache-control', 'no-store').send(await deletionPreview(room));
     });

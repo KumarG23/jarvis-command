@@ -55,6 +55,7 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 .sidebar-scroll > .sidebar-section { margin-bottom: 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 .sidebar-scroll > .sidebar-section[aria-label="Projects"] { flex: 0 1 auto; max-height: 55%; }
 .sidebar-scroll > .sidebar-section[aria-label="Recent chats"] { flex: 1 1 0; min-height: 132px; border-top: 1px solid var(--border); }
+.sidebar-scroll > .sidebar-error { flex: 0 0 auto; margin: 0; max-height: 40%; overflow-y: auto; }
 .sidebar-scroll > .sidebar-section > .section-heading { position: sticky; top: 0; z-index: 1; margin-bottom: 4px; background: var(--sidebar); }
 .section-heading { display: flex; align-items: center; justify-content: space-between; margin: 0 0 8px; min-height: 44px; padding-left: 8px; }
 .section-heading h2 { font-size: 12px; color: var(--muted); font-weight: 500; margin: 0; }

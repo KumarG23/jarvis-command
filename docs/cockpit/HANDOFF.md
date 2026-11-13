@@ -48,7 +48,7 @@ Ordered by Discord-replacement value. Each line gives the state, owner and next 
 6. **Host shell remaining check:** with `hermes-gateway` stopped, open a new shell and start it again.
 7. **P13 thread status, unread, per-thread model:** deployed; convergence/reload/phone acceptance outstanding.
 8. **P12 reactions:** behind a disabled flag; needs Hermes #166 (exact-message binding). Owner: Jarvis, then Claude.
-9. **P9.6 delete projects and recovery:** deletion enablement outstanding; live deletion needs Neal.
+9. **Project deletion (P9.6):** Neal wants to remove old test projects himself. "Delete project only" unlinks chats and files (they stay as standalone items) after a retained snapshot. Runtime needs `PROJECT_DELETION_MODE=enabled` and artifact storage on (`ARTIFACTS_MODE=enabled`, `ARTIFACT_STORAGE_PATH`). Since the deletion-check fix, linked chats that Hermes no longer has no longer block it, and failures show a visible message. Contents deletion stays unavailable.
 10. **P10.5 OpenRouter free routes:** deployed; accept in the picker. P10.4 Anthropic is off by owner decision.
 11. **P14 Studio crew view:** blocked; Dev Studio is paused. Neal decides whether to resume Studio or retarget the view.
 12. **Ops:** `npm audit` (no high/critical), optional release pipeline on VM118, VM113 deletion (Neal only).

@@ -54,10 +54,14 @@ import type { AuditDraft, AuditRunRecord, AuditLedger } from './audit-ledger';
 import type { RunNotifier } from './run-notifier';
 import type { ReplyNotifier } from './reply-notifier';
 import {
+  CommandProxyUnavailableError,
   type CommandProxyClient,
   type CommandRunEvent,
   type CommandRunStatus,
 } from './command-client';
+
+/** Hermes says the chat no longer exists (deleted or expired). Unlinking it from a project is safe. */
+export const isMissingSession = (error: unknown) => error instanceof CommandProxyUnavailableError && error.statusCode === 404;
 
 const PUBLIC_RUN_ID = /^jcr_[a-f0-9]{32}$/;
 const TERMINAL_STATES = new Set<LiveRunState>([
@@ -556,8 +560,9 @@ export function createLiveRoomService({
       sessionIds.forEach(id => submittingSessions.add(id));
       try {
         for (const id of sessionIds) {
-          const { session } = await client.getSession(id);
-          if (session.id !== id) throw new LiveRoomNotFoundError();
+          // A linked chat that Hermes no longer has is only unlinked; any other read failure still blocks.
+          const read = await client.getSession(id).catch((error: unknown) => { if (isMissingSession(error)) return null; throw error; });
+          if (read && read.session.id !== id) throw new LiveRoomNotFoundError();
         }
         const audit = { actor: actorFingerprint(subject), sessionId: projectId, publicRunId: null, clientRequestId: null, upstreamRunId: null, requestId: null, requestFingerprint: null, status: null, choice: null };
         // sessionId is the ledger's scope identifier here: exactly the room id.

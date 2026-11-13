@@ -697,3 +697,27 @@ it('keeps legacy and unknown identity metadata through unrelated edit/archive pa
   expect(writes).toHaveLength(2);
   for (const write of writes) { expect(write).not.toHaveProperty('projectIcon'); expect(write).not.toHaveProperty('projectColor'); }
 });
+it('shows a visible message when the deletion check fails instead of silently doing nothing', async () => {
+  const writes: string[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (path: string, init?: RequestInit) => {
+    if (init?.method) writes.push(path);
+    if (path.endsWith('/deletion')) return Response.json({ error: 'upstream' }, { status: 502 });
+    return Response.json({ version: 1, rooms: [room] });
+  }));
+  render(<ProjectRooms sessions={[]} onScope={vi.fn()} onSession={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: `Delete project ${room.name}` }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not check this project for deletion');
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(writes).toEqual([]);
+});
+it('explains why deletion is unavailable when the server has it turned off', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (path: string) => {
+    if (path.endsWith('/deletion')) return Response.json({ roomId: room.id, name: room.name, chats: 0, artifacts: 0, token: 'a'.repeat(64), enabled: false, availabilityReason: 'Project deletion is turned off on this server (PROJECT_DELETION_MODE). Nothing was changed.', contentsAvailable: false, reason: 'Unsupported' });
+    return Response.json({ version: 1, rooms: [room] });
+  }));
+  render(<ProjectRooms sessions={[]} onScope={vi.fn()} onSession={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: `Delete project ${room.name}` }));
+  const dialog = await screen.findByRole('dialog', { name: 'Delete project?' });
+  expect(dialog).toHaveTextContent('turned off on this server');
+  expect(within(dialog).getByRole('button', { name: 'Delete project only' })).toBeDisabled();
+});
