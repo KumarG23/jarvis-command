@@ -502,6 +502,7 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
   .sidebar-footer { padding-block: 8px; }
 }
 
+.steer-hint { flex: 1 1 100%; margin: 0 0 4px; color: var(--amber); font-size: 12px; }
 .project-input-preview { flex: 1 1 100%; min-width: 0; max-width: 100%; font-size: .8rem; }
 .project-input-preview summary { cursor: pointer; padding: .5rem 0; }
 .project-input-preview pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow: auto; }

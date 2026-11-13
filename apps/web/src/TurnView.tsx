@@ -290,7 +290,7 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
   }, [projectSnapshot, projectId, sessionId, isLead, allowed, draftsAuthorized, rosterRetry]);
   const ownDrafts = useComposerDrafts();
   const memory = retainedDrafts ?? ownDrafts;
-  const { steers, setSteers, steerVersions, imagesBySession, setImagesBySession, imageBusy, setImageBusy, imageError, setImageError } = memory;
+  const { imagesBySession, setImagesBySession, imageBusy, setImageBusy, imageError, setImageError } = memory;
   const { draft, draftsRef, setRoomDraft, clearForSend, storageUnavailable } = useTextDraft(sessionId, allowed && draftsAuthorized, memory.text);
   const picker = useRef<HTMLDetailsElement>(null);
   useEffect(() => { if (picker.current) picker.current.open = false; }, [sessionId]);
@@ -329,11 +329,6 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
   const imageInput = useRef<HTMLInputElement>(null);
   const images = sessionId ? imagesBySession[sessionId] ?? [] : [];
   const setDraft = (value: string) => { if (sessionId) setRoomDraft(sessionId, value); };
-  const steerDraft = sessionId ? steers[sessionId] ?? '' : '';
-  const setSteerDraft = (room: string, value: string) => {
-    steerVersions.current[room] = (steerVersions.current[room] ?? 0) + 1;
-    setSteers((previous) => ({ ...previous, [room]: value }));
-  };
   const handoff = (recovery: DraftRecovery, append: boolean) => {
     const room = recovery.intent.sessionId;
     if (room !== sessionId || !allowed || !draftsAuthorized) return;
@@ -368,11 +363,15 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
       .finally(() => { if (active) setInventoryBusy(false); });
     return () => { active = false; controller.abort(); };
   }, [allowed, inventoryRetry]);
+  // While a run is active, the normal message box steers it: one place to type, no separate steer box.
+  const steerable = allowed && !!sessionId && !!turn && turn.identityVerified && !turn.done && !!turn.publicRunId && turn.intent.sessionId === sessionId;
   const queue = async () => {
-    if (!allowed || !sessionId || !turn || !turn.identityVerified || turn.done || turn.intent.sessionId !== sessionId || turn.controlBusy || !steerDraft.trim() || steerDraft.length > maxSteer) return;
-    const room = sessionId; const run = turn; const version = steerVersions.current[room];
-    const accepted = await steer(run, steerDraft, maxSteer);
-    if (accepted && latestTurn.current?.intent === run.intent && steerVersions.current[room] === version) setSteerDraft(room, '');
+    const text = draft;
+    if (!steerable || !turn || turn.controlBusy || !text.trim() || text.length > maxSteer) return;
+    const room = sessionId!; const run = turn;
+    const accepted = await steer(run, text, maxSteer);
+    // Clear only if the box still holds exactly what was sent; newer edits are kept.
+    if (accepted && latestTurn.current?.intent === run.intent && (draftsRef.current[room] ?? '') === text) setRoomDraft(room, '');
   };
   const busy = blocked || !draftsAuthorized || (!!turn && !turn.done);
   const selectedOption = inferenceOptions?.options.find(option => `${option.provider}:${option.model}` === selectedModel);
@@ -540,22 +539,17 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
     {turn?.phase === 'Admission uncertain — retry the same intent' ? <button className="primary-button" type="button" onClick={retry}>Retry same intent</button> : null}
     {turn && !turn.done && !turn.publicRunId && turn.phase.startsWith('Admission unknown') ? <button className="primary-button" type="button" onClick={resume}>Check admission status</button> : null}
     {turn && !turn.done && turn.publicRunId && turn.phase.startsWith('Disconnected') ? <button className="primary-button" type="button" onClick={resume}>Resume status check</button> : null}
-    {allowed && turn && turn.identityVerified && !turn.done && turn.publicRunId && turn.intent.sessionId === sessionId ? <form className="turn-composer" onSubmit={(event) => { event.preventDefault(); void queue(); }}>
-      <textarea aria-label="Steer Jarvis" maxLength={maxSteer} value={steerDraft} onChange={(event) => setSteerDraft(sessionId!, event.target.value)} />
-      <button className="primary-button" type="submit" disabled={turn.controlBusy || !steerDraft.trim() || steerDraft.length > maxSteer}>Queue steer</button>
-      <p>Queue guidance for this run; acknowledgement does not mean execution.</p>
-    </form> : null}
     {allowed && draftsAuthorized ? recoveries.filter((item) => item.intent.sessionId === sessionId).map((item, index) => <section key={index} aria-label="Recover steer draft">
       <p>{item.kind === 'refused' ? 'Not sent — model refused' : item.kind === 'terminal' ? 'Unconsumed terminal steer' : 'Unconfirmed steer — may already be queued; no automatic retry'}</p><pre>{item.input}</pre>
       <button type="button" disabled={!!draft} onClick={() => handoff(item, false)}>Restore to empty draft</button>
       <button type="button" onClick={() => handoff(item, true)}>Append to draft</button>
     </section>) : null}
-    {allowed ? <form className="turn-composer" onSubmit={(event) => { event.preventDefault(); void submit(); }} onDragOver={(event) => {
+    {allowed ? <form className="turn-composer" onSubmit={(event) => { event.preventDefault(); void (steerable ? queue() : submit()); }} onDragOver={(event) => {
       if (!imageAttachmentsEnabled) return;
       if (Array.from(event.dataTransfer.items).some(item => item.kind === 'file' && item.type.startsWith('image/'))) event.preventDefault();
     }} onDrop={(event) => { if (!imageAttachmentsEnabled) return; const files = Array.from(event.dataTransfer.files); if (files.some(file => file.type.startsWith('image/'))) { event.preventDefault(); void attachImages(files); } }}>
       {inferenceTarget ? createPortal(inferencePicker, inferenceTarget) : inferencePicker}
-      {projectId ? <details className="project-input-preview"><summary>{displayedProject ? 'Project context included' : 'Project context awaiting readback'} · {composeProjectInput(draft.trim() || (images.length ? 'Review the attached image.' : ''), displayedProject, displayedRoster, sessionId).length} / {max} characters</summary>{displayedProject ? <><pre>{projectContext(displayedProject)}{displayedRoster ? `\n\n${rosterContext(displayedRoster)}` : ''}</pre>{isLead ? <><p>{displayedRoster ? 'Lead roster included. Review the complete bounded context above.' : rosterError || 'Lead roster loading; sending requires review.'}</p><button type="button" disabled={preflighting} onClick={() => setRosterRetry(value => value + 1)}>Refresh lead roster</button></> : null}</> : <p>Project context must be read back before sending.</p>}<p>Included as ordinary message text on new sends. Saved non-image files are not delivered to Hermes. Use Attach image explicitly for images.</p></details> : null}
+      {projectId && !steerable ? <details className="project-input-preview"><summary>{displayedProject ? 'Project context included' : 'Project context awaiting readback'} · {composeProjectInput(draft.trim() || (images.length ? 'Review the attached image.' : ''), displayedProject, displayedRoster, sessionId).length} / {max} characters</summary>{displayedProject ? <><pre>{projectContext(displayedProject)}{displayedRoster ? `\n\n${rosterContext(displayedRoster)}` : ''}</pre>{isLead ? <><p>{displayedRoster ? 'Lead roster included. Review the complete bounded context above.' : rosterError || 'Lead roster loading; sending requires review.'}</p><button type="button" disabled={preflighting} onClick={() => setRosterRetry(value => value + 1)}>Refresh lead roster</button></> : null}</> : <p>Project context must be read back before sending.</p>}<p>Included as ordinary message text on new sends. Saved non-image files are not delivered to Hermes. Use Attach image explicitly for images.</p></details> : null}
       {preflighting ? <p role="status">Checking saved context and requested model…</p> : null}
       {preflightError || problem || inferenceError ? <p role="status">{preflightError || problem || 'Model choices unavailable; explicitly selected Inherit remains available.'}</p> : null}
       {storageUnavailable ? <p role="status">Draft storage unavailable or full. Text remains in this tab; reload may lose recent edits. Sending requires safely clearing the saved draft.</p> : null}
@@ -565,14 +559,17 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
       {imageError ? <p role="alert">{imageError}</p> : null}
       {imageAttachmentsEnabled ? <><input ref={imageInput} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-label="Attach images" onChange={event => { void attachImages(event.target.files); }} />
       <button className="icon-button attach-image" type="button" disabled={busy || preflighting || imageBusy || images.length >= 4} aria-label="Attach image" title="Attach image" onClick={() => imageInput.current?.click()}><ImagePlus size={19} /></button></> : null}
-      <textarea placeholder="Message Jarvis…" aria-label="Message Jarvis" maxLength={max} value={draft} disabled={busy || preflighting} onPaste={(event) => {
+      {steerable ? <p className="steer-hint" role="status">Jarvis is working. Anything you send now steers this run.</p> : null}
+      <textarea placeholder={steerable ? 'Steer Jarvis…' : 'Message Jarvis…'} aria-label="Message Jarvis" maxLength={steerable ? maxSteer : max} value={draft} disabled={steerable ? false : busy || preflighting} onPaste={(event) => {
         if (!imageAttachmentsEnabled) return;
         const pasted = Array.from(event.clipboardData.files).filter(file => file.type.startsWith('image/'));
         if (pasted.length) { event.preventDefault(); void attachImages(pasted); }
       }} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => {
-        if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); void submit(); }
+        if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) { event.preventDefault(); void (steerable ? queue() : submit()); }
       }} />
-      <button className="primary-button" type="submit" disabled={busy || preflighting || imageBusy || (!draft.trim() && !images.length) || draft.length > max} aria-label="Send message" title="Send message"><ArrowUp size={20} /></button>
+      {steerable
+        ? <button className="primary-button" type="submit" disabled={!!turn?.controlBusy || !draft.trim() || draft.length > maxSteer} aria-label="Send message" title="Steer Jarvis"><ArrowUp size={20} /></button>
+        : <button className="primary-button" type="submit" disabled={busy || preflighting || imageBusy || (!draft.trim() && !images.length) || draft.length > max} aria-label="Send message" title="Send message"><ArrowUp size={20} /></button>}
     </form> : <p className="composer-feedback">{sessionId ? 'Messaging is unavailable for this chat.' : 'Choose New chat to begin.'}</p>}
     <details className="turn-limit"><summary>Connection & recovery details</summary><p>One writer per chat in this tab; the server enforces cross-tab/session concurrency. Only opaque session, project, request and run identifiers are stored for reload recovery. Requested model/effort preferences are stored locally per chat and application environment. Known runs resume by status reads, never message retransmission. Pending admission without a run ID uses a read-only request lookup and stays locked while the outcome is unknown. Unsent text drafts are saved in this tab (up to 32 chats, 16,000 characters per draft and 128 KiB total). Image bytes are never saved in draft storage. Drafts appear only after selected-chat access is confirmed; sending clears the saved text before admission.</p></details>
   </>;

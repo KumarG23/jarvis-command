@@ -850,13 +850,13 @@ it.each(['same', 'different'])('preserves a %s uncertain steer after terminal re
 const approval = { requestId: 'approval:exact', command: 'Synthetic command --target exact', description: 'Complete description', tool: 'terminal' };
 it('retains an edited steer draft after a successful queued acknowledgement', async () => {
   const fetchMock = setup(undefined, status('running')); await open(); await send();
-  fireEvent.change(screen.getByRole('textbox', { name: 'Steer Jarvis' }), { target: { value: 'original' } });
+  fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: 'original' } });
   let resolve!: (response: Response) => void;
   fetchMock.mockImplementationOnce(() => new Promise<Response>((done) => { resolve = done; }));
-  fireEvent.click(screen.getByRole('button', { name: 'Queue steer' }));
-  fireEvent.change(screen.getByRole('textbox', { name: 'Steer Jarvis' }), { target: { value: 'edited during request' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: 'edited during request' } });
   await act(async () => resolve(Response.json({ publicRunId: id, accepted: true, state: 'queued' })));
-  expect(screen.getByRole('textbox', { name: 'Steer Jarvis' })).toHaveValue('edited during request');
+  expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('edited during request');
   expect(screen.getByText(/Steer queued — not executed/)).toBeInTheDocument();
   expect(fetchMock.mock.calls.filter(([url]) => url.endsWith('/steer'))).toHaveLength(1);
 });
@@ -894,14 +894,15 @@ it.each(['offline', 'capability', 'disabled', 'external'])('removes active contr
   await chooseChat(session.title);
   await screen.findByText('No saved messages in session history yet.'); await send();
   act(() => Source.instances[0]!.emit('approval.request', { approval }));
-  expect(screen.getByRole('button', { name: 'Queue steer' })).toBeInTheDocument();
+  expect(screen.getByText(/Anything you send now steers this run/)).toBeInTheDocument();
   const changed = structuredClone(initial);
   if (gate === 'offline') changed.hermes.state = 'offline';
   if (gate === 'capability') changed.hermes.capabilities = [];
   if (gate === 'disabled') changed.command.liveRoom.enabled = false;
   await act(async () => rerender(<App loadBootstrap={async () => changed} />));
   if (gate === 'external') await chooseChat('External room');
-  for (const name of ['Approve once', 'Deny', 'Stop run', 'Queue steer']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+  for (const name of ['Approve once', 'Deny', 'Stop run']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+  expect(screen.queryByText(/Anything you send now steers this run/)).not.toBeInTheDocument();
   expect(fetchMock.mock.calls.filter(([url]) => /\/(approval|stop|steer)$/.test(url))).toHaveLength(0);
   await act(async () => Source.instances[0]!.onerror?.());
   expect(fetchMock.mock.calls.some(([url]) => url === `/api/live/runs/${id}`)).toBe(true);
@@ -909,15 +910,15 @@ it.each(['offline', 'capability', 'disabled', 'external'])('removes active contr
 it('queues exact steer with shared locking and restores authoritative terminal input once', async () => {
   const exact = '  focus here\nexactly  ';
   const fetchMock = setup(undefined, status('completed', { pendingSteer: exact })); await open(); await send();
-  const field = screen.getByRole('textbox', { name: 'Steer Jarvis' });
+  const field = screen.getByRole('textbox', { name: 'Message Jarvis' });
   fireEvent.change(field, { target: { value: ' ' } });
-  expect(screen.getByRole('button', { name: 'Queue steer' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
   fireEvent.change(field, { target: { value: 'x'.repeat(101) } });
-  expect(screen.getByRole('button', { name: 'Queue steer' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
   fireEvent.change(field, { target: { value: exact } });
   let resolve!: (response: Response) => void;
   fetchMock.mockImplementationOnce(() => new Promise<Response>((done) => { resolve = done; }));
-  fireEvent.click(screen.getByRole('button', { name: 'Queue steer' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
   expect(screen.getByRole('button', { name: 'Stop run' })).toBeDisabled();
   const posts = fetchMock.mock.calls.filter(([url]) => url.endsWith('/steer'));
   expect(posts).toHaveLength(1);
@@ -959,18 +960,18 @@ it('offers explicit recovery for an edited room draft and does not auto-restore 
 it.each(['missing', 'run', 'malformed', 'network', 'state', 'accepted'])('retains exact uncertain %s steer separately from newer edits', async (fault) => {
   const fetchMock = setup(undefined, status('running')); await open(); await send();
   const exact = '  original\nsteer  ';
-  fireEvent.change(screen.getByRole('textbox', { name: 'Steer Jarvis' }), { target: { value: exact } });
+  fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: exact } });
   let resolve!: (response: Response) => void;
   let reject!: (reason: Error) => void;
   fetchMock.mockImplementationOnce(() => new Promise<Response>((yes, no) => { resolve = yes; reject = no; }));
-  fireEvent.click(screen.getByRole('button', { name: 'Queue steer' }));
-  fireEvent.change(screen.getByRole('textbox', { name: 'Steer Jarvis' }), { target: { value: 'Newer edit' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: 'Newer edit' } });
   await act(async () => {
     if (fault === 'network') reject(new Error('SECRET'));
     else resolve(Response.json(fault === 'missing' ? {} : { publicRunId: fault === 'run' ? 'jcr_' + 'b'.repeat(32) : id, accepted: fault !== 'accepted', state: fault === 'state' ? 'executed' : 'queued', ...(fault === 'malformed' ? { extra: true } : {}) }));
   });
   expect(screen.getByText(/Steer outcome unconfirmed/)).toBeInTheDocument();
-  expect(screen.getByRole('textbox', { name: 'Steer Jarvis' })).toHaveValue('Newer edit');
+  expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('Newer edit');
   expect(screen.getByRole('region', { name: 'Recover steer draft' }).querySelector('pre')!.textContent).toBe(exact);
   expect(fetchMock.mock.calls.filter(([url]) => url.endsWith('/steer'))).toHaveLength(1);
   expect(document.body.textContent).not.toContain('SECRET');
@@ -1277,4 +1278,18 @@ it('keeps an ambiguous 503 routing failure as admission uncertain', async () => 
   await waitFor(() => expect(result.current.turn?.phase).toMatch(/Admission uncertain/));
   expect(result.current.recoveries).toEqual([]);
   unmount();
+});
+it('steers from the normal message box with Enter while a run is active, without starting a new run', async () => {
+  const fetchMock = setup(undefined, status('running')); await open(); await send();
+  const runsBefore = fetchMock.mock.calls.filter(([url, init]) => url === '/api/live/runs' && init?.method === 'POST').length;
+  expect(screen.queryByRole('textbox', { name: 'Steer Jarvis' })).not.toBeInTheDocument();
+  const box = screen.getByRole('textbox', { name: 'Message Jarvis' });
+  expect(box).toBeEnabled(); expect(box).toHaveAttribute('placeholder', 'Steer Jarvis…');
+  fetchMock.mockResolvedValueOnce(Response.json({ publicRunId: id, accepted: true, state: 'queued' }));
+  fireEvent.change(box, { target: { value: 'focus on the art plan' } });
+  await act(async () => { fireEvent.keyDown(box, { key: 'Enter' }); });
+  const steers = fetchMock.mock.calls.filter(([url]) => url.endsWith('/steer'));
+  expect(steers).toHaveLength(1); expect(steers[0]![1]!.body).toBe(JSON.stringify({ input: 'focus on the art plan' }));
+  expect(fetchMock.mock.calls.filter(([url, init]) => url === '/api/live/runs' && init?.method === 'POST')).toHaveLength(runsBefore);
+  await waitFor(() => expect(box).toHaveValue(''));
 });
