@@ -369,7 +369,7 @@ describe('Live Room history', () => {
     expect(screen.queryByText(/private upstream/)).not.toBeInTheDocument();
   });
 
-  it('bounds history to ten pages and labels the view limit instead of claiming the end', async () => {
+  it('loads remaining history pages automatically up to the page cap and labels the view limit', async () => {
     const fetchMock = vi.fn().mockImplementation((url: string) => {
       const offset = Number(new URL(url, 'http://localhost').searchParams.get('offset'));
       return Promise.resolve(Response.json(history('session_123', offset, Array.from({ length: 50 }, (_, i) => `Row ${offset + i}`), true)));
@@ -377,16 +377,12 @@ describe('Live Room history', () => {
     stubFetch(fetchMock);
     render(<App loadBootstrap={async () => liveBootstrap} />);
     await clickEnabled(/^Jarvis Command/);
-    for (let page = 1; page < 10; page += 1) {
-      await screen.findByText(`Row ${page * 50 - 1}`);
-      fireEvent.click(screen.getByRole('button', { name: 'Load more messages' }));
-    }
-    await screen.findByText('Row 499');
-    expect(screen.getByText('History view limit reached. More messages may exist.')).toBeInTheDocument();
+    await screen.findByText('Row 999', undefined, { timeout: 50_000 });
+    expect(await screen.findByText('History view limit reached. More messages may exist.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Load more messages' })).not.toBeInTheDocument();
     expect(screen.queryByText('End of history.')).not.toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(10);
-  }, 20_000);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/messages?'))).toHaveLength(20);
+  }, 60_000);
 
   it('opens mobile navigation and selects a chat without a second session picker', async () => {
     stubFetch(vi.fn().mockResolvedValue(Response.json(history())));

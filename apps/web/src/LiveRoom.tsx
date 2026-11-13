@@ -19,6 +19,8 @@ const FOCUS_NOTICE = {
   unavailable: 'Exact reply unavailable: it could not be located or displayed right now. Nothing else was highlighted.',
 } as const;
 
+const HISTORY_PAGE_CAP = 20;
+
 export function LiveRoom({ session, onHistory, reactions, reactionsAvailable = false, reactionsUnavailableReason, turns = [], renderTurn, onSaveResponse, threadProjectId, threadProjectSessionIds, onThreadLink, focusMessageId = null, onFocusSettled, reportPresence = false, readObservation, onLatestViewed, showDeliveries = false }: Readonly<{ showDeliveries?: boolean; readObservation?: string | undefined; onLatestViewed?: ((sessionId: string, messageId: string, position: number) => void) | undefined; focusMessageId?: string | null; onFocusSettled?: (() => void) | undefined; reportPresence?: boolean; session: SessionSummary; reactions?: MessageReactionClient | undefined; reactionsAvailable?: boolean | undefined; reactionsUnavailableReason?: string | undefined; onHistory: (sessionId: string, messages: SessionMessage[], complete: boolean) => void; turns?: Turn[]; renderTurn?: (turn: Turn) => ReactNode; onSaveResponse?: ((message: SessionMessage) => void) | undefined; threadProjectId?: string | null; threadProjectSessionIds?: readonly string[] | undefined; onThreadLink?: ((projectId: string, sessionId: string) => void) | undefined }>) {
   const reactionSessionWritable = session.ownership === 'command' && /^jc_[a-f0-9]{32}$/.test(session.id);
   const report = useRef(onHistory);
@@ -57,12 +59,20 @@ export function LiveRoom({ session, onHistory, reactions, reactionsAvailable = f
     } else if (error) finish('unavailable');
     else if (!loading && !hasMore) finish('missing');
     else if (!loading && hasMore) {
-      if (pagesLoaded >= 10) finish('incomplete');
+      if (pagesLoaded >= HISTORY_PAGE_CAP) finish('incomplete');
       else { setLoading(true); setOffset(nextOffset); }
     }
   }, [focus, messages, loading, error, hasMore, pagesLoaded, nextOffset]);
 
   useEffect(() => { report.current(session.id, messages, !loading && !error && !hasMore); }, [session.id, messages, loading, error, hasMore]);
+
+  // Load the rest of the history automatically: a chat is only usable (and sendable) once complete,
+  // so making the operator press "Load more" page after page only gets in the way. Still bounded.
+  useEffect(() => {
+    if (loading || error || !hasMore || pagesLoaded >= HISTORY_PAGE_CAP) return;
+    setLoading(true);
+    setOffset(nextOffset);
+  }, [loading, error, hasMore, pagesLoaded, nextOffset]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -160,7 +170,7 @@ export function LiveRoom({ session, onHistory, reactions, reactionsAvailable = f
       </div>
     </article>}{liveAfter(index)}</Fragment>)}
     {!loading && !error && messages.length > 0 && session.ownership === 'command' && !(renderTurn && turns.some(turn => turn.intent.sessionId === session.id && (!turn.done || turn.usage?.execution))) ? <HistoryReceipt key={session.id} sessionId={session.id} refreshKey={JSON.stringify(messages.map(message => message.id))} /> : null}
-    {!error && (hasMore && pagesLoaded >= 10 ? <p role="status">History view limit reached. More messages may exist.</p> : hasMore ? <button type="button" className="primary-button" disabled={loading} onClick={() => { setLoading(true); setOffset(nextOffset); }}>Load more messages</button> : null)}
+    {!error && (hasMore && pagesLoaded >= HISTORY_PAGE_CAP ? <p role="status">History view limit reached. More messages may exist.</p> : hasMore ? <button type="button" className="primary-button" disabled={loading} onClick={() => { setLoading(true); setOffset(nextOffset); }}>Load more messages</button> : null)}
   </>;
 }
 
