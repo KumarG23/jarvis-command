@@ -104,7 +104,11 @@ Do not deploy until the source is on VM118 and these steps are reviewed. Never p
    WantedBy=multi-user.target
    ```
    `KillMode=process` keeps the tmux server, and so the open shells, alive across a restart of this unit. `NoNewPrivileges` is deliberately off, because `sudo` must work inside the shell.
-6. **Firewall.** Allow TCP 8660 on the Dell only from VM118, and keep it closed to everything else.
+6. **Firewall.** The Dell uses nftables (iptables-nft). firewalld isn't present, and UFW is inactive. Its INPUT policy is accept, so add an explicit nftables rule:
+   - accept TCP 8660 from VM118's address
+   - drop TCP 8660 from everything else, including the Tailscale interface
+
+   Make the rule persistent. Before enabling the BFF side, verify both: VM118 can connect, and another LAN host or tailnet peer is refused.
 7. **BFF on VM118** (`command.env`, then `sudo systemctl restart jarvis-command`):
    ```
    HOST_SHELL_MODE=enabled
