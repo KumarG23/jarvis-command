@@ -11,7 +11,7 @@ import {
 } from '@jarvis-command/contracts';
 import { useEffect, useRef, useState } from 'react';
 import { boundedJson } from './useLiveTurn';
-import { inboxIn, knownItems } from './notificationInbox';
+import { closeReadAlerts, inboxIn, knownItems } from './notificationInbox';
 
 const CATEGORY_LABELS: Record<NotificationCategory, string> = {
   'run-completed': 'Run finished',
@@ -60,7 +60,7 @@ export function useNotifications(enabled: boolean, refreshKey: string) {
       const value = await action(new AbortController());
       if (!alive.current) return null;
       const next = apply(value);
-      if (ticket === sequence.current) { if (next) setInbox(next); setError(null); }
+      if (ticket === sequence.current) { if (next) { setInbox(next); void closeReadAlerts(next); } setError(null); }
       return value;
     } catch {
       if (alive.current && ticket === sequence.current) setError(failure);
@@ -156,9 +156,9 @@ export function NotificationsPane({ state, onOpen }: Readonly<{
         <button type="button" className="secondary-button" disabled={busy} onClick={() => void state.reconcile()}>Check active runs</button>
       </div>
       {items.length === 0 ? <p className="empty-copy" role="status">{inbox.items.length === 0 ? 'No notifications yet.' : 'No notifications match this filter.'}</p> : <ul className="notification-list" aria-label="Notifications">
-        {items.map(item => <li key={item.id} className={`notification-row${item.readAt === null ? ' unread' : ''}`}>
+        {items.map(item => <li key={item.id} className={`notification-row${item.readAt === null ? ' unread' : ' read'}`}>
           <div>
-            <strong>{item.title}{item.readAt === null ? <span className="visually-hidden"> (unread)</span> : null}</strong>
+            <strong>{item.readAt === null ? <span className="unread-dot" aria-hidden="true" /> : null}{item.title}<span className="visually-hidden">{item.readAt === null ? ' (unread)' : ' (read)'}</span></strong>
             <p>{item.body}</p>
             <small>Observed by Command {timeFormat.format(new Date(item.observedAt))}</small>
           </div>

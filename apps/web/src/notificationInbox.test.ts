@@ -1,6 +1,6 @@
-import { expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { NotificationInboxSchema, NotificationTargetSchema } from '@jarvis-command/contracts';
-import { inboxIn, knownItems } from './notificationInbox';
+import { closeReadAlerts, inboxIn, knownItems } from './notificationInbox';
 
 const known = { id: 'ntf_' + 'a'.repeat(32), category: 'run-completed', observedAt: '2026-11-12T18:00:00Z', sessionId: 'jc_' + 'b'.repeat(32), publicRunId: 'jcr_' + 'c'.repeat(32), title: 'Run finished', body: 'Done.', readAt: null };
 const future = { ...known, id: 'ntf_' + 'd'.repeat(32), category: 'something-new', future: true };
@@ -23,4 +23,21 @@ it('applies the same rule to an open target’s inbox', () => {
   const target = { state: 'available', sessionId: known.sessionId, approvalPending: false, session: { id: known.sessionId, title: 'Chat', source: 'api_server', ownership: 'command', model: null, lastActive: '2026-11-12T18:00:00Z', messageCount: 1, toolCallCount: 0, pinned: false }, inbox };
   expect(NotificationTargetSchema.parse(inboxIn(target))).toMatchObject({ state: 'available', inbox: { unreadCount: 1 } });
   expect(inboxIn({ state: 'missing' })).toEqual({ state: 'missing' });
+});
+
+describe('closeReadAlerts', () => {
+  const alert = (tag: string) => ({ tag, close: vi.fn() });
+  it('closes only system alerts for items that are read', async () => {
+    const readOne = alert('ntf_a'), unread = alert('ntf_b'), other = alert('ntf_c');
+    const worker = { getRegistration: async () => ({ getNotifications: async () => [readOne, unread, other] }) };
+    const closed = await closeReadAlerts({ items: [{ id: 'ntf_a', readAt: '2026-11-13T00:00:00.000Z' }, { id: 'ntf_b', readAt: null }] }, worker);
+    expect(closed).toBe(1);
+    expect(readOne.close).toHaveBeenCalled();
+    expect(unread.close).not.toHaveBeenCalled();
+    expect(other.close).not.toHaveBeenCalled();
+  });
+  it('does nothing without a service worker or when lookup fails', async () => {
+    await expect(closeReadAlerts({ items: [{ id: 'ntf_a', readAt: 'x' }] }, undefined)).resolves.toBe(0);
+    await expect(closeReadAlerts({ items: [{ id: 'ntf_a', readAt: 'x' }] }, { getRegistration: async () => { throw new Error('no'); } })).resolves.toBe(0);
+  });
 });
