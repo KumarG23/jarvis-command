@@ -50,13 +50,17 @@ Ordered by dependency. Each line gives the state, the owner and the next concret
    - **Many channels:** projects, chats and threads. Present.
    - **Images:** chat image attachments and artifacts. Present; to be checked in an acceptance pass.
    - **Homelab operations:** Hermes tools such as SSH, VMs and troubleshooting, run from Command chat, with approval prompts answered in Command. Needs a real pass: a harmless read-only tool call, then one that asks for approval. Owner: Jarvis exercises it, Claude fixes the UI.
-   - **Reminders and cron:** **built, not deployed.** Hermes cron has no outbound webhook, so a script-mode cron job calls Command's scheduled-runs listener. Command starts a run in the project chat as Neal, and the inbox entry and reply push fire as for any run. See [SCHEDULED-RUNS.md](SCHEDULED-RUNS.md). Owner: Jarvis enables the listener (network path, key, owner actor) and runs the acceptance steps. Phone push needs Web Push and reply notifications on.
+   - **Reminders and cron:** two paths, both described in [SCHEDULED-RUNS.md](SCHEDULED-RUNS.md).
+     - **Scheduled runs** are live. A script-mode job calls Command, which starts a run in the project chat.
+     - **Deliveries** cover Hermes cron and reminders that stay in Hermes, through the Hermes `command` plugin. The receiver is deployed: b578d42 is live, and Jarvis's test reminder reached Neal's phone (2026-11-12).
+     - Blocked (Jarvis, 2026-11-13): the native gateway acceptance needs a `hermes-gateway` restart that Jarvis doesn't initiate itself. After that comes one guarded script-only acceptance, then migrating the Discord jobs one at a time with Neal's OK.
 8. **P13 thread status, unread, per-thread model.** State: source merged and now on VM118. Convergence, reload, restart and phone acceptance outstanding (MASTER_PLAN §11). Owner: Claude; acceptance Jarvis/Neal.
 9. **P12 reactions and P6.1 reply notifications.** State: source merged and on VM118 behind disabled flags. The exact-message binding (#166, Hermes PR1) is unmerged and installed support is unknown. Owner: Jarvis (Hermes source and install), then Claude (enable and verify). VAPID/egress/push enablement is an owner boundary.
 10. **P9.6 delete projects and recovery.** State: retained-snapshot recovery merged; deletion enablement and contents recovery outstanding. Owner: Claude. Live deletion needs Neal.
 11. **P10.5 OpenRouter free routes.** State: deployed, `:free` only. Owner: Jarvis/Neal accept it in the picker. **P10.4 Anthropic:** disabled by owner decision (2026-11-11), not a gap.
 12. **P14 Studio crew view and P14.1 steering.** State: blocked. They depend on Dev Studio's shared projection (Studio #93), and Dev Studio is paused. Owner: Neal decides whether to resume Studio or retarget the view onto cockpit sessions.
 13. **Ops follow-ups.** Dev/build `npm audit` (20 advisories, none high or critical); port the containerized release pipeline to VM118 (optional); VM113 deletion (Neal only).
+14. **Hermes host admin shell.** A shell on the Dell, outside Projects, usable from the phone without Tailscale, and working while the Hermes gateway is down. Its main use is restarting `hermes-gateway`. State: contract proposed in [HOST-SHELL.md](HOST-SHELL.md). Neal picks the sudo model before anything is built or deployed. Owner: Claude (source), Jarvis (Dell unit, user, firewall).
 
 ## Verified facts
 
