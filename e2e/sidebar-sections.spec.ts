@@ -78,3 +78,14 @@ test('Projects and Recent chats scroll independently with pinned headings', asyn
   const title = row.locator('.chat-item-title');
   expect(await title.evaluate(el => el.scrollHeight <= el.clientHeight + 1)).toBe(true);
 });
+
+test('a short desktop window keeps Projects visible instead of squeezing it away', async ({ page }) => {
+  test.skip((page.viewportSize()?.width ?? 1000) <= 760, 'desktop layout only');
+  await page.setViewportSize({ width: 1280, height: 640 });
+  await mockApis(page);
+  await page.goto('/');
+  const projects = page.getByRole('navigation', { name: 'Projects', exact: true });
+  const chats = page.getByRole('navigation', { name: 'Recent chats', exact: true });
+  await expect(projects.getByRole('button', { name: 'Synthetic project 1', exact: true })).toBeVisible();
+  for (const section of [projects, chats]) expect(await section.evaluate(el => el.clientHeight)).toBeGreaterThanOrEqual(100);
+});
