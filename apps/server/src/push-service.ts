@@ -1,4 +1,4 @@
-import { createECDH } from 'node:crypto';
+import { createECDH, randomBytes } from 'node:crypto';
 import { lookup } from 'node:dns/promises';
 import { request } from 'node:https';
 import { isIP } from 'node:net';
@@ -80,7 +80,9 @@ export const restrictedPushTransport: PushTransport = async details => {
 // Version 2 is reply-only and carries the already-sanitized, bounded title/body inside the encrypted payload.
 export const replyPushPayload = (item: Readonly<{ id: string; title: string; body: string }>) => JSON.stringify({ version: 2, id: item.id, title: item.title, body: item.body });
 export function createPushService(config: PushConfig, store: NotificationStore, transport: PushTransport = restrictedPushTransport) {
-  async function send(actor: string, id: string, claim: () => Promise<Awaited<ReturnType<NotificationStore['claimReplyPush']>>>, payload: () => Promise<string>) {
+  // High urgency: on Android a normal-urgency push to a dozing phone is held until the phone
+  // wakes, and with a short TTL it then expires undelivered. `ttl` bounds how stale an alert may be.
+  async function send(actor: string, id: string, claim: () => Promise<Awaited<ReturnType<NotificationStore['claimReplyPush']>>>, payload: () => Promise<string>, ttl = 3_600) {
     if (config.capability.state !== 'available' || !config.vapid) return;
     try {
       const body = await payload();
@@ -90,7 +92,7 @@ export function createPushService(config: PushConfig, store: NotificationStore, 
         try {
           if (!supportedPushEndpoint(device.subscription.endpoint)) throw new Error('Unsupported destination');
           const details = webpush.generateRequestDetails(device.subscription as PushSubscription, body, {
-            vapidDetails: config.vapid!, TTL: 300, urgency: 'normal', contentEncoding: 'aes128gcm',
+            vapidDetails: config.vapid!, TTL: ttl, urgency: 'high', contentEncoding: 'aes128gcm',
           });
           if (!Buffer.isBuffer(details.body) || details.body.length > 4096) throw new Error('Push too large');
           const status = await transport({ endpoint: device.subscription.endpoint, headers: details.headers, body: details.body });
@@ -120,6 +122,30 @@ export function createPushService(config: PushConfig, store: NotificationStore, 
       return replyPushPayload({ id: item.id, title: 'Jarvis replied', body });
     }) : Promise.resolve(),
     /**
+     * Test push to every registered device of this actor, so the owner can check a phone end to
+     * end. Not an inbox item and records no receipt; tapping it just opens Command. Returns how
+     * many devices the push service accepted (2xx). That proves the provider took it, not that the
+     * phone displayed it.
+     */
+    sendTest: async (actor: string): Promise<{ devices: number; accepted: number; expired: number }> => {
+      if (config.capability.state !== 'available' || !config.vapid) return { devices: 0, accepted: 0, expired: 0 };
+      const devices = await store.pushTestDevices(actor);
+      const id = `ntf_${randomBytes(16).toString('hex')}`;
+      const body = JSON.stringify({ version: 2, id, title: 'Test notification', body: 'Push works on this device. Tap to open Command.', test: true });
+      const outcomes = await Promise.all(devices.map(async device => {
+        try {
+          if (!supportedPushEndpoint(device.subscription.endpoint)) return 'failed';
+          const details = webpush.generateRequestDetails(device.subscription as PushSubscription, body, {
+            vapidDetails: config.vapid!, TTL: 60, urgency: 'high', contentEncoding: 'aes128gcm',
+          });
+          if (!Buffer.isBuffer(details.body) || details.body.length > 4096) return 'failed';
+          const status = await transport({ endpoint: device.subscription.endpoint, headers: details.headers, body: details.body });
+          return status >= 200 && status < 300 ? 'sent' : status === 404 || status === 410 ? 'expired' : 'failed';
+        } catch { return 'failed'; }
+      }));
+      return { devices: devices.length, accepted: outcomes.filter(item => item === 'sent').length, expired: outcomes.filter(item => item === 'expired').length };
+    },
+    /**
      * Delivered reminder or cron result. Pushed whenever Web Push is available: unlike a reply, the
      * owner scheduled it, so it doesn't wait on the reply category flag.
      */
@@ -127,7 +153,7 @@ export function createPushService(config: PushConfig, store: NotificationStore, 
       const item = await store.find(actor, id);
       if (item?.category !== 'delivery') throw new Error('Not a delivery');
       return replyPushPayload(item);
-    }),
+    }, 86_400), // a reminder is still worth showing when the phone comes back online
   };
 }
 export type PushService = ReturnType<typeof createPushService>;

@@ -95,6 +95,7 @@ export function createCommandServer(
     hermes,
     artifactStore,
     notifications,
+    pushService: push,
     presence,
     get liveRoom() { return liveRoom; },
     get replyEvidence() { return replyEvidence; },

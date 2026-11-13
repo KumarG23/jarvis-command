@@ -1,3 +1,4 @@
+import type { PushService } from './push-service';
 import { RoutingWritesUnavailableError } from './routing-write-state';
 import { RoutingRefusedError, RoutingUnavailableError } from './routing-defaults';
 import { ThreadReadStorageError } from './thread-read-store';
@@ -36,6 +37,7 @@ type AppDependencies = Readonly<{
   artifactStore?: ArtifactStore | undefined;
   notifications?: NotificationStore | undefined;
   presence?: Presence | undefined;
+  pushService?: PushService | undefined;
   replyEvidence?: ReplyEvidenceSource | undefined;
   checkLiveRoom?: () => Promise<void>;
   liveStreamLimits?: LiveStreamLimits;

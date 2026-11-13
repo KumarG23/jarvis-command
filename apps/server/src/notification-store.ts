@@ -266,6 +266,7 @@ export class NotificationStore {
     const item = (await this.read(actor)).items.find(item => item.id === id);
     return item?.category === 'run-completed' ? this.#push.claimPush(actor, item) : [];
   }
+  pushTestDevices(actor: string) { return this.#push.testDevices(actor); }
   /** Delivery claim: refuses every item that is not a delivered scheduled message. */
   async claimDeliveryPush(actor: string, id: string) {
     const item = (await this.read(actor)).items.find(item => item.id === id);

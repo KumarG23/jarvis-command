@@ -41,6 +41,15 @@ export function PushSettings({ push, refresh }: Readonly<{ push: PushState | und
         await refresh(); setNotice('Device revoked. Future sends to it are disabled. An already dispatched alert cannot be recalled.');
       })}>Revoke device {device.id.slice(-6)}</button>
     </li>)}</ul> : null}
+    {capability.state === 'available' && push?.devices.length ? <button type="button" className="secondary-button" disabled={busy} onClick={() => void action(async () => {
+      let result: { devices?: number; accepted?: number; expired?: number };
+      try { result = await boundedJson('/api/notifications/push/test', write({}), new AbortController()) as typeof result; }
+      catch { setNotice('The test could not be sent. Wait 20 seconds and try again.'); return; }
+      const accepted = result.accepted ?? 0;
+      setNotice(accepted > 0
+        ? `Test sent to ${accepted} of ${result.devices ?? 0} device${result.devices === 1 ? '' : 's'}. If it doesn't appear on this phone within a minute, the push service accepted it but the phone didn't show it.`
+        : result.expired ? 'The push service says this device registration expired. Revoke it and enable push again.' : 'The test could not be sent. Try again in a moment.');
+    })}>Send test notification</button> : null}
     {notice ? <p role="status">{notice}</p> : null}
   </section>;
 }

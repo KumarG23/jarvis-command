@@ -41,6 +41,13 @@ export class PushStore {
   read(actor: string): Promise<PushView> {
     return this.#transaction(state => ({ result: pushView(state.actors[actor] ?? this.#emptyActor()) }));
   }
+  /** Unexpired devices with their subscriptions, for a test push only. Records no receipt. */
+  testDevices(actor: string): Promise<Array<z.infer<typeof DeviceSchema>>> {
+    return this.#transaction(state => {
+      const now = this.now().toISOString();
+      return { result: (state.actors[actor]?.push.devices ?? []).filter(device => device.expiresAt > now) };
+    });
+  }
   registerDevice(actor: string, input: PushSubscription): Promise<PushView> {
     const subscription = PushSubscriptionSchema.parse(input);
     return this.#transaction(state => {
