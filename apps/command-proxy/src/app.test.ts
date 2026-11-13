@@ -1272,7 +1272,7 @@ describe('run creation and control', () => {
   });
 
   it('permits only exact once or deny approval responses', async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => jsonResponse({
       object: 'hermes.run.approval_response',
       run_id: runId,
       request_id: 'approval-1',
@@ -1289,7 +1289,7 @@ describe('run creation and control', () => {
     });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ runId, requestId: 'approval-1', choice: 'once', resolved: 1 });
-    expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).toEqual({
+    expect(JSON.parse(String(fetcher.mock.calls.find(([, init]) => init?.method === 'POST')![1]?.body))).toEqual({
       request_id: 'approval-1',
       choice: 'once',
     });
@@ -1303,7 +1303,7 @@ describe('run creation and control', () => {
       });
       expect(denied.statusCode).toBe(400);
     }
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
   });
 
   it('forwards bounded steer and stop controls without extra fields', async () => {
@@ -1897,19 +1897,49 @@ describe('pending approval inside pending_controls', () => {
     expect(response.statusCode).toBe(200);
     return response.json().approval;
   };
-  it('projects the single pending approval control when top-level approval is absent', async () => {
-    expect(await read(status({ pending_controls: [{ kind: 'approval', request_id: 'approval-ctl', command: 'write_file AGENTS.md', description: 'Protected agent-instruction file', tool: 'write_file' }] })))
-      .toEqual({ requestId: 'approval-ctl', command: 'write_file AGENTS.md', description: 'Protected agent-instruction file', tool: 'write_file' });
-    expect(await read(status({ pending_controls: [{ kind: 'approval', id: 'approval-nested', approval: { summary: 'Write AGENTS.md', description: 'Protected file' } }] })))
-      .toMatchObject({ requestId: 'approval-nested', command: 'Write AGENTS.md' });
+  // Literal installed shape (gateway/session_pending_controls.py) for the protected-file guard.
+  const guard = (extra: Record<string, unknown> = {}) => ({ kind: 'approval', prompt_id: 'prompt-guard-1', execution_generation: 2, command: '<write to [AGENTS.md]>', description: 'Protected agent-instruction file write', choices: ['once', 'deny'], timeout_s: 60, ...extra });
+  it('projects the single installed-shape approval control by its prompt_id', async () => {
+    expect(await read(status({ pending_controls: [guard()] })))
+      .toEqual({ requestId: 'prompt-guard-1', command: '<write to [AGENTS.md]>', description: 'Protected agent-instruction file write', tool: null });
+    expect(await read(status({ pending_controls: [guard({ choices: ['once', 'session', 'always', 'deny'], edit: true })] }))).toMatchObject({ requestId: 'prompt-guard-1' });
   });
-  it('prefers top-level approval and yields null for ambiguous or malformed controls without failing status', async () => {
-    expect(await read(status({ approval: { request_id: 'approval-top', command: 'echo top', description: 'Top' }, pending_controls: [{ kind: 'approval', request_id: 'approval-ctl', command: 'other' }] })))
+  it('prefers top-level approval and refuses ambiguous, contradictory or malformed controls without failing status', async () => {
+    expect(await read(status({ approval: { request_id: 'approval-top', command: 'echo top', description: 'Top' }, pending_controls: [guard()] })))
       .toMatchObject({ requestId: 'approval-top' });
-    expect(await read(status({ pending_controls: [{ kind: 'approval', request_id: 'a1', command: 'x' }, { kind: 'approval', request_id: 'a2', command: 'y' }] }))).toBeNull();
-    expect(await read(status({ pending_controls: [{ kind: 'approval', request_id: ' bad id ', command: 'x' }] }))).toBeNull();
-    expect(await read(status({ pending_controls: [{ kind: 'steer', request_id: 's1' }] }))).toBeNull();
+    for (const controls of [
+      [guard(), guard({ prompt_id: 'prompt-guard-2' })],
+      [guard({ prompt_id: ' bad id ' })],
+      [guard({ prompt_id: undefined })],
+      [guard({ id: 'prompt-guard-1' })],
+      [guard({ request_id: 'other' })],
+      [guard({ approval: { request_id: 'nested' } })],
+      [guard({ execution_generation: '2' })],
+      [guard({ execution_generation: -1 })],
+      [guard({ choices: ['once'] })],
+      [guard({ choices: ['once', 'deny', 'forever'] })],
+      [guard({ choices: ['once', 'deny', 'deny'] })],
+      [guard({ command: '' })],
+      [guard({ description: ' ' })],
+      [{ kind: 'steer', prompt_id: 's1' }],
+    ]) expect(await read(status({ pending_controls: controls }))).toBeNull();
     expect(await read(status({ pending_controls: 'nope' }))).toBeNull();
+  });
+  it.each(['once', 'deny'] as const)('answers a status-only guard approval (%s) with its prompt_id and execution generation', async (choice) => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(status({ pending_controls: [guard()] })))
+      .mockResolvedValueOnce(jsonResponse({ run_id: runId, request_id: 'prompt-guard-1', choice, resolved: 1 }));
+    const response = await createApp(fetcher).inject({ method: 'POST', url: `/v1/runs/${runId}/approval`, headers: authHeaders(), payload: { requestId: 'prompt-guard-1', choice } });
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(String(fetcher.mock.calls[1]![1]!.body))).toEqual({ request_id: 'prompt-guard-1', execution_generation: 2, choice });
+  });
+  it('answers a stream approval without a generation when no matching control is pending', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(status({ pending_controls: [guard({ prompt_id: 'someone-else' })] })))
+      .mockResolvedValueOnce(jsonResponse({ run_id: runId, request_id: 'stream-approval', choice: 'once', resolved: 1 }));
+    const response = await createApp(fetcher).inject({ method: 'POST', url: `/v1/runs/${runId}/approval`, headers: authHeaders(), payload: { requestId: 'stream-approval', choice: 'once' } });
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(String(fetcher.mock.calls[1]![1]!.body))).toEqual({ request_id: 'stream-approval', choice: 'once' });
   });
 });
 

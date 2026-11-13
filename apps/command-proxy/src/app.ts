@@ -688,6 +688,15 @@ export function buildCommandProxy({
     }
   });
 
+  async function pendingApprovalGeneration(runId: string, requestId: string): Promise<number | null> {
+    try {
+      const upstream = UpstreamRunStatusSchema.parse(await requestJson({ path: `/v1/runs/${runId}`, method: 'GET', config, fetcher }));
+      if (upstream.run_id !== runId) return null;
+      const control = pendingApprovalControl(upstream);
+      return control && control.approval.requestId === requestId ? control.generation : null;
+    } catch { return null; }
+  }
+
   app.post('/v1/runs/:runId/approval', async (request, reply) => {
     if (!authorize(request, reply, config.commandProxyKey)) return reply;
     const runId = validRunId(pathParameter(request, 'runId'));
@@ -695,11 +704,15 @@ export function buildCommandProxy({
     if (!runId || !parsed.success) return invalidRequest(reply);
 
     try {
+      // A status-only (pending_controls) approval is answered with its execution generation, so a
+      // stale prompt from an earlier generation is refused upstream instead of resolving the new one.
+      const generation = await pendingApprovalGeneration(runId, parsed.data.requestId);
       const upstream = UpstreamApprovalResponseSchema.parse(await requestJson({
         path: `/v1/runs/${runId}/approval`,
         method: 'POST',
         body: {
           request_id: parsed.data.requestId,
+          ...(generation === null ? {} : { execution_generation: generation }),
           choice: parsed.data.choice,
         },
         config,
@@ -1094,7 +1107,7 @@ function projectRunStatus(upstream: z.infer<typeof UpstreamRunStatusSchema>, obs
     // Hermes may omit both timestamps. In that case this is the read observation time,
     // not a claim about when the run transitioned to its current state.
     updatedAt: toIsoTimestamp(upstream.updated_at ?? upstream.created_at, observedAt),
-    approval: upstream.approval ? projectApproval(upstream.approval) : pendingControlApproval(upstream),
+    approval: upstream.approval ? projectApproval(upstream.approval) : pendingApprovalControl(upstream)?.approval ?? null,
     output: upstream.output ?? null,
     error: upstream.error == null ? null : 'Hermes run unavailable',
     pendingSteer: upstream.pending_steer ?? null,
@@ -1121,22 +1134,31 @@ function projectRunStatus(upstream: z.infer<typeof UpstreamRunStatusSchema>, obs
 
 /**
  * Installed Hermes durable run status reports a pending approval only inside `pending_controls`
- * (kind "approval"), not as top-level `approval`. Project the single pending approval so Command
- * can show Approve/Deny after a dropped event stream. Anything ambiguous or malformed yields null,
- * never a failed status read.
+ * (gateway/session_pending_controls.py PendingControls.snapshot), never as top-level `approval`.
+ * The literal item shape is { kind: "approval", prompt_id, execution_generation, command,
+ * description, choices, edit?, timeout_s? }. Project it only when exactly one such item is
+ * present and every field is well formed; anything else yields null, never a failed status read.
  */
-function pendingControlApproval(upstream: Record<string, unknown>): LiveApproval | null {
+const KNOWN_APPROVAL_CHOICES = new Set(['once', 'session', 'always', 'deny']);
+export function pendingApprovalControl(upstream: Record<string, unknown>): { approval: LiveApproval; generation: number } | null {
   const controls = upstream.pending_controls;
   if (!Array.isArray(controls)) return null;
-  const approvals = controls.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object' && (item as { kind?: unknown }).kind === 'approval');
+  const approvals = controls.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object' && !Array.isArray(item) && (item as { kind?: unknown }).kind === 'approval');
   if (approvals.length !== 1) return null;
   const item = approvals[0]!;
-  const nested = item.approval && typeof item.approval === 'object' ? item.approval as Record<string, unknown> : {};
+  const promptId = ApprovalRequestIdSchema.safeParse(item.prompt_id);
+  if (!promptId.success) return null;
+  // A second identity alongside prompt_id is contradictory, even if it happens to match.
+  if ('request_id' in item || 'id' in item || 'approval' in item) return null;
+  const generation = item.execution_generation;
+  if (typeof generation !== 'number' || !Number.isSafeInteger(generation) || generation < 0) return null;
+  const choices = item.choices;
+  if (!Array.isArray(choices) || choices.length === 0 || choices.length > KNOWN_APPROVAL_CHOICES.size
+    || choices.some(choice => typeof choice !== 'string' || !KNOWN_APPROVAL_CHOICES.has(choice))
+    || new Set(choices).size !== choices.length || !choices.includes('once') || !choices.includes('deny')) return null;
+  if (typeof item.description !== 'string' || !item.description.trim()) return null;
   try {
-    const merged: Record<string, unknown> = { ...item, ...nested };
-    // A file-guard approval may carry a summary instead of a shell command; show what Hermes gave.
-    const command = [merged.command, merged.summary, merged.title, merged.description].find(value => typeof value === 'string' && value.trim());
-    return projectApproval({ ...merged, command, request_id: nested.request_id ?? item.request_id ?? item.id });
+    return { approval: projectApproval({ request_id: promptId.data, command: item.command, description: item.description, tool: null }), generation };
   } catch { return null; }
 }
 
