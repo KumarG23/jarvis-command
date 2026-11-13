@@ -45,6 +45,8 @@ export function createRunNotifier(store: NotificationStore, push?: PushService, 
       // Only the call that created the item may push, and never while the chat is on screen.
       if (result === 'created' && event.pushFallback && event.category === 'run-completed'
         && !presence?.visible(event.actor, event.sessionId)) await push?.deliverRun(event.actor, id, event.preview);
+      // A pending approval expires quickly; alert the phone unless that chat is already on screen.
+      if (result === 'created' && event.category === 'approval' && !presence?.visible(event.actor, event.sessionId)) await push?.deliverApproval(event.actor, id);
       return true;
     } catch { return false; /* surfaced by the inbox read path */ }
   };

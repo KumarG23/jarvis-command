@@ -149,6 +149,16 @@ export function createPushService(config: PushConfig, store: NotificationStore, 
      * Delivered reminder or cron result. Pushed whenever Web Push is available: unlike a reply, the
      * owner scheduled it, so it doesn't wait on the reply category flag.
      */
+    /**
+     * Pending approval. Hermes approvals expire quickly (protected-file writes after about 60 s),
+     * so like a delivery this pushes whenever Web Push is available. The text never includes the
+     * command; the chat shows it next to Approve/Deny.
+     */
+    deliverApproval: (actor: string, id: string) => send(actor, id, () => store.claimApprovalPush(actor, id), async () => {
+      const item = await store.find(actor, id);
+      if (item?.category !== 'approval') throw new Error('Not an approval');
+      return replyPushPayload({ id: item.id, title: 'Jarvis needs your OK', body: 'Open the chat to approve or deny. It expires soon.' });
+    }, 300),
     deliverDelivery: (actor: string, id: string) => send(actor, id, () => store.claimDeliveryPush(actor, id), async () => {
       const item = await store.find(actor, id);
       if (item?.category !== 'delivery') throw new Error('Not a delivery');

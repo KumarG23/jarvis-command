@@ -283,3 +283,27 @@ it('test push route is owner-scoped and rate limited', async () => {
   expect((await h.post('/api/notifications/push/test', { endpoint: 'x' }, 'carol')).statusCode).toBe(400);
   expect(transport).toHaveBeenCalledTimes(1);
 });
+
+it('pushes a new pending approval once, without the command text, and not while that chat is on screen', async () => {
+  const h = await storeFixture();
+  await h.store.registerDevice(actor, subscription());
+  h.clock.now = new Date(Date.now() + 1000);
+  const sent: Array<{ payload: string; ttl: number | undefined }> = [];
+  vi.spyOn(webpush, 'generateRequestDetails').mockImplementation(((_subscription: unknown, payload: string, options: { TTL?: number }) => {
+    sent.push({ payload, ttl: options.TTL });
+    return { headers: {}, body: Buffer.from('x') } as never;
+  }) as never);
+  const push = createPushService(config, h.store, vi.fn(async () => 201));
+  let visible = false;
+  const notify = createRunNotifier(h.store, push, { visible: () => visible } as never);
+  const approval = { ...event(7), category: 'approval' as const, key: 'approval:agents-md' };
+  await notify(approval);
+  await notify(approval); // same request observed again (status poll + stream): no second push
+  expect(sent).toHaveLength(1);
+  expect(JSON.parse(sent[0]!.payload)).toMatchObject({ version: 2, title: 'Jarvis needs your OK' });
+  expect(sent[0]!.payload).not.toContain('agents-md');
+  expect(sent[0]!.ttl).toBe(300);
+  visible = true;
+  await notify({ ...event(8), category: 'approval' as const, key: 'approval:other' });
+  expect(sent).toHaveLength(1);
+});
