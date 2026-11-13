@@ -12,7 +12,9 @@ export type AdapterDefinition = {
   label: string;
   binary: (shell: string) => string;
   billing: string;
-  argv: (options: { shell: string; prompt?: string | undefined; resume?: string | undefined; nativeSessionId?: string | undefined }) => string[];
+  // autonomous: start without per-tool permission prompts (and, for Codex, without its sandbox),
+  // because Neal runs his agents unattended on the dev VM (SESSION_HOST_AUTONOMOUS, approved 2026-11-13).
+  argv: (options: { shell: string; prompt?: string | undefined; resume?: string | undefined; nativeSessionId?: string | undefined; autonomous?: boolean | undefined }) => string[];
   // Generates a native session id up front when the CLI accepts one, so lineage is known before launch.
   assignNativeSessionId?: () => string;
   // Reads the CLI's own native id after launch, for CLIs that pick it themselves. Only used
@@ -116,7 +118,8 @@ export const ADAPTERS: Record<CockpitKind, AdapterDefinition> = {
   },
   claude: {
     kind: 'claude', label: 'Claude Code', binary: () => 'claude', billing: 'Claude subscription (official Claude Code CLI)',
-    argv: ({ prompt, resume, nativeSessionId }) => ['claude',
+    argv: ({ prompt, resume, nativeSessionId, autonomous }) => ['claude',
+      ...(autonomous ? ['--dangerously-skip-permissions'] : []),
       ...(resume ? ['--resume', resume] : nativeSessionId ? ['--session-id', nativeSessionId] : []),
       ...(prompt ? [prompt] : [])],
     assignNativeSessionId: () => randomUUID(),
@@ -124,7 +127,10 @@ export const ADAPTERS: Record<CockpitKind, AdapterDefinition> = {
   },
   codex: {
     kind: 'codex', label: 'Codex', binary: () => 'codex', billing: 'ChatGPT subscription (official Codex CLI)',
-    argv: ({ prompt, resume }) => (resume ? ['codex', 'resume', resume] : ['codex', ...(prompt ? [prompt] : [])]),
+    argv: ({ prompt, resume, autonomous }) => {
+      const mode = autonomous ? ['--dangerously-bypass-approvals-and-sandbox'] : [];
+      return resume ? ['codex', ...mode, 'resume', resume] : ['codex', ...mode, ...(prompt ? [prompt] : [])];
+    },
     promptViaArgv: true, preflight: codexPreflight, note: null,
   },
   agy: {

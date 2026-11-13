@@ -21,6 +21,9 @@ const EnvironmentSchema = z.object({
   SESSION_HOST_SHELL: z.string().optional(),
   // Comma-separated kinds Neal has qualified on this host (e.g. "claude,codex").
   SESSION_HOST_QUALIFIED: z.string().default(''),
+  // Comma-separated kinds started without permission prompts (claude, codex). Neal runs his agents
+  // unattended; set it empty to bring the CLIs' own prompts back.
+  SESSION_HOST_AUTONOMOUS: z.string().default('claude,codex'),
   SESSION_HOST_REFRESH_MS: z.coerce.number().int().min(250).max(60_000).default(2_000),
   SESSION_HOST_TRUST_PROXY: flag.default(false),
 });
@@ -38,6 +41,7 @@ export type SessionHostConfig = Readonly<{
   worktreesDir: string;
   shell: string;
   qualified: ReadonlySet<CockpitKind>;
+  autonomous: ReadonlySet<CockpitKind>;
   refreshMs: number;
 }>;
 
@@ -61,6 +65,12 @@ export function loadSessionHostConfig(environment: NodeJS.ProcessEnv): SessionHo
   for (const item of parsed.SESSION_HOST_QUALIFIED.split(',').map(value => value.trim()).filter(Boolean)) {
     qualified.add(CockpitKindSchema.parse(item));
   }
+  const autonomous = new Set<CockpitKind>();
+  for (const item of parsed.SESSION_HOST_AUTONOMOUS.split(',').map(value => value.trim()).filter(Boolean)) {
+    const kind = CockpitKindSchema.parse(item);
+    if (kind !== 'claude' && kind !== 'codex') throw new Error(`SESSION_HOST_AUTONOMOUS supports claude and codex, not ${kind}`);
+    autonomous.add(kind);
+  }
   return Object.freeze({
     bind: parsed.SESSION_HOST_BIND,
     mcpBind: parsed.SESSION_HOST_MCP_BIND ?? parsed.SESSION_HOST_BIND,
@@ -74,6 +84,7 @@ export function loadSessionHostConfig(environment: NodeJS.ProcessEnv): SessionHo
     worktreesDir: absolute('SESSION_HOST_WORKTREES_DIR', parsed.SESSION_HOST_WORKTREES_DIR, join(home, 'worktrees')),
     shell: parsed.SESSION_HOST_SHELL ?? environment.SHELL ?? '/bin/bash',
     qualified,
+    autonomous,
     refreshMs: parsed.SESSION_HOST_REFRESH_MS,
   });
 }

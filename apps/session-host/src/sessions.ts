@@ -140,7 +140,7 @@ export class SessionManager extends EventEmitter {
         if (refusal) return { session: this.update(session, { state: 'failed', failure: refusal }), created: true };
         const nativeSessionId = adapter.assignNativeSessionId?.() ?? null;
         const prompt = adapter.promptViaArgv ? input.initialInput : undefined;
-        const argv = adapter.argv({ shell: this.config.shell, prompt, nativeSessionId: nativeSessionId ?? undefined });
+        const argv = adapter.argv({ shell: this.config.shell, prompt, nativeSessionId: nativeSessionId ?? undefined, autonomous: this.config.autonomous.has(input.kind) });
         await this.tmux.newSession(id, {
           cwd: workspace.cwd, argv, cols: input.cols ?? 120, rows: input.rows ?? 32,
           env: { COCKPIT_SESSION_ID: id, COCKPIT_PROJECT_ID: input.projectId },

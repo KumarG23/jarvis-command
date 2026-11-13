@@ -54,3 +54,11 @@ it('reads agy conversation ids from its per-directory cache, and nothing else', 
     expect(await discover('/w/one', { HOME: home })).toBeNull();
   } finally { rmSync(home, { recursive: true, force: true }); }
 });
+
+it('starts Claude and Codex without permission prompts only when the host runs them autonomously', () => {
+  expect(ADAPTERS.claude.argv({ shell: '/bin/bash', prompt: 'go', nativeSessionId: 'n1', autonomous: true })).toEqual(['claude', '--dangerously-skip-permissions', '--session-id', 'n1', 'go']);
+  expect(ADAPTERS.claude.argv({ shell: '/bin/bash', prompt: 'go', nativeSessionId: 'n1' })).toEqual(['claude', '--session-id', 'n1', 'go']);
+  expect(ADAPTERS.codex.argv({ shell: '/bin/bash', prompt: 'go', autonomous: true })).toEqual(['codex', '--dangerously-bypass-approvals-and-sandbox', 'go']);
+  expect(ADAPTERS.codex.argv({ shell: '/bin/bash', resume: 'r1', autonomous: true })).toEqual(['codex', '--dangerously-bypass-approvals-and-sandbox', 'resume', 'r1']);
+  expect(ADAPTERS.codex.argv({ shell: '/bin/bash', prompt: 'go' })).toEqual(['codex', 'go']);
+});

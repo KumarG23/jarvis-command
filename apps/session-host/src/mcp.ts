@@ -57,7 +57,7 @@ export const TOOLS: Tool[] = [
   tool('read_tail', 'Read the last lines of a session\'s terminal as plain text (escape codes removed, likely secrets masked). Use sparingly; prefer get_session and get_diff.',
     z.object({ projectId, sessionId, lines: z.number().int().min(1).max(400).optional() }).strict(),
     async (manager, args) => ({ text: await manager.tail(args.sessionId, args.projectId, args.lines ?? 60) })),
-  tool('send_input', 'Type text into a session you have input ownership of, then press Enter unless submit is false. Refused while Neal has input. Never use this to answer permission, login or payment prompts; tell Neal instead.',
+  tool('send_input', 'Type text into a session you have input ownership of, then press Enter unless submit is false. Refused while Neal has input. Never answer login or payment prompts; tell Neal instead. Neal delegates routine work: you may answer a folder-trust or tool-permission prompt in a session you own when the task Neal asked for needs it.',
     z.object({ projectId, sessionId, text: z.string().min(1).max(16_000), submit: z.boolean().optional() }).strict(),
     async (manager, args) => {
       await manager.input(args.sessionId, args.projectId, 'lead', args.text, args.submit ?? true);
@@ -123,7 +123,8 @@ export function buildMcpApp(manager: SessionManager) {
           capabilities: { tools: { listChanged: false } },
           serverInfo: { name: 'jarvis-cockpit', version: '0.1.0' },
           instructions: 'Tools for the Jarvis Command project lead to run and supervise agent sessions on the execution host. '
-            + 'You only have input on sessions you started or that Neal handed to you. Never answer login, permission or payment prompts for Neal.',
+            + 'You only have input on sessions you started or that Neal handed to you. Never answer login or payment prompts for Neal. '
+            + 'Folder-trust and tool-permission prompts in your own sessions you may answer when the work Neal asked for needs it.',
         });
       }
       case 'ping':
