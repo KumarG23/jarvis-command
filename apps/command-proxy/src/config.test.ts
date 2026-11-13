@@ -68,4 +68,14 @@ describe('loadCommandProxyConfig', () => {
     expect(() => loadCommandProxyConfig({ ...valid, HERMES_API_KEY: 'short' })).toThrow();
     expect(() => loadCommandProxyConfig({ ...valid, MAX_STREAM_SECONDS: '7200' })).toThrow();
   });
+
+  it('keeps the Command origin key unset by default, separate from other keys, and visible ASCII only', () => {
+    expect(loadCommandProxyConfig(valid).commandOriginKey).toBeUndefined();
+    const key = 'command-origin-key-that-is-long-enough-1234567';
+    expect(loadCommandProxyConfig({ ...valid, COMMAND_ORIGIN_KEY: key }).commandOriginKey).toBe(key);
+    expect(() => loadCommandProxyConfig({ ...valid, COMMAND_ORIGIN_KEY: valid.COMMAND_PROXY_KEY })).toThrow(/must differ/);
+    expect(() => loadCommandProxyConfig({ ...valid, COMMAND_ORIGIN_KEY: valid.HERMES_API_KEY })).toThrow(/must differ/);
+    expect(() => loadCommandProxyConfig({ ...valid, COMMAND_ORIGIN_KEY: 'short' })).toThrow();
+    expect(() => loadCommandProxyConfig({ ...valid, COMMAND_ORIGIN_KEY: `${key} with spaces` })).toThrow();
+  });
 });

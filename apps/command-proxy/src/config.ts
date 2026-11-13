@@ -25,6 +25,9 @@ const EnvironmentSchema = z.object({
   // request- or browser-controlled.
   COMMAND_HISTORY_BINDING_ENABLED: z.enum(['true', 'false', '1', '0']).default('false')
     .transform(value => value === 'true' || value === '1'),
+  // Unset by default. When set, each Command chat run carries an HMAC origin assertion so Hermes
+  // can route reminders created in that chat back to it (docs/cockpit/COMMAND-ORIGIN.md).
+  COMMAND_ORIGIN_KEY: z.string().min(32).max(512).regex(/^[!-~]+$/).optional(),
 });
 
 export type CommandProxyConfig = Readonly<{
@@ -38,6 +41,7 @@ export type CommandProxyConfig = Readonly<{
   advertisedSubscriptionRoutes: boolean;
   openRouterFreeRoutesEnabled: boolean;
   historyBindingEnabled: boolean;
+  commandOriginKey?: string;
 }>;
 
 export function loadCommandProxyConfig(environment: NodeJS.ProcessEnv): CommandProxyConfig {
@@ -55,6 +59,10 @@ export function loadCommandProxyConfig(environment: NodeJS.ProcessEnv): CommandP
   ) {
     throw new Error('HERMES_API_BASE_URL must be an uncredentialed loopback HTTP origin');
   }
+  if (parsed.COMMAND_ORIGIN_KEY !== undefined
+    && (parsed.COMMAND_ORIGIN_KEY === parsed.COMMAND_PROXY_KEY || parsed.COMMAND_ORIGIN_KEY === parsed.HERMES_API_KEY)) {
+    throw new Error('COMMAND_ORIGIN_KEY must differ from COMMAND_PROXY_KEY and HERMES_API_KEY');
+  }
 
   return Object.freeze({
     host: parsed.HOST,
@@ -67,5 +75,6 @@ export function loadCommandProxyConfig(environment: NodeJS.ProcessEnv): CommandP
     advertisedSubscriptionRoutes: parsed.COMMAND_ADVERTISED_SUBSCRIPTION_ROUTES,
     openRouterFreeRoutesEnabled: parsed.COMMAND_OPENROUTER_FREE_ROUTES_ENABLED,
     historyBindingEnabled: parsed.COMMAND_HISTORY_BINDING_ENABLED,
+    ...(parsed.COMMAND_ORIGIN_KEY ? { commandOriginKey: parsed.COMMAND_ORIGIN_KEY } : {}),
   });
 }

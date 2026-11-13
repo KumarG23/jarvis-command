@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
 import {
   ApprovalChoiceSchema,
@@ -44,6 +44,21 @@ const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9_.:@+-]{0,159}$/;
 const COMMAND_SESSION_ID = /^jc_[a-f0-9]{32}$/;
 const RUN_ID = /^run_[a-f0-9]{32}$/;
 const IDEMPOTENCY_KEY = /^[!-~]{1,255}$/;
+const COMMAND_CHAT_ID = /^jc_[a-f0-9]{32}$/;
+
+/**
+ * Command origin assertion v1 (docs/cockpit/COMMAND-ORIGIN.md): proves to Hermes that this exact
+ * run, for this exact Command chat and idempotency key, came through the Command proxy, so a
+ * reminder created during it can be delivered back to that chat. Lowercase hex HMAC-SHA256 over UTF-8.
+ */
+export function commandOriginAssertion(key: string, sessionId: string, idempotencyKey: string): string {
+  return `v1.${createHmac('sha256', key).update(`command-origin/v1\n${sessionId}\n${idempotencyKey}`, 'utf8').digest('hex')}`;
+}
+// Built fresh for each upstream call; anything the caller sent under this name is never forwarded.
+function originHeaders(config: CommandProxyConfig, sessionId: string, idempotencyKey: string): Record<string, string> {
+  if (!config.commandOriginKey || !COMMAND_CHAT_ID.test(sessionId) || !IDEMPOTENCY_KEY.test(idempotencyKey)) return {};
+  return { 'x-command-origin': commandOriginAssertion(config.commandOriginKey, sessionId, idempotencyKey) };
+}
 const CHAT_IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const;
 const MAX_CHAT_IMAGE_BYTES = 6 * 1024 * 1024;
 const COMMAND_SOURCES = new Set(['jarvis-command', 'api_server']);
@@ -546,7 +561,7 @@ export function buildCommandProxy({
           ...(parsed.data.inference ? upstreamInference(parsed.data.inference) : {}),
           ...(parsed.data.instructions ? { instructions: parsed.data.instructions } : {}),
         },
-        headers: { 'idempotency-key': idempotencyKey },
+        headers: { 'idempotency-key': idempotencyKey, ...originHeaders(config, parsed.data.sessionId, idempotencyKey) },
         config,
         fetcher,
       }));

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { buildCommandProxy } from './app';
+import { createHmac } from 'node:crypto';
+import { buildCommandProxy, commandOriginAssertion } from './app';
 import type { CommandProxyConfig } from './config';
 
 const commandKey = 'command-proxy-key-that-is-long-enough-123456';
@@ -1857,3 +1858,35 @@ describe('installed Hermes durable transcript and run contract', () => {
     expect((await app.inject({ url: `/v1/runs/${runId}`, headers: authHeaders() })).statusCode).toBe(200);
   });
 });
+
+describe('Command origin assertion (v1)', () => {
+  const originKey = 'command-origin-key-that-is-long-enough-1234567';
+  const idem = 'jc-v1-' + 'd'.repeat(64);
+  const run = async (overrides: Partial<CommandProxyConfig>, extra: Record<string, string> = {}) => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'jarvis-command'))).mockResolvedValueOnce(jsonResponse({ run_id: runId, status: 'running' }));
+    const response = await createApp(fetcher, undefined, overrides).inject({ method: 'POST', url: '/v1/runs', headers: authHeaders({ 'idempotency-key': idem, ...extra }), payload: { sessionId: commandSessionId, input: 'remind me' } });
+    expect(response.statusCode).toBe(202);
+    return new Headers(fetcher.mock.calls[1]![1]!.headers as Record<string, string>);
+  };
+
+  it('matches the documented HMAC string exactly', () => {
+    const expected = createHmac('sha256', originKey).update(`command-origin/v1\n${commandSessionId}\n${idem}`, 'utf8').digest('hex');
+    expect(commandOriginAssertion(originKey, commandSessionId, idem)).toBe(`v1.${expected}`);
+    expect(expected).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('signs the exact session and idempotency key only when the key is configured', async () => {
+    const signed = await run({ commandOriginKey: originKey });
+    expect(signed.get('x-command-origin')).toBe(commandOriginAssertion(originKey, commandSessionId, idem));
+    expect(signed.get('idempotency-key')).toBe(idem);
+    expect((await run({})).get('x-command-origin')).toBeNull();
+  });
+
+  it('never forwards a caller-supplied assertion', async () => {
+    const forged = 'v1.' + 'f'.repeat(64);
+    expect((await run({}, { 'x-command-origin': forged })).get('x-command-origin')).toBeNull();
+    const replaced = await run({ commandOriginKey: originKey }, { 'x-command-origin': forged });
+    expect(replaced.get('x-command-origin')).toBe(commandOriginAssertion(originKey, commandSessionId, idem));
+  });
+});
+
