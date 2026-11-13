@@ -34,8 +34,8 @@ phone/browser ──Cloudflare Access──▶ BFF (VM118) ──LAN, own key─
 
 The shell runs as a dedicated non-root login user on the Dell, `command-admin`. How `sudo` behaves is the decision:
 
-1. **Password prompt (recommended).** `sudo` asks for that user's password in the terminal, typed by Neal on his phone. No password is stored anywhere. Even a stolen Access session can't become root without the password.
-2. **Passwordless for a short list.** `NOPASSWD` covers only `systemctl restart|status hermes-gateway.service` and `journalctl -u hermes-gateway`. Everything else prompts.
+1. **Password prompt.** `sudo` asks for that user's password in the terminal, typed by Neal on his phone. No password is stored anywhere. Even a stolen Access session can't become root without the password.
+2. **Passwordless for a short list (recommended).** `NOPASSWD` covers only `systemctl restart|status hermes-gateway.service` and `journalctl -u hermes-gateway`. Everything else prompts. This makes the main use, a gateway restart, one command from a phone without typing a password, while every other root action still needs one.
 3. **Passwordless sudo.** Convenient, but anyone holding an Access session to Command is root on the Dell.
 
 ## Audit and logs
