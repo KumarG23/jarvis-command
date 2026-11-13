@@ -186,15 +186,19 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
     let source: EventSource | undefined;
     let streamOpen = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let watch: ReturnType<typeof setInterval> | undefined;
     let closed = false;
     let reconciling = false;
     let terminalObserved = false;
     let approvalRevision = 0;
     let reconnects = 0;
+    let quietReconnect = false;
     let polls = 0;
     let eventCount = run.events.length;
     let eventBytes = run.events.reduce((bytes, event) => bytes + new TextEncoder().encode(JSON.stringify(event)).length, 0);
     let previewBytes = new TextEncoder().encode(run.output).length;
+    // A replacement stream can replay earlier activity; show each event once.
+    const seen = new Set(run.events.map((event) => JSON.stringify(event)));
     statusOnly = (!!sessionScope && (!foregroundRef.current || pollingRuns.current.has(run.intent))) || statusOnly;
     if (sessionScope && statusOnly) {
       // A status snapshot has no event cursor. Once polling has supplied output,
@@ -204,20 +208,23 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
     }
     let limited = statusOnly || run.outputLimited;
     const valid = () => !closed && alive.current && current.current?.intent === run.intent;
-    cleanup.current = () => { closed = true; controller?.abort(); source?.close(); clearTimeout(timer); };
+    cleanup.current = () => { closed = true; controller?.abort(); source?.close(); clearTimeout(timer); clearInterval(watch); };
     checkStatus.current = (preserve) => {
       if (!valid() || !streamOpen) return false;
       preserveApproval = preserve;
       void reconcile(true);
       return true;
     };
-    async function reconcile(keepStream = false) {
-      if (!keepStream) { streamOpen = false; source?.close(); clearTimeout(timer); }
+    // quiet: a background check while the stream is healthy. It never rewrites
+    // the visible phase or output unless the run has ended or needs approval.
+    async function reconcile(keepStream = false, quiet = false) {
+      if (!keepStream) { streamOpen = false; source?.close(); clearTimeout(timer); clearInterval(watch); }
       if (!valid() || reconciling) return;
       reconciling = true;
       polls++;
+      const settled = /^Run (running|queued|in_progress|started)$/.test(current.current!.phase);
       update({
-        phase: 'Recovering status',
+        ...(quiet || (settled && !keepStream) ? {} : { phase: 'Recovering status' }),
         telemetry: {
           admissionAttempts: current.current!.telemetry?.admissionAttempts ?? 0,
           streamConnections: current.current!.telemetry?.streamConnections ?? 0,
@@ -235,6 +242,11 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
         polls = 0;
         const done = terminal(status.status);
         const newerApproval = approvalRevision !== revisionAtStart || current.current!.approval !== approvalAtStart;
+        if (quiet && !done) {
+          const fresh = !newerApproval && !current.current!.approval && status.approval ? { approval: status.approval, phase: 'Awaiting approval' } : {};
+          update({ identityVerified: true, statusObservedAt: new Date().toISOString(), usage: status.usage, ...fresh });
+          return;
+        }
         // A status snapshot has no stream cursor: applying it during a healthy
         // stream can rewind output or double-count later deltas. Terminal wins.
         update({ identityVerified: true, statusObservedAt: new Date().toISOString(), historyBinding: done ? status.historyBinding : undefined,
@@ -276,7 +288,8 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
       if (!valid()) return;
       // Hermes consumes a shared queue; replacement streams do not replay their
       // prefix. Preserve visible data and cumulative per-run limits.
-      if (reconnects) update({ phase: 'Reconnecting — preview retained' });
+      if (reconnects && !quietReconnect) update({ phase: 'Reconnecting — preview retained' });
+      quietReconnect = false;
       update({ telemetry: {
         admissionAttempts: current.current!.telemetry?.admissionAttempts ?? 0,
         streamConnections: (current.current!.telemetry?.streamConnections ?? 0) + 1,
@@ -286,7 +299,15 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
       source = connection;
       streamOpen = true;
       let ended = false;
-      const recover = () => { if (ended) return; ended = true; if (!terminalObserved) update({ activityUnavailable: true }); void reconcile(); };
+      let delivered = false;
+      const recover = () => {
+        if (ended) return;
+        ended = true;
+        // A stream that delivered events was healthy; its loss starts a fresh reconnect budget.
+        if (delivered) { reconnects = 0; quietReconnect = true; }
+        if (!terminalObserved) update({ activityUnavailable: true });
+        void reconcile();
+      };
       connection.onerror = recover;
       for (const name of eventNames) connection.addEventListener(name, (message) => {
       if (!valid() || ended || source !== connection) return;
@@ -297,6 +318,12 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
         if (eventCount > 1000 || eventBytes > 524288) { limited = true; throw new Error('limit'); }
         const event = RunEventSchema.parse(JSON.parse(raw));
         if (event.type !== name || event.publicRunId !== run.publicRunId) throw new Error('event');
+        delivered = true;
+        if (event.type !== 'message.delta' && !event.type.startsWith('run.')) {
+          const key = JSON.stringify(event);
+          if (seen.has(key)) return;
+          seen.add(key);
+        }
         // Execution activity supersedes a queued admission snapshot. Other phases
         // (approval, compaction, recovery, stopping, terminal) retain their authority.
         const activePhase = current.current!.phase === 'Run queued' && !current.current!.done
@@ -337,7 +364,10 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
         } else update({ ...activePhase, events: [...current.current!.events, event] });
       } catch { recover(); }
     });
-      timer = setTimeout(recover, 60_000);
+      // No hard stream lifetime: the server bounds it. A slow background status
+      // check catches a stalled stream or an approval the stream did not carry.
+      clearInterval(watch);
+      watch = setInterval(() => { if (valid() && source === connection && !ended) void reconcile(true, true); }, 60_000);
     }
     if (readFirst || statusOnly || terminal(run.phase.replace('Run ', ''))) void reconcile();
     else connect();

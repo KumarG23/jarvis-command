@@ -632,6 +632,42 @@ it('keeps monitoring healthy long-running work until its terminal status arrives
   unmount();
 });
 
+it('keeps a healthy stream open past a minute without flickering the phase', async () => {
+  const fetchMock = setup(undefined, status('running', { output: null }));
+  const { result, unmount } = readyHook();
+  vi.useFakeTimers();
+  await act(async () => result.current.send(session.id, 'long work', 100));
+  act(() => Source.instances[0]!.emit('tool.started', { tool: 'terminal', preview: 'build' }));
+  const phase = result.current.turn?.phase;
+  await act(async () => { await vi.advanceTimersByTimeAsync(185_000); });
+  expect(Source.instances).toHaveLength(1);
+  expect(Source.instances[0]!.close).not.toHaveBeenCalled();
+  expect(result.current.turn?.phase).toBe(phase);
+  expect(result.current.turn?.telemetry?.statusChecks).toBeGreaterThan(0);
+  fetchMock.mockResolvedValueOnce(Response.json(status()));
+  await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+  expect(result.current.turn?.done).toBe(true);
+  unmount();
+});
+
+it('shows replayed activity once and keeps streaming after repeated healthy reconnects', async () => {
+  setup(undefined, status('running', { output: null }));
+  const { result, unmount } = readyHook();
+  vi.useFakeTimers();
+  await act(async () => result.current.send(session.id, 'replay', 100));
+  for (let index = 0; index < 4; index++) {
+    act(() => Source.instances[index]!.emit('tool.started', { tool: 'execute_code', preview: 'step' }));
+    act(() => Source.instances[index]!.emit('tool.completed', { tool: 'execute_code', error: false, durationSeconds: 1 }));
+    act(() => Source.instances[index]!.onerror?.());
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+    expect(Source.instances).toHaveLength(index + 2);
+  }
+  expect(result.current.turn?.events.filter((event) => event.type === 'tool.started')).toHaveLength(1);
+  expect(result.current.turn?.events.filter((event) => event.type === 'tool.completed')).toHaveLength(1);
+  expect(result.current.turn?.phase).not.toMatch(/Reconnecting|Recovering/);
+  unmount();
+});
+
 it('bounds reconnection and failed status polling without inventing a terminal state', async () => {
   const fetchMock = setup(undefined, status('running', { output: null })); await open(); await send();
   fetchMock.mockRejectedValue(new Error('network unavailable'));
