@@ -104,11 +104,32 @@ it('keeps saved tool output collapsed while retaining its exact payload', async 
   const tool = { id: 'tool:1', sessionId: session.id, role: 'tool', content: 'Exact tool output\n  unchanged', timestamp: null, toolName: 'terminal', displayKind: null };
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ sessionId: session.id, messages: [tool], pagination: { limit: 50, offset: 0, returned: 1, hasMore: false } })));
   render(<LiveRoom session={session} onHistory={vi.fn()} />);
-  const summary = await screen.findByText('terminal');
-  expect(summary.closest('details')).not.toHaveAttribute('open');
+  const group = await screen.findByText('Used 1 tool · terminal');
+  expect(group.closest('details')).not.toHaveAttribute('open');
+  const summary = screen.getByText('Result · terminal');
   expect(summary.closest('details')!.querySelector('p')!.textContent).toBe(tool.content);
-  fireEvent.click(summary);
-  expect(summary.closest('details')).toHaveAttribute('open');
+  fireEvent.click(group);
+  expect(group.closest('details')).toHaveAttribute('open');
+});
+
+it('collapses a run of tool steps into one expandable line between replies', async () => {
+  const message = (id: string, role: string, content: string, toolName: string | null = null) => ({ id, sessionId: session.id, role, content, timestamp: null, toolName, displayKind: null });
+  const messages = [
+    message('u:1', 'user', 'Build it'),
+    message('a:1', 'assistant', '{"cmd":"ls"}', 'terminal'),
+    message('t:1', 'tool', 'file-a', 'terminal'),
+    message('a:2', 'assistant', '{"code":"1"}', 'execute_code'),
+    message('t:2', 'tool', 'ok', 'execute_code'),
+    message('t:3', 'tool', 'ok again', 'execute_code'),
+    message('a:3', 'assistant', 'Done building.'),
+    message('t:4', 'tool', 'later', 'read_file'),
+  ];
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ sessionId: session.id, messages, pagination: { limit: 50, offset: 0, returned: messages.length, hasMore: false } })));
+  render(<LiveRoom session={session} onHistory={vi.fn()} />);
+  await screen.findByText('Used 3 tools · terminal, execute_code');
+  expect(screen.getAllByRole('article', { name: 'Tool activity' })).toHaveLength(2);
+  expect(screen.getByText('Used 1 tool · read_file')).toBeInTheDocument();
+  expect(screen.getAllByRole('article').map(row => row.getAttribute('aria-label'))).toEqual(['Your message', 'Tool activity', 'Jarvis response', 'Tool activity']);
 });
 
 it('renders stored and live assistant thread links consistently; user and tool messages stay inert', async () => {

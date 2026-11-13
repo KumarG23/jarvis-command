@@ -122,6 +122,22 @@ export function LiveRoom({ session, onHistory, reactions, reactionsAvailable = f
       <CopyResponse text={delivery.content} limited={false} />
     </div>
   </article>;
+  // Consecutive tool records collapse into one expandable line instead of filling the chat.
+  // A group never spans a point where a live turn or delivery is placed.
+  const activityGroups = new Map<number, SessionMessage[]>();
+  const groupable = (message: SessionMessage) => isActivityMessage(message) && !omittedEchoIds.has(message.id);
+  for (let start = 0; start < messages.length;) {
+    if (!groupable(messages[start]!)) { start++; continue; }
+    const group: SessionMessage[] = [];
+    let end = start;
+    for (; end < messages.length && groupable(messages[end]!); end++) {
+      group.push(messages[end]!);
+      if (end > start) activityGroups.set(end, []);
+      if (placedDeliveries.has(end) || projected.some(item => item.after === end)) { end++; break; }
+    }
+    activityGroups.set(start, group);
+    start = end;
+  }
   const liveAfter = (index: number) => <>{placedDeliveries.get(index)?.map(deliveryView)}{projected.filter((item) => item.after === index).map(({ turn }) => <Fragment key={turn.intent.clientRequestId}>{renderTurn?.(turn)}</Fragment>)}</>;
   return <>
     {session.ownership === 'external' ? <p className="external-chat-notice">External chat · Read-only. Continuation is unavailable.</p> : null}
@@ -131,7 +147,7 @@ export function LiveRoom({ session, onHistory, reactions, reactionsAvailable = f
     {!loading && !error && messages.length === 0 && deliveries.length === 0 ? <p role="status">No saved messages in session history yet.</p> : null}
     {focus && focus.state !== 'searching' && focus.state !== 'found' ? <div className="history-feedback" role="status"><p>{FOCUS_NOTICE[focus.state]}</p><button type="button" className="text-button" onClick={() => setFocus(null)}>Dismiss</button></div> : null}
     {liveAfter(-1)}
-    {messages.map((message, index) => <Fragment key={message.id}>{omittedEchoIds.has(message.id) || (message.role === 'assistant' && !message.content && !message.toolName) ? null : <article ref={message.id === focus?.id ? (element) => { focusRef.current = element; } : undefined} tabIndex={message.id === focus?.id ? -1 : undefined} data-reply-focus={message.id === focus?.id && focus.state === 'found' ? 'true' : undefined} className="timeline-event history-message" data-message-id={message.id} aria-label={message.role === 'user' ? 'Your message' : message.role === 'assistant' ? 'Jarvis response' : undefined}>
+    {messages.map((message, index) => <Fragment key={message.id}>{omittedEchoIds.has(message.id) || (message.role === 'assistant' && !message.content && !message.toolName) ? null : activityGroups.has(index) ? activityGroups.get(index)!.length === 0 ? null : <ActivityGroup messages={activityGroups.get(index)!} open={activityGroups.get(index)!.some(item => item.id === focus?.id)} /> : <article ref={message.id === focus?.id ? (element) => { focusRef.current = element; } : undefined} tabIndex={message.id === focus?.id ? -1 : undefined} data-reply-focus={message.id === focus?.id && focus.state === 'found' ? 'true' : undefined} className="timeline-event history-message" data-message-id={message.id} aria-label={message.role === 'user' ? 'Your message' : message.role === 'assistant' ? 'Jarvis response' : undefined}>
       <div className={`event-icon ${message.role === 'user' ? 'violet' : 'cyan'}`}>
         {message.role === 'tool' ? <SquareTerminal size={17} /> : message.role === 'user' ? <MessageSquare size={17} /> : <Command size={25} />}
       </div>
@@ -146,4 +162,25 @@ export function LiveRoom({ session, onHistory, reactions, reactionsAvailable = f
     {!loading && !error && messages.length > 0 && session.ownership === 'command' && !(renderTurn && turns.some(turn => turn.intent.sessionId === session.id && (!turn.done || turn.usage?.execution))) ? <HistoryReceipt key={session.id} sessionId={session.id} refreshKey={JSON.stringify(messages.map(message => message.id))} /> : null}
     {!error && (hasMore && pagesLoaded >= 10 ? <p role="status">History view limit reached. More messages may exist.</p> : hasMore ? <button type="button" className="primary-button" disabled={loading} onClick={() => { setLoading(true); setOffset(nextOffset); }}>Load more messages</button> : null)}
   </>;
+}
+
+function isActivityMessage(message: SessionMessage) {
+  return message.role === 'tool' || (message.role === 'assistant' && message.toolName !== null);
+}
+
+function ActivityGroup({ messages, open }: { messages: SessionMessage[]; open: boolean }) {
+  const names = [...new Set(messages.map(message => message.toolName ?? 'tool'))];
+  const steps = messages.filter(message => message.role === 'tool').length || messages.length;
+  const summary = `${steps === 1 ? 'Used 1 tool' : `Used ${steps} tools`} · ${names.slice(0, 3).join(', ')}${names.length > 3 ? ` +${names.length - 3} more` : ''}`;
+  return <article className="timeline-event history-message activity-group" aria-label="Tool activity" data-message-id={messages[0]!.id}>
+    <div className="event-icon cyan"><SquareTerminal size={17} /></div>
+    <div className="event-body">
+      <details className="saved-tool-disclosure activity-group-disclosure" open={open || undefined}>
+        <summary>{summary}</summary>
+        <ol className="activity-group-list">{messages.map(message => <li key={message.id}>
+          <details className="saved-tool-disclosure"><summary>{message.role === 'tool' ? `Result · ${message.toolName ?? 'tool'}` : `Call · ${message.toolName}`}{message.timestamp ? <time> · {new Date(message.timestamp).toLocaleTimeString()}</time> : null}</summary><p>{message.content || 'No text was saved.'}</p></details>
+        </li>)}</ol>
+      </details>
+    </div>
+  </article>;
 }
