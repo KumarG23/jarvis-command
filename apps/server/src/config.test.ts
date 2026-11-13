@@ -32,6 +32,7 @@ describe('loadConfig', () => {
     expect(config).toEqual({
       cockpit: null,
       scheduledRuns: null,
+      hostShell: null,
       reactionsEnabled: false,
       replyEvidenceEnabled: false,
       projectDeletionEnabled: false,
@@ -82,6 +83,11 @@ describe('loadConfig', () => {
   it('enables scheduled runs only with a key and owner actor on a separate port', () => {
     const key = 'k'.repeat(40);
     const owner = 'a'.repeat(64);
+    expect(loadConfig({ ...productionEnvironment, HOST_SHELL_MODE: 'enabled', HOST_SHELL_BASE_URL: 'http://192.168.1.20:8660', HOST_SHELL_KEY: 'x'.repeat(40) }).hostShell)
+      .toEqual({ url: 'http://192.168.1.20:8660', key: 'x'.repeat(40), name: 'Hermes host' });
+    expect(() => loadConfig({ ...productionEnvironment, HOST_SHELL_MODE: 'enabled', HOST_SHELL_BASE_URL: 'http://192.168.1.20:8660' })).toThrow(/HOST_SHELL_KEY/);
+    expect(() => loadConfig({ ...productionEnvironment, HOST_SHELL_MODE: 'enabled', HOST_SHELL_BASE_URL: 'http://u:p@192.168.1.20:8660', HOST_SHELL_KEY: 'x'.repeat(40) })).toThrow(/uncredentialed/);
+    expect(() => loadConfig({ ...productionEnvironment, HOST_SHELL_MODE: 'enabled', HOST_SHELL_BASE_URL: 'http://192.168.1.20:8660', HOST_SHELL_KEY: 'x'.repeat(40), SESSION_HOST_KEY: 'x'.repeat(40) })).toThrow(/must differ/);
     expect(loadConfig(productionEnvironment).scheduledRuns).toBeNull();
     expect(loadConfig({ ...productionEnvironment, SCHEDULED_RUNS_MODE: 'enabled', SCHEDULED_RUNS_HOST: '0.0.0.0', SCHEDULED_RUNS_KEY: key, SCHEDULED_RUNS_OWNER_ACTOR: owner }).scheduledRuns)
       .toEqual({ host: '0.0.0.0', port: 8652, key, ownerActor: owner, deliveriesKey: null, home: null });

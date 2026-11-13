@@ -10,6 +10,7 @@ import Fastify from 'fastify';
 import { registerLiveRoomRoutes, type LiveStreamLimits } from './live-room-routes';
 import { registerArtifactRoutes } from './artifact-routes';
 import { registerCockpitRoutes } from './cockpit-routes';
+import { registerHostShellRoutes } from './host-shell-routes';
 import type { createLiveRoomService } from './live-room-service';
 import { AuditIntegrityError } from './audit-ledger';
 import { ArtifactConflictError, ArtifactDeletedError, ArtifactNotFoundError, ArtifactStorageError, ArtifactStore } from './artifact-store';
@@ -223,6 +224,7 @@ export function buildApp(dependencies: AppDependencies) {
   registerLiveRoomRoutes(app, dependencies, artifactStore);
   registerArtifactRoutes(app, { ...dependencies, artifactStore });
   registerCockpitRoutes(app, dependencies);
+  registerHostShellRoutes(app, dependencies);
   app.addHook('onReady', async () => {
     await artifactStore?.init();
   });

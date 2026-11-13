@@ -176,37 +176,47 @@ export function registerCockpitRoutes(app: FastifyInstance, dependencies: Depend
         return;
       }
       void audit(subjects.get(request) ?? 'unknown', 'terminal.attach', { url: target.replace(/^.*\/v1\//, '/v1/') });
-      const upstream = new WebSocket(target, { headers: { authorization: `Bearer ${cockpit.sessionHostKey}` }, maxPayload: 8 * 1024 * 1024 });
-      const pending: string[] = [];
-      const lifetime = setTimeout(() => socket.close(4401, 'reauthenticate'), MAX_TERMINAL_MS);
-      const closeBoth = (code: number, reason: string) => {
-        clearTimeout(lifetime);
-        if (socket.readyState === socket.OPEN) socket.close(code, reason);
-        if (upstream.readyState === WebSocket.OPEN || upstream.readyState === WebSocket.CONNECTING) upstream.close();
-      };
-      upstream.on('open', () => { for (const frame of pending.splice(0)) upstream.send(frame); });
-      upstream.on('message', (data: Buffer, isBinary: boolean) => {
-        if (socket.readyState === socket.OPEN) socket.send(isBinary ? data : data.toString('utf8'), { binary: isBinary });
-      });
-      upstream.on('unexpected-response', () => {
-        if (socket.readyState === socket.OPEN) socket.send(JSON.stringify({ type: 'closed', reason: 'The execution host refused the terminal.' }));
-        closeBoth(1011, 'upstream refused');
-      });
-      upstream.on('error', () => {
-        if (socket.readyState === socket.OPEN) socket.send(JSON.stringify({ type: 'closed', reason: 'The execution host is not reachable.' }));
-        closeBoth(1011, 'upstream unavailable');
-      });
-      upstream.on('close', () => closeBoth(1000, 'closed'));
-      socket.on('message', (raw: Buffer, isBinary: boolean) => {
-        if (isBinary) return;
-        const text = raw.toString('utf8');
-        // Only well-formed input/resize frames reach the host.
-        try { CockpitTerminalClientFrameSchema.parse(JSON.parse(text)); } catch { return; }
-        if (upstream.readyState === WebSocket.OPEN) upstream.send(text);
-        else if (upstream.readyState === WebSocket.CONNECTING && pending.length < 64) pending.push(text);
-      });
-      // A browser leaving only detaches its viewer; the agent keeps running on the host.
-      socket.on('close', () => closeBoth(1000, 'viewer left'));
+      relayTerminal(socket, target, cockpit.sessionHostKey);
     });
   });
+}
+
+
+/**
+ * Relays one browser terminal to a session host's terminal WebSocket. Only well-formed input and
+ * resize frames go upstream; the viewer is closed after MAX_TERMINAL_MS so Access re-verifies.
+ * A browser leaving only detaches its viewer: the process keeps running on the host.
+ */
+export function relayTerminal(socket: WebSocket, target: string, key: string) {
+  const upstream = new WebSocket(target, { headers: { authorization: `Bearer ${key}` }, maxPayload: 8 * 1024 * 1024 });
+  const pending: string[] = [];
+  const lifetime = setTimeout(() => socket.close(4401, 'reauthenticate'), MAX_TERMINAL_MS);
+  const closeBoth = (code: number, reason: string) => {
+    clearTimeout(lifetime);
+    if (socket.readyState === socket.OPEN) socket.close(code, reason);
+    if (upstream.readyState === WebSocket.OPEN || upstream.readyState === WebSocket.CONNECTING) upstream.close();
+  };
+  upstream.on('open', () => { for (const frame of pending.splice(0)) upstream.send(frame); });
+  upstream.on('message', (data: Buffer, isBinary: boolean) => {
+    if (socket.readyState === socket.OPEN) socket.send(isBinary ? data : data.toString('utf8'), { binary: isBinary });
+  });
+  upstream.on('unexpected-response', () => {
+    if (socket.readyState === socket.OPEN) socket.send(JSON.stringify({ type: 'closed', reason: 'The execution host refused the terminal.' }));
+    closeBoth(1011, 'upstream refused');
+  });
+  upstream.on('error', () => {
+    if (socket.readyState === socket.OPEN) socket.send(JSON.stringify({ type: 'closed', reason: 'The execution host is not reachable.' }));
+    closeBoth(1011, 'upstream unavailable');
+  });
+  upstream.on('close', () => closeBoth(1000, 'closed'));
+  socket.on('message', (raw: Buffer, isBinary: boolean) => {
+    if (isBinary) return;
+    const text = raw.toString('utf8');
+    // Only well-formed input/resize frames reach the host.
+    try { CockpitTerminalClientFrameSchema.parse(JSON.parse(text)); } catch { return; }
+    if (upstream.readyState === WebSocket.OPEN) upstream.send(text);
+    else if (upstream.readyState === WebSocket.CONNECTING && pending.length < 64) pending.push(text);
+  });
+  // A browser leaving only detaches its viewer; the agent keeps running on the host.
+  socket.on('close', () => closeBoth(1000, 'viewer left'));
 }

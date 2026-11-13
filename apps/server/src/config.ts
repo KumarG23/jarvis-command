@@ -43,6 +43,11 @@ const EnvironmentSchema = z.object({
   COCKPIT_MODE: z.enum(['disabled', 'enabled']).default('disabled'),
   SESSION_HOST_BASE_URL: z.url().optional(),
   SESSION_HOST_KEY: z.string().min(32).optional(),
+  // Hermes host admin shell: a separate session host on the Hermes machine, outside Projects.
+  HOST_SHELL_MODE: z.enum(['disabled', 'enabled']).default('disabled'),
+  HOST_SHELL_BASE_URL: z.url().optional(),
+  HOST_SHELL_KEY: z.string().min(32).optional(),
+  HOST_SHELL_NAME: z.string().trim().min(1).max(40).regex(/^[^\r\n]+$/).optional(),
   // Scheduled runs: a separate bearer-key listener (never the Access-protected app port) that lets a
   // Hermes cron script start a run in a Command chat as the configured owner.
   SCHEDULED_RUNS_MODE: z.enum(['disabled', 'enabled']).default('disabled'),
@@ -88,6 +93,12 @@ export type AppConfig = Readonly<{
   cockpit?: Readonly<{
     sessionHostUrl: string;
     sessionHostKey: string;
+  }> | null;
+  hostShell?: Readonly<{
+    url: string;
+    key: string;
+    /** Label shown in Command, e.g. "Hermes host". */
+    name: string;
   }> | null;
   scheduledRuns?: Readonly<{
     host: string;
@@ -233,6 +244,20 @@ export function loadConfig(environment: NodeJS.ProcessEnv): AppConfig {
       })()
     : null;
 
+  const hostShell = parsed.HOST_SHELL_MODE === 'enabled'
+    ? (() => {
+        if (!command) throw new Error('HOST_SHELL_MODE requires COMMAND_MODE=enabled (PUBLIC_ORIGIN and the audit ledger)');
+        const url = new URL(requireValue('HOST_SHELL_BASE_URL', parsed.HOST_SHELL_BASE_URL));
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('HOST_SHELL_BASE_URL must be http(s)');
+        if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+          throw new Error('HOST_SHELL_BASE_URL must be an uncredentialed origin');
+        }
+        const key = requireValue('HOST_SHELL_KEY', parsed.HOST_SHELL_KEY);
+        if (key === parsed.SESSION_HOST_KEY) throw new Error('HOST_SHELL_KEY must differ from SESSION_HOST_KEY');
+        return Object.freeze({ url: url.origin, key, name: parsed.HOST_SHELL_NAME ?? 'Hermes host' });
+      })()
+    : null;
+
   const scheduledRuns = parsed.SCHEDULED_RUNS_MODE === 'enabled'
     ? (() => {
         if (!command) throw new Error('SCHEDULED_RUNS_MODE requires COMMAND_MODE=enabled');
@@ -251,6 +276,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv): AppConfig {
 
   return Object.freeze({
     cockpit,
+    hostShell,
     scheduledRuns,
     reactionsEnabled: parsed.REACTIONS_MODE === 'enabled',
     ...(parsed.PROJECT_CONTEXT_MODE === 'enabled' ? { projectContextEnabled: true } : {}),

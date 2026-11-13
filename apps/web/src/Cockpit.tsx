@@ -28,10 +28,14 @@ export async function cockpitRequest<T>(path: string, body?: unknown): Promise<T
 
 const newRequestId = () => `web-${crypto.randomUUID()}`;
 
-type Props = Readonly<{ projectId: string; projectName: string; onClose: () => void; fullScreen: boolean; onToggleFullScreen: () => void }>;
+type Props = Readonly<{
+  projectId: string; projectName: string; onClose: () => void; fullScreen: boolean; onToggleFullScreen: () => void;
+  /** Hermes host admin shell: shells only, outside Projects, no lead (docs/cockpit/HOST-SHELL.md). */
+  hostShell?: boolean;
+}>;
 
-export function Cockpit({ projectId, projectName, onClose, fullScreen, onToggleFullScreen }: Props) {
-  const base = `/api/cockpit/projects/${projectId}`;
+export function Cockpit({ projectId, projectName, onClose, fullScreen, onToggleFullScreen, hostShell = false }: Props) {
+  const base = hostShell ? '/api/host-shell' : `/api/cockpit/projects/${projectId}`;
   const [sessions, setSessions] = useState<CockpitSession[] | null>(null);
   const [adapters, setAdapters] = useState<CockpitAdapter[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -48,17 +52,17 @@ export function Cockpit({ projectId, projectName, onClose, fullScreen, onToggleF
 
   useEffect(() => {
     void load();
-    cockpitRequest<{ adapters: CockpitAdapter[] }>('/api/cockpit/adapters').then(value => setAdapters(value.adapters), () => undefined);
+    if (!hostShell) cockpitRequest<{ adapters: CockpitAdapter[] }>('/api/cockpit/adapters').then(value => setAdapters(value.adapters), () => undefined);
     const timer = setInterval(() => { if (document.visibilityState === 'visible') void load(); }, 4_000);
     return () => clearInterval(timer);
-  }, [load]);
+  }, [load, hostShell]);
 
   const selected = sessions?.find(item => item.id === selectedId) ?? null;
   const replace = (session: CockpitSession) => setSessions(previous => previous ? [session, ...previous.filter(item => item.id !== session.id)] : [session]);
 
   return <div className={`cockpit${fullScreen ? '' : ' is-docked'}`} onKeyDown={event => { if (event.key === 'Escape' && !(event.target instanceof HTMLElement && event.target.closest('.cockpit-terminal'))) onClose(); }}>
     <header className="pane-header cockpit-header">
-      <h2><TerminalSquare size={18} /> Terminals <small>{projectName}</small></h2>
+      <h2><TerminalSquare size={18} /> {hostShell ? 'Shell' : 'Terminals'} <small>{projectName}</small></h2>
       <div className="cockpit-header-actions">
         <button className="icon-button" type="button" aria-label="Refresh sessions" title="Refresh" onClick={() => void load()}><RefreshCw size={17} /></button>
         <button className="icon-button" type="button" aria-label={fullScreen ? 'Exit full screen' : 'Full screen'} title={fullScreen ? 'Exit full screen' : 'Full screen'} onClick={onToggleFullScreen}>{fullScreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}</button>
@@ -68,8 +72,8 @@ export function Cockpit({ projectId, projectName, onClose, fullScreen, onToggleF
     {error ? <p className="notice error cockpit-notice" role="alert">{error}</p> : null}
     <div className="cockpit-body">
       <nav className="cockpit-sessions" aria-label="Terminal sessions">
-        <button className="secondary-button cockpit-new" type="button" onClick={() => setCreating(true)}><Plus size={16} /> New session</button>
-        {sessions === null ? <p className="muted small">Loading…</p> : sessions.length === 0 ? <p className="muted small">No sessions in this project yet.</p> : null}
+        <button className="secondary-button cockpit-new" type="button" onClick={() => setCreating(true)}><Plus size={16} /> {hostShell ? 'New shell' : 'New session'}</button>
+        {sessions === null ? <p className="muted small">Loading…</p> : sessions.length === 0 ? <p className="muted small">{hostShell ? 'No shells open.' : 'No sessions in this project yet.'}</p> : null}
         <ul>
           {sessions?.map(session => <li key={session.id}>
             <button type="button" className="cockpit-session-item" aria-current={session.id === selectedId ? 'true' : undefined} onClick={() => { setSelectedId(session.id); setCreating(false); }}>
@@ -80,16 +84,16 @@ export function Cockpit({ projectId, projectName, onClose, fullScreen, onToggleF
         </ul>
       </nav>
       <section className="cockpit-main">
-        {creating ? <CreateForm adapters={adapters} base={base} onCancel={() => setCreating(false)} onCreated={session => { replace(session); setSelectedId(session.id); setCreating(false); }} />
-          : selected ? <SessionView key={selected.id} base={base} session={selected} onSession={replace} />
-            : <div className="cockpit-empty"><TerminalSquare size={28} /><p>Start a session to run Claude Code, Codex, Gemini, OpenCode or a shell on the execution host.</p></div>}
+        {creating ? <CreateForm hostShell={hostShell} adapters={adapters} base={base} onCancel={() => setCreating(false)} onCreated={session => { replace(session); setSelectedId(session.id); setCreating(false); }} />
+          : selected ? <SessionView key={selected.id} base={base} session={selected} onSession={replace} leadAvailable={!hostShell} />
+            : <div className="cockpit-empty"><TerminalSquare size={28} /><p>{hostShell ? `Open a shell on ${projectName}. It runs separately from Hermes, so it works while Hermes is down.` : 'Start a session to run Claude Code, Codex, Gemini, OpenCode or a shell on the execution host.'}</p></div>}
       </section>
     </div>
   </div>;
 }
 
-function CreateForm({ adapters, base, onCancel, onCreated }: Readonly<{ adapters: CockpitAdapter[]; base: string; onCancel: () => void; onCreated: (session: CockpitSession) => void }>) {
-  const [kind, setKind] = useState<CockpitKind>('claude');
+function CreateForm({ adapters, base, onCancel, onCreated, hostShell = false }: Readonly<{ adapters: CockpitAdapter[]; base: string; onCancel: () => void; onCreated: (session: CockpitSession) => void; hostShell?: boolean }>) {
+  const [kind, setKind] = useState<CockpitKind>(hostShell ? 'shell' : 'claude');
   const [title, setTitle] = useState('');
   const [prompt, setPrompt] = useState('');
   const [worktree, setWorktree] = useState(true);
@@ -103,7 +107,9 @@ function CreateForm({ adapters, base, onCancel, onCreated }: Readonly<{ adapters
   const submit = async () => {
     setBusy(true); setError(null);
     try {
-      const { session } = await cockpitRequest<{ session: CockpitSession }>(`${base}/sessions`, {
+      const { session } = await cockpitRequest<{ session: CockpitSession }>(`${base}/sessions`, hostShell ? {
+        requestId: requestId.current, ...(title.trim() ? { title: title.trim() } : {}),
+      } : {
         requestId: requestId.current, title: title.trim() || options.find(item => item.kind === kind)?.label || kind, kind,
         ...(kind === 'shell' ? {} : { worktree }), ...(prompt.trim() ? { initialInput: prompt } : {}),
       });
@@ -112,10 +118,10 @@ function CreateForm({ adapters, base, onCancel, onCreated }: Readonly<{ adapters
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'The session could not be started.'); } finally { setBusy(false); }
   };
   return <form className="cockpit-create" onSubmit={event => { event.preventDefault(); void submit(); }}>
-    <h3>New session</h3>
-    <label>Agent<select value={kind} onChange={event => { setKind(event.target.value as CockpitKind); requestId.current = newRequestId(); }}>
+    <h3>{hostShell ? 'New shell' : 'New session'}</h3>
+    {hostShell ? null : <label>Agent<select value={kind} onChange={event => { setKind(event.target.value as CockpitKind); requestId.current = newRequestId(); }}>
       {options.map(item => <option key={item.kind} value={item.kind}>{item.label}</option>)}
-    </select></label>
+    </select></label>}
     {adapter ? <p className="muted small">{adapter.available ? `${adapter.version ?? 'Installed'} · ${adapter.billing}${adapter.qualified ? '' : ' · not yet qualified on this host'}` : 'Not installed on the execution host.'}{adapter.note ? ` ${adapter.note}` : ''}</p> : null}
     <label>Title<input value={title} maxLength={120} placeholder="What is this session for?" onChange={event => setTitle(event.target.value)} /></label>
     {kind !== 'shell' ? <>
@@ -161,7 +167,7 @@ function mirrorTerminalStyles(root: HTMLElement) {
 
 type Link = 'connecting' | 'open' | 'reconnecting' | 'closed';
 
-function SessionView({ base, session, onSession }: Readonly<{ base: string; session: CockpitSession; onSession: (session: CockpitSession) => void }>) {
+function SessionView({ base, session, onSession, leadAvailable = true }: Readonly<{ base: string; session: CockpitSession; onSession: (session: CockpitSession) => void; leadAvailable?: boolean }>) {
   const host = useRef<HTMLDivElement | null>(null);
   const socket = useRef<WebSocket | null>(null);
   const terminal = useRef<Terminal | null>(null);
@@ -280,7 +286,7 @@ function SessionView({ base, session, onSession }: Readonly<{ base: string; sess
       <div className="cockpit-actions">
         <span className={`cockpit-owner owner-${session.owner}`} title={OWNER_LABEL[session.owner]}>{session.owner === 'lead' ? <Bot size={14} /> : <UserRound size={14} />}<span className="cockpit-label">{OWNER_LABEL[session.owner]}</span><span className="cockpit-short">{OWNER_SHORT[session.owner]}</span></span>
         {active && session.owner !== 'human' ? <button className="secondary-button" type="button" disabled={busy} aria-label="Take over" onClick={() => void act('ownership', { action: 'take' })}><Hand size={15} /><span className="cockpit-label">Take over</span><span className="cockpit-short">Take over</span></button> : null}
-        {active && session.owner === 'human' ? <button className="secondary-button" type="button" disabled={busy} aria-label="Hand to lead" onClick={() => void act('ownership', { action: 'hand_to_lead' })}><Bot size={15} /><span className="cockpit-label">Hand to lead</span><span className="cockpit-short">To lead</span></button> : null}
+        {active && leadAvailable && session.owner === 'human' ? <button className="secondary-button" type="button" disabled={busy} aria-label="Hand to lead" onClick={() => void act('ownership', { action: 'hand_to_lead' })}><Bot size={15} /><span className="cockpit-label">Hand to lead</span><span className="cockpit-short">To lead</span></button> : null}
         {active ? <button className="secondary-button" type="button" disabled={busy} title="Send Ctrl-C" aria-label="Interrupt" onClick={() => void act('interrupt')}><OctagonX size={15} /><span className="cockpit-label">Interrupt</span><span className="cockpit-short">Ctrl+C</span></button> : null}
         {active ? confirmStop
           ? <><button className="danger-button" type="button" disabled={busy} onClick={() => { setConfirmStop(false); void act('stop'); }}>Stop it</button><button className="secondary-button" type="button" onClick={() => setConfirmStop(false)}>Keep running</button></>

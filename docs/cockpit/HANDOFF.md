@@ -60,7 +60,7 @@ Ordered by dependency. Each line gives the state, the owner and the next concret
 11. **P10.5 OpenRouter free routes.** State: deployed, `:free` only. Owner: Jarvis/Neal accept it in the picker. **P10.4 Anthropic:** disabled by owner decision (2026-11-11), not a gap.
 12. **P14 Studio crew view and P14.1 steering.** State: blocked. They depend on Dev Studio's shared projection (Studio #93), and Dev Studio is paused. Owner: Neal decides whether to resume Studio or retarget the view onto cockpit sessions.
 13. **Ops follow-ups.** Dev/build `npm audit` (20 advisories, none high or critical); port the containerized release pipeline to VM118 (optional); VM113 deletion (Neal only).
-14. **Hermes host admin shell.** A shell on the Dell, outside Projects, usable from the phone without Tailscale, and working while the Hermes gateway is down. Its main use is restarting `hermes-gateway`. State: contract proposed in [HOST-SHELL.md](HOST-SHELL.md). Neal picks the sudo model before anything is built or deployed. Owner: Claude (source), Jarvis (Dell unit, user, firewall).
+14. **Hermes host admin shell.** A shell on the Dell, outside Projects, usable from the phone without Tailscale, and working while the Hermes gateway is down. Its main use is restarting `hermes-gateway`. State: built, not deployed. Neal chose passwordless sudo only for gateway restart/start/stop (2026-11-13). Setup steps are in [HOST-SHELL.md](HOST-SHELL.md). Owner: Claude (source), Jarvis (Dell unit, user, firewall).
 
 ## Verified facts
 
