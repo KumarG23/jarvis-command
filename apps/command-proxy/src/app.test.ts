@@ -1890,3 +1890,26 @@ describe('Command origin assertion (v1)', () => {
   });
 });
 
+describe('pending approval inside pending_controls', () => {
+  const status = (extra: Record<string, unknown>) => ({ run_id: runId, session_id: commandSessionId, status: 'waiting_for_approval', updated_at: 1788530400, ...extra });
+  const read = async (body: unknown) => {
+    const response = await createApp(vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(body))).inject({ url: `/v1/runs/${runId}`, headers: authHeaders() });
+    expect(response.statusCode).toBe(200);
+    return response.json().approval;
+  };
+  it('projects the single pending approval control when top-level approval is absent', async () => {
+    expect(await read(status({ pending_controls: [{ kind: 'approval', request_id: 'approval-ctl', command: 'write_file AGENTS.md', description: 'Protected agent-instruction file', tool: 'write_file' }] })))
+      .toEqual({ requestId: 'approval-ctl', command: 'write_file AGENTS.md', description: 'Protected agent-instruction file', tool: 'write_file' });
+    expect(await read(status({ pending_controls: [{ kind: 'approval', id: 'approval-nested', approval: { summary: 'Write AGENTS.md', description: 'Protected file' } }] })))
+      .toMatchObject({ requestId: 'approval-nested', command: 'Write AGENTS.md' });
+  });
+  it('prefers top-level approval and yields null for ambiguous or malformed controls without failing status', async () => {
+    expect(await read(status({ approval: { request_id: 'approval-top', command: 'echo top', description: 'Top' }, pending_controls: [{ kind: 'approval', request_id: 'approval-ctl', command: 'other' }] })))
+      .toMatchObject({ requestId: 'approval-top' });
+    expect(await read(status({ pending_controls: [{ kind: 'approval', request_id: 'a1', command: 'x' }, { kind: 'approval', request_id: 'a2', command: 'y' }] }))).toBeNull();
+    expect(await read(status({ pending_controls: [{ kind: 'approval', request_id: ' bad id ', command: 'x' }] }))).toBeNull();
+    expect(await read(status({ pending_controls: [{ kind: 'steer', request_id: 's1' }] }))).toBeNull();
+    expect(await read(status({ pending_controls: 'nope' }))).toBeNull();
+  });
+});
+

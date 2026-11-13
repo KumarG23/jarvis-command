@@ -1094,7 +1094,7 @@ function projectRunStatus(upstream: z.infer<typeof UpstreamRunStatusSchema>, obs
     // Hermes may omit both timestamps. In that case this is the read observation time,
     // not a claim about when the run transitioned to its current state.
     updatedAt: toIsoTimestamp(upstream.updated_at ?? upstream.created_at, observedAt),
-    approval: upstream.approval ? projectApproval(upstream.approval) : null,
+    approval: upstream.approval ? projectApproval(upstream.approval) : pendingControlApproval(upstream),
     output: upstream.output ?? null,
     error: upstream.error == null ? null : 'Hermes run unavailable',
     pendingSteer: upstream.pending_steer ?? null,
@@ -1117,6 +1117,27 @@ function projectRunStatus(upstream: z.infer<typeof UpstreamRunStatusSchema>, obs
       inPlace: upstream.result.in_place,
     } } : {}),
   };
+}
+
+/**
+ * Installed Hermes durable run status reports a pending approval only inside `pending_controls`
+ * (kind "approval"), not as top-level `approval`. Project the single pending approval so Command
+ * can show Approve/Deny after a dropped event stream. Anything ambiguous or malformed yields null,
+ * never a failed status read.
+ */
+function pendingControlApproval(upstream: Record<string, unknown>): LiveApproval | null {
+  const controls = upstream.pending_controls;
+  if (!Array.isArray(controls)) return null;
+  const approvals = controls.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object' && (item as { kind?: unknown }).kind === 'approval');
+  if (approvals.length !== 1) return null;
+  const item = approvals[0]!;
+  const nested = item.approval && typeof item.approval === 'object' ? item.approval as Record<string, unknown> : {};
+  try {
+    const merged: Record<string, unknown> = { ...item, ...nested };
+    // A file-guard approval may carry a summary instead of a shell command; show what Hermes gave.
+    const command = [merged.command, merged.summary, merged.title, merged.description].find(value => typeof value === 'string' && value.trim());
+    return projectApproval({ ...merged, command, request_id: nested.request_id ?? item.request_id ?? item.id });
+  } catch { return null; }
 }
 
 function projectApproval(value: Record<string, unknown>): LiveApproval {
