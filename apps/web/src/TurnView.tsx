@@ -28,6 +28,10 @@ export function TurnView({ turn, allowed, approve, stop, onSaveResponse, threadP
     {turn.approval ? <section aria-label="Awaiting approval"><h2>Awaiting approval</h2><pre>{turn.approval.command}</pre><p>{turn.approval.description}</p><p>Tool: {turn.approval.tool ?? 'Not reported'}</p><p>Request: {turn.approval.requestId}</p><p>Run: {turn.publicRunId} · Session: {turn.intent.sessionId}</p>
       {canControl && !turn.done ? <><button type="button" disabled={turn.controlBusy} onClick={() => approve(turn, 'once')}>Approve once</button><button type="button" disabled={turn.controlBusy} onClick={() => approve(turn, 'deny')}>Deny</button></> : null}
     </section> : null}
+    {!turn.approval && !turn.done && turn.phase === 'Run waiting_for_approval' ? <section aria-label="Approval details missing" className="notice">
+      <h2>Jarvis is waiting for an approval</h2>
+      <p>Hermes paused this run for approval but didn't send Command what it wants to do, so there is nothing to approve here. Stop the run and send your message again, or approve it where Jarvis asked (for example Discord).</p>
+    </section> : null}
     {canControl && !turn.done && turn.publicRunId ? <>
       {confirmation?.intent === turn.intent && confirmation.publicRunId === turn.publicRunId ? <section aria-label="Confirm stop">
         <h2>Confirm stop</h2><p>Run: {confirmation.publicRunId}</p><p>Session: {confirmation.intent.sessionId}</p>
