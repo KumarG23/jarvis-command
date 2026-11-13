@@ -10,7 +10,9 @@ import { ConflictError, NotFoundError, type SessionManager } from './sessions';
 // MCP (Streamable HTTP, JSON responses) for the project lead running in Hermes.
 // Every call through this listener acts as the lead and can never act as Neal.
 
-const projectId = CockpitProjectIdSchema;
+// The Command project ID (room_…) given as "Cockpit projectId" in the project context. A chat or
+// thread ID, or a UUID from a chat title, puts sessions where Command's Terminals panel never looks.
+const projectId = CockpitProjectIdSchema.describe('The Command project ID, exactly as given by "Cockpit projectId" in the project context (room_ followed by 32 hex characters). Never a chat, thread or session ID.');
 const sessionId = CockpitSessionIdSchema;
 
 type Tool = {

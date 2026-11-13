@@ -381,6 +381,19 @@ it('parses COMMAND_DEFAULT_INFERENCE', async () => {
   expect(() => parseDefaultInference('openai-codex/gpt-6.1-sol')).toThrow(/COMMAND_DEFAULT_INFERENCE/);
   expect(() => parseDefaultInference('openai-api/gpt-6.1-sol/medium')).toThrow(/COMMAND_DEFAULT_INFERENCE/);
 });
+it('gives the lead the canonical project ID for cockpit tools, from the saved room the chat belongs to', async () => {
+  const f = await fixture();
+  const room = (await f.rooms.list()).find(candidate => candidate.sessionIds.includes(request().sessionId))!;
+  const listTerminals = vi.fn(async () => []);
+  const service = createLiveRoomService({ ledger: f.ledger, client: f.client, rooms: f.rooms, resolveImages: f.resolveImages, now: fixtureNow, projectContext: true, listTerminals });
+  await service.submitRun('alice', { ...request(), inference: a });
+  const sent = f.startRun.mock.calls.at(-1)![0] as { instructions?: string };
+  expect(room.id).toMatch(/^room_[a-f0-9]{32}$/);
+  expect(sent.instructions).toContain(`Cockpit projectId: ${room.id} `);
+  expect(sent.instructions).not.toContain(`Cockpit projectId: ${request().sessionId}`);
+  // The terminals listed in the prompt come from the same project the cockpit tools are told to use.
+  expect(listTerminals).toHaveBeenCalledWith(room.id);
+});
 it('sends saved project context as per-run instructions only when enabled', async () => {
   const f = await fixture();
   const withContext = createLiveRoomService({ ledger: f.ledger, client: f.client, rooms: f.rooms, resolveImages: f.resolveImages, now: fixtureNow, projectContext: true });

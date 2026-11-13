@@ -16,6 +16,7 @@ it('describes the project and the chat role, leaving out archived threads', () =
   expect(text).toContain('- Lead (lead)');
   expect(text).not.toContain('Old');
   expect(projectInstructions(room, other)).toContain('a chat in this project');
+  expect(text).toContain(`Cockpit projectId: ${room.id} `);
 });
 
 it('stays within the size bound', () => {
