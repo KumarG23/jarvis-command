@@ -20,47 +20,38 @@ Keep this short and current. A new conversation (Claude, Jarvis or Neal) reads i
 
 ## Built and deployed so far
 
-States mean: **built** = source with tests; **deployed** = running on VM118/Dell; **accepted** = exercised for real by Neal or Jarvis.
+States mean: **built** = source with tests; **deployed** = running on VM118/Dell; **accepted** = exercised for real by Neal or Jarvis. Everything up to `9726999` is built; everything up to `abe7bbc` is deployed (Jarvis, PR #177 comment 6862684459).
 
 | Slice | State | Evidence |
 | --- | --- | --- |
-| Session host (tmux PTYs, ownership, worktrees, diff/check, MCP tools) | deployed | Jarvis, PR #177 comments 6803171736 and 6803980369. Hermes connects and discovers the 12 tools, configured for `project-lead` only. `run_check` was re-enabled after the ownership-gate regressions passed. |
-| BFF relay + web Terminals pane | deployed, **accepted on phone with Claude Code** | Built in `19a9543`. Part of the VM118 web build since `be38a9f`. On 2026-11-12 Neal started a Claude Code session on his Android phone: he accepted the folder-trust prompt with the key bar, sent a message, and the reply streamed back under his subscription login. |
-| Lead chat on VM118 | deployed, **one real chat accepted** | Neal's chat completed after the system-unit repair (Jarvis, comment 6809584673; audit has `run.completed`). |
-| Model routing: subscription catalog, Sol 6.1 default, definite refusals | deployed | `9a10948`. Jarvis read-only check: Inherit resolves to Sol 6.1/medium with source `command` (comment 6807882442). |
-| Storage reason codes in logs | built, not deployed | `1fb7363`. Ships with the next functional deploy. |
+| Session host (tmux PTYs, ownership, worktrees, diff/check, MCP tools) | deployed | Jarvis, comments 6803171736 and 6803980369. 12 MCP tools discovered. |
+| BFF relay + web Terminals pane | **accepted** (phone, Claude Code, Codex, agy) | Neal, 2026-11-12. |
+| Lead chat on VM118 | **accepted** | Neal's chats complete on Sol 6.1 medium (comment 6809584673). |
+| Model routing: subscription catalog, Sol 6.1 default | deployed | `9a10948`; comment 6807882442. |
+| Project chats on main Jarvis (`default` profile) with the cockpit MCP | **accepted** | Jarvis added the MCP (comment 6811720990). Neal, phone, 2026-11-12: Jarvis listed the Test project's terminals, and a live Proxmox/TrueNAS check ran from a Command chat. |
+| Project context as run `instructions` (`PROJECT_CONTEXT_MODE`) | deployed | `9254ff7`, enabled per Jarvis (comment 6862829544). Not separately accepted. |
+| Phone push: run/reply alerts, tap opens the chat, high urgency, test button | **accepted** | Tap routing (Neal, 2026-11-12). Locked-phone test alert after `abe7bbc` (Neal, 2026-11-13). Other categories not individually checked. |
+| Hermes cron/reminder deliveries into Command (`POST /v1/deliveries`) | **accepted** for the native gateway path | After Neal's gateway restart, Jarvis's native job reached Command as one inbox item (2026-11-13). Existing Discord cron destinations are unchanged. |
+| Hermes host admin shell ([HOST-SHELL.md](HOST-SHELL.md)) | deployed, **gateway restart accepted** | Jarvis commissioning, comment 6862684459. Neal restarted `hermes-gateway` from the shell on his phone; the shell stayed up and the gateway came back with a new PID (comment 6862829544). Not yet checked: opening a new shell while the gateway is down. |
+| Storage reason codes in logs; agy conversation-ID capture (`dcf1072`) | deployed | In `abe7bbc`. agy resume not yet exercised. |
+| Read notifications dimmed; read items clear their phone alert | built | `9726999`, web only. Awaiting deploy. |
 
 ## Remaining work
 
-Ordered by dependency. Each line gives the state, the owner and the next concrete action. Earlier receipts for P6.1–P14.1 are kept in MASTER_PLAN §11.
+Ordered by Discord-replacement value. Each line gives the state, owner and next action. Earlier receipts for P6.1–P14.1 are in MASTER_PLAN §11.
 
-1. **Chat acceptance on desktop and phone.** Picker, history, streaming, run receipt, retry and recovery. State: deployed, partly accepted. Owner: Jarvis/Neal exercise it, Claude fixes. Next: authenticated desktop + phone pass that records the receipt route.
-2. **Terminals acceptance.** In the browser: Shell, `echo hi`, Hand to lead, Take over, Stop; then check `cockpit-audit.jsonl`. State: deployed. Owner: Jarvis or Neal. Next: run [DEPLOY-VM118.md](DEPLOY-VM118.md) §7.3–7.4.
-3. **Official CLI qualification on VM118.** Claude Code, Codex, agy (already logged in), Gemini, OpenCode as real interactive sessions. State: **Claude Code, Codex and agy accepted** (Neal, phone, 2026-11-12). Codex ran on GPT-6.1-Sol medium under his ChatGPT login, and agy 1.5.6 on Gemini 4 Argon under Google AI Pro. agy ignored the create-form prompt passed with `--prompt-interactive`; since `5fb5099` the session host types it once the screen settles. Gemini and OpenCode not yet exercised. Owner: Neal logs in himself through a Terminals shell (owner-only); Claude fixes adapters. Next: start each kind once and report what the adapters need.
-4. **Lead chat runs as the project lead with project continuity.**
-   - The BFF sends Hermes `/p/project-lead/v1/runs` a stable `session_id` per project and server-built `instructions`: goal, instructions, decisions, artifacts, and session/worktree lineage.
-   - State: built in `9254ff7` behind `PROJECT_CONTEXT_MODE=enabled`. Project chats send the saved project context as run `instructions` on the existing Command session, which is Prime's continuity. Jarvis confirmed `instructions` and `session_id` from the installed source. Not deployed.
-   - Accepted (Neal, phone, 2026-11-12): phone push arrives with the app closed (af608db generic alert), and tapping it opens the originating chat (bbf0071).
-   - Accepted (Neal, phone, 2026-11-12): in the Test project chat, main Jarvis listed the project's three terminals (Claude Code, Codex, agy). In another chat it checked Proxmox and TrueNAS storage live and answered. Neal runs Jarvis with almost no approvals, so approval UI is checked only if a prompt occurs naturally. Follow-up: both receipts said "Route verification unavailable", and the tool run said "Activity incomplete"; check whether that's expected for Hermes tool runs or a receipt gap.
-   - Decided (Neal, 2026-11-12): project chats stay on the main Jarvis profile (the one the command proxy reaches at `127.0.0.1:8642`), and Jarvis adds the cockpit MCP to it. `project-lead` stays as it is. Open: Jarvis applies the profile change and reports a list-terminals check from a Command project chat.
-   - Owner: Claude (source), Jarvis (profile).
-5. **Lead drives terminals end to end.** From the project lead chat: create a session, send, read output, `run_check`, and show tool approvals and results in Command. State: MCP deployed; the Command UI for lead tool calls and approvals is unverified. Owner: Claude (UI), Jarvis (profile). Next: depends on item 4.
-6. **agy conversation-ID capture** for lineage and resume. State: built in `dcf1072`. It reads agy's per-directory cache for sessions with their own worktree, and resume uses `--conversation <id>`. Not deployed. Owner: Claude; Jarvis deploys.
-7. **Discord parity.** Neal's usage (2026-11-12): homelab operations through Hermes tools (the most important), reminders and cron jobs (often), many channels, and images (rarely). Never voice. The target is "like the Claude app, with Hermes instead of Claude". Mapping:
-   - **Many channels:** projects, chats and threads. Present.
-   - **Images:** chat image attachments and artifacts. Present; to be checked in an acceptance pass.
-   - **Homelab operations:** Hermes tools such as SSH, VMs and troubleshooting, run from Command chat, with approval prompts answered in Command. Needs a real pass: a harmless read-only tool call, then one that asks for approval. Owner: Jarvis exercises it, Claude fixes the UI.
-   - **Reminders and cron:** two paths, both described in [SCHEDULED-RUNS.md](SCHEDULED-RUNS.md).
-     - **Scheduled runs** are live. A script-mode job calls Command, which starts a run in the project chat.
-     - **Deliveries** cover Hermes cron and reminders that stay in Hermes, through the Hermes `command` plugin. The receiver is deployed: b578d42 is live, and Jarvis's test reminder reached Neal's phone (2026-11-12).
-     - Blocked (Jarvis, 2026-11-13): the native gateway acceptance needs a `hermes-gateway` restart that Jarvis doesn't initiate itself. After that comes one guarded script-only acceptance, then migrating the Discord jobs one at a time with Neal's OK.
-8. **P13 thread status, unread, per-thread model.** State: source merged and now on VM118. Convergence, reload, restart and phone acceptance outstanding (MASTER_PLAN §11). Owner: Claude; acceptance Jarvis/Neal.
-9. **P12 reactions and P6.1 reply notifications.** State: source merged and on VM118 behind disabled flags. The exact-message binding (#166, Hermes PR1) is unmerged and installed support is unknown. Owner: Jarvis (Hermes source and install), then Claude (enable and verify). VAPID/egress/push enablement is an owner boundary.
-10. **P9.6 delete projects and recovery.** State: retained-snapshot recovery merged; deletion enablement and contents recovery outstanding. Owner: Claude. Live deletion needs Neal.
-11. **P10.5 OpenRouter free routes.** State: deployed, `:free` only. Owner: Jarvis/Neal accept it in the picker. **P10.4 Anthropic:** disabled by owner decision (2026-11-11), not a gap.
-12. **P14 Studio crew view and P14.1 steering.** State: blocked. They depend on Dev Studio's shared projection (Studio #93), and Dev Studio is paused. Owner: Neal decides whether to resume Studio or retarget the view onto cockpit sessions.
-13. **Ops follow-ups.** Dev/build `npm audit` (20 advisories, none high or critical); port the containerized release pipeline to VM118 (optional); VM113 deletion (Neal only).
-14. **Hermes host admin shell.** A shell on the Dell, outside Projects, usable from the phone without Tailscale, and working while the Hermes gateway is down. Its main use is restarting `hermes-gateway`. State: built, not deployed. Neal chose passwordless sudo only for gateway restart/start/stop (2026-11-13). Setup steps are in [HOST-SHELL.md](HOST-SHELL.md). Owner: Claude (source), Jarvis (Dell unit, user, firewall).
+1. **Homelab chat and reminders end to end from Command (next slice).** In a normal Command chat Neal asks Jarvis for a homelab action, then says "remind me in N minutes …". Pass when the reminder arrives as a Command delivery (inbox, phone alert, card in that chat), not in Discord. Includes one tool call that naturally asks for approval, if one occurs. Owner: Neal exercises, Jarvis confirms Hermes routes the reminder to the `command` platform, Claude fixes. Open questions: does a reminder created from a Command chat default to Command delivery, or does Hermes need `deliver=command:<chat>` set by the chat?
+2. **Selective Discord cron migration.** Jarvis lists Neal's Discord cron/reminder jobs; Neal approves each one individually; Jarvis moves that job's destination to Command (`home` or a named chat). No bulk migration.
+3. **Lead drives terminals end to end.** From a project chat: create a session, send, read output, `run_check`, with tool calls and results visible in Command. MCP is deployed and listing works; create/drive/read/check is unaccepted. Owner: Neal/Jarvis exercise, Claude fixes the UI. Follow-up from earlier receipts: "Route verification unavailable" and "Activity incomplete" on Hermes tool runs.
+4. **Chat and Terminals acceptance gaps.** Receipt route, retry/recovery; Hand to lead, Take over, Stop, audit check ([DEPLOY-VM118.md](DEPLOY-VM118.md) §7.3–7.4).
+5. **CLI qualification:** Gemini and OpenCode not yet exercised. Neal logs in himself through a Terminals shell.
+6. **Host shell remaining check:** with `hermes-gateway` stopped, open a new shell and start it again.
+7. **P13 thread status, unread, per-thread model:** deployed; convergence/reload/phone acceptance outstanding.
+8. **P12 reactions:** behind a disabled flag; needs Hermes #166 (exact-message binding). Owner: Jarvis, then Claude.
+9. **P9.6 delete projects and recovery:** deletion enablement outstanding; live deletion needs Neal.
+10. **P10.5 OpenRouter free routes:** deployed; accept in the picker. P10.4 Anthropic is off by owner decision.
+11. **P14 Studio crew view:** blocked; Dev Studio is paused. Neal decides whether to resume Studio or retarget the view.
+12. **Ops:** `npm audit` (no high/critical), optional release pipeline on VM118, VM113 deletion (Neal only).
 
 ## Verified facts
 
