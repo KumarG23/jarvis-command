@@ -257,6 +257,11 @@ export const LiveRunSubmissionRequestSchema = z.object({
     artifactId: z.string().regex(/^art_[a-f0-9]{32}$/),
     version: z.number().int().min(1).max(10_000),
   }).strict()).max(4).optional(),
+  // Any other uploaded file: Jarvis is told where it is saved on the Command host and opens it there.
+  files: z.array(z.object({
+    artifactId: z.string().regex(/^art_[a-f0-9]{32}$/),
+    version: z.number().int().min(1).max(10_000),
+  }).strict()).max(10).optional(),
 }).strict();
 
 export const LiveRunSubmissionResponseSchema = z.object({

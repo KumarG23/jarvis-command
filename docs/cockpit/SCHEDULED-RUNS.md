@@ -119,6 +119,40 @@ Storage is `deliveries.json` next to the audit ledger, private (0700 directory, 
 
 **Rollback:** a BFF older than this change can't read an inbox that holds a delivery item and reports notification storage unavailable. Before rolling back past it, move `notifications.json` aside (the inbox then starts empty).
 
+## Files: Jarvis sends files, and reads Neal's attachments
+
+Same listener, same **deliveries key** (`SCHEDULED_DELIVERIES_KEY`). The scheduled-runs key doesn't work here.
+
+`POST /v1/files?name=<filename>[&chatId=jc_…|room_…][&id=<key>][&title=…]` with the raw file as the body and its type as `Content-Type`. Up to `ARTIFACT_MAX_FILE_BYTES` (50 MB by default). Images (PNG, JPEG, GIF, WebP) and PDFs that pass their content checks keep their type; anything else is stored as a plain file. The same `id` returns the same file instead of storing it twice.
+
+```json
+{ "artifactId": "art_…", "version": 1, "type": "image", "name": "graph.png", "size": 48213,
+  "url": "/api/artifacts/art_…/versions/1/download",
+  "markdown": "![graph.png](/api/artifacts/art_…/versions/1/blob)" }
+```
+
+Put `markdown` in a reply or a delivery's `content`. In the chat an image shows inline (tap to open full size) and any other file shows as a download card. Command only renders its own stored files this way; remote images stay blocked.
+
+`GET /v1/files/<artifactId>/<version>` returns a stored file's bytes. When Neal attaches a file in a chat, the message Jarvis receives lists each file with its path on the Command VM (the artifact store, the same path inside and outside the container) and the command to fetch it from another machine.
+
+`deploy/scripts/command-file.sh` wraps both, for Jarvis on the Dell (needs `curl`, `jq`, `sha256sum`, and `file` for the type):
+
+```
+COMMAND_SCHEDULED_URL=http://<VM118>:8652 COMMAND_DELIVERIES_KEY_FILE=<0600 key file>
+command-file.sh send ./disk-report.pdf                 # prints the Markdown to put in a reply
+command-file.sh send ./graph.png room_… --say "Disk usage this week"   # posts it to that chat itself
+command-file.sh get art_… 1 ./backup.zip               # fetches a file Neal attached
+```
+
+| Status | Body | Meaning |
+|---|---|---|
+| 200 | see above / the bytes | Stored or fetched. |
+| 400 | `invalid_request` | Missing name, a name with `/`, or an empty body. |
+| 401 | `unauthorized` | Missing or wrong key. |
+| 404 | `not_found` | No such file (GET). |
+| 413 | `too_large` | Over the file limit. |
+| 503 | `unavailable` | Artifacts are off (`ARTIFACTS_MODE`) or storage failed. |
+
 ## Replacing a job, not transporting a result
 
 A scheduled run **replaces** a Hermes cron job. The migrated job becomes script-only and runs its prompt once, in Command. Don't keep an LLM cron job and then start a second run just to carry its answer into Command; that is two model turns for one job.

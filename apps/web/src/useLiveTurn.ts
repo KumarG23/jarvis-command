@@ -414,7 +414,8 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
     input: string,
     max: number,
     inference?: InferenceOverride,
-    images?: LiveRunSubmissionRequest['images'],
+    // Images go to the model as images; entries marked kind 'file' are other uploads Jarvis opens on the host.
+    attachments?: ReadonlyArray<{ artifactId: string; version: number; kind?: 'file' }>,
     clientRequestId?: string,
     projectId?: string | null,
     routing?: LiveRunSubmissionRequest['routing'],
@@ -425,17 +426,21 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
     if (recoveryBlocked.current || (current.current && !current.current.done) || !input.trim() || input.length > max) return false;
     cleanup.current();
     mutation.current?.abort(); mutation.current = null;
+    const images = attachments?.filter(item => item.kind !== 'file').map(({ artifactId, version }) => ({ artifactId, version }));
+    const files = attachments?.filter(item => item.kind === 'file').map(({ artifactId, version }) => ({ artifactId, version }));
     const intent = {
       sessionId,
       input,
       clientRequestId: clientRequestId ?? crypto.randomUUID(),
       ...(inference ? { inference: { ...inference } } : {}),
-      ...(images?.length ? { images: images.map(image => ({ ...image })) } : {}),
+      ...(images?.length ? { images } : {}),
+      ...(files?.length ? { files } : {}),
       ...(routing ? { routing: { ...routing } } : {}),
     };
     if (intent.inference) Object.freeze(intent.inference);
     if (intent.routing) Object.freeze(intent.routing);
     if (intent.images) { intent.images.forEach(image => Object.freeze(image)); Object.freeze(intent.images); }
+    if (intent.files) { intent.files.forEach(file => Object.freeze(file)); Object.freeze(intent.files); }
     Object.freeze(intent);
     const pending = { ...(projectId ? { projectId } : {}), sessionId, clientRequestId: intent.clientRequestId, publicRunId: null };
     try { writeStored(pending, null); stored.current = pending; }

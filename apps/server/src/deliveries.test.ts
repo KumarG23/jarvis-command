@@ -7,6 +7,7 @@ import { DeliveryConflictError, DeliveryStore } from './delivery-store';
 import { NotificationStore, deliveryPreview } from './notification-store';
 import { createDeliverer, deliveryNotificationId } from './deliverer';
 import { createScheduledRunsServer } from './scheduled-runs';
+import { ArtifactStore } from './artifact-store';
 
 const ACTOR = 'a'.repeat(64);
 const KEY = 'k'.repeat(40);
@@ -145,6 +146,51 @@ describe('POST /v1/deliveries', () => {
     deliver.mockRejectedValueOnce(new DeliveryConflictError());
     const conflict = await app.inject({ method: 'POST', url: '/v1/deliveries', payload: body, headers });
     expect([conflict.statusCode, conflict.json()]).toEqual([409, { error: 'conflict' }]);
+    await app.close();
+  });
+});
+
+describe('/v1/files', () => {
+  const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(32)]);
+  async function setup() {
+    const directory = await root();
+    const artifactStore = new ArtifactStore({ root: directory, maxFileBytes: 4096, maxTotalBytes: 65_536, maxArtifacts: 20 });
+    const app = createScheduledRunsServer({
+      config: { host: '127.0.0.1', port: 0, key: RUN_KEY, deliveriesKey: KEY, ownerActor: ACTOR },
+      liveRoom: () => undefined, rooms: () => undefined, log: () => undefined, artifactStore, maxFileBytes: 4096,
+    });
+    return { app, artifactStore };
+  }
+  const headers = { authorization: `Bearer ${KEY}` };
+
+  it('stores a file Jarvis sends and returns Markdown that shows it in a chat', async () => {
+    const { app } = await setup();
+    const sent = await app.inject({ method: 'POST', url: `/v1/files?name=report.tar.gz&chatId=${LEAD}&id=job1.fire1`, payload: Buffer.from('tarball bytes'), headers: { ...headers, 'content-type': 'application/gzip' } });
+    expect(sent.statusCode).toBe(200);
+    const file = sent.json();
+    expect(file).toMatchObject({ type: 'file', name: 'report.tar.gz', version: 1, size: 13 });
+    expect(file.markdown).toBe(`[report.tar.gz](/api/artifacts/${file.artifactId}/versions/1/download)`);
+    const again = await app.inject({ method: 'POST', url: `/v1/files?name=report.tar.gz&chatId=${LEAD}&id=job1.fire1`, payload: Buffer.from('tarball bytes'), headers: { ...headers, 'content-type': 'application/gzip' } });
+    expect(again.json().artifactId).toBe(file.artifactId);
+    const image = (await app.inject({ method: 'POST', url: '/v1/files?name=graph.png', payload: PNG, headers: { ...headers, 'content-type': 'image/png' } })).json();
+    expect(image.markdown).toBe(`![graph.png](/api/artifacts/${image.artifactId}/versions/1/blob)`);
+    // A file that claims to be an image but isn't one is still stored, as a plain file.
+    const fake = (await app.inject({ method: 'POST', url: '/v1/files?name=fake.png', payload: Buffer.from('not a png'), headers: { ...headers, 'content-type': 'image/png' } })).json();
+    expect(fake.type).toBe('file');
+    const text = (await app.inject({ method: 'POST', url: '/v1/files?name=notes.txt', payload: 'plain notes', headers: { ...headers, 'content-type': 'text/plain; charset=utf-8' } })).json();
+    expect(text).toMatchObject({ type: 'file', size: 11 });
+    const fetched = await app.inject({ method: 'GET', url: `/v1/files/${file.artifactId}/1`, headers });
+    expect([fetched.statusCode, fetched.body]).toEqual([200, 'tarball bytes']);
+    await app.close();
+  });
+
+  it('needs the deliveries key and refuses bad input', async () => {
+    const { app } = await setup();
+    expect((await app.inject({ method: 'POST', url: '/v1/files?name=a.txt', payload: Buffer.from('x'), headers: { authorization: `Bearer ${RUN_KEY}`, 'content-type': 'text/plain' } })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'GET', url: `/v1/files/art_${'a'.repeat(32)}/1` })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'POST', url: '/v1/files?name=../a', payload: Buffer.from('x'), headers: { ...headers, 'content-type': 'text/plain' } })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'POST', url: '/v1/files?name=a.bin', payload: Buffer.alloc(5000), headers: { ...headers, 'content-type': 'application/octet-stream' } })).statusCode).toBe(413);
+    expect((await app.inject({ method: 'GET', url: `/v1/files/art_${'a'.repeat(32)}/1`, headers })).statusCode).toBe(404);
     await app.close();
   });
 });

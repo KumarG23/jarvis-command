@@ -273,7 +273,7 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
   allowed: boolean; imageAttachmentsEnabled: boolean; sessionId: string | undefined; projectId: string | null; max: number; turn: Turn | null;
   maxSteer: number; steer: (run: Turn, input: string, max: number) => Promise<boolean | undefined>;
   recoveries: DraftRecovery[]; consumeRecovery: (recovery: DraftRecovery) => void;
-  send: (sessionId: string, input: string, max: number, inference?: InferenceOverride, images?: LiveRunSubmissionRequest['images'], routing?: LiveRunSubmissionRequest['routing']) => boolean; retry: () => void; resume: () => void;
+  send: (sessionId: string, input: string, max: number, inference?: InferenceOverride, images?: ReadonlyArray<{ artifactId: string; version: number; kind?: 'file' }>, routing?: LiveRunSubmissionRequest['routing']) => boolean; retry: () => void; resume: () => void;
 }>) {
   const displayedProject = project?.id === projectId ? project : null;
   const projectSnapshot = displayedProject ? projectSendSnapshot(displayedProject) : '';
@@ -334,6 +334,9 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
   const imageInput = useRef<HTMLInputElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const [fileError, setFileError] = useState('');
+  const [filesBySession, setFilesBySession] = useState<Record<string, PendingChatImage[]>>({});
+  const [fileBusy, setFileBusy] = useState(false);
+  const files = sessionId ? filesBySession[sessionId] ?? [] : [];
   const images = sessionId ? imagesBySession[sessionId] ?? [] : [];
   const setDraft = (value: string) => { if (sessionId) setRoomDraft(sessionId, value); };
   const handoff = (recovery: DraftRecovery, append: boolean) => {
@@ -437,8 +440,8 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
   };
   // One attach button for everything: images go to Jarvis as images, text files (code, logs, configs, CSV, JSON…)
   // are added to the message as fenced blocks, within the message limit. Other files can't reach Hermes yet.
-  const attachFiles = async (files: FileList | File[] | null) => {
-    const list = Array.from(files ?? []);
+  const attachFiles = async (picked: FileList | File[] | null) => {
+    const list = Array.from(picked ?? []);
     if (fileInput.current) fileInput.current.value = '';
     if (!list.length || !sessionId || !allowed) return;
     setFileError('');
@@ -450,22 +453,45 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
     }
     let next = draft;
     const skipped: string[] = [];
+    const uploads: File[] = [];
     for (const file of others) {
-      if (file.size > 512 * 1024) { skipped.push(`${file.name} (too large)`); continue; }
-      const text = await file.text().catch(() => null);
-      if (text === null || text.includes('\u0000') || /^%PDF-/.test(text)) { skipped.push(`${file.name} (not a text file)`); continue; }
-      const fence = text.includes('```') ? '~~~~' : '```';
-      const block = `${next.trim() ? '\n\n' : ''}${file.name}:\n${fence}\n${text.replace(/\s+$/, '')}\n${fence}`;
-      if (next.length + block.length > max - 500) { skipped.push(`${file.name} (would exceed the ${max.toLocaleString('en-US')}-character message limit)`); continue; }
-      next += block;
+      // Small text files go straight into the message; everything else is uploaded and Jarvis opens it on the host.
+      const text = file.size <= 64 * 1024 ? await file.text().catch(() => null) : null;
+      if (text !== null && !text.includes('\u0000') && !/^%PDF-/.test(text)) {
+        const fence = text.includes('```') ? '~~~~' : '```';
+        const block = `${next.trim() ? '\n\n' : ''}${file.name}:\n${fence}\n${text.replace(/\s+$/, '')}\n${fence}`;
+        if (next.length + block.length <= max - 2000) { next += block; continue; }
+      }
+      uploads.push(file);
     }
     if (next !== draft) setDraft(next);
-    if (skipped.length) setFileError(`Not attached: ${skipped.join(', ')}. Chat accepts images and text files for now.`);
+    if (uploads.length) {
+      if (files.length + uploads.length > 10) skipped.push(`${uploads.length} file(s) (at most 10 per message)`);
+      else {
+        setFileBusy(true);
+        const uploaded: PendingChatImage[] = [];
+        for (const file of uploads) {
+          try {
+            const form = new FormData();
+            form.append('metadata', JSON.stringify({ title: file.name || 'Attached file', sessionId, projectId }));
+            form.append('file', file, file.name || 'file');
+            const response = await fetch('/api/artifacts/upload', { method: 'POST', credentials: 'same-origin', headers: { accept: 'application/json', 'x-jarvis-command': '1' }, body: form });
+            if (response.status === 413) { skipped.push(`${file.name} (too large to upload)`); continue; }
+            if (!response.ok || response.redirected) throw new Error('upload failed');
+            const artifact = ArtifactMutationResponseSchema.parse(await response.json()).artifact;
+            uploaded.push({ artifactId: artifact.id, version: artifact.currentVersion, name: artifact.originalFilename ?? artifact.title, size: artifact.size });
+          } catch { skipped.push(`${file.name} (upload failed)`); }
+        }
+        if (uploaded.length) setFilesBySession(previous => ({ ...previous, [sessionId]: [...(previous[sessionId] ?? []), ...uploaded] }));
+        setFileBusy(false);
+      }
+    }
+    if (skipped.length) setFileError(`Not attached: ${skipped.join(', ')}.`);
   };
   const submit = async () => {
-    const message = draft.trim() || (images.length ? 'Review the attached image.' : '');
+    const message = draft.trim() || (images.length ? 'Review the attached image.' : files.length ? 'Review the attached file.' : '');
     let input = composeProjectInput(message, displayedProject, displayedRoster, sessionId);
-    if (!allowed || !sessionId || busy || imageBusy || preflight.current || !message) return;
+    if (!allowed || !sessionId || busy || imageBusy || fileBusy || preflight.current || !message) return;
     if (problem) { setPreflightError(problem); return; }
     if (saved.opted && !saved.available) { setPreflightError('Saved defaults are unavailable. Refresh or explicitly turn off saved defaults; your draft is kept.'); return; }
     const context = sendContext.current;
@@ -521,9 +547,10 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
       }
       if (controller.signal.aborted || sendContext.current !== context || (draftsRef.current[sessionId] ?? '') !== draft) return;
       if (!clearForSend(sessionId)) { setPreflightError('Draft storage could not be cleared safely. Message not sent; keep this tab open and retry when storage is available.'); return; }
-      if (send(sessionId, input, max, typeof selection === 'string' ? undefined : selection, images.map(({ artifactId, version }) => ({ artifactId, version })), ...(saved.opted ? [{ mode: 'defaults' as const, projectId }] : []))) {
+      if (send(sessionId, input, max, typeof selection === 'string' ? undefined : selection, [...images.map(({ artifactId, version }) => ({ artifactId, version })), ...files.map(({ artifactId, version }) => ({ artifactId, version, kind: 'file' as const }))], ...(saved.opted ? [{ mode: 'defaults' as const, projectId }] : []))) {
         setRoomDraft(sessionId, '');
         setImagesBySession(previous => ({ ...previous, [sessionId]: [] }));
+        setFilesBySession(previous => ({ ...previous, [sessionId]: [] }));
       } else setRoomDraft(sessionId, draft);
     } finally {
       preflight.current = null;
@@ -596,9 +623,11 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
       {imageBusy ? <p role="status">Uploading image…</p> : null}
       {imageError ? <p role="alert">{imageError}</p> : null}
       {imageAttachmentsEnabled ? <input ref={imageInput} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-label="Attach images" onChange={event => { void attachImages(event.target.files); }} /> : null}
+      {files.length ? <div className="chat-images" aria-label="Attached files">{files.map(file => <span key={`${file.artifactId}:${file.version}`}><Paperclip size={14} />{file.name}<button type="button" disabled={busy || preflighting || fileBusy} aria-label={`Remove ${file.name}`} onClick={() => setFilesBySession(previous => ({ ...previous, [sessionId!]: (previous[sessionId!] ?? []).filter(item => item !== file) }))}><X size={13} /></button></span>)}</div> : null}
+      {fileBusy ? <p role="status">Uploading file…</p> : null}
       {fileError ? <p role="alert">{fileError}</p> : null}
       {steerable ? null : <><input ref={fileInput} className="visually-hidden" type="file" multiple aria-label="Attach files" onChange={event => { void attachFiles(event.target.files); }} />
-      <button className="icon-button attach-image" type="button" disabled={busy || preflighting || imageBusy} aria-label="Attach file" title="Attach images or text files" onClick={() => fileInput.current?.click()}><Paperclip size={19} /></button></>}
+      <button className="icon-button attach-image" type="button" disabled={busy || preflighting || imageBusy || fileBusy} aria-label="Attach file" title="Attach files" onClick={() => fileInput.current?.click()}><Paperclip size={19} /></button></>}
       {steerable ? <p className="steer-hint" role="status">Jarvis is working. Anything you send now steers this run.</p> : null}
       <textarea placeholder={steerable ? 'Steer Jarvis…' : 'Message Jarvis…'} aria-label="Message Jarvis" maxLength={steerable ? maxSteer : max} value={draft} disabled={steerable ? false : busy || preflighting} onPaste={(event) => {
         if (!imageAttachmentsEnabled) return;
@@ -609,7 +638,7 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
       }} />
       {steerable
         ? <button className="primary-button" type="submit" disabled={!!turn?.controlBusy || !draft.trim() || draft.length > maxSteer} aria-label="Send message" title="Steer Jarvis"><ArrowUp size={20} /></button>
-        : <button className="primary-button" type="submit" disabled={busy || preflighting || imageBusy || (!draft.trim() && !images.length) || draft.length > max} aria-label="Send message" title="Send message"><ArrowUp size={20} /></button>}
+        : <button className="primary-button" type="submit" disabled={busy || preflighting || imageBusy || (!draft.trim() && !images.length && !files.length) || fileBusy || draft.length > max} aria-label="Send message" title="Send message"><ArrowUp size={20} /></button>}
     </form> : <p className="composer-feedback">{sessionId ? 'Messaging is unavailable for this chat.' : 'Choose New chat to begin.'}</p>}
   </>;
 }

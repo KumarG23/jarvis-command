@@ -221,6 +221,18 @@ describe('LiveRoomService run identity and recovery', () => {
     })).rejects.toBeInstanceOf(LiveRoomConflictError);
   });
 
+  it('tells Jarvis where attached files are and binds them into idempotency', async () => {
+    const { ledger } = await createLedger();
+    const client = fakeClient();
+    const describeFiles = vi.fn().mockResolvedValue('Attached files.\n- [backup.zip](/api/artifacts/x/versions/1/download)');
+    const service = createLiveRoomService({ client, ledger, createPublicRunId: () => publicRunId, describeFiles });
+    const withFile = { ...request, files: [{ artifactId: `art_${'d'.repeat(32)}`, version: 1 }] };
+    await service.submitRun('operator-subject', withFile);
+    expect(describeFiles).toHaveBeenCalledExactlyOnceWith(withFile.files);
+    expect(vi.mocked(client.startRun).mock.calls[0]![0].input).toBe(`${request.input}\n\nAttached files.\n- [backup.zip](/api/artifacts/x/versions/1/download)`);
+    await expect(service.submitRun('operator-subject', { ...request, files: [{ artifactId: `art_${'d'.repeat(32)}`, version: 2 }] })).rejects.toBeInstanceOf(LiveRoomConflictError);
+  });
+
   it('recovers the same public run after service restart without resubmitting the turn', async () => {
     const { ledger, path } = await createLedger();
     const firstClient = fakeClient();

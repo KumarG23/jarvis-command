@@ -463,6 +463,12 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 .message-table th, .message-table td { overflow-wrap: normal; word-break: normal; border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
 .message-content blockquote { border-left: 3px solid var(--border); margin-left: 0; padding-left: 14px; color: var(--muted); }
 .message-content a { color: var(--cyan); text-decoration: underline; }
+.message-content a.message-file { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; margin: 4px 0; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); text-decoration: none; }
+.message-content a.message-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.message-content a.message-file svg { flex: none; color: var(--cyan); }
+.message-content a.message-file:hover { border-color: var(--cyan); }
+.message-content a.message-inline-image { display: inline-block; margin: 4px 0; text-decoration: none; }
+.message-content a.message-inline-image img { display: block; max-width: min(100%, 480px); max-height: 420px; border-radius: 10px; border: 1px solid var(--border); object-fit: contain; }
 .message-content .message-thread-link { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; padding: 3px 2px; border: 0; border-radius: 4px; background: transparent; color: var(--cyan); font: inherit; text-decoration: underline; cursor: pointer; touch-action: manipulation; }
 .message-content .message-thread-link:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
 

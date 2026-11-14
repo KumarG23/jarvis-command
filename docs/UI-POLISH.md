@@ -31,6 +31,11 @@ Goal: feel as finished as the Claude app, ChatGPT and Discord. Phone first, beca
 11. **Quieter composer.** "Project context included" no longer shows a character count until 80% of the limit.
 12. **Approval and stop prompts are cards** with real buttons ("Jarvis wants to run this", "Stop this reply?");
     request/run/session IDs are under a Details toggle.
+13. **Big messages.** The message limit is 200,000 characters (about 30,000 words), up from 16,000.
+14. **Files both ways.** The paperclip takes any file. Small text files go into the message; anything else
+    (PDF, zip, images, big logs) uploads to the artifact store and Jarvis gets its path and a fetch command.
+    Jarvis sends files back with `deploy/scripts/command-file.sh`; images show inline in the chat and other
+    files as download cards. See "Files" in `docs/cockpit/SCHEDULED-RUNS.md`.
 
 ## Next, in priority order
 
