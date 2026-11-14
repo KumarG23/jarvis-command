@@ -22,14 +22,18 @@ export const GatewayStateSchema = z.enum(['idle', 'busy', 'unknown']);
 export const SessionOwnershipSchema = z.enum(['command', 'external']);
 export const ApprovalChoiceSchema = z.enum(['once', 'deny']);
 export const ReasoningEffortSchema = z.enum(['minimal', 'low', 'medium', 'high', 'xhigh']);
+// Subscription routes are whatever the authenticated provider currently advertises
+// (new models appear without a Command release). The command proxy only offers, and
+// only admits, a model the authenticated provider lists; this is just the id shape.
+const SubscriptionModelIdSchema = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,79}$/, 'Invalid model id');
 const OpenAiCodexInferenceSchema = z.object({
   provider: z.literal('openai-codex'),
-  model: z.enum(['gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']),
+  model: SubscriptionModelIdSchema,
   reasoningEffort: ReasoningEffortSchema,
 }).strict();
 const GrokInferenceSchema = z.object({
   provider: z.literal('xai-oauth'),
-  model: z.enum(['grok-4.7', 'grok-4.6']),
+  model: SubscriptionModelIdSchema,
   reasoningEffort: ReasoningEffortSchema,
 }).strict();
 // Claude routes are enabled only by an explicit command-proxy flag. Their installed
@@ -37,7 +41,7 @@ const GrokInferenceSchema = z.object({
 // rather than inventing or translating a Codex/xAI effort value.
 const AnthropicInferenceSchema = z.object({
   provider: z.literal('anthropic'),
-  model: z.enum(['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5']),
+  model: z.string().regex(/^claude-[a-z0-9][a-z0-9.-]{0,72}$/, 'Invalid Claude model id'),
 }).strict();
 // OpenRouter ids are dynamic, so the allowlist shape is the exact zero-spend suffix:
 // lowercase namespace/segments followed by a single lowercase `:free`. Paid ids,

@@ -9,6 +9,8 @@ import { loadConfig } from './config';
 import { createLiveRoomService } from './live-room-service';
 import { MAX_APPROVAL_RECEIPTS, NotificationNotFoundError, NotificationStorageError, NotificationStore } from './notification-store';
 import { createRunNotifier, notificationId } from './run-notifier';
+import { DeliveryStore } from './delivery-store';
+import { createDeliverer, deliveryNotificationId } from './deliverer';
 
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => { await Promise.all(cleanup.splice(0).map(fn => fn())); });
@@ -372,6 +374,26 @@ async function routeHarness(overrides: Partial<CommandProxyClient> = {}) {
 }
 
 describe('notification routes', () => {
+  it('opens a delivered reminder to its chat without a run lookup, and lists the chat’s deliveries for its owner only', async () => {
+    const r = await routeHarness();
+    const alice = await actorHash('alice');
+    const deliver = createDeliverer({ deliveries: new DeliveryStore(r.directory), notifications: r.store });
+    const { deliveryId } = await deliver(alice, { key: 'job:1', sessionId: sessionOf(2), kind: 'reminder', title: 'Stretch', content: 'Time to stretch.' });
+    const id = deliveryNotificationId(alice, deliveryId);
+    expect((await r.get('/api/notifications', 'alice')).json().items[0]).toMatchObject({ id, category: 'delivery', title: 'Stretch' });
+    const opened = (await r.post(`/api/notifications/${id}/open`, 'alice')).json();
+    expect(opened).toMatchObject({ state: 'available', sessionId: sessionOf(2), deliveryId, approvalPending: false });
+    expect(opened.publicRunId).toBeUndefined();
+    expect(opened.inbox.unreadCount).toBe(0);
+    expect(r.getRun).not.toHaveBeenCalled();
+    expect((await r.post(`/api/notifications/${id}/open`, 'bob')).statusCode).toBe(404);
+    const listed = (await r.get(`/api/live/sessions/${sessionOf(2)}/deliveries`, 'alice')).json();
+    expect(listed).toEqual({ sessionId: sessionOf(2), deliveries: [expect.objectContaining({ deliveryId, content: 'Time to stretch.', kind: 'reminder' })] });
+    expect((await r.get(`/api/live/sessions/${sessionOf(2)}/deliveries`, 'bob')).json().deliveries).toEqual([]);
+    (r.client.getSession as ReturnType<typeof vi.fn>).mockRejectedValue(Object.assign(new Error('deleted'), { statusCode: 404 }));
+    expect((await r.post(`/api/notifications/${id}/open`, 'alice')).json()).toEqual({ state: 'missing' });
+  });
+
   it('reports incomplete delivery even on first-use empty inbox and after bounded reconciliation', async () => {
     const r = await routeHarness();
     const run = await r.submit('alice', 1);

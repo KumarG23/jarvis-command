@@ -7,6 +7,7 @@ COPY apps/server/package.json apps/server/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY apps/read-proxy/package.json apps/read-proxy/package.json
 COPY apps/command-proxy/package.json apps/command-proxy/package.json
+COPY apps/session-host/package.json apps/session-host/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
 RUN npm ci --ignore-scripts
 
@@ -28,6 +29,7 @@ COPY apps/server/package.json apps/server/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY apps/read-proxy/package.json apps/read-proxy/package.json
 COPY apps/command-proxy/package.json apps/command-proxy/package.json
+COPY apps/session-host/package.json apps/session-host/package.json
 COPY packages/contracts/package.json packages/contracts/package.json
 RUN npm ci --omit=dev --ignore-scripts --workspace @jarvis-command/server --include-workspace-root=false \
  && rm -rf node_modules/@jarvis-command

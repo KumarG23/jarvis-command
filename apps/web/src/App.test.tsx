@@ -369,23 +369,21 @@ describe('Live Room history', () => {
     expect(screen.queryByText(/private upstream/)).not.toBeInTheDocument();
   });
 
-  it('bounds history to ten pages and labels the view limit instead of claiming the end', async () => {
+  it('loads remaining history pages automatically up to the page cap and labels the view limit', async () => {
     const fetchMock = vi.fn().mockImplementation((url: string) => {
       const offset = Number(new URL(url, 'http://localhost').searchParams.get('offset'));
-      return Promise.resolve(Response.json(history('session_123', offset, Array.from({ length: 50 }, (_, i) => `Row ${offset + i}`), true)));
+      // Two rows per page keeps rendering cheap; the bound under test is the page count.
+      return Promise.resolve(Response.json(history('session_123', offset, [`Row ${offset}`, `Row ${offset + 1}`], true)));
     });
     stubFetch(fetchMock);
     render(<App loadBootstrap={async () => liveBootstrap} />);
     await clickEnabled(/^Jarvis Command/);
-    for (let page = 1; page < 10; page += 1) {
-      await screen.findByText(`Row ${page * 50 - 1}`);
-      fireEvent.click(screen.getByRole('button', { name: 'Load more messages' }));
-    }
-    await screen.findByText('Row 499');
-    expect(screen.getByText('History view limit reached. More messages may exist.')).toBeInTheDocument();
+    await screen.findByText('Row 39', undefined, { timeout: 10_000 });
+    expect(await screen.findByText('History view limit reached. More messages may exist.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Load more messages' })).not.toBeInTheDocument();
     expect(screen.queryByText('End of history.')).not.toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(10);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/messages?'))).toHaveLength(20);
+    expect(screen.queryByText('Row 40')).not.toBeInTheDocument();
   }, 20_000);
 
   it('opens mobile navigation and selects a chat without a second session picker', async () => {
@@ -487,7 +485,7 @@ describe('Live Room history', () => {
     expect(within(timeline).getAllByRole('article').map((row) => row.textContent)).toEqual([
       expect.stringContaining('First question'), expect.stringContaining('Assistant answer'), expect.stringContaining('Tool output'),
     ]);
-    expect(within(timeline).getByText('terminal')).toBeInTheDocument();
+    expect(within(timeline).getByText('Used 1 tool · terminal')).toBeInTheDocument();
     expect(within(timeline).getByText(/External chat · Read-only/)).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Message Jarvis' })).not.toBeInTheDocument();
   });

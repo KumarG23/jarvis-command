@@ -1,4 +1,5 @@
 export * from './notifications';
+export * from './cockpit';
 export * from './project-rooms';
 export * from './artifacts';
 export {

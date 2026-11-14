@@ -261,17 +261,17 @@ it.each(['malformed', 'duplicate-session', 'foreign-lookup', 'expired-access'] a
 
 it('retains unsent guidance and image references when its composer closes and reopens in another pane', async () => {
   const f = fixture(); const view = render(<Harness composerFor={a} />); await ready(); sendBoth();
-  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Steer Jarvis' })).toBeEnabled());
-  fireEvent.change(screen.getByRole('textbox', { name: 'Steer Jarvis' }), { target: { value: 'SYNTHETIC unsent A guidance' } });
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toBeEnabled());
+  fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: 'SYNTHETIC unsent A guidance' } });
   act(() => threads.get(a).composerDrafts.setImagesBySession({ [a]: [{ artifactId: `art_${'c'.repeat(32)}`, version: 1, name: 'SYNTHETIC-A.png', size: 100 }] }));
   expect(screen.getByText('SYNTHETIC-A.png')).toBeInTheDocument();
   view.rerender(<Harness />);
   view.rerender(<Harness composerFor={b} />);
-  expect(screen.getByRole('textbox', { name: 'Steer Jarvis' })).toHaveValue('');
+  expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('');
   expect(screen.queryByText('SYNTHETIC-A.png')).not.toBeInTheDocument();
   view.rerender(<Harness />);
   view.rerender(<Harness composerFor={a} />);
-  expect(screen.getByRole('textbox', { name: 'Steer Jarvis' })).toHaveValue('SYNTHETIC unsent A guidance');
+  expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('SYNTHETIC unsent A guidance');
   expect(screen.getByText('SYNTHETIC-A.png')).toBeInTheDocument();
   expect(f.posts).toHaveLength(2); // Opening/closing never sends guidance or images.
 });

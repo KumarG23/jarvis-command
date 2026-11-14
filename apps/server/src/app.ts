@@ -1,5 +1,6 @@
+import type { PushService } from './push-service';
 import { RoutingWritesUnavailableError } from './routing-write-state';
-import { RoutingUnavailableError } from './routing-defaults';
+import { RoutingRefusedError, RoutingUnavailableError } from './routing-defaults';
 import { ThreadReadStorageError } from './thread-read-store';
 import { ThreadObservationUnavailableError } from './thread-state';
 import { ReactionStorageError, ReactionUnavailableError, ReactionConflictError, ReactionBoundsError } from './reaction-store';
@@ -9,6 +10,8 @@ import Fastify from 'fastify';
 
 import { registerLiveRoomRoutes, type LiveStreamLimits } from './live-room-routes';
 import { registerArtifactRoutes } from './artifact-routes';
+import { registerCockpitRoutes } from './cockpit-routes';
+import { registerHostShellRoutes } from './host-shell-routes';
 import type { createLiveRoomService } from './live-room-service';
 import { AuditIntegrityError } from './audit-ledger';
 import { ArtifactConflictError, ArtifactDeletedError, ArtifactNotFoundError, ArtifactStorageError, ArtifactStore } from './artifact-store';
@@ -34,6 +37,7 @@ type AppDependencies = Readonly<{
   artifactStore?: ArtifactStore | undefined;
   notifications?: NotificationStore | undefined;
   presence?: Presence | undefined;
+  pushService?: PushService | undefined;
   replyEvidence?: ReplyEvidenceSource | undefined;
   checkLiveRoom?: () => Promise<void>;
   liveStreamLimits?: LiveStreamLimits;
@@ -62,15 +66,24 @@ export function buildApp(dependencies: AppDependencies) {
 
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof RoutingWritesUnavailableError) return reply.code(503).send({ error: 'routing_writes_unavailable', message: error.message });
-    if (error instanceof RoutingUnavailableError) return reply.code(503).send({ error: 'routing_unavailable', message: error.message });
-    const errorName = error instanceof Error ? error.name : 'UnknownError';
+    if (error instanceof RoutingRefusedError || error instanceof RoutingUnavailableError) {
+      // reason is a fixed code-defined value, never input or identity.
+      request.log.warn({ errorType: error.name, route: request.routeOptions.url ?? null, method: request.method, reason: error.reason }, 'routing refused');
+      return error instanceof RoutingRefusedError
+        ? reply.code(422).send({ error: 'routing_refused', message: error.message })
+        : reply.code(503).send({ error: 'routing_unavailable', message: error.message });
+    }
+    // Many custom errors keep the default name "Error"; the class name says which store or
+    // check failed. Only fixed, code-defined values are logged: never messages, input or identity.
+    const errorName = error instanceof Error ? (error.name !== 'Error' ? error.name : error.constructor?.name ?? 'Error') : 'UnknownError';
+    const reason = typeof error === 'object' && error !== null && 'reason' in error && typeof error.reason === 'string' && /^[a-z_]{1,64}$/.test(error.reason) ? error.reason : undefined;
     const candidateStatusCode = typeof error === 'object'
       && error !== null
       && 'statusCode' in error
       && typeof error.statusCode === 'number'
       ? error.statusCode
       : undefined;
-    request.log.error({ errorType: errorName }, 'request failed');
+    request.log.error({ errorType: errorName, route: request.routeOptions.url ?? null, method: request.method, ...(reason ? { reason } : {}) }, 'request failed');
     if (error instanceof ThreadReadStorageError || error instanceof ThreadObservationUnavailableError) return reply.code(503).send({ error: 'thread_state_unavailable' });
     if (error instanceof ReactionUnavailableError) return reply.code(409).send({ error: 'reactions_unavailable' });
     if (error instanceof ReactionConflictError) return reply.code(409).send({ error: 'reaction_conflict' });
@@ -174,6 +187,7 @@ export function buildApp(dependencies: AppDependencies) {
     const capabilities = [...new Set([
       ...snapshot.capabilities.filter(capability => capability !== 'message_reactions'),
       ...(dependencies.config.artifacts.enabled ? ['artifact_studio'] : []),
+      ...(dependencies.config.cockpit && dependencies.config.command ? ['project_cockpit'] : []),
     ])];
     // An optional UI capability must not overflow the existing bootstrap contract.
     if (liveRoomEnabled && dependencies.config.reactionsEnabled && capabilities.length < 100) capabilities.push('message_reactions');
@@ -211,6 +225,8 @@ export function buildApp(dependencies: AppDependencies) {
   // after onReady. Spreading here would freeze that getter before startup.
   registerLiveRoomRoutes(app, dependencies, artifactStore);
   registerArtifactRoutes(app, { ...dependencies, artifactStore });
+  registerCockpitRoutes(app, dependencies);
+  registerHostShellRoutes(app, dependencies);
   app.addHook('onReady', async () => {
     await artifactStore?.init();
   });

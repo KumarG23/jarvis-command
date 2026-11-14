@@ -1,0 +1,21 @@
+# User unit for the cockpit user on cockpit-dev:
+#   ~/.config/systemd/user/cockpit-session-host.service
+# Edit WorkingDirectory to the checkout and create the env file (mode 0600) with
+# SESSION_HOST_KEY, SESSION_HOST_MCP_KEY and any overrides from the README.
+[Unit]
+Description=Jarvis Command cockpit session host
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/jarvis-command/apps/session-host
+EnvironmentFile=%h/.config/cockpit/session-host.env
+ExecStart=/usr/bin/env node dist/index.js
+Restart=on-failure
+RestartSec=3
+# Stopping or restarting the service must not kill agents. The tmux server is a child
+# in this unit's cgroup; KillMode=process stops only the node process and leaves it running.
+KillMode=process
+
+[Install]
+WantedBy=default.target

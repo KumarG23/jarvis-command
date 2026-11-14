@@ -172,15 +172,20 @@ describe('per-prompt inference contracts', () => {
       inference: { provider: 'xai-oauth', model: 'grok-4.7', reasoningEffort: 'xhigh' },
     }).inference?.model).toBe('grok-4.7');
 
+    // Model ids are shape-checked only; which provider/model pairs are real is decided by
+    // the command proxy against the authenticated provider's live inventory.
+    expect(LiveRunSubmissionRequestSchema.parse({ ...request, inference: { provider: 'openai-codex', model: 'gpt-6.1-sol', reasoningEffort: 'high' } }).inference?.model).toBe('gpt-6.1-sol');
     for (const inference of [
-      { provider: 'xai-oauth', model: 'gpt-5.6-sol', reasoningEffort: 'high' },
-      { provider: 'openai-codex', model: 'grok-4.6', reasoningEffort: 'high' },
-      { provider: 'openai-codex', model: 'private-model', reasoningEffort: 'high' },
+      { provider: 'openai-codex', model: 'GPT-6-SOL', reasoningEffort: 'high' },
+      { provider: 'openai-codex', model: 'gpt 6', reasoningEffort: 'high' },
+      { provider: 'openai-codex', model: '../gpt', reasoningEffort: 'high' },
+      { provider: 'openai-codex', model: 'gpt-5.6-sol' },
       { provider: 'openai-codex', model: 'gpt-5.6-sol', reasoningEffort: 'ultra' },
+      { provider: 'openai-api', model: 'gpt-5.6-sol', reasoningEffort: 'high' },
     ]) expect(() => LiveRunSubmissionRequestSchema.parse({ ...request, inference })).toThrow();
   });
 
-  it('accepts only the three exact Claude routes with provider-default effort', () => {
+  it('accepts well-formed Claude routes with provider-default effort only', () => {
     for (const model of ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5']) {
       expect(LiveRunSubmissionRequestSchema.parse({
         ...request,
@@ -188,9 +193,9 @@ describe('per-prompt inference contracts', () => {
       }).inference).toEqual({ provider: 'anthropic', model });
     }
     for (const inference of [
-      { provider: 'anthropic', model: 'claude-opus-5-6' },
       { provider: 'anthropic', model: 'claude-opus-5-5', reasoningEffort: 'high' },
       { provider: 'anthropic', model: 'gpt-6-sol' },
+      { provider: 'anthropic', model: 'Claude-Opus' },
       { provider: 'openai-codex', model: 'claude-opus-5-5' },
     ]) expect(() => LiveRunSubmissionRequestSchema.parse({ ...request, inference })).toThrow();
   });
@@ -323,5 +328,14 @@ describe('per-prompt inference contracts', () => {
       ...payload.catalog,
       entries: [{ ...entry, unavailableReason: 'provider_guessed' }],
     })).toThrow();
+  });
+});
+
+describe('cockpit terminal reports', () => {
+  it('recognizes terminal query replies but never keystrokes', async () => {
+    const { isTerminalReport, CockpitTerminalClientFrameSchema } = await import('./cockpit');
+    for (const reply of ['\x1b[?1;2c', '\x1b[>0;276;0c', '\x1b]11;rgb:0d0d/1010/0f0f\x07', '\x1b]10;rgb:f1f1/eeee/e7e7\x1b\\', '\x1b[12;40R', '\x1b[I']) expect(isTerminalReport(reply)).toBe(true);
+    for (const key of ['ls\r', '\x1b', '\x1b[A', '\x03', 'rm -rf /\r', '\x1b[?1;2cls\r']) expect(isTerminalReport(key)).toBe(false);
+    expect(CockpitTerminalClientFrameSchema.safeParse({ type: 'report', data: 'echo pwned\r' }).success).toBe(false);
   });
 });

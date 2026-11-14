@@ -178,6 +178,7 @@ export type CommandProxyClient = Readonly<{
     idempotencyKey: string;
     inference?: InferenceOverride;
     images?: ReadonlyArray<Readonly<{ mime: string; bytes: Buffer }>>;
+    instructions?: string;
   }>) => Promise<CommandRunCreate>;
   startContextCompaction: (request: Readonly<{ sessionId: string; idempotencyKey: string }>) => Promise<CommandRunCreate>;
   getRun: (runId: string) => Promise<CommandRunStatus>;
@@ -307,6 +308,7 @@ export function createCommandProxyClient(options: Readonly<{
         || images.length > 4
         || imageBytes > MAX_CHAT_IMAGE_BYTES
         || images.some(image => !CHAT_IMAGE_MIMES.has(image.mime) || image.bytes.length < 1)
+        || (request.instructions !== undefined && (!request.instructions.trim() || request.instructions.length > 16_000))
       ) {
         return Promise.reject(new CommandProxyUnavailableError(400));
       }
@@ -317,6 +319,7 @@ export function createCommandProxyClient(options: Readonly<{
           input: request.input.trim(),
           ...(request.inference ? { inference: request.inference } : {}),
           ...(images.length ? { images: images.map(image => ({ mime: image.mime, dataBase64: image.bytes.toString('base64') })) } : {}),
+          ...(request.instructions ? { instructions: request.instructions } : {}),
         },
         headers: { 'idempotency-key': request.idempotencyKey },
       });

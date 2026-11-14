@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'node:crypto';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 
 import {
   ApprovalChoiceSchema,
@@ -44,6 +44,21 @@ const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9_.:@+-]{0,159}$/;
 const COMMAND_SESSION_ID = /^jc_[a-f0-9]{32}$/;
 const RUN_ID = /^run_[a-f0-9]{32}$/;
 const IDEMPOTENCY_KEY = /^[!-~]{1,255}$/;
+const COMMAND_CHAT_ID = /^jc_[a-f0-9]{32}$/;
+
+/**
+ * Command origin assertion v1 (docs/cockpit/COMMAND-ORIGIN.md): proves to Hermes that this exact
+ * run, for this exact Command chat and idempotency key, came through the Command proxy, so a
+ * reminder created during it can be delivered back to that chat. Lowercase hex HMAC-SHA256 over UTF-8.
+ */
+export function commandOriginAssertion(key: string, sessionId: string, idempotencyKey: string): string {
+  return `v1.${createHmac('sha256', key).update(`command-origin/v1\n${sessionId}\n${idempotencyKey}`, 'utf8').digest('hex')}`;
+}
+// Built fresh for each upstream call; anything the caller sent under this name is never forwarded.
+function originHeaders(config: CommandProxyConfig, sessionId: string, idempotencyKey: string): Record<string, string> {
+  if (!config.commandOriginKey || !COMMAND_CHAT_ID.test(sessionId) || !IDEMPOTENCY_KEY.test(idempotencyKey)) return {};
+  return { 'x-command-origin': commandOriginAssertion(config.commandOriginKey, sessionId, idempotencyKey) };
+}
 const CHAT_IMAGE_MIMES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'] as const;
 const MAX_CHAT_IMAGE_BYTES = 6 * 1024 * 1024;
 const COMMAND_SOURCES = new Set(['jarvis-command', 'api_server']);
@@ -82,6 +97,33 @@ function enabledCuratedInferenceOptions(config: CommandProxyConfig) {
   return config.anthropicRoutesEnabled
     ? KNOWN_CURATED_INFERENCE_OPTIONS
     : CURATED_INFERENCE_OPTIONS;
+}
+
+// By default only the curated, labelled routes are eligible. With
+// COMMAND_ADVERTISED_SUBSCRIPTION_ROUTES, subscription-billed providers (ChatGPT via
+// Codex, xAI OAuth) are eligible for every model their authenticated login currently
+// advertises, so a new model (e.g. a 6.1 release) is selectable without a Command release. Anthropic stays behind its explicit
+// flag because its route can be API-key billed. Paid API providers are never eligible.
+const SUBSCRIPTION_PROVIDERS = new Set(['openai-codex', 'xai-oauth']);
+const MODEL_ID = /^[a-z0-9][a-z0-9._-]{0,79}$/;
+const CLAUDE_MODEL_ID = /^claude-[a-z0-9][a-z0-9.-]{0,72}$/;
+const MAX_DYNAMIC_OPTIONS_PER_PROVIDER = 24;
+function eligibleInferenceOptions(providers: ReadonlyMap<string, ProviderInventory>, config: CommandProxyConfig) {
+  const labels = new Map<string, string>(KNOWN_CURATED_INFERENCE_OPTIONS.map(option => [catalogKey(option.provider, option.model), option.label]));
+  const result: { provider: 'openai-codex' | 'xai-oauth' | 'anthropic'; model: string; label: string }[] = [];
+  const add = (provider: 'openai-codex' | 'xai-oauth' | 'anthropic', pattern: RegExp) => {
+    const inventory = providers.get(provider);
+    if (inventory?.authenticated !== true) return;
+    // Curated (labelled) models first, in curated order, then the rest by id.
+    const curated = enabledCuratedInferenceOptions(config).filter(option => option.provider === provider && inventory.models.has(option.model)).map((option): string => option.model);
+    const rest = config.advertisedSubscriptionRoutes ? [...inventory.models].filter(model => !curated.includes(model)).sort() : [];
+    for (const model of [...curated, ...rest].filter(model => pattern.test(model)).slice(0, MAX_DYNAMIC_OPTIONS_PER_PROVIDER)) {
+      result.push({ provider, model, label: labels.get(catalogKey(provider, model)) ?? model });
+    }
+  };
+  for (const provider of SUBSCRIPTION_PROVIDERS) add(provider as 'openai-codex' | 'xai-oauth', MODEL_ID);
+  if (config.anthropicRoutesEnabled) add('anthropic', CLAUDE_MODEL_ID);
+  return result;
 }
 
 // Deduplicated by the canonical provider inventory, sorted by model id for a stable
@@ -259,6 +301,8 @@ const RunCreateBodySchema = z.object({
   sessionId: z.string().regex(SESSION_ID),
   input: z.string().trim().min(1).max(16_000),
   inference: InferenceOverrideSchema.optional(),
+  // Per-run system text from Command (project context). Hermes treats it as ephemeral.
+  instructions: z.string().trim().min(1).max(16_000).optional(),
   images: z.array(z.object({
     mime: z.enum(CHAT_IMAGE_MIMES),
     dataBase64: z.string().min(4).max(Math.ceil(MAX_CHAT_IMAGE_BYTES * 4 / 3) + 8),
@@ -515,8 +559,9 @@ export function buildCommandProxy({
             ],
           }] : parsed.data.input,
           ...(parsed.data.inference ? upstreamInference(parsed.data.inference) : {}),
+          ...(parsed.data.instructions ? { instructions: parsed.data.instructions } : {}),
         },
-        headers: { 'idempotency-key': idempotencyKey },
+        headers: { 'idempotency-key': idempotencyKey, ...originHeaders(config, parsed.data.sessionId, idempotencyKey) },
         config,
         fetcher,
       }));
@@ -643,6 +688,15 @@ export function buildCommandProxy({
     }
   });
 
+  async function pendingApprovalGeneration(runId: string, requestId: string): Promise<number | null> {
+    try {
+      const upstream = UpstreamRunStatusSchema.parse(await requestJson({ path: `/v1/runs/${runId}`, method: 'GET', config, fetcher }));
+      if (upstream.run_id !== runId) return null;
+      const control = pendingApprovalControl(upstream);
+      return control && control.approval.requestId === requestId ? control.generation : null;
+    } catch { return null; }
+  }
+
   app.post('/v1/runs/:runId/approval', async (request, reply) => {
     if (!authorize(request, reply, config.commandProxyKey)) return reply;
     const runId = validRunId(pathParameter(request, 'runId'));
@@ -650,11 +704,15 @@ export function buildCommandProxy({
     if (!runId || !parsed.success) return invalidRequest(reply);
 
     try {
+      // A status-only (pending_controls) approval is answered with its execution generation, so a
+      // stale prompt from an earlier generation is refused upstream instead of resolving the new one.
+      const generation = await pendingApprovalGeneration(runId, parsed.data.requestId);
       const upstream = UpstreamApprovalResponseSchema.parse(await requestJson({
         path: `/v1/runs/${runId}/approval`,
         method: 'POST',
         body: {
           request_id: parsed.data.requestId,
+          ...(generation === null ? {} : { execution_generation: generation }),
           choice: parsed.data.choice,
         },
         config,
@@ -728,10 +786,7 @@ async function readInferenceOptions(
     path: '/api/model/options', method: 'GET', config, fetcher, cache: 'no-store',
   }));
   const providers = canonicalProviderInventory(upstream);
-  const curatedOptions = enabledCuratedInferenceOptions(config).filter((candidate) => {
-    const provider = providers.get(candidate.provider);
-    return provider?.authenticated === true && provider.models.has(candidate.model);
-  }).map(option => option.provider === 'anthropic'
+  const curatedOptions = eligibleInferenceOptions(providers, config).map(option => option.provider === 'anthropic'
     ? { ...option, reasoningEfforts: [] }
     : { ...option, reasoningEfforts: [...REASONING_EFFORTS] });
   const freeOptions = openRouterFreeOptions(providers, config);
@@ -739,7 +794,7 @@ async function readInferenceOptions(
   return InferenceOptionsResponseSchema.parse({
     default: { provider: upstream.provider, model: upstream.model },
     options,
-    catalog: projectModelCatalog(providers, config, freeOptions),
+    catalog: projectModelCatalog(providers, config, [...curatedOptions, ...freeOptions]),
   });
 }
 
@@ -784,11 +839,12 @@ type CatalogCandidate = Readonly<{
 function projectModelCatalog(
   providers: ReadonlyMap<string, ProviderInventory>,
   config: CommandProxyConfig,
-  freeOptions: readonly InferenceOption[],
+  eligibleOptions: readonly { provider: string; model: string }[],
 ): ModelCatalog {
+  // Curated routes stay marked eligible even while unadvertised (policy, not availability).
   const eligibleKeys = new Set([
     ...enabledCuratedInferenceOptions(config).map(option => catalogKey(option.provider, option.model)),
-    ...freeOptions.map(option => catalogKey(option.provider, option.model)),
+    ...eligibleOptions.map(option => catalogKey(option.provider, option.model)),
   ]);
   const advertised = new Map<string, CatalogCandidate>();
   for (const [slug, provider] of providers) {
@@ -1051,7 +1107,7 @@ function projectRunStatus(upstream: z.infer<typeof UpstreamRunStatusSchema>, obs
     // Hermes may omit both timestamps. In that case this is the read observation time,
     // not a claim about when the run transitioned to its current state.
     updatedAt: toIsoTimestamp(upstream.updated_at ?? upstream.created_at, observedAt),
-    approval: upstream.approval ? projectApproval(upstream.approval) : null,
+    approval: upstream.approval ? projectApproval(upstream.approval) : pendingApprovalControl(upstream)?.approval ?? null,
     output: upstream.output ?? null,
     error: upstream.error == null ? null : 'Hermes run unavailable',
     pendingSteer: upstream.pending_steer ?? null,
@@ -1074,6 +1130,36 @@ function projectRunStatus(upstream: z.infer<typeof UpstreamRunStatusSchema>, obs
       inPlace: upstream.result.in_place,
     } } : {}),
   };
+}
+
+/**
+ * Installed Hermes durable run status reports a pending approval only inside `pending_controls`
+ * (gateway/session_pending_controls.py PendingControls.snapshot), never as top-level `approval`.
+ * The literal item shape is { kind: "approval", prompt_id, execution_generation, command,
+ * description, choices, edit?, timeout_s? }. Project it only when exactly one such item is
+ * present and every field is well formed; anything else yields null, never a failed status read.
+ */
+const KNOWN_APPROVAL_CHOICES = new Set(['once', 'session', 'always', 'deny']);
+export function pendingApprovalControl(upstream: Record<string, unknown>): { approval: LiveApproval; generation: number } | null {
+  const controls = upstream.pending_controls;
+  if (!Array.isArray(controls)) return null;
+  const approvals = controls.filter((item): item is Record<string, unknown> => !!item && typeof item === 'object' && !Array.isArray(item) && (item as { kind?: unknown }).kind === 'approval');
+  if (approvals.length !== 1) return null;
+  const item = approvals[0]!;
+  const promptId = ApprovalRequestIdSchema.safeParse(item.prompt_id);
+  if (!promptId.success) return null;
+  // A second identity alongside prompt_id is contradictory, even if it happens to match.
+  if ('request_id' in item || 'id' in item || 'approval' in item) return null;
+  const generation = item.execution_generation;
+  if (typeof generation !== 'number' || !Number.isSafeInteger(generation) || generation < 0) return null;
+  const choices = item.choices;
+  if (!Array.isArray(choices) || choices.length === 0 || choices.length > KNOWN_APPROVAL_CHOICES.size
+    || choices.some(choice => typeof choice !== 'string' || !KNOWN_APPROVAL_CHOICES.has(choice))
+    || new Set(choices).size !== choices.length || !choices.includes('once') || !choices.includes('deny')) return null;
+  if (typeof item.description !== 'string' || !item.description.trim()) return null;
+  try {
+    return { approval: projectApproval({ request_id: promptId.data, command: item.command, description: item.description, tool: null }), generation };
+  } catch { return null; }
 }
 
 function projectApproval(value: Record<string, unknown>): LiveApproval {

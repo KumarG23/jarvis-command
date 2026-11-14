@@ -1,8 +1,10 @@
+import { replyPreview } from './reply-preview';
 import { requireRoutingWrites } from './routing-write-state';
-import { createRoutingDefaults } from './routing-defaults';
+import { projectInstructions } from './project-context';
+import { createRoutingDefaults, RoutingRefusedError, RoutingUnavailableError } from './routing-defaults';
 import { KeyedSerialQueue } from './keyed-serial-queue';
 import type { ProjectRoomStore } from './project-room-store';
-import type { FrozenRouting, RoutingDefaultSet } from '@jarvis-command/contracts';
+import type { CockpitSession, FrozenRouting, InferenceOverride, RoutingDefaultSet } from '@jarvis-command/contracts';
 import { ReactionTargetSchema, ReactionMutationSchema, SessionMessagesPageSchema, SessionMutationResponseSchema, type ReactionTarget, type ReactionMutation } from '@jarvis-command/contracts';
 import { type ReactionStore, ReactionUnavailableError } from './reaction-store';
 import { ProjectRosterStatusSchema } from '@jarvis-command/contracts';
@@ -52,10 +54,14 @@ import type { AuditDraft, AuditRunRecord, AuditLedger } from './audit-ledger';
 import type { RunNotifier } from './run-notifier';
 import type { ReplyNotifier } from './reply-notifier';
 import {
+  CommandProxyUnavailableError,
   type CommandProxyClient,
   type CommandRunEvent,
   type CommandRunStatus,
 } from './command-client';
+
+/** Hermes says the chat no longer exists (deleted or expired). Unlinking it from a project is safe. */
+export const isMissingSession = (error: unknown) => error instanceof CommandProxyUnavailableError && error.statusCode === 404;
 
 const PUBLIC_RUN_ID = /^jcr_[a-f0-9]{32}$/;
 const TERMINAL_STATES = new Set<LiveRunState>([
@@ -66,6 +72,15 @@ const TERMINAL_STATES = new Set<LiveRunState>([
 ]);
 
 type LiveRoomServiceOptions = Readonly<{
+  defaultInference?: InferenceOverride;
+  projectContext?: boolean;
+  // Reads the project's cockpit sessions for the lead's context; null when unavailable.
+  listTerminals?: (projectId: string) => Promise<CockpitSession[] | null>;
+  /**
+   * Server-side status polling after admission, so the terminal audit, inbox entry and reply push
+   * happen even when no browser is watching (the phone app was closed). Off unless configured.
+   */
+  watchRuns?: Readonly<{ pollMs: number; watchMs: number; maxWatched?: number }>;
   rooms?: Pick<ProjectRoomStore, 'list' | 'readLocked'>;
   client: CommandProxyClient;
   ledger: AuditLedger;
@@ -80,6 +95,10 @@ type LiveRoomServiceOptions = Readonly<{
 }>;
 
 type AdmittedRunRecord = AuditRunRecord & Readonly<{ upstreamRunId: string }>;
+
+/** Server-configured actor for scheduled runs. Never derived from a request body or header. */
+export type ActorSubject = Readonly<{ actor: string }>;
+export type Subject = string | ActorSubject;
 
 export class LiveRoomConflictError extends Error {
   public readonly statusCode = 409;
@@ -99,6 +118,15 @@ export class LiveRoomNotFoundError extends Error {
   }
 }
 
+/**
+ * First line of the run's final output, for a finished-run push that has no verified reply item.
+ * Specific text reads as a real message; Chrome flags vague generic pushes as possible spam.
+ */
+function fallbackPreview(output: string | null | undefined): { preview?: string } {
+  const preview = replyPreview(output ?? '');
+  return preview ? { preview } : {};
+}
+
 export function createLiveRoomService({
   client,
   ledger,
@@ -110,17 +138,53 @@ export function createLiveRoomService({
   notifyReply,
   reactions,
   reactionsEnabled = false,
+  defaultInference,
+  projectContext = false,
+  listTerminals,
+  watchRuns,
 }: LiveRoomServiceOptions) {
   const routingRequests = new KeyedSerialQueue();
-  const defaults = createRoutingDefaults(ledger, client, rooms);
+  const defaults = createRoutingDefaults(ledger, client, rooms, defaultInference);
   const submissions = new Map<string, { fingerprint: string; operation: Promise<LiveRunSubmissionResponse> }>();
   const compactionSubmissions = new Map<string, { fingerprint: string; operation: Promise<ContextCompactionSubmissionResponse> }>();
 
   const submittingSessions = new Set<string>();
 
-  const actorFingerprint = (subject: string): string => sha256(subject);
+  // A string is an authenticated Access subject. An ActorSubject is a server-configured actor
+  // fingerprint (scheduled runs); it is never built from request input.
+  const watched = new Set<string>();
+  const watchTimers = new Set<NodeJS.Timeout>();
+  let watchClosed = false;
+  // Polls through projectStatus, which records the terminal audit and fires the inbox entry and
+  // reply push. Status reads are idempotent, so a browser watching too only duplicates reads.
+  const watch = (actor: string, publicRunId: string) => {
+    if (!watchRuns || watchClosed || watched.has(publicRunId) || watched.size >= (watchRuns.maxWatched ?? 64)) return;
+    watched.add(publicRunId);
+    const deadline = Date.now() + watchRuns.watchMs;
+    const schedule = () => {
+      const timer = setTimeout(() => { watchTimers.delete(timer); void tick(); }, watchRuns.pollMs);
+      timer.unref?.();
+      watchTimers.add(timer);
+    };
+    const tick = async () => {
+      if (watchClosed) { watched.delete(publicRunId); return; }
+      let done = Date.now() >= deadline;
+      try {
+        const record = ledger.findRunByPublicId(actor, publicRunId);
+        if (!record?.upstreamRunId) done = true;
+        else {
+          const status = await projectStatus(record as AdmittedRunRecord, await client.getRun(record.upstreamRunId));
+          if (TERMINAL_STATES.has(status.status)) done = true;
+        }
+      } catch { /* transient upstream or storage fault: keep polling until the deadline */ }
+      if (done || watchClosed) watched.delete(publicRunId); else schedule();
+    };
+    schedule();
+  };
 
-  const findRun = (subject: string, publicRunId: string): AdmittedRunRecord => {
+  const actorFingerprint = (subject: Subject): string => typeof subject === 'string' ? sha256(subject) : subject.actor;
+
+  const findRun = (subject: Subject, publicRunId: string): AdmittedRunRecord => {
     const record = ledger.findRunByPublicId(actorFingerprint(subject), publicRunId);
     if (!record || !record.upstreamRunId) throw new LiveRoomNotFoundError();
     return record as AdmittedRunRecord;
@@ -130,12 +194,14 @@ export function createLiveRoomService({
   // is already actor/run/session bound. Context-compaction operations are not runs.
   const notifyStatus = async (record: AuditRunRecord, upstream: CommandRunStatus, terminalAt: string | null): Promise<void> => {
     if (upstream.kind === 'context_compaction') return;
+    let replied = false;
     if (upstream.status === 'completed' && terminalAt) {
-      await notifyReply?.({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, eventAt: terminalAt });
+      replied = await notifyReply?.({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, eventAt: terminalAt }) ?? false;
     }
     if (!notify) return;
     const base = { actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId };
-    if (upstream.status === 'completed' && terminalAt) await notify({ ...base, eventAt: terminalAt, category: 'run-completed' });
+    // Without a verified reply (no history binding), the finished-run item carries the push instead.
+    if (upstream.status === 'completed' && terminalAt) await notify({ ...base, eventAt: terminalAt, category: 'run-completed', ...(replied ? {} : { pushFallback: true, ...fallbackPreview(upstream.output) }) });
     else if (upstream.status === 'failed' && terminalAt) await notify({ ...base, eventAt: terminalAt, category: 'run-failed' });
     else if (upstream.status === 'waiting_for_approval' && upstream.approval) {
       await notify({ ...base, eventAt: now().toISOString(), category: 'approval', key: upstream.approval.requestId });
@@ -215,7 +281,7 @@ export function createLiveRoomService({
   };
 
   const submitRun = async (
-    subject: string,
+    subject: Subject,
     rawRequest: LiveRunSubmissionRequest,
   ): Promise<LiveRunSubmissionResponse> => {
     const request = LiveRunSubmissionRequestSchema.parse(rawRequest);
@@ -276,7 +342,10 @@ export function createLiveRoomService({
         }
       }
 
-      const routing: FrozenRouting | undefined = request.routing ? await defaults.resolve(actor, request, payloadFingerprint) : undefined;
+      // Nothing is recorded or sent before this point, so a routing refusal here is definite.
+      const routing: FrozenRouting | undefined = request.routing ? await defaults.resolve(actor, request, payloadFingerprint).catch((error: unknown) => {
+        throw error instanceof RoutingUnavailableError ? new RoutingRefusedError(error.reason) : error;
+      }) : undefined;
       const resolvedRequest = routing ? { ...request, inference: routing.inference } : request;
       const { prepared, requestFingerprint } = await prepareReactionContext(resolvedRequest, actor, payloadFingerprint, reactionsEnabled);
       const publicRunId = createPublicRunId();
@@ -315,7 +384,9 @@ export function createLiveRoomService({
 
     submissions.set(submissionKey, { fingerprint: payloadFingerprint, operation });
     try {
-      return await operation;
+      const result = await operation;
+      watch(actor, result.publicRunId);
+      return result;
     } finally {
       submissions.delete(submissionKey);
       submittingSessions.delete(request.sessionId);
@@ -331,8 +402,14 @@ export function createLiveRoomService({
       ? await resolveImages?.(request.images)
       : undefined;
     if (request.images?.length && !images) throw new Error('Artifact image resolver unavailable');
+    const room = projectContext && rooms
+      ? (await rooms.list()).find(candidate => !candidate.archived && candidate.sessionIds.includes(request.sessionId))
+      : undefined;
+    const terminals = room && listTerminals ? await listTerminals(room.id).catch(() => null) : undefined;
+    const instructions = room ? projectInstructions(room, request.sessionId, terminals) : undefined;
     const admit = async () => {
       const upstream = await client.startRun({
+        ...(instructions ? { instructions } : {}),
         sessionId: request.sessionId,
         input: request.input,
         idempotencyKey: `jc-v1-${sha256(`${record.actor}\0${record.clientRequestId}`)}`,
@@ -483,8 +560,9 @@ export function createLiveRoomService({
       sessionIds.forEach(id => submittingSessions.add(id));
       try {
         for (const id of sessionIds) {
-          const { session } = await client.getSession(id);
-          if (session.id !== id) throw new LiveRoomNotFoundError();
+          // A linked chat that Hermes no longer has is only unlinked; any other read failure still blocks.
+          const read = await client.getSession(id).catch((error: unknown) => { if (isMissingSession(error)) return null; throw error; });
+          if (read && read.session.id !== id) throw new LiveRoomNotFoundError();
         }
         const audit = { actor: actorFingerprint(subject), sessionId: projectId, publicRunId: null, clientRequestId: null, upstreamRunId: null, requestId: null, requestFingerprint: null, status: null, choice: null };
         // sessionId is the ledger's scope identifier here: exactly the room id.
@@ -541,7 +619,7 @@ export function createLiveRoomService({
       return client.getMessages(sessionId, limit, offset);
     },
 
-    async getSession(_subject: string, sessionId: string): Promise<SessionMutationResponse> {
+    async getSession(_subject: Subject, sessionId: string): Promise<SessionMutationResponse> {
       ledger.assertHealthy();
       return client.getSession(sessionId);
     },
@@ -620,6 +698,8 @@ export function createLiveRoomService({
     },
 
     submitRun,
+    /** Stops server-side run watching (app shutdown). */
+    closeWatchers() { watchClosed = true; for (const timer of watchTimers) clearTimeout(timer); watchTimers.clear(); watched.clear(); },
     readRoutingDefault: (subject: string, target: unknown) => defaults.read(actorFingerprint(subject), target),
     setRoutingDefault: (subject: string, raw: RoutingDefaultSet) => routingRequests.run(`${actorFingerprint(subject)}\0${raw.clientRequestId}`, () => defaults.set(actorFingerprint(subject), raw)),
     submitContextCompaction,
@@ -662,7 +742,7 @@ export function createLiveRoomService({
         .slice(0, limit).map(record => record.publicRunId);
     },
 
-    async getRun(subject: string, publicRunId: string): Promise<LiveRunStatus> {
+    async getRun(subject: Subject, publicRunId: string): Promise<LiveRunStatus> {
       const record = findRun(subject, publicRunId);
       return projectStatus(record, await client.getRun(record.upstreamRunId!));
     },
@@ -700,8 +780,8 @@ export function createLiveRoomService({
             // cannot be confirmed now, the inbox reconcile re-checks it from the ledger.
             const confirmed = await client.getRun(record.upstreamRunId!).catch(() => null);
             if (confirmed && confirmed.runId === record.upstreamRunId && confirmed.sessionId === record.sessionId && confirmed.kind !== 'context_compaction') {
-              if (event.type === 'run.completed') await notifyReply?.({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, eventAt: terminalAt });
-              await notify?.({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, eventAt: terminalAt, category: event.type === 'run.completed' ? 'run-completed' : 'run-failed' });
+              const replied = event.type === 'run.completed' ? await notifyReply?.({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, eventAt: terminalAt }) ?? false : true;
+              await notify?.({ actor: record.actor, sessionId: record.sessionId, publicRunId: record.publicRunId, eventAt: terminalAt, category: event.type === 'run.completed' ? 'run-completed' : 'run-failed', ...(replied ? {} : { pushFallback: true, ...(event.type === 'run.completed' ? fallbackPreview(confirmed.output) : {}) }) });
             }
           }
         }

@@ -7,6 +7,11 @@ const eventNames = ['message.delta', 'tool.started', 'tool.completed', 'subagent
 const terminal = (status: string) => ['completed', 'failed', 'cancelled', 'interrupted'].includes(status);
 const MAX_UNCONFIRMED_TURNS = 8;
 
+// The server refused the routing before recording or sending anything: definitely not admitted.
+export class RoutingRefusedResponseError extends Error {
+  constructor(message: string) { super(message); this.name = 'RoutingRefusedResponseError'; }
+}
+const REFUSED_FALLBACK = 'Command refused this model, effort or project for this message. Nothing was sent; pick an eligible model and send again.';
 // Own the reader: transport cancellation must not depend on cooperative JSON parsing.
 export async function boundedJson(url: string, init: RequestInit, controller: AbortController): Promise<unknown> {
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
@@ -27,7 +32,7 @@ export async function boundedJson(url: string, init: RequestInit, controller: Ab
       const response = await fetch(url, { ...init, signal: controller.signal });
       if (controller.signal.aborted) { void response.body?.cancel().catch(() => {}); throw new Error('late response'); }
       reader = response.body?.getReader();
-      if (!response.ok || response.redirected || !reader) throw new Error('response');
+      if ((!response.ok && response.status !== 422) || response.redirected || !reader) throw new Error('response');
       const decoder = new TextDecoder();
       let text = '';
       let bytes = 0;
@@ -39,7 +44,13 @@ export async function boundedJson(url: string, init: RequestInit, controller: Ab
         if (bytes > 2_097_152) throw new Error('response limit');
         text += decoder.decode(chunk.value, { stream: true });
       }
-      return JSON.parse(text + decoder.decode()) as unknown;
+      const parsed = JSON.parse(text + decoder.decode()) as unknown;
+      if (response.status === 422) {
+        const body = typeof parsed === 'object' && parsed !== null ? parsed as { error?: unknown; message?: unknown } : {};
+        if (body.error !== 'routing_refused') throw new Error('response');
+        throw new RoutingRefusedResponseError(typeof body.message === 'string' && body.message.length <= 300 ? body.message : REFUSED_FALLBACK);
+      }
+      return parsed;
     })();
     return await Promise.race([work, aborted]);
   } finally {
@@ -68,11 +79,13 @@ export type Turn = {
   usage?: LiveRunStatus['usage'];
   compaction?: LiveRunStatus['compaction'];
   error?: string | null;
+  // Refused before admission: never in history, so it is never matched or retained.
+  refused?: boolean;
   activityUnavailable?: boolean;
   statusObservedAt?: string;
   telemetry?: { admissionAttempts: number; streamConnections: number; statusChecks: number };
 };
-export type DraftRecovery = { intent: TurnIntent; input: string; kind: 'terminal' | 'uncertain' };
+export type DraftRecovery = { intent: TurnIntent; input: string; kind: 'terminal' | 'uncertain' | 'refused' };
 
 export function useLiveTurn(sessionScope?: string, foreground = true) {
   const foregroundRef = useRef(foreground); foregroundRef.current = foreground;
@@ -173,15 +186,19 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
     let source: EventSource | undefined;
     let streamOpen = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let watch: ReturnType<typeof setInterval> | undefined;
     let closed = false;
     let reconciling = false;
     let terminalObserved = false;
     let approvalRevision = 0;
     let reconnects = 0;
+    let quietReconnect = false;
     let polls = 0;
     let eventCount = run.events.length;
     let eventBytes = run.events.reduce((bytes, event) => bytes + new TextEncoder().encode(JSON.stringify(event)).length, 0);
     let previewBytes = new TextEncoder().encode(run.output).length;
+    // A replacement stream can replay earlier activity; show each event once.
+    const seen = new Set(run.events.map((event) => JSON.stringify(event)));
     statusOnly = (!!sessionScope && (!foregroundRef.current || pollingRuns.current.has(run.intent))) || statusOnly;
     if (sessionScope && statusOnly) {
       // A status snapshot has no event cursor. Once polling has supplied output,
@@ -191,20 +208,23 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
     }
     let limited = statusOnly || run.outputLimited;
     const valid = () => !closed && alive.current && current.current?.intent === run.intent;
-    cleanup.current = () => { closed = true; controller?.abort(); source?.close(); clearTimeout(timer); };
+    cleanup.current = () => { closed = true; controller?.abort(); source?.close(); clearTimeout(timer); clearInterval(watch); };
     checkStatus.current = (preserve) => {
       if (!valid() || !streamOpen) return false;
       preserveApproval = preserve;
       void reconcile(true);
       return true;
     };
-    async function reconcile(keepStream = false) {
-      if (!keepStream) { streamOpen = false; source?.close(); clearTimeout(timer); }
+    // quiet: a background check while the stream is healthy. It never rewrites
+    // the visible phase or output unless the run has ended or needs approval.
+    async function reconcile(keepStream = false, quiet = false) {
+      if (!keepStream) { streamOpen = false; source?.close(); clearTimeout(timer); clearInterval(watch); }
       if (!valid() || reconciling) return;
       reconciling = true;
       polls++;
+      const settled = /^Run (running|queued|in_progress|started)$/.test(current.current!.phase);
       update({
-        phase: 'Recovering status',
+        ...(quiet || (settled && !keepStream) ? {} : { phase: 'Recovering status' }),
         telemetry: {
           admissionAttempts: current.current!.telemetry?.admissionAttempts ?? 0,
           streamConnections: current.current!.telemetry?.streamConnections ?? 0,
@@ -222,6 +242,11 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
         polls = 0;
         const done = terminal(status.status);
         const newerApproval = approvalRevision !== revisionAtStart || current.current!.approval !== approvalAtStart;
+        if (quiet && !done) {
+          const fresh = !newerApproval && !current.current!.approval && status.approval ? { approval: status.approval, phase: 'Awaiting approval' } : {};
+          update({ identityVerified: true, statusObservedAt: new Date().toISOString(), usage: status.usage, ...fresh });
+          return;
+        }
         // A status snapshot has no stream cursor: applying it during a healthy
         // stream can rewind output or double-count later deltas. Terminal wins.
         update({ identityVerified: true, statusObservedAt: new Date().toISOString(), historyBinding: done ? status.historyBinding : undefined,
@@ -263,7 +288,8 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
       if (!valid()) return;
       // Hermes consumes a shared queue; replacement streams do not replay their
       // prefix. Preserve visible data and cumulative per-run limits.
-      if (reconnects) update({ phase: 'Reconnecting — preview retained' });
+      if (reconnects && !quietReconnect) update({ phase: 'Reconnecting — preview retained' });
+      quietReconnect = false;
       update({ telemetry: {
         admissionAttempts: current.current!.telemetry?.admissionAttempts ?? 0,
         streamConnections: (current.current!.telemetry?.streamConnections ?? 0) + 1,
@@ -273,7 +299,15 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
       source = connection;
       streamOpen = true;
       let ended = false;
-      const recover = () => { if (ended) return; ended = true; if (!terminalObserved) update({ activityUnavailable: true }); void reconcile(); };
+      let delivered = false;
+      const recover = () => {
+        if (ended) return;
+        ended = true;
+        // A stream that delivered events was healthy; its loss starts a fresh reconnect budget.
+        if (delivered) { reconnects = 0; quietReconnect = true; }
+        if (!terminalObserved) update({ activityUnavailable: true });
+        void reconcile();
+      };
       connection.onerror = recover;
       for (const name of eventNames) connection.addEventListener(name, (message) => {
       if (!valid() || ended || source !== connection) return;
@@ -284,6 +318,12 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
         if (eventCount > 1000 || eventBytes > 524288) { limited = true; throw new Error('limit'); }
         const event = RunEventSchema.parse(JSON.parse(raw));
         if (event.type !== name || event.publicRunId !== run.publicRunId) throw new Error('event');
+        delivered = true;
+        if (event.type !== 'message.delta' && !event.type.startsWith('run.')) {
+          const key = JSON.stringify(event);
+          if (seen.has(key)) return;
+          seen.add(key);
+        }
         // Execution activity supersedes a queued admission snapshot. Other phases
         // (approval, compaction, recovery, stopping, terminal) retain their authority.
         const activePhase = current.current!.phase === 'Run queued' && !current.current!.done
@@ -324,7 +364,10 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
         } else update({ ...activePhase, events: [...current.current!.events, event] });
       } catch { recover(); }
     });
-      timer = setTimeout(recover, 60_000);
+      // No hard stream lifetime: the server bounds it. A slow background status
+      // check catches a stalled stream or an approval the stream did not carry.
+      clearInterval(watch);
+      watch = setInterval(() => { if (valid() && source === connection && !ended) void reconcile(true, true); }, 60_000);
     }
     if (readFirst || statusOnly || terminal(run.phase.replace('Run ', ''))) void reconcile();
     else connect();
@@ -351,7 +394,20 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
       try { writeStored(bound, stored.current); stored.current = bound; }
       catch { setRecoveryError('Reload recovery degraded — keep this tab open. In-memory supervision continues.'); }
       supervise(current.current!);
-    } catch { if (!cancelled && alive.current && current.current?.intent === intent) update({ phase: 'Admission uncertain — retry the same intent' }); }
+    } catch (error) {
+      if (cancelled || !alive.current || current.current?.intent !== intent) return;
+      if (!(error instanceof RoutingRefusedResponseError)) { update({ phase: 'Admission uncertain — retry the same intent' }); return; }
+      // A definite refusal: nothing was recorded, so drop the pending recovery identity and hand the
+      // text back to the composer instead of offering a same-intent retry.
+      try {
+        if (stored.current) { clearStored(stored.current); stored.current = null; }
+      } catch { recoveryBlocked.current = true; setRecoveryError('Local reload recovery could not be cleared safely — writer locked. Trusted operator reconciliation required.'); }
+      update({ phase: 'Not sent — pick an eligible model', error: error.message, done: true, historyMatched: true, refused: true });
+      if (intent.input !== null) {
+        const input = intent.input;
+        setRecoveries((items) => [...items, { intent, input, kind: 'refused' }]);
+      }
+    }
   }
   function send(
     sessionId: string,
@@ -429,7 +485,7 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
       if (matched.size) retain(completed.current.filter((item) => !matched.has(item.intent)));
     }
     const run = current.current;
-    if (run && run.intent.sessionId === sessionId) {
+    if (run && run.intent.sessionId === sessionId && !run.refused) {
       const match = matchTurn(run, messages, complete);
       update({ historyMatched: !!match.assistant, userHistoryMatched: !!match.user });
     }

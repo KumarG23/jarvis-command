@@ -30,6 +30,8 @@ jobs:
         with:
           node-version: 22.22.3 # matches the Dockerfile runtime
           cache: npm
+      - name: Install tmux for the cockpit session-host tests
+        run: sudo apt-get update && sudo apt-get install -y tmux
       - run: npm ci
       - name: Install Chromium for the browser regression
         if: hashFiles('e2e/header-layout.config.ts') != ''

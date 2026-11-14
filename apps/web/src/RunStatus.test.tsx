@@ -63,3 +63,12 @@ it('labels incomplete activity without inventing zero tool calls or historical b
   expect(screen.getByRole('status', { name: 'Run status' })).not.toHaveTextContent('0 tools');
   expect(screen.getByText('Recovered run output — canonical message link unavailable')).toBeInTheDocument();
 });
+
+it('explains a waiting-for-approval run whose approval details never reached Command', () => {
+  const { rerender } = render(<TurnView {...props} turn={{ ...base, phase: 'Run waiting_for_approval' }} />);
+  expect(screen.getByRole('region', { name: 'Approval details missing' })).toHaveTextContent('nothing to approve here');
+  expect(screen.queryByRole('button', { name: 'Approve once' })).not.toBeInTheDocument();
+  rerender(<TurnView {...props} turn={{ ...base, phase: 'Run waiting_for_approval', approval: { requestId: 'approval:x', command: 'git init', description: 'Create repo', tool: 'terminal' } }} />);
+  expect(screen.queryByRole('region', { name: 'Approval details missing' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Approve once' })).toBeInTheDocument();
+});

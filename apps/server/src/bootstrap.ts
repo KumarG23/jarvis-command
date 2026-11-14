@@ -1,3 +1,4 @@
+import { createTerminalLister } from './project-context';
 import { ProjectRoomStore } from './project-room-store';
 import { ReactionStore } from './reaction-store';
 import { createPushService, type PushTransport } from './push-service';
@@ -14,6 +15,9 @@ import { NotificationStore } from './notification-store';
 import { createRunNotifier } from './run-notifier';
 import { createPresence, createReplyNotifier, type ReplyEvidenceSource } from './reply-notifier';
 import { createReplyEvidenceSource } from './reply-evidence-source';
+import { createScheduledRunsServer } from './scheduled-runs';
+import { DeliveryStore } from './delivery-store';
+import { createDeliverer } from './deliverer';
 
 export type CompositionOverrides = Readonly<{
   hermes?: Readonly<{
@@ -79,12 +83,19 @@ export function createCommandServer(
   let ledger: AuditLedger | undefined;
   let replyEvidence: ReplyEvidenceSource | undefined;
   let liveRoom: ReturnType<typeof createLiveRoomService> | undefined;
+  let rooms: ProjectRoomStore | undefined;
+  const deliveries = config.command ? new DeliveryStore(dirname(config.command.auditLogPath)) : undefined;
+  const scheduled = config.scheduledRuns && config.command ? createScheduledRunsServer({
+    config: config.scheduledRuns, liveRoom: () => liveRoom, rooms: () => rooms,
+    ...(deliveries && notifications ? { deliver: createDeliverer({ deliveries, notifications, push, presence }) } : {}),
+  }) : undefined;
   const app = buildApp({
     config,
     verifyAccess,
     hermes,
     artifactStore,
     notifications,
+    pushService: push,
     presence,
     get liveRoom() { return liveRoom; },
     get replyEvidence() { return replyEvidence; },
@@ -102,16 +113,25 @@ export function createCommandServer(
     liveRoom = createLiveRoomService({
       client,
       ledger,
-      rooms: new ProjectRoomStore(dirname(config.command.auditLogPath)),
-      notify: notifications ? createRunNotifier(notifications) : undefined,
+      rooms: rooms = new ProjectRoomStore(dirname(config.command.auditLogPath)),
+      notify: notifications ? createRunNotifier(notifications, push, presence) : undefined,
       notifyReply: notifications ? createReplyNotifier({ store: notifications, push, enabled: config.push?.replies === true, source: replyEvidence, presence }) : undefined,
       reactions: new ReactionStore(dirname(config.command.auditLogPath)),
       reactionsEnabled: config.reactionsEnabled,
+      projectContext: config.projectContextEnabled === true,
+      // Without this, a run finished while no browser is open never reaches the inbox or push.
+      watchRuns: { pollMs: 5_000, watchMs: 30 * 60_000 },
+      ...(config.cockpit ? { listTerminals: createTerminalLister(config.cockpit) } : {}),
+      ...(config.command.defaultInference ? { defaultInference: config.command.defaultInference } : {}),
       resolveImages: artifactStore
         ? createArtifactImageResolver(artifactStore)
         : async () => { throw Object.assign(new Error('Artifact storage unavailable'), { statusCode: 503 }); },
     });
   });
-  app.addHook('onClose', async () => { await ledger?.close(); });
+  // The scheduled-runs listener opens only once the live room exists, and closes with the app.
+  app.addHook('onReady', async () => {
+    if (scheduled && config.scheduledRuns) await scheduled.listen({ host: config.scheduledRuns.host, port: config.scheduledRuns.port });
+  });
+  app.addHook('onClose', async () => { liveRoom?.closeWatchers(); await scheduled?.close(); await ledger?.close(); });
   return app;
 }

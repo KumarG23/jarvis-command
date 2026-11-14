@@ -8,7 +8,9 @@ import { LiveRunStateSchema, OpaqueIdentifierSchema, SessionIdSchema, SessionSum
 export const NotificationCategorySchema = z.enum(['run-completed', 'run-failed', 'approval']);
 // Rollback reader bridge (#99): a later writer may persist one assistant-reply item. Items of this
 // category are readable and preserved here but are never created, toggled or pushed by this code.
-export const NotificationItemCategorySchema = z.enum([...NotificationCategorySchema.options, 'assistant-reply']);
+// 'delivery': a scheduled message (Hermes cron/reminder) delivered into a chat; not a run.
+export const NotificationItemCategorySchema = z.enum([...NotificationCategorySchema.options, 'assistant-reply', 'delivery']);
+export const DeliveryIdSchema = z.string().regex(/^dlv_[a-f0-9]{32}$/);
 export const NotificationIdSchema = z.string().regex(/^ntf_[a-f0-9]{32}$/);
 const IsoTimestampSchema = z.iso.datetime({ offset: true });
 
@@ -25,12 +27,16 @@ export const NotificationItemSchema = z.object({
   // When this server first observed the event; not Hermes' completion time.
   observedAt: IsoTimestampSchema,
   sessionId: SessionIdSchema,
-  publicRunId: z.string().regex(/^jcr_[a-f0-9]{32}$/),
+  // Absent only for a delivery, which is not a run.
+  publicRunId: z.string().regex(/^jcr_[a-f0-9]{32}$/).optional(),
   title: z.string().min(1).max(80),
   body: z.string().min(1).max(160),
   readAt: IsoTimestampSchema.nullable(),
   reply: NotificationReplySchema.optional(),
-}).strict().refine(item => (item.category === 'assistant-reply') === (item.reply !== undefined));
+  delivery: z.object({ deliveryId: DeliveryIdSchema }).strict().optional(),
+}).strict().refine(item => (item.category === 'assistant-reply') === (item.reply !== undefined)
+  && (item.category === 'delivery') === (item.delivery !== undefined)
+  && (item.category === 'delivery') === (item.publicRunId === undefined));
 
 export const NotificationPreferencesSchema = z.object({
   categories: z.object({
@@ -75,11 +81,13 @@ export const NotificationTargetSchema = z.discriminatedUnion('state', [
   z.object({
     state: z.literal('available'),
     sessionId: SessionIdSchema,
-    publicRunId: z.string().regex(/^jcr_[a-f0-9]{32}$/),
+    // Run fields are absent for a delivery target, which only opens its chat.
+    publicRunId: z.string().regex(/^jcr_[a-f0-9]{32}$/).optional(),
     // Exact reply to focus for an assistant-reply item; absent for run-state items.
     messageId: OpaqueIdentifierSchema.optional(),
-    clientRequestId: z.uuid(),
-    runStatus: LiveRunStateSchema,
+    deliveryId: DeliveryIdSchema.optional(),
+    clientRequestId: z.uuid().optional(),
+    runStatus: LiveRunStateSchema.optional(),
     approvalPending: z.boolean(),
     session: SessionSummarySchema,
     inbox: NotificationInboxSchema,
@@ -97,3 +105,18 @@ export type NotificationInbox = z.infer<typeof NotificationInboxSchema>;
 export type NotificationReconcileResponse = z.infer<typeof NotificationReconcileResponseSchema>;
 export type NotificationReadRequest = z.infer<typeof NotificationReadRequestSchema>;
 export type NotificationTarget = z.infer<typeof NotificationTargetSchema>;
+
+// A scheduled message delivered into a chat by Hermes (cron result or reminder), stored by Command.
+export const ScheduledDeliverySchema = z.object({
+  deliveryId: DeliveryIdSchema,
+  sessionId: SessionIdSchema,
+  kind: z.enum(['cron', 'reminder']),
+  title: z.string().min(1).max(80).nullable(),
+  content: z.string().min(1).max(16_000),
+  deliveredAt: IsoTimestampSchema,
+}).strict();
+export const ScheduledDeliveriesResponseSchema = z.object({
+  sessionId: SessionIdSchema,
+  deliveries: z.array(ScheduledDeliverySchema).max(200),
+}).strict();
+export type ScheduledDelivery = z.infer<typeof ScheduledDeliverySchema>;

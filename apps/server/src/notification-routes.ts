@@ -17,6 +17,7 @@ import { z } from 'zod';
 import type { createLiveRoomService } from './live-room-service';
 import { notificationId } from './run-notifier';
 import { replyState, type Presence, type ReplyEvidenceSource } from './reply-notifier';
+import type { PushService } from './push-service';
 import { NotificationNotFoundError, NotificationStorageError, type ActorView, type NotificationStore } from './notification-store';
 
 const RECONCILE_LIMIT = 10;
@@ -51,6 +52,7 @@ export function registerNotificationRoutes(
   dependencies: Readonly<{
     store: NotificationStore | undefined;
     push?: PushConfig | undefined;
+    pushService?: PushService | undefined;
     presence?: Presence | undefined;
     /** Read per request: the source only exists after onReady, and only when the server-side opt-in is set. */
     replyEvidence?: ReplyEvidenceSource | undefined;
@@ -71,6 +73,18 @@ export function registerNotificationRoutes(
     const subscription = parse(PushSubscriptionSchema, request.body);
     if (!supportedPushEndpoint(subscription.endpoint)) throw Object.assign(new Error('Unsupported push destination'), { statusCode: 400 });
     return inbox(await store().registerDevice(actorOf(request), subscription), actorOf(request));
+  });
+  // Owner-initiated test push to this actor's own devices. In-memory rate limit: one per 20 s.
+  const lastTest = new Map<string, number>();
+  routes.post('/api/notifications/push/test', { bodyLimit: 64 }, async (request, reply) => {
+    parse(z.object({}).strict(), request.body);
+    if (!dependencies.pushService || dependencies.push?.capability.state !== 'available') return reply.code(503).send({ error: 'push_unavailable' });
+    const actor = actorOf(request);
+    const now = Date.now();
+    if ((lastTest.get(actor) ?? 0) > now - 20_000) return reply.code(429).header('retry-after', '20').send({ error: 'rate_limited' });
+    lastTest.set(actor, now);
+    if (lastTest.size > 64) for (const [key, at] of lastTest) if (at <= now - 20_000) lastTest.delete(key);
+    return reply.header('cache-control', 'no-store').send(await dependencies.pushService.sendTest(actor));
   });
   routes.post('/api/notifications/push/devices/:deviceId/revoke', { bodyLimit: 64 }, async request => {
     const { deviceId } = parse(z.object({ deviceId: PushDeviceIdSchema }).strict(), request.params);
@@ -133,11 +147,27 @@ export function registerNotificationRoutes(
     const classify = (error: unknown) => (
       typeof error === 'object' && error !== null && 'statusCode' in error && error.statusCode === 404 ? 'missing' as const : 'unavailable' as const
     );
+    if (item.category === 'delivery' || !item.publicRunId) {
+      // A delivered reminder or cron result has no run: re-check only the chat it landed in.
+      let deliverySession;
+      try { deliverySession = (await dependencies.liveRoom.getSession(subject, item.sessionId)).session; } catch (error) { return { state: classify(error) }; }
+      if (deliverySession.id !== item.sessionId) return { state: 'missing' };
+      const deliveryInbox = await inbox(await store().markRead(actor, { ids: [item.id] }), actor);
+      return NotificationTargetSchema.parse({
+        state: 'available',
+        sessionId: item.sessionId,
+        ...(item.delivery ? { deliveryId: item.delivery.deliveryId } : {}),
+        approvalPending: false,
+        session: deliverySession,
+        inbox: deliveryInbox,
+      });
+    }
+    const publicRunId = item.publicRunId;
     let status: Awaited<ReturnType<typeof dependencies.liveRoom.getRun>>;
     let identity: ReturnType<typeof dependencies.liveRoom.getRunIdentity>;
     try {
-      identity = dependencies.liveRoom.getRunIdentity(subject, item.publicRunId);
-      status = await dependencies.liveRoom.getRun(subject, item.publicRunId);
+      identity = dependencies.liveRoom.getRunIdentity(subject, publicRunId);
+      status = await dependencies.liveRoom.getRun(subject, publicRunId);
       if (identity.sessionId !== item.sessionId || status.sessionId !== item.sessionId) return { state: 'missing' };
     } catch (error) { return { state: classify(error) }; }
     let session;

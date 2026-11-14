@@ -41,11 +41,12 @@ async function storeFixture() {
   const store = new NotificationStore(directory, () => clock.now);
   return { directory, clock, store };
 }
-async function routesFixture(push: PushConfig = config) {
+async function routesFixture(push: PushConfig = config, transport?: ReturnType<typeof vi.fn>) {
   const h = await storeFixture();
   const app = buildApp({
     config: { ...loadConfig({ NODE_ENV: 'test', HERMES_READ_PROXY_KEY: 'r'.repeat(32), COMMAND_MODE: 'enabled', PUBLIC_ORIGIN: 'https://command.example', HERMES_COMMAND_API_BASE_URL: 'http://127.0.0.1:9091', HERMES_COMMAND_PROXY_KEY: 'c'.repeat(32), COMMAND_AUDIT_LOG_PATH: join(h.directory, 'audit.jsonl') }), push },
     notifications: h.store,
+    ...(transport ? { pushService: createPushService(push, h.store, transport as never) } : {}),
     liveRoom: {} as ReturnType<typeof createLiveRoomService>,
     verifyAccess: async assertion => { if (!assertion) throw new Error(); return { subject: assertion, provider: 'cloudflare-access' }; },
     hermes: { readSnapshot: async () => { throw new Error(); } },
@@ -233,4 +234,76 @@ it('proves local VAPID/encrypted transport → worker display/dedupe/restart →
   const next = JSON.stringify({ version: 2, id: replyId(2), title: 'T', body: 'B' });
   await worker()('push', { data: { text: () => next, json: () => JSON.parse(next) } });
   expect(shown).toHaveBeenCalledTimes(1); // bounded receipts never evict/replay
+});
+
+it('puts the run output’s first line in a fallback push only when reply text is shown, and never stores it', async () => {
+  const h = await storeFixture();
+  await h.store.registerDevice(actor, subscription());
+  h.clock.now = new Date(Date.now() + 1000);
+  const bodies: string[] = [];
+  vi.spyOn(webpush, 'generateRequestDetails').mockImplementation(((_subscription: unknown, payload: string) => {
+    bodies.push(JSON.parse(payload).body as string);
+    return { headers: {}, body: Buffer.from('x') } as never;
+  }) as never);
+  const push = createPushService(config, h.store, vi.fn(async () => 201));
+  const notify = createRunNotifier(h.store, push);
+  await notify({ ...event(1), pushFallback: true, preview: 'Disk usage is fine on all servers.' });
+  await h.store.setPreferences(actor, { categories: { 'run-completed': true, 'run-failed': true, approval: true }, showReplyText: false });
+  await notify({ ...event(2), pushFallback: true, preview: 'Hidden answer' });
+  expect(bodies).toEqual(['Disk usage is fine on all servers.', 'Jarvis finished your request. Open the chat to read the answer.']);
+  expect(JSON.stringify((await h.store.read(actor)).items)).not.toMatch(/Disk usage|Hidden/);
+});
+
+it('sends a test push to the actor’s own unexpired devices with high urgency, no inbox item and no receipt', async () => {
+  const h = await storeFixture();
+  await h.store.registerDevice(actor, subscription());
+  const details: Array<{ payload: string; options: { TTL?: number; urgency?: string } }> = [];
+  vi.spyOn(webpush, 'generateRequestDetails').mockImplementation(((_subscription: unknown, payload: string, options: { TTL?: number; urgency?: string }) => {
+    details.push({ payload, options });
+    return { headers: {}, body: Buffer.from('x') } as never;
+  }) as never);
+  const push = createPushService(config, h.store, vi.fn(async () => 201));
+  expect(await push.sendTest(actor)).toEqual({ devices: 1, accepted: 1, expired: 0 });
+  expect(await push.sendTest(other)).toEqual({ devices: 0, accepted: 0, expired: 0 });
+  expect(JSON.parse(details[0]!.payload)).toMatchObject({ version: 2, test: true, title: 'Test notification' });
+  expect(details[0]!.options).toMatchObject({ urgency: 'high' });
+  expect((await h.store.read(actor)).items).toEqual([]);
+  expect(await createPushService(config, h.store, vi.fn(async () => 410)).sendTest(actor)).toEqual({ devices: 1, accepted: 0, expired: 1 });
+});
+
+it('test push route is owner-scoped and rate limited', async () => {
+  expect((await (await routesFixture()).post('/api/notifications/push/test', {})).statusCode).toBe(503); // no push service wired
+  const transport = vi.fn(async () => 201);
+  const h = await routesFixture(config, transport);
+  await h.store.registerDevice(actor, subscription());
+  const first = await h.post('/api/notifications/push/test', {});
+  expect([first.statusCode, first.json()]).toEqual([200, { devices: 1, accepted: 1, expired: 0 }]);
+  expect((await h.post('/api/notifications/push/test', {})).statusCode).toBe(429);
+  expect((await h.post('/api/notifications/push/test', {}, 'bob')).json()).toEqual({ devices: 0, accepted: 0, expired: 0 });
+  expect((await h.post('/api/notifications/push/test', { endpoint: 'x' }, 'carol')).statusCode).toBe(400);
+  expect(transport).toHaveBeenCalledTimes(1);
+});
+
+it('pushes a new pending approval once, without the command text, and not while that chat is on screen', async () => {
+  const h = await storeFixture();
+  await h.store.registerDevice(actor, subscription());
+  h.clock.now = new Date(Date.now() + 1000);
+  const sent: Array<{ payload: string; ttl: number | undefined }> = [];
+  vi.spyOn(webpush, 'generateRequestDetails').mockImplementation(((_subscription: unknown, payload: string, options: { TTL?: number }) => {
+    sent.push({ payload, ttl: options.TTL });
+    return { headers: {}, body: Buffer.from('x') } as never;
+  }) as never);
+  const push = createPushService(config, h.store, vi.fn(async () => 201));
+  let visible = false;
+  const notify = createRunNotifier(h.store, push, { visible: () => visible } as never);
+  const approval = { ...event(7), category: 'approval' as const, key: 'approval:agents-md' };
+  await notify(approval);
+  await notify(approval); // same request observed again (status poll + stream): no second push
+  expect(sent).toHaveLength(1);
+  expect(JSON.parse(sent[0]!.payload)).toMatchObject({ version: 2, title: 'Jarvis needs your OK' });
+  expect(sent[0]!.payload).not.toContain('agents-md');
+  expect(sent[0]!.ttl).toBe(300);
+  visible = true;
+  await notify({ ...event(8), category: 'approval' as const, key: 'approval:other' });
+  expect(sent).toHaveLength(1);
 });

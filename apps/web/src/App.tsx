@@ -8,7 +8,7 @@ import { ThreadConversation } from './ThreadConversation';
 import { PushLink } from './PushLink';
 import { composeProjectInput, projectContext, readProjectForSend, readProjectThreadTarget } from './projectInput';
 import { ArtifactListResponseSchema, SessionMutationResponseSchema, ArtifactTypeSchema, CommandBootstrapSchema, type NotificationTarget, type ProjectRoom, type ArtifactType, type CommandBootstrap, type SessionSummary } from '@jarvis-command/contracts';
-import { Command, ShieldCheck, Menu, X, Settings2, PanelRight, ChevronRight, MessageSquare, Files, Users, MessagesSquare, Bell, Clapperboard } from 'lucide-react';
+import { Command, ShieldCheck, Menu, X, Settings2, PanelRight, ChevronRight, MessageSquare, Files, Users, MessagesSquare, Bell, Clapperboard, TerminalSquare } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import './styles.css';
@@ -26,6 +26,7 @@ import { NotificationsPane, useNotifications } from './Notifications';
 import { StudioProjectionView } from './studio-projection/StudioProjectionView';
 import { STUDIO_PROJECTION_SOURCE } from './studio-projection/studioProjectionConfig';
 
+const Cockpit = lazy(() => import('./Cockpit').then(module => ({ default: module.Cockpit })));
 const ArtifactStudio = lazy(() => import('./ArtifactStudio').then(module => ({ default: module.ArtifactStudio })));
 
 type LoadBootstrap = () => Promise<CommandBootstrap>;
@@ -307,8 +308,9 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
   const studioEntry = useRef(crypto.randomUUID()), studioVisible = useRef(false), studioDismissed = useRef(false), studioReturnFocus = useRef(false);
   const studioRegion = useRef<HTMLElement | null>(null), studioNav = useRef<HTMLButtonElement | null>(null), studioMenu = useRef<HTMLButtonElement | null>(null);
   const [draftAuthorizedSession, setDraftAuthorizedSession] = useState<string | null>(null);
-  const [pane, setPane] = useState<'project' | 'runtime' | 'settings' | 'artifacts' | 'agents' | 'collaboration' | 'notifications' | null>(null);
+  const [pane, setPane] = useState<'project' | 'runtime' | 'settings' | 'artifacts' | 'agents' | 'collaboration' | 'notifications' | 'cockpit' | 'host-shell' | null>(null);
   const [artifactPaneFullScreen, setArtifactPaneFullScreen] = useState(false);
+  const [cockpitFullScreen, setCockpitFullScreen] = useState(true);
   const [associatedArtifacts, setAssociatedArtifacts] = useState<number | null>(null);
   const [artifactRefresh, setArtifactRefresh] = useState(0);
   const [pendingGeneration, setPendingGeneration] = useState<PendingArtifactGeneration | null>(() => readPendingGeneration());
@@ -363,6 +365,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     if (element) element.scrollTop = element.scrollHeight;
   }, [selectedSession?.id]);
   const artifactStudioEnabled = bootstrap.hermes.capabilities.includes('artifact_studio');
+  const cockpitOn = bootstrap.hermes.capabilities.includes('project_cockpit');
   useEffect(() => {
     if (!artifactStudioEnabled) return;
     if (!selectedSession?.id && !projectId) {
@@ -398,6 +401,19 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     }
   }, [live.turn?.intent, selectedSession?.id]);
   const liveEnabled = bootstrap.command.liveRoom.enabled;
+  // Hermes host admin shell: present only when the server enables it; checked each time the Hermes panel opens.
+  const [hostShell, setHostShell] = useState<{ name: string; reachable: boolean } | null>(null);
+  useEffect(() => {
+    if (!liveEnabled || pane !== 'runtime') return;
+    const controller = new AbortController();
+    void fetch('/api/host-shell/status', { credentials: 'same-origin', cache: 'no-store', headers: { accept: 'application/json' }, signal: controller.signal })
+      .then(async response => {
+        const value = response.ok ? await response.json() as { enabled?: unknown; name?: unknown; reachable?: unknown } : null;
+        if (!controller.signal.aborted) setHostShell(value?.enabled === true && typeof value.name === 'string' ? { name: value.name, reachable: value.reachable === true } : null);
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [liveEnabled, pane]);
   const notifications = useNotifications(liveEnabled, threads.all.map(item => `${item.turn?.publicRunId ?? ''}:${item.turn?.done ? 'done' : 'open'}:${item.turn?.approval?.requestId ?? ''}`).join('|'));
   const hermesOnline = bootstrap.hermes.state === 'online';
   const writeAllowed = liveEnabled && hermesOnline && bootstrap.hermes.capabilities.includes('run_events_sse') && selectedSession?.ownership === 'command' && selectedSession.id.startsWith('jc_');
@@ -645,7 +661,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
   function setProjectScope(name: string | null) {
     setProjectName(name);
   }
-  function openPanel(kind: 'runtime' | 'settings' | 'artifacts' | 'agents' | 'collaboration' | 'notifications', element: HTMLElement) {
+  function openPanel(kind: 'runtime' | 'settings' | 'artifacts' | 'agents' | 'collaboration' | 'notifications' | 'cockpit' | 'host-shell', element: HTMLElement) {
     pauseSavedRecovery();
     leaveStudio();
     if (kind !== 'artifacts') setSaveActive(false);
@@ -655,17 +671,26 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
   // approves or alters the draft, and never displaces a run that is active in this tab.
   function openNotificationTarget(target: Extract<NotificationTarget, { state: 'available' }>): string | null {
     setReplyFocus(target.messageId ? { sessionId: target.sessionId, messageId: target.messageId } : null);
-    const targetLive = threads.get(target.sessionId);
-    if (!threads.ready(target.sessionId)) setNotificationAttachment(target);
-    const settled = ['completed', 'failed', 'cancelled', 'interrupted'].includes(target.runStatus);
-    const sameRun = targetLive.turn?.publicRunId === target.publicRunId;
-    const occupied = !!targetLive.turn && !targetLive.turn.done && !sameRun;
     let note: string | null = null;
-    if (threads.ready(target.sessionId) && !settled && !sameRun) {
-      if (occupied) note = 'Opened the chat. Another run is active in this chat, so this run’s live card is not attached here; open it after the active run finishes.';
-      else if (!targetLive.adopt({ sessionId: target.sessionId, clientRequestId: target.clientRequestId, publicRunId: target.publicRunId })) note = 'Opened the chat, but this run’s live card could not be attached. Reload the chat to retry.';
+    // A delivery target has no run: it only opens its chat.
+    const { publicRunId, clientRequestId, runStatus } = target;
+    if (publicRunId && clientRequestId && runStatus) {
+      const targetLive = threads.get(target.sessionId);
+      if (!threads.ready(target.sessionId)) setNotificationAttachment(target);
+      const settled = ['completed', 'failed', 'cancelled', 'interrupted'].includes(runStatus);
+      const sameRun = targetLive.turn?.publicRunId === publicRunId;
+      const occupied = !!targetLive.turn && !targetLive.turn.done && !sameRun;
+      if (threads.ready(target.sessionId) && !settled && !sameRun) {
+        if (occupied) note = 'Opened the chat. Another run is active in this chat, so this run’s live card is not attached here; open it after the active run finishes.';
+        else if (!targetLive.adopt({ sessionId: target.sessionId, clientRequestId, publicRunId })) note = 'Opened the chat, but this run’s live card could not be attached. Reload the chat to retry.';
+      }
     }
-    if (projects.current) { if (project?.sessionIds.includes(target.sessionId)) projects.current.openLinkedChat(project, target.session); else projects.current.selectChat(target.session); } else selectSession(target.session);
+    // Open the chat inside the project that holds it, whichever project is selected now.
+    if (projects.current) {
+      const room = projects.current.roomFor(target.sessionId) ?? (project?.sessionIds.includes(target.sessionId) ? project : null);
+      const opened = room ? projects.current.openLinkedChat(room, target.session) : projects.current.selectChat(target.session);
+      if (!opened) note = 'Project navigation is busy or has an edit draft, so the chat was not opened. Finish the edit and open the notification again.';
+    } else selectSession(target.session);
     if (!note) closePanel();
     return note;
   }
@@ -673,7 +698,8 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     if (!notificationAttachment || !threads.ready(notificationAttachment.sessionId)) return;
     const target = notificationAttachment;
     const handle = threads.get(target.sessionId);
-    if (!['completed', 'failed', 'cancelled', 'interrupted'].includes(target.runStatus) && handle.turn?.publicRunId !== target.publicRunId) handle.adopt({ sessionId: target.sessionId, clientRequestId: target.clientRequestId, publicRunId: target.publicRunId });
+    const { publicRunId, clientRequestId, runStatus } = target;
+    if (publicRunId && clientRequestId && runStatus && !['completed', 'failed', 'cancelled', 'interrupted'].includes(runStatus) && handle.turn?.publicRunId !== publicRunId) handle.adopt({ sessionId: target.sessionId, clientRequestId, publicRunId });
     setNotificationAttachment(null);
   }, [notificationAttachment, threads]);
   function closePanel() { setSaveActive(false); if (pane === 'project') projects.current?.closeDetails(); setPane(null); setArtifactPaneFullScreen(false); if (panelOpener.current?.closest('.room-sidebar') && window.matchMedia?.('(max-width: 760px)').matches) menu.current?.focus(); else panelOpener.current?.focus(); }
@@ -838,13 +864,14 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     </aside>
     <div className={`conversation-panes${secondSession ? ' is-split' : ''}`}>
     <main className="command-main" hidden={studioOpen}>
-      <PushLink enabled={liveEnabled} state={notifications} onOpen={openNotificationTarget} />
+      <PushLink enabled={liveEnabled} ready={projectNavigationReady} state={notifications} onOpen={openNotificationTarget} />
       <header className={`command-header${projectId ? ' has-project-threads' : ''}`}><button ref={menu} className="icon-button menu-button" type="button" aria-label="Open chat navigation" aria-expanded={navigationOpen} onClick={openNavigation}><Menu size={21} />{notifications.inbox?.unreadCount ? <span className="notification-dot" aria-hidden="true" /> : null}</button>
         <div className="room-breadcrumb">{projectName ? <><span aria-label="Selected project">{project?.id === projectId ? <ProjectIdentity project={project} /> : null}{projectName}</span><ChevronRight size={14} /></> : null}<strong aria-label="Selected session">{selectedSession?.title ?? (projectName ? 'New conversation' : 'Jarvis Command')}</strong></div>
         {selectedSession || projectName ? <div className="header-thread-states">{projectName ? <span>Project <StatusIcon state={summarizeThreads(project?.sessionIds ?? [], statusStates, threadState.clock)} /></span> : null}{selectedSession ? <span>Chat <StatusIcon state={threadStatus(statusStates[selectedSession.id], threadState.clock)} /></span> : null}</div> : null}
         {projectId ? <button className="secondary-button project-threads-button" type="button" aria-label="Threads" aria-expanded={pane === 'project'} onClick={event => projects.current?.openThreads(event.currentTarget)}>Threads</button> : null}
         <div ref={setInferenceTarget} className="requested-route-slot" />
         <div className="header-actions"><SessionContextMeter enabled={bootstrap.command.liveRoom.enabled && selectedSession?.ownership === 'command'} sessionId={selectedSession?.id ?? null} liveUsage={latestUsage} compaction={live.turn && live.turn.intent.sessionId === selectedSession?.id ? live.turn.compaction ?? null : null} refreshVersion={contextRevision} compactedContext={compactedContext} /><SessionLifecycleControls enabled={bootstrap.command.liveRoom.enabled && selectedSession?.ownership === 'command'} session={selectedSession} blocked={!writeAllowed || !!(live.turn && !live.turn.done)} onCompacted={status => { if (status.result) setCompactedContext({ sessionId: status.result.resultSessionId, usedTokens: status.result.afterTokens }); setContextRevision(value => value + 1); }} onSession={async session => { if (projects.current) await projects.current.adoptSession(session); else selectSession(session); }} />{projectName ? <button className={`icon-button${pane === 'project' ? ' active' : ''}`} type="button" aria-label="Open project details" title="Project details" aria-expanded={pane === 'project'} onClick={event => { if (pane === 'project') projects.current?.closeDetails(); else projects.current?.openDetails(event.currentTarget); }}><PanelRight size={19} /></button> : null}
+          {cockpitOn && projectId ? <button className={`artifact-context-button terminals-button${pane === 'cockpit' ? ' active' : ''}`} type="button" aria-label="Open project terminals" title="Agent terminals for this project" aria-expanded={pane === 'cockpit'} onClick={event => openPanel('cockpit', event.currentTarget)}><TerminalSquare size={17} /><span>Terminals</span></button> : null}
           {artifactStudioEnabled ? <button className={`artifact-context-button${pane === 'artifacts' ? ' active' : ''}`} type="button" aria-label="Open Artifact Studio" title="Artifacts for this context" aria-expanded={pane === 'artifacts'} onClick={event => openPanel('artifacts', event.currentTarget)}><Files size={17} /><span>Artifacts</span><strong>{associatedArtifacts ?? '...'}</strong></button> : null}
           <button className={`health-button ${bootstrap.hermes.state}`} type="button" aria-label={health} title={health} onClick={event => openPanel('runtime', event.currentTarget)}><span className="status-dot" /><span>Hermes</span></button></div>
       </header>
@@ -862,7 +889,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
       {!hermesOnline ? <p className="notice error" role="status">{health}. {bootstrap.hermes.state === 'offline' ? 'Check the connection before sending.' : 'Some capabilities may be unavailable.'}</p> : null}
       {activeElsewhere ? <div className="active-run-notice" role="status">Jarvis is working in another chat. <button className="text-button" type="button" onClick={() => { if (activeElsewhere?.turn) void openRetainedThread(activeElsewhere.turn.intent.sessionId, activeElsewhere.turn.projectId); }}>View active chat</button></div> : null}
       <section ref={conversationScroll} className="timeline" aria-label="Conversation" onScroll={event => { const element = event.currentTarget; followLatest.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }}><div ref={conversationContent} className="conversation-content">
-        {liveEnabled && selectedSession && threads.ready(selectedSession.id) ? <LiveRoom key={`${selectedSession.id}:${live.refresh?.sessionId === selectedSession.id ? live.refresh.revision : ''}`} session={selectedSession} reactions={reactions} reactionsAvailable={bootstrap.hermes.capabilities.includes('message_reactions') && !project?.archived} reactionsUnavailableReason={project?.archived ? 'Reactions unavailable in archived projects.' : undefined} threadProjectId={project && project.id === projectId && !project.archived ? projectId : null} threadProjectSessionIds={project && project.id === projectId && !project.archived ? project.sessionIds : undefined} onThreadLink={openThreadLink} focusMessageId={replyFocus?.sessionId === selectedSession.id ? replyFocus.messageId : null} onFocusSettled={() => setReplyFocus(null)} reportPresence={!!notifications.inbox && !studioOpen} readObservation={threadState.states[selectedSession.id]?.observedAt} onLatestViewed={threadState.viewed} onHistory={(sessionId, messages, complete) => { live.history(sessionId, messages, complete); setDraftAuthorizedSession(complete ? sessionId : null); }}
+        {liveEnabled && selectedSession && threads.ready(selectedSession.id) ? <LiveRoom key={`${selectedSession.id}:${live.refresh?.sessionId === selectedSession.id ? live.refresh.revision : ''}`} session={selectedSession} reactions={reactions} reactionsAvailable={bootstrap.hermes.capabilities.includes('message_reactions') && !project?.archived} reactionsUnavailableReason={project?.archived ? 'Reactions unavailable in archived projects.' : undefined} threadProjectId={project && project.id === projectId && !project.archived ? projectId : null} threadProjectSessionIds={project && project.id === projectId && !project.archived ? project.sessionIds : undefined} onThreadLink={openThreadLink} focusMessageId={replyFocus?.sessionId === selectedSession.id ? replyFocus.messageId : null} onFocusSettled={() => setReplyFocus(null)} reportPresence={!!notifications.inbox && !studioOpen} showDeliveries={!!notifications.inbox} readObservation={threadState.states[selectedSession.id]?.observedAt} onLatestViewed={threadState.viewed} onHistory={(sessionId, messages, complete) => { live.history(sessionId, messages, complete); setDraftAuthorizedSession(complete ? sessionId : null); }}
           turns={[...live.completedTurns, ...(live.turn ? [live.turn] : [])]} onSaveResponse={artifactStudioEnabled ? message => saveResponseArtifact(message.content, null) : undefined}
           renderTurn={turn => <TurnView turn={turn} threadProjectId={project && project.id === projectId && !project.archived ? projectId : null} threadProjectSessionIds={project && project.id === projectId && !project.archived ? project.sessionIds : undefined} onThreadLink={openThreadLink} allowed={writeAllowed && turn.intent === live.turn?.intent} approve={live.approve} stop={live.stop} onSaveResponse={artifactStudioEnabled ? (text, runId) => saveResponseArtifact(text, runId, turn.projectId ?? projectId) : undefined} />} /> : <div className="welcome"><Command size={39} strokeWidth={1.5} /><p className="eyebrow">YOUR SPACE TO THINK & BUILD</p><h1>{projectName ? `Let’s work on ${projectName}.` : 'What are we working on?'}</h1><p>Start a conversation with Jarvis. Keep related work together in projects.</p><button className="secondary-button welcome-action" type="button" onClick={() => { if (window.matchMedia('(max-width: 760px)').matches) openNavigation(); else projects.current?.focusSearch(); }}>Choose a chat or start a new one <ChevronRight size={17} /></button></div>}
         {!selectedSession ? threads.all.filter(item => item.turn?.intent.input === null).map(item => <TurnView key={item.turn!.intent.sessionId} turn={item.turn!} allowed={false} approve={item.approve} stop={item.stop} />) : null}
@@ -895,7 +922,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     </section> : null}
     {secondSession && threads.ready(secondSession.id) ? <ThreadConversation threadState={statusStates[secondSession.id]} statusClock={threadState.clock} onLatestViewed={threadState.viewed} hidden={studioOpen} reactions={reactions} reportPresence={!!notifications.inbox && splitVisible && !studioOpen} session={secondSession} live={threads.get(secondSession.id)} project={project && project.id === projectId && project.sessionIds.includes(secondSession.id) && !project.archived ? project : null} bootstrap={bootstrap} onClose={() => selectSecondPane(null)} onFocus={() => { if (project) projects.current?.openLinkedChat(project, secondSession); }} onProjectReadback={room => { setProject(room); projects.current?.readback(room); }} onThreadLink={(id, sessionId) => { void openThreadLink(id, sessionId, 'second'); }} onSave={(text, runId) => { selectSession(secondSession); saveResponseArtifact(text, runId, projectId, secondSession.id); }} /> : null}
     </div>
-    <ContextPane open={pane !== null} fullScreen={pane === 'artifacts' && artifactPaneFullScreen}>
+    <ContextPane open={pane !== null} fullScreen={(pane === 'artifacts' && artifactPaneFullScreen) || ((pane === 'cockpit' || pane === 'host-shell') && cockpitFullScreen)}>
       <div ref={setContextTarget} hidden={pane !== 'project'} />
       {pane === 'artifacts' ? <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {saveRecovery.error ? <p className="notice error" role="alert" style={{ flexShrink: 0 }}>{saveRecovery.error}</p> : null}
@@ -918,6 +945,8 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
         setPendingGeneration(previous => previous?.sourceRequestId === key ? null : previous);
       }} onSendPrompt={sendArtifactPrompt} onCreateWithJarvis={createArtifactWithJarvis} generation={generationStatus} onRetryGeneration={retryArtifactGeneration} onCancelGeneration={cancelArtifactGeneration} onClose={closePanel} fullScreen={artifactPaneFullScreen} onToggleFullScreen={() => setArtifactPaneFullScreen(value => !value)} onLibraryChanged={() => setArtifactRefresh(value => value + 1)} /></Suspense>
       </div> : null}
+      {pane === 'host-shell' && hostShell ? <Suspense fallback={<p className="pane-loading" role="status">Loading shell…</p>}><Cockpit key="host-shell" hostShell projectId="host-shell" projectName={hostShell.name} onClose={closePanel} fullScreen={cockpitFullScreen} onToggleFullScreen={() => setCockpitFullScreen(value => !value)} /></Suspense> : null}
+      {pane === 'cockpit' && projectId ? <Suspense fallback={<p className="pane-loading" role="status">Loading terminals…</p>}><Cockpit key={projectId} projectId={projectId} projectName={projectName ?? 'Project'} onClose={closePanel} fullScreen={cockpitFullScreen} onToggleFullScreen={() => setCockpitFullScreen(value => !value)} /></Suspense> : null}
       {pane === 'agents' || pane === 'collaboration' || pane === 'notifications' ? <div className="runtime-details" onKeyDown={event => { if (event.key === 'Escape') closePanel(); }}>
         <header className="pane-header"><h2>{pane === 'agents' ? 'Agents' : pane === 'collaboration' ? 'Collaboration rooms' : 'Notifications'}</h2><button ref={panelClose} className="icon-button" type="button" aria-label="Close context" onClick={closePanel}><X size={20} /></button></header>
         {pane === 'notifications' && liveEnabled ? <NotificationsPane state={notifications} onOpen={openNotificationTarget} /> : <div className="pane-body unavailable-capability"><p className="eyebrow">Unavailable</p><h3>{pane === 'notifications' ? 'Not available in this connection' : 'Not available on this installation'}</h3>
@@ -928,7 +957,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
       {pane === 'runtime' || pane === 'settings' ? <div className="runtime-details" onKeyDown={event => { if (event.key === 'Escape') closePanel(); }}><header className="pane-header"><h2>{pane === 'runtime' ? 'Hermes connection' : 'Settings'}</h2><button ref={panelClose} className="icon-button" type="button" aria-label="Close context" onClick={closePanel}><X size={20} /></button></header><div className="pane-body">
         <h3>{pane === 'runtime' ? health : 'Your workspace'}</h3><p className="muted">{pane === 'runtime' ? 'Reported connection snapshot' : 'Jarvis Command keeps your conversations connected to Hermes.'}</p>
         <dl className="runtime-facts"><dt>Version</dt><dd>{bootstrap.command.version}</dd><dt>Identity</dt><dd>{bootstrap.identity.provider === 'cloudflare-access' ? 'Access verified' : 'Development identity'}</dd><dt>Model</dt><dd>{bootstrap.hermes.model === 'hermes-agent' ? 'Adapter label: hermes-agent' : bootstrap.hermes.model ?? 'Not reported'}</dd><dt>Provider</dt><dd>{bootstrap.hermes.provider ?? 'Not reported'}</dd><dt>Active agents</dt><dd>{bootstrap.hermes.activeAgents}</dd></dl>
-        {pane === 'runtime' ? <><h4>Readiness</h4><dl className="runtime-facts">{Object.entries(bootstrap.hermes.readinessChecks).map(([name, value]) => <div key={name}><dt>{name.replace(/([A-Z])/g, ' $1')}</dt><dd>{value}</dd></div>)}</dl><h4>Available capabilities</h4><ul className="capability-list">{bootstrap.hermes.capabilities.map(item => <li key={item}>{item}</li>)}</ul></> : <p className="muted small">Conversations use your current Hermes configuration.</p>}
+        {pane === 'runtime' ? <><h4>Readiness</h4><dl className="runtime-facts">{Object.entries(bootstrap.hermes.readinessChecks).map(([name, value]) => <div key={name}><dt>{name.replace(/([A-Z])/g, ' $1')}</dt><dd>{value}</dd></div>)}</dl>{hostShell ? <div className="host-shell-entry"><h4>{hostShell.name} shell</h4><p className="muted small">{hostShell.reachable ? 'A shell on the Hermes machine. It runs separately from Hermes, so it works while Hermes is down.' : `${hostShell.name} isn't reachable right now. Its shell service may be stopped.`}</p><button className="secondary-button" type="button" onClick={event => openPanel('host-shell', event.currentTarget)}><TerminalSquare size={16} /> Open shell</button></div> : null}<h4>Available capabilities</h4><ul className="capability-list">{bootstrap.hermes.capabilities.map(item => <li key={item}>{item}</li>)}</ul></> : <p className="muted small">Conversations use your current Hermes configuration.</p>}
       </div></div> : null}
     </ContextPane>
   </div>;

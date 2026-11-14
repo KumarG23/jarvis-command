@@ -6,7 +6,7 @@ import { buildApp } from './app';
 import { loadConfig } from './config';
 import { AuditLedger } from './audit-ledger';
 import { createLiveRoomService } from './live-room-service';
-import type { CommandProxyClient } from './command-client';
+import { CommandProxyUnavailableError, type CommandProxyClient } from './command-client';
 
 const roots: string[] = [];
 const closes: (() => Promise<unknown>)[] = [];
@@ -102,4 +102,18 @@ it('rejects attachment whose session read completes after its project is deleted
   expect((await f.remove(body(p))).statusCode).toBe(200);
   release(); expect((await attaching).statusCode).toBe(404);
   expect((await f.app.inject({ url: '/api/rooms', headers })).json().rooms).toEqual([]);
+});
+
+it('unlinks chats Hermes no longer has instead of blocking deletion, but still blocks on other read failures', async () => {
+  const gone = `jc_${'d'.repeat(32)}`;
+  const f = await fixture(); await f.attach(session.id); await f.attach(gone);
+  f.client.getSession.mockImplementation(async (id: string) => { if (id === gone) throw new CommandProxyUnavailableError(404); return { session: { ...session, id } }; });
+  const p = await f.preview(); expect(p).toMatchObject({ chats: 2, enabled: true });
+  expect((await f.remove(body(p))).statusCode).toBe(200);
+  expect((await f.app.inject({ url: '/api/rooms', headers })).json().rooms).toEqual([]);
+  expect(f.client.deleteSession).not.toHaveBeenCalled();
+  const g = await fixture(); await g.attach(session.id);
+  g.client.getSession.mockImplementation(async () => { throw new CommandProxyUnavailableError(503); });
+  expect((await g.app.inject({ url: `/api/rooms/${g.project.id}/deletion`, headers })).statusCode).toBeGreaterThanOrEqual(500);
+  expect((await g.app.inject({ url: '/api/rooms', headers })).json().rooms).toHaveLength(1);
 });

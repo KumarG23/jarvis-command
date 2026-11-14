@@ -90,7 +90,8 @@ it.each([true, false])('shows recovered target without fabricating a bootstrap r
   await waitFor(() => expect(screen.getByText(/Original message unavailable/)).toBeInTheDocument());
   expect(screen.getByRole('region', { name: 'Current turn' })).toHaveTextContent(clientRequestId);
   await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(present ? 'Real bootstrap room' : 'Jarvis Command'));
-  if (present) expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toBeDisabled();
+  // A verified recovered run is steerable from the normal message box; new messages wait for the run to end.
+  if (present) expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveAttribute('placeholder', 'Steer Jarvis…');
   else expect(screen.queryByText('Command-owned session')).not.toBeInTheDocument();
 });
 
