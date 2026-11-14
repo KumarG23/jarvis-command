@@ -1,3 +1,4 @@
+import { SmilePlus } from 'lucide-react';
 import { useId, useLayoutEffect, useRef, useState } from 'react';
 import { ReactionEmojiSchema, type ReactionTarget } from '@jarvis-command/contracts';
 import type { MessageReactionClient } from './useMessageReactions';
@@ -36,7 +37,7 @@ export function MessageReactions({ target, client }: { target: ReactionTarget; c
   };
   return <div className="message-reactions" onKeyDown={event => { if (open && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); } }}>
     <div className="reaction-chips">
-      <button ref={trigger} type="button" className="text-button reaction-trigger" aria-expanded={open} aria-controls={id} onClick={() => open ? close() : show()}>Reactions</button>
+      <button ref={trigger} type="button" className="icon-button reaction-trigger" aria-label="Reactions" title="React" aria-expanded={open} aria-controls={id} onClick={() => open ? close() : show()}><SmilePlus size={16} aria-hidden="true" /></button>
       {(state?.emojis ?? []).map(emoji => <button key={emoji} type="button" className="reaction-chip" aria-label={`Remove ${labels[ReactionEmojiSchema.options.indexOf(emoji)]} reaction`} aria-pressed="true" disabled={locked} onClick={() => { void choose(emoji); }}><span aria-hidden="true">{emoji}</span></button>)}
     </div>
     {open ? <div className="reaction-picker" id={id} ref={picker} role="group" aria-label="Choose reaction">

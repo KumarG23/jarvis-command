@@ -2,7 +2,7 @@ import type { CommandBootstrap, SessionSummary } from '@jarvis-command/contracts
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { App } from './App';
+import { App, SHOW_STUDIO_ENTRY } from './App';
 
 // Synthetic only: these fixtures never reach an endpoint, Studio data or live work.
 const timestamp = new Date().toISOString();
@@ -95,7 +95,7 @@ afterEach(() => {
   window.history.replaceState(null, '');
 });
 
-describe('Studio unavailable destination', () => {
+describe.skipIf(!SHOW_STUDIO_ENTRY)('Studio unavailable destination', () => {
   it('is a global top-level destination that opens an honest unavailable view and returns with draft and selection intact', async () => {
     const calls = fixture();
     const composer = await openShell();

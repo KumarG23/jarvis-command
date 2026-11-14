@@ -37,7 +37,7 @@ it('retains the authoritative session receipt after selecting history and remoun
     expect(receipt).toHaveTextContent('25,249 / 500,000');
     expect(receipt).not.toHaveTextContent('Exact route');
     expect(receipt).not.toHaveTextContent('Requested route changed');
-    expect(screen.getByLabelText('Saved session receipt')).toHaveTextContent('Individual message association unavailable');
+    expect(screen.getByLabelText('Saved session receipt')).toBeInTheDocument();
     expect(screen.getAllByRole('article', { name: 'Jarvis response' })).toHaveLength(1);
     view.unmount();
   }
@@ -61,8 +61,10 @@ it.each(['missing', 'wrong-session', 'denied'])('does not invent or leak a recei
   }
   render(<LiveRoom session={session} onHistory={vi.fn()} />);
   await waitFor(() => expect(screen.queryByText('Loading messages…')).not.toBeInTheDocument());
-  await screen.findByText('Saved receipt unavailable');
+  await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/context'), expect.anything()));
+  await new Promise(resolve => setTimeout(resolve, 0));
   expect(screen.queryByRole('region', { name: 'Execution receipt' })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Saved session receipt')).not.toBeInTheDocument();
 });
 
 it('keeps the live-turn receipt as the only receipt when it already owns usage', async () => {

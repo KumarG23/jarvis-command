@@ -43,10 +43,10 @@ it.each(['completed', 'waiting_for_approval'])('delayed prior run A %s cannot re
   fixture.retained = { ...fixture.retained!, identityVerified: true, publicRunId: 'jcr_' + 'a'.repeat(32), statusObservedAt: new Date(fixture.now + 60_002).toISOString() };
   fixture.now += 60_003;
   rerender(<App />);
-  expect(header().getByRole('img', { name: 'Unknown' })).toBeInTheDocument();
+  expect(document.querySelector('.header-thread-states')).toBeNull();
   fixture.state = undefined;
   rerender(<App />);
-  expect(header().getByRole('img', { name: 'Unknown' })).toBeInTheDocument();
+  expect(document.querySelector('.header-thread-states')).toBeNull();
   // Same-session read state remains owned by the server snapshot, never A's receipt.
   fixture.state = { sessionId: session.id, runStatus: 'unknown', runObservedAt: null, observedAt: new Date(fixture.now).toISOString(), recentAt: null, latest: { messageId: 'new-output', position: 1 }, lastRead: null, unread: true, historyComplete: true };
   rerender(<App />);
