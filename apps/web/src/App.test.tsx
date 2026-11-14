@@ -486,7 +486,7 @@ describe('Live Room history', () => {
       expect.stringContaining('First question'), expect.stringContaining('Assistant answer'), expect.stringContaining('Tool output'),
     ]);
     expect(within(timeline).getByText('Used 1 tool · terminal')).toBeInTheDocument();
-    expect(within(timeline).getByText(/External chat · Read-only/)).toBeInTheDocument();
+    expect(within(timeline).getByText(/· Read-only. You can read it here/)).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Message Jarvis' })).not.toBeInTheDocument();
   });
 });

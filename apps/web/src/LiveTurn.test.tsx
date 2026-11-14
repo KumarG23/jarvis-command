@@ -840,7 +840,7 @@ it('keeps supervision across rooms, ignores foreign events and closes on unmount
 });
 
 it.each(['offline', 'external', 'capability'])('keeps %s sessions read-only', async (fault) => {
-  setup(); await open({ ...bootstrap, hermes: { ...bootstrap.hermes, state: fault === 'offline' ? 'offline' : 'online', capabilities: fault === 'capability' ? [] : ['run_events_sse'] }, sessions: [{ ...session, ownership: fault === 'external' ? 'external' : 'command' }] });
+  setup(); await open({ ...bootstrap, hermes: { ...bootstrap.hermes, state: fault === 'offline' ? 'offline' : 'online', capabilities: fault === 'capability' ? [] : ['run_events_sse'] }, sessions: [{ ...session, ownership: fault === 'external' ? 'external' : 'command', messageCount: 3 }] });
   expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
 });
 
@@ -925,7 +925,7 @@ it('cancels an active steer body on unmount without recovery callbacks', async (
 it.each(['offline', 'capability', 'disabled', 'external'])('removes active controls under %s gating and retains supervision', async (gate) => {
   const fetchMock = setup();
   const initial = structuredClone(bootstrap);
-  initial.sessions.push({ ...session, id: 'external:room', title: 'External room', ownership: 'external' });
+  initial.sessions.push({ ...session, id: 'external:room', title: 'External room', ownership: 'external', messageCount: 3 });
   const { rerender } = render(<App loadBootstrap={async () => initial} />);
   await chooseChat(session.title);
   await screen.findByText('Nothing here yet. Ask Jarvis anything.'); await send();

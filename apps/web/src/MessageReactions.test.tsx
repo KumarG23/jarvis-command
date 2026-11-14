@@ -119,7 +119,7 @@ it('exposes controls only on eligible durable exact A/B rows, keeps repeated tex
   expect(b.queryByRole('button', { name: 'Remove Thumbs up reaction' })).toBeNull();
   expect(JSON.parse(f.fetcher.mock.calls.find(([url]) => url.includes('/reactions/'))![1]!.body as string)).toEqual({ sessionId: session.id, messageId: 'stored:A', offset: 0 });
   view.rerender(<History available={false} />); expect(screen.queryByRole('button', { name: 'Reactions' })).toBeNull(); expect(screen.getByText('Reactions unavailable on this server.')).toBeVisible();
-  view.rerender(<History external />); await screen.findByText('Reactions unavailable in read-only chats.'); expect(screen.queryByRole('button', { name: 'Reactions' })).toBeNull();
+  view.rerender(<History external />); await waitFor(() => expect(screen.queryByRole('button', { name: 'Reactions' })).toBeNull()); expect(screen.queryByText('Reactions unavailable in read-only chats.')).toBeNull();
 });
 
 it('uses the loaded page offset for durable B while leaving transient turn output without controls', async () => {

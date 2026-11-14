@@ -44,6 +44,10 @@ Goal: feel as finished as the Claude app, ChatGPT and Discord. Phone first, beca
     picker is a quiet right-aligned row.
 17. **Agent badges on terminal tabs.** CC (Claude Code), CX (Codex), AG (Antigravity), a terminal icon for shells,
     each with its status dot in the corner.
+18. **Outside Jarvis sessions out of Recent chats.** Hermes lists every session Jarvis has, including Discord
+    channels, cron runs and other places, and many have no title ("Untitled session"). Recent chats now shows only
+    Command chats. The others sit in a collapsed "Other Jarvis sessions" group, named by where they came from
+    ("Discord chat", "Scheduled job"), and ones with no messages are left out.
 
 ## Next, in priority order
 

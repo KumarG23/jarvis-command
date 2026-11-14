@@ -14,6 +14,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import './styles.css';
 import { LiveRoom } from './LiveRoom';
 import { Welcome } from './Welcome';
+import { chatTitle } from './chatTitle';
 import { readArtifactSave, persistArtifactSave, consumeArtifactSave, saveRecoveryError, type PendingArtifactSave } from './artifactSaveRecovery';
 import { ProjectRooms, type ProjectRoomsHandle } from './ProjectRooms';
 import { ContextPane } from './ContextPane';
@@ -887,7 +888,7 @@ function CommandShell({ bootstrap }: Readonly<{ bootstrap: CommandBootstrap }>) 
     <main className="command-main" hidden={studioOpen}>
       <PushLink enabled={liveEnabled} ready={projectNavigationReady} state={notifications} onOpen={openNotificationTarget} />
       <header className={`command-header${projectId ? ' has-project-threads' : ''}`}><button ref={menu} className="icon-button menu-button" type="button" aria-label="Open chat navigation" aria-expanded={navigationOpen} onClick={openNavigation}><Menu size={21} />{notifications.inbox?.unreadCount ? <span className="notification-dot" aria-hidden="true" /> : null}</button>
-        <div className="room-breadcrumb">{projectName ? <><span aria-label="Selected project">{project?.id === projectId ? <ProjectIdentity project={project} /> : null}{projectName}</span><ChevronRight size={14} /></> : null}<strong aria-label="Selected session">{selectedSession?.title ?? (projectName ? 'New conversation' : 'Jarvis Command')}</strong></div>
+        <div className="room-breadcrumb">{projectName ? <><span aria-label="Selected project">{project?.id === projectId ? <ProjectIdentity project={project} /> : null}{projectName}</span><ChevronRight size={14} /></> : null}<strong aria-label="Selected session">{(selectedSession ? chatTitle(selectedSession) : null) ?? (projectName ? 'New conversation' : 'Jarvis Command')}</strong></div>
         {(() => {
           // Only states worth acting on (working, needs you, unread) earn header space.
           const projectState = projectName ? summarizeThreads(project?.sessionIds ?? [], statusStates, threadState.clock) : null;

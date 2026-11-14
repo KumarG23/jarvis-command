@@ -1,3 +1,4 @@
+import { sourceLabel } from './chatTitle';
 import { useLatestMessageView } from './useLatestMessageView';
 import { formatMessageTime } from './formatTime';
 import { MessageReactions } from './MessageReactions';
@@ -151,8 +152,8 @@ export function LiveRoom({ session, onHistory, reactions, reactionsAvailable = f
   }
   const liveAfter = (index: number) => <>{placedDeliveries.get(index)?.map(deliveryView)}{projected.filter((item) => item.after === index).map(({ turn }) => <Fragment key={turn.intent.clientRequestId}>{renderTurn?.(turn)}</Fragment>)}</>;
   return <>
-    {session.ownership === 'external' ? <p className="external-chat-notice">External chat · Read-only. Continuation is unavailable.</p> : null}
-    {!reactionsAvailable || !reactions || !reactionSessionWritable ? <p className="reaction-note">{!reactionSessionWritable ? 'Reactions unavailable in read-only chats.' : reactionsUnavailableReason ?? 'Reactions unavailable on this server.'}</p> : null}
+    {session.ownership === 'external' ? <p className="external-chat-notice">{sourceLabel(session.source)} · Read-only. You can read it here but replies go where it started.</p> : null}
+    {reactionSessionWritable && (!reactionsAvailable || !reactions) ? <p className="reaction-note">{reactionsUnavailableReason ?? 'Reactions unavailable on this server.'}</p> : null}
     {loading ? <p role="status">Loading messages…</p> : null}
     {error ? <div className="history-feedback"><p role="alert">{error}</p><button type="button" className="primary-button" onClick={() => { setError(null); setLoading(true); setAttempt((value) => value + 1); }}>Retry history</button></div> : null}
     {!loading && !error && messages.length === 0 && deliveries.length === 0 ? <p role="status" className="empty-chat">Nothing here yet. Ask Jarvis anything.</p> : null}
