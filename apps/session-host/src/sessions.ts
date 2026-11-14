@@ -248,6 +248,15 @@ export class SessionManager extends EventEmitter {
     return this.update(session, { state: 'stopped', pid: null });
   }
 
+  // Closes a terminal tab for good: stops the process if it still runs and forgets the record.
+  // The worktree (and any commits in it) stays on disk.
+  async closeSession(id: string, projectId: string) {
+    const session = this.get(id, projectId);
+    await this.tmux.kill(id).catch(() => undefined);
+    this.registry.remove(session.id);
+    return { id: session.id };
+  }
+
   async resize(id: string, projectId: string, cols: number, rows: number) {
     this.get(id, projectId);
     await this.tmux.resize(id, cols, rows);

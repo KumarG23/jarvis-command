@@ -14,6 +14,7 @@ const STATE_LABEL: Record<string, string> = {
 };
 const OWNER_LABEL = { human: 'You have input', lead: 'Lead has input', none: 'Nobody has input' } as const;
 const OWNER_SHORT = { human: 'You', lead: 'Lead', none: 'Nobody' } as const;
+const KIND_LABEL: Record<string, string> = { claude: 'Claude Code', codex: 'Codex', agy: 'Antigravity', gemini: 'Gemini', opencode: 'OpenCode', shell: 'Shell', hermes: 'Hermes' };
 
 export async function cockpitRequest<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(path, {
@@ -58,7 +59,27 @@ export function Cockpit({ projectId, projectName, onClose, fullScreen, onToggleF
   }, [load, hostShell]);
 
   const selected = sessions?.find(item => item.id === selectedId) ?? null;
-  const replace = (session: CockpitSession) => setSessions(previous => previous ? [session, ...previous.filter(item => item.id !== session.id)] : [session]);
+  // Updates keep a tab where it is; new sessions go at the end, like browser tabs.
+  const replace = (session: CockpitSession) => setSessions(previous => !previous ? [session]
+    : previous.some(item => item.id === session.id) ? previous.map(item => item.id === session.id ? session : item) : [...previous, session]);
+  const [closing, setClosing] = useState<string | null>(null);
+  // Closing a tab stops the process if it still runs and removes the tab. Any worktree stays on disk.
+  const closeSession = async (session: CockpitSession) => {
+    setClosing(session.id); setError(null);
+    try {
+      await cockpitRequest(`${base}/sessions/${session.id}/close`, {});
+      const list = sessions ?? [];
+      const index = list.findIndex(item => item.id === session.id);
+      const rest = list.filter(item => item.id !== session.id);
+      setSessions(previous => previous?.filter(item => item.id !== session.id) ?? null);
+      setSelectedId(current => current !== session.id ? current : (rest[index] ?? rest[index - 1])?.id ?? null);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'The session could not be closed.'); } finally { setClosing(null); }
+  };
+  const requestClose = (session: CockpitSession) => {
+    // A running session asks first (in its toolbar); an ended one closes straight away.
+    if (ACTIVE.has(session.state)) { setSelectedId(session.id); setCreating(false); setConfirmCloseId(session.id); } else void closeSession(session);
+  };
+  const [confirmCloseId, setConfirmCloseId] = useState<string | null>(null);
 
   return <div className={`cockpit${fullScreen ? '' : ' is-docked'}`} onKeyDown={event => { if (event.key === 'Escape' && !(event.target instanceof HTMLElement && event.target.closest('.cockpit-terminal'))) onClose(); }}>
     <header className="pane-header cockpit-header">
@@ -75,17 +96,19 @@ export function Cockpit({ projectId, projectName, onClose, fullScreen, onToggleF
         <button className="secondary-button cockpit-new" type="button" onClick={() => setCreating(true)}><Plus size={16} /> {hostShell ? 'New shell' : 'New session'}</button>
         {sessions === null ? <p className="muted small">Loading…</p> : sessions.length === 0 ? <p className="muted small">{hostShell ? 'No shells open.' : 'No sessions in this project yet.'}</p> : null}
         <ul>
-          {sessions?.map(session => <li key={session.id}>
+          {sessions?.map(session => <li key={session.id} className="cockpit-tab" aria-current={session.id === selectedId ? 'true' : undefined}>
             <button type="button" className="cockpit-session-item" aria-current={session.id === selectedId ? 'true' : undefined} onClick={() => { setSelectedId(session.id); setCreating(false); }}>
               <span className={`cockpit-dot state-${session.state}`} aria-hidden="true" />
-              <span className="cockpit-session-text"><strong>{session.title}</strong><small>{session.kind} · {STATE_LABEL[session.state] ?? session.state}{session.owner === 'lead' ? ' · lead' : ''}</small></span>
+              <span className="cockpit-session-text"><strong>{session.title}</strong><small>{KIND_LABEL[session.kind] ?? session.kind} · {STATE_LABEL[session.state] ?? session.state}{session.owner === 'lead' ? ' · lead' : ''}</small></span>
             </button>
+            <button type="button" className="cockpit-tab-close" aria-label={`Close ${session.title}`} title={ACTIVE.has(session.state) ? 'Stop and close' : 'Close'} disabled={closing === session.id} onClick={() => requestClose(session)}><X size={15} /></button>
           </li>)}
         </ul>
       </nav>
       <section className="cockpit-main">
         {creating ? <CreateForm hostShell={hostShell} adapters={adapters} base={base} onCancel={() => setCreating(false)} onCreated={session => { replace(session); setSelectedId(session.id); setCreating(false); }} />
-          : selected ? <SessionView key={selected.id} base={base} session={selected} onSession={replace} leadAvailable={!hostShell} />
+          : selected ? <SessionView key={selected.id} base={base} session={selected} onSession={replace} leadAvailable={!hostShell}
+            closing={closing === selected.id} confirmClose={confirmCloseId === selected.id} onConfirmClose={value => setConfirmCloseId(value ? selected.id : null)} onClose={() => { setConfirmCloseId(null); void closeSession(selected); }} />
             : <div className="cockpit-empty"><TerminalSquare size={28} /><p>{hostShell ? `Open a shell on ${projectName}. It runs separately from Hermes, so it works while Hermes is down.` : 'Start a session to run Claude Code, Codex, Gemini, OpenCode or a shell on the execution host.'}</p></div>}
       </section>
     </div>
@@ -167,7 +190,12 @@ function mirrorTerminalStyles(root: HTMLElement) {
 
 type Link = 'connecting' | 'open' | 'reconnecting' | 'closed';
 
-function SessionView({ base, session, onSession, leadAvailable = true }: Readonly<{ base: string; session: CockpitSession; onSession: (session: CockpitSession) => void; leadAvailable?: boolean }>) {
+type SessionViewProps = Readonly<{
+  base: string; session: CockpitSession; onSession: (session: CockpitSession) => void; leadAvailable?: boolean;
+  closing?: boolean; confirmClose?: boolean; onConfirmClose?: (open: boolean) => void; onClose?: () => void;
+}>;
+
+function SessionView({ base, session, onSession, leadAvailable = true, closing = false, confirmClose = false, onConfirmClose, onClose }: SessionViewProps) {
   const host = useRef<HTMLDivElement | null>(null);
   const socket = useRef<WebSocket | null>(null);
   const terminal = useRef<Terminal | null>(null);
@@ -284,15 +312,22 @@ function SessionView({ base, session, onSession, leadAvailable = true }: Readonl
         <small>{STATE_LABEL[session.state] ?? session.state}{session.exitCode !== null ? ` (${session.exitCode})` : ''} · {session.host}{session.branch ? ` · ${session.branch}` : ''} · {link === 'open' ? 'live' : link}</small>
       </div>
       <div className="cockpit-actions">
-        <span className={`cockpit-owner owner-${session.owner}`} title={OWNER_LABEL[session.owner]}>{session.owner === 'lead' ? <Bot size={14} /> : <UserRound size={14} />}<span className="cockpit-label">{OWNER_LABEL[session.owner]}</span><span className="cockpit-short">{OWNER_SHORT[session.owner]}</span></span>
+        {active ? <span className={`cockpit-owner owner-${session.owner}`} title={OWNER_LABEL[session.owner]}>{session.owner === 'lead' ? <Bot size={14} /> : <UserRound size={14} />}<span className="cockpit-label">{OWNER_LABEL[session.owner]}</span><span className="cockpit-short">{OWNER_SHORT[session.owner]}</span></span> : null}
         {active && session.owner !== 'human' ? <button className="secondary-button" type="button" disabled={busy} aria-label="Take over" onClick={() => void act('ownership', { action: 'take' })}><Hand size={15} /><span className="cockpit-label">Take over</span><span className="cockpit-short">Take over</span></button> : null}
         {active && leadAvailable && session.owner === 'human' ? <button className="secondary-button" type="button" disabled={busy} aria-label="Hand to lead" onClick={() => void act('ownership', { action: 'hand_to_lead' })}><Bot size={15} /><span className="cockpit-label">Hand to lead</span><span className="cockpit-short">To lead</span></button> : null}
         {active ? <button className="secondary-button" type="button" disabled={busy} title="Send Ctrl-C" aria-label="Interrupt" onClick={() => void act('interrupt')}><OctagonX size={15} /><span className="cockpit-label">Interrupt</span><span className="cockpit-short">Ctrl+C</span></button> : null}
-        {active ? confirmStop
-          ? <><button className="danger-button" type="button" disabled={busy} onClick={() => { setConfirmStop(false); void act('stop'); }}>Stop it</button><button className="secondary-button" type="button" onClick={() => setConfirmStop(false)}>Keep running</button></>
-          : <button className="secondary-button" type="button" disabled={busy} aria-label="Stop" onClick={() => setConfirmStop(true)}><Square size={14} /><span className="cockpit-label">Stop</span><span className="cockpit-short">Stop</span></button> : null}
+        {active && !confirmStop && !confirmClose ? <button className="secondary-button" type="button" disabled={busy} aria-label="Stop" onClick={() => setConfirmStop(true)}><Square size={14} /><span className="cockpit-label">Stop</span><span className="cockpit-short">Stop</span></button> : null}
+        {!active && onClose ? <button className="secondary-button" type="button" disabled={closing} aria-label="Close tab" onClick={onClose}><X size={15} /><span className="cockpit-label">Close tab</span><span className="cockpit-short">Close</span></button> : null}
       </div>
     </div>
+    {active && (confirmStop || confirmClose) ? <div className="cockpit-confirm" role="group" aria-label={confirmClose ? 'Confirm close' : 'Confirm stop'}>
+      <span>{confirmClose ? 'Stop this session and close its tab?' : 'Stop this session?'} {session.worktree ? 'Its worktree stays on disk.' : ''}</span>
+      <div>
+        <button className="secondary-button" type="button" onClick={() => { setConfirmStop(false); onConfirmClose?.(false); }}>Keep running</button>
+        {confirmClose ? null : <button className="secondary-button" type="button" disabled={busy} onClick={() => { setConfirmStop(false); void act('stop'); }}>Stop</button>}
+        {onClose ? <button className="danger-button" type="button" disabled={busy || closing} onClick={() => { setConfirmStop(false); onClose(); }}>Stop and close</button> : null}
+      </div>
+    </div> : null}
     {session.failure ? <p className="notice error cockpit-notice" role="alert">{session.failure}</p> : null}
     {notice ? <p className="notice cockpit-notice" role="status">{notice}</p> : null}
     <div className="cockpit-terminal" ref={host} />

@@ -145,7 +145,7 @@ export function registerCockpitRoutes(app: FastifyInstance, dependencies: Depend
       return relay(reply, host('POST', `/v1/sessions/${sessionId}/ownership`, { projectId: roomId, action }));
     });
 
-    for (const action of ['interrupt', 'stop'] as const) {
+    for (const action of ['interrupt', 'stop', 'close'] as const) {
       routes.post(`/api/cockpit/projects/:roomId/sessions/:sessionId/${action}`, async (request, reply) => {
         const { roomId, sessionId } = SessionParams.parse(request.params);
         z.object({}).strict().parse(request.body ?? {});

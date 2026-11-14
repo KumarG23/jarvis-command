@@ -150,6 +150,20 @@ describe.skipIf(!hasTmux)('session host (real tmux)', () => {
     expect((await manager.tmux.panes())?.has(third.id)).toBe(false);
   });
 
+  it('closes a tab: stops a running session and forgets stopped ones', async () => {
+    const running = (await create({})).json<{ session: { id: string } }>().session;
+    const stopped = (await create({ requestId: 'req-00000002' })).json<{ session: { id: string } }>().session;
+    await manager.stopSession(stopped.id, 'proj1', 'human');
+    for (const id of [running.id, stopped.id]) {
+      const closed = await app.inject({ method: 'POST', url: `/v1/sessions/${id}/close`, headers: auth, payload: { projectId: 'proj1' } });
+      expect(closed.statusCode).toBe(200);
+    }
+    expect(manager.list('proj1')).toEqual([]);
+    expect((await manager.tmux.panes())?.has(running.id)).toBeFalsy();
+    const again = await app.inject({ method: 'POST', url: `/v1/sessions/${running.id}/close`, headers: auth, payload: { projectId: 'proj1' } });
+    expect(again.statusCode).toBe(404);
+  });
+
   it('keeps sessions alive across a session-host restart', async () => {
     const { session } = (await create({})).json<{ session: { id: string } }>();
     manager.stop();

@@ -68,3 +68,20 @@
   .cockpit-owner { flex-direction: column; gap: 3px; padding: 6px 8px; border-radius: 10px; }
 }
 x-term-style { display: none !important; }
+/* Tabs: each one has its own close button, like browser tabs. */
+.cockpit-header h2 { white-space: nowrap; }
+.cockpit-header h2 small { min-width: 0; }
+.cockpit-tab { position: relative; display: flex; align-items: center; border-radius: 7px; }
+.cockpit-tab .cockpit-session-item { flex: 1; min-width: 0; padding-right: 34px; }
+.cockpit-tab-close { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border: 0; border-radius: 6px; background: transparent; color: var(--subtle); }
+.cockpit-tab-close:hover, .cockpit-tab-close:focus-visible { background: #2c3530; color: var(--text); }
+@media (pointer: fine) { .cockpit-tab:not(:hover):not(:focus-within):not([aria-current]) .cockpit-tab-close { opacity: 0; } }
+.cockpit-confirm { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: #2a2420; font-size: 13px; }
+.cockpit-confirm > div { display: flex; gap: 6px; margin-left: auto; }
+.cockpit-confirm button { min-height: 38px; padding: 6px 12px; font-size: 13px; }
+@media (max-width: 760px) {
+  .cockpit-tab { flex: 0 0 auto; }
+  .cockpit-tab .cockpit-session-item { max-width: 200px; }
+}
+.cockpit.is-docked .cockpit-tab { flex: 0 0 auto; }
+.cockpit.is-docked .cockpit-tab .cockpit-session-item { max-width: 200px; }
