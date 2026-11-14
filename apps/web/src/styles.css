@@ -694,3 +694,82 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 .activity-group-list { list-style: none; margin: 0; padding: 0 0 0 4px; border-left: 1px solid var(--border); }
 .activity-group-list li { padding-left: 10px; }
 .activity-group-list .saved-tool-disclosure p { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 320px; overflow: auto; font-size: 12px; }
+
+/* ---- Polish pass (2026-11-14): quieter chrome, closer to Claude/ChatGPT. ---- */
+/* Message actions: copy and react sit on one quiet row under each message. */
+.message-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-top: 6px; }
+.message-actions:empty { display: none; }
+.message-actions .response-actions, .message-actions .message-reactions { margin-top: 0; }
+.message-actions .message-reactions:has(.reaction-picker) { flex-basis: 100%; }
+.message-actions .icon-button { width: 34px; height: 34px; min-width: 34px; min-height: 34px; color: var(--subtle); }
+.message-actions .icon-button:hover { color: var(--text); }
+@media (hover: hover) {
+  .history-message .message-actions .icon-button { opacity: .45; transition: opacity .12s; }
+  .history-message:hover .message-actions .icon-button, .message-actions .icon-button:focus-visible, .message-actions .icon-button[aria-expanded="true"] { opacity: 1; }
+}
+/* Context meter only appears once Hermes reports usage. */
+.session-context.unavailable:not(.compacting) { display: none !important; }
+/* Split view needs a wide screen; on phones and tablets the picker is clutter. */
+@media (max-width: 1100px) { .split-controls { display: none; } }
+.split-controls { padding-block: 6px; font-size: 12px; }
+.split-controls select { min-height: 32px; padding: 4px 8px; font-size: 12px; }
+/* Project context preview above the composer: a small hint, not a banner. */
+.composer-wrap .project-input-preview summary { color: var(--subtle); font-size: 12px; padding: 2px 0 6px; }
+@media (max-width: 760px) {
+  .requested-label { display: none; }
+  /* Phones: row actions only on the open chat, so titles get the full width. */
+  .recent-chat-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .recent-chat-row:not(:has(.chat-item[aria-current])) .chat-row-action { display: none; }
+}
+/* Desktop: chat row actions take no room until the row is hovered or focused, so titles aren't cut short. */
+@media (hover: hover) {
+  .recent-chat-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .recent-chat-row:not(:hover):not(:focus-within) .chat-row-action { display: none; }
+}
+
+/* Phones: one header row, like the Claude app. Menu, title, then compact icon actions.
+   The model picker moves into the composer on phones (see App.tsx). */
+@media (max-width: 760px) {
+  .command-main > .command-header, .command-main > .command-header.has-project-threads {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 56px; padding: 6px 8px; }
+  .command-main > .command-header .menu-button { flex: 0 0 44px; order: 0; }
+  .command-main > .command-header .room-breadcrumb { flex: 1 1 0; min-width: 0; order: 1; padding: 0; gap: 0; }
+  .command-main > .command-header .room-breadcrumb strong { font-size: 15px; font-weight: 600; }
+  .command-main > .command-header .room-breadcrumb > span { font-size: 12px; margin: 0; }
+  .command-main > .command-header .project-threads-button { order: 2; flex: 0 0 auto; min-width: 0; min-height: 40px; padding: 0 10px; font-size: 13px; }
+  .command-main > .command-header .header-actions { order: 3; flex: 0 0 auto; flex-wrap: nowrap; gap: 2px; min-height: 0; }
+  .command-main > .command-header .header-actions .icon-button { width: 40px; height: 40px; min-width: 40px; }
+  .command-main > .command-header .artifact-context-button.terminals-button { width: 40px; max-width: 40px; padding: 0; justify-content: center; border-color: transparent; background: transparent; }
+  .command-main > .command-header .artifact-context-button.terminals-button span { display: none; }
+  .command-main > .command-header .health-button { position: static; width: 32px; height: 40px; min-height: 40px; padding: 0; border: 0; background: transparent; }
+  .command-main > .command-header .header-thread-states { order: 4; flex: 1 0 100%; padding-left: 48px; }
+  .command-main > .command-header .requested-route-slot:empty { display: none; }
+  /* Model picker inside the composer: a small chip on the same line as the project context hint. */
+  .turn-composer > .inference-control { flex: 0 0 auto; }
+  .turn-composer > .inference-control > summary { min-height: 32px; padding: 5px 10px; border-radius: 999px; font-family: inherit; font-size: 12px; letter-spacing: 0; list-style: none; }
+  .turn-composer textarea { flex: 1 1 calc(100% - 110px); }
+  .command-main > .command-header .room-breadcrumb .project-identity { display: none; }
+  .turn-composer > .inference-control > summary::-webkit-details-marker { display: none; }
+  .turn-composer > .inference-control[open] { flex-basis: 100%; }
+  .turn-composer > .project-input-preview { flex: 1 1 60%; min-width: 0; }
+  .turn-composer > .project-input-preview:not([open]) > summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+@media (max-width: 760px) {
+  .turn-composer > .project-input-preview { align-self: center; }
+  /* Phones: the whole drawer scrolls as one list, so recent chats aren't squeezed into a small box. */
+  .room-sidebar, .room-sidebar:has(.sidebar-scroll > .sidebar-section) { overflow-y: auto; overscroll-behavior: contain; }
+  .sidebar-scroll, .sidebar-scroll:has(> .sidebar-section) { flex: 0 0 auto; min-height: 0; overflow: visible; }
+  .sidebar-scroll > .sidebar-section, .sidebar-scroll > .sidebar-section[aria-label="Projects"], .sidebar-scroll > .sidebar-section[aria-label="Recent chats"] { flex: 0 0 auto; max-height: none; min-height: 0; overflow: visible; }
+  .room-sidebar .capability-navigation, .room-sidebar .sidebar-footer { flex: 0 0 auto; }
+}
+/* Approval and stop prompts: a clear card with real buttons; IDs tucked under Details. */
+.approval-card, .stop-confirm { margin: 12px 0; padding: 14px 16px; border: 1px solid #5a4a24; border-radius: 12px; background: #221d12; }
+.stop-confirm { border-color: var(--border); background: var(--panel); }
+.approval-card h2, .stop-confirm h2 { margin: 0 0 8px; font-size: 15px; font-weight: 600; }
+.approval-card pre { margin: 0 0 8px; padding: 10px; border-radius: 8px; background: var(--bg); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+.approval-ids { color: var(--subtle); font-size: 12px; }
+.approval-ids summary { cursor: pointer; padding: 4px 0; }
+.approval-ids p { margin: 2px 0; overflow-wrap: anywhere; }
+.approval-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.approval-actions button { min-height: 44px; padding: 8px 16px; }
+.live-turn .stop-run { min-height: 40px; margin-top: 8px; }

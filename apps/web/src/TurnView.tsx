@@ -3,7 +3,7 @@ import { SavedRoutingControls } from './SavedRoutingControls';
 import { composeProjectInput, projectContext, readProjectForSend, readProjectRoster, rosterContext, rosterFacts } from './projectInput';
 import { projectSendSnapshot, type ProjectRoster, type ProjectRoom } from '@jarvis-command/contracts';
 import { createPortal } from 'react-dom';
-import { ArrowUp, ChevronRight, Command, Copy, FilePlus2, ImagePlus, X } from 'lucide-react';
+import { ArrowUp, ChevronRight, Command, Copy, FilePlus2, ImagePlus, Paperclip, X } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ArtifactMutationResponseSchema, InferenceOptionsResponseSchema, type InferenceOptionsResponse, type InferenceOverride, type LiveRunSubmissionRequest, type ReasoningEffort, type RunEvent } from '@jarvis-command/contracts';
 import { boundedJson, type DraftRecovery, type Turn } from './useLiveTurn';
@@ -25,19 +25,20 @@ export function TurnView({ turn, allowed, approve, stop, onSaveResponse, threadP
     {turn.controlMessage ? <p role="status">{turn.done && /steer/i.test(turn.controlMessage)
       ? turn.terminalPendingSteer ? 'Run ended — unconsumed guidance was returned for draft recovery.' : 'Run ended — steer consumption was not reported.'
       : turn.controlMessage}</p> : null}
-    {turn.approval ? <section aria-label="Awaiting approval"><h2>Awaiting approval</h2><pre>{turn.approval.command}</pre><p>{turn.approval.description}</p><p>Tool: {turn.approval.tool ?? 'Not reported'}</p><p>Request: {turn.approval.requestId}</p><p>Run: {turn.publicRunId} · Session: {turn.intent.sessionId}</p>
-      {canControl && !turn.done ? <><button type="button" disabled={turn.controlBusy} onClick={() => approve(turn, 'once')}>Approve once</button><button type="button" disabled={turn.controlBusy} onClick={() => approve(turn, 'deny')}>Deny</button></> : null}
+    {turn.approval ? <section aria-label="Awaiting approval" className="approval-card"><h2>Jarvis wants to run this</h2><pre>{turn.approval.command}</pre>{turn.approval.description ? <p>{turn.approval.description}</p> : null}
+      <details className="approval-ids"><summary>Details</summary><p>Tool: {turn.approval.tool ?? 'Not reported'}</p><p>Request: {turn.approval.requestId}</p><p>Run: {turn.publicRunId} · Session: {turn.intent.sessionId}</p></details>
+      {canControl && !turn.done ? <div className="approval-actions"><button type="button" className="primary-button" disabled={turn.controlBusy} onClick={() => approve(turn, 'once')}>Approve once</button><button type="button" className="secondary-button" disabled={turn.controlBusy} onClick={() => approve(turn, 'deny')}>Deny</button></div> : null}
     </section> : null}
     {!turn.approval && !turn.done && turn.phase === 'Run waiting_for_approval' ? <section aria-label="Approval details missing" className="notice">
       <h2>Jarvis is waiting for an approval</h2>
       <p>Hermes paused this run for approval but didn't send Command what it wants to do, so there is nothing to approve here. Stop the run and send your message again, or approve it where Jarvis asked (for example Discord).</p>
     </section> : null}
     {canControl && !turn.done && turn.publicRunId ? <>
-      {confirmation?.intent === turn.intent && confirmation.publicRunId === turn.publicRunId ? <section aria-label="Confirm stop">
-        <h2>Confirm stop</h2><p>Run: {confirmation.publicRunId}</p><p>Session: {confirmation.intent.sessionId}</p>
-        <button type="button" disabled={turn.controlBusy} onClick={() => { stop(confirmation); setConfirmation(null); }}>Confirm stop</button>
-        <button type="button" onClick={() => setConfirmation(null)}>Keep running</button>
-      </section> : <button type="button" disabled={turn.controlBusy} onClick={() => setConfirmation(turn)}>Stop run</button>}
+      {confirmation?.intent === turn.intent && confirmation.publicRunId === turn.publicRunId ? <section aria-label="Confirm stop" className="stop-confirm">
+        <h2>Stop this reply?</h2><details className="approval-ids"><summary>Details</summary><p>Run: {confirmation.publicRunId}</p><p>Session: {confirmation.intent.sessionId}</p></details>
+        <div className="approval-actions"><button type="button" className="danger-button" disabled={turn.controlBusy} onClick={() => { stop(confirmation); setConfirmation(null); }}>Confirm stop</button>
+        <button type="button" className="secondary-button" onClick={() => setConfirmation(null)}>Keep running</button></div>
+      </section> : <button type="button" className="secondary-button stop-run" disabled={turn.controlBusy} onClick={() => setConfirmation(turn)}>Stop run</button>}
     </> : null}
   </section>;
 }
@@ -331,6 +332,8 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
     return () => { preflight.current?.abort(); };
   }, [sessionId]);
   const imageInput = useRef<HTMLInputElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [fileError, setFileError] = useState('');
   const images = sessionId ? imagesBySession[sessionId] ?? [] : [];
   const setDraft = (value: string) => { if (sessionId) setRoomDraft(sessionId, value); };
   const handoff = (recovery: DraftRecovery, append: boolean) => {
@@ -432,6 +435,33 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
       if (imageInput.current) imageInput.current.value = '';
     }
   };
+  // One attach button for everything: images go to Jarvis as images, text files (code, logs, configs, CSV, JSON…)
+  // are added to the message as fenced blocks, within the message limit. Other files can't reach Hermes yet.
+  const attachFiles = async (files: FileList | File[] | null) => {
+    const list = Array.from(files ?? []);
+    if (fileInput.current) fileInput.current.value = '';
+    if (!list.length || !sessionId || !allowed) return;
+    setFileError('');
+    const pictures = list.filter(file => file.type.startsWith('image/'));
+    const others = list.filter(file => !file.type.startsWith('image/'));
+    if (pictures.length) {
+      if (imageAttachmentsEnabled) void attachImages(pictures);
+      else setFileError('Image attachments are not enabled on this server.');
+    }
+    let next = draft;
+    const skipped: string[] = [];
+    for (const file of others) {
+      if (file.size > 512 * 1024) { skipped.push(`${file.name} (too large)`); continue; }
+      const text = await file.text().catch(() => null);
+      if (text === null || text.includes('\u0000') || /^%PDF-/.test(text)) { skipped.push(`${file.name} (not a text file)`); continue; }
+      const fence = text.includes('```') ? '~~~~' : '```';
+      const block = `${next.trim() ? '\n\n' : ''}${file.name}:\n${fence}\n${text.replace(/\s+$/, '')}\n${fence}`;
+      if (next.length + block.length > max - 500) { skipped.push(`${file.name} (would exceed the ${max.toLocaleString('en-US')}-character message limit)`); continue; }
+      next += block;
+    }
+    if (next !== draft) setDraft(next);
+    if (skipped.length) setFileError(`Not attached: ${skipped.join(', ')}. Chat accepts images and text files for now.`);
+  };
   const submit = async () => {
     const message = draft.trim() || (images.length ? 'Review the attached image.' : '');
     let input = composeProjectInput(message, displayedProject, displayedRoster, sessionId);
@@ -509,7 +539,7 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
       }} className={`inference-control${inferenceTarget ? ' header-inference' : ''}`} onBlur={event => { if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }} onKeyDown={event => {
         if (event.key === 'Escape') { event.stopPropagation(); if (picker.current) picker.current.open = false; picker.current?.querySelector('summary')?.focus(); }
       }}>
-        <summary title={`Requested · ${selection === 'inherit' ? saved.opted ? 'Saved defaults' : 'Inherit' : selection === 'invalid' ? 'Selection unavailable' : `${selectedOption?.label ?? selection.model} · ${effortLabel}`}`}><span className="requested-label">Requested · </span><span className="requested-choice">{selection === 'inherit' ? saved.opted ? 'Saved defaults' : 'Inherit' : selection === 'invalid' ? 'Selection unavailable' : `${selectedOption?.label ?? selection.model} · ${effortLabel}`}</span></summary>
+        <summary title={`Requested · ${selection === 'inherit' ? saved.opted ? 'Saved defaults' : 'Default model' : selection === 'invalid' ? 'Selection unavailable' : `${selectedOption?.label ?? selection.model} · ${effortLabel}`}`}><span className="requested-label">Requested · </span><span className="requested-choice">{selection === 'inherit' ? saved.opted ? 'Saved defaults' : 'Default model' : selection === 'invalid' ? 'Selection unavailable' : `${selectedOption?.label ?? selection.model} · ${effortLabel}`}</span></summary>
         <div className="inference-fields">
           <p className="route-explanation">Requested for the next message. Executed route is reported only in a run’s Activity / Usage receipt; a latest-session receipt does not identify a selected answer.</p>
           <label>Model<select aria-label="Model for this prompt" value={selectedModel} disabled={busy || preflighting || inventoryBusy} onChange={(event) => chooseModel(event.target.value)}>
@@ -549,11 +579,15 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
       <button type="button" onClick={() => handoff(item, true)}>Append to draft</button>
     </section>) : null}
     {allowed ? <form className="turn-composer" onSubmit={(event) => { event.preventDefault(); void (steerable ? queue() : submit()); }} onDragOver={(event) => {
-      if (!imageAttachmentsEnabled) return;
-      if (Array.from(event.dataTransfer.items).some(item => item.kind === 'file' && item.type.startsWith('image/'))) event.preventDefault();
-    }} onDrop={(event) => { if (!imageAttachmentsEnabled) return; const files = Array.from(event.dataTransfer.files); if (files.some(file => file.type.startsWith('image/'))) { event.preventDefault(); void attachImages(files); } }}>
+      if (steerable) return;
+      if (Array.from(event.dataTransfer.items).some(item => item.kind === 'file')) event.preventDefault();
+    }} onDrop={(event) => { if (steerable) return; const files = Array.from(event.dataTransfer.files); if (files.length) { event.preventDefault(); void attachFiles(files); } }}>
       {inferenceTarget ? createPortal(inferencePicker, inferenceTarget) : inferencePicker}
-      {projectId && !steerable ? <details className="project-input-preview"><summary>{displayedProject ? 'Project context included' : 'Project context awaiting readback'} · {composeProjectInput(draft.trim() || (images.length ? 'Review the attached image.' : ''), displayedProject, displayedRoster, sessionId).length} / {max} characters</summary>{displayedProject ? <><pre>{projectContext(displayedProject)}{displayedRoster ? `\n\n${rosterContext(displayedRoster)}` : ''}</pre>{isLead ? <><p>{displayedRoster ? 'Lead roster included. Review the complete bounded context above.' : rosterError || 'Lead roster loading; sending requires review.'}</p><button type="button" disabled={preflighting} onClick={() => setRosterRetry(value => value + 1)}>Refresh lead roster</button></> : null}</> : <p>Project context must be read back before sending.</p>}<p>Included as ordinary message text on new sends. Saved non-image files are not delivered to Hermes. Use Attach image explicitly for images.</p></details> : null}
+      {projectId && !steerable ? <details className="project-input-preview"><summary>{displayedProject ? 'Project context included' : 'Project context awaiting readback'}{(() => {
+        // The character count only matters near the limit.
+        const used = composeProjectInput(draft.trim() || (images.length ? 'Review the attached image.' : ''), displayedProject, displayedRoster, sessionId).length;
+        return used >= max * 0.8 ? ` · ${used} / ${max} characters` : '';
+      })()}</summary>{displayedProject ? <><pre>{projectContext(displayedProject)}{displayedRoster ? `\n\n${rosterContext(displayedRoster)}` : ''}</pre>{isLead ? <><p>{displayedRoster ? 'Lead roster included. Review the complete bounded context above.' : rosterError || 'Lead roster loading; sending requires review.'}</p><button type="button" disabled={preflighting} onClick={() => setRosterRetry(value => value + 1)}>Refresh lead roster</button></> : null}</> : <p>Project context must be read back before sending.</p>}<p>Included as ordinary message text on new sends. Saved non-image files are not delivered to Hermes. Use Attach image explicitly for images.</p></details> : null}
       {preflighting ? <p role="status">Checking saved context and requested model…</p> : null}
       {preflightError || problem || inferenceError ? <p role="status">{preflightError || problem || 'Model choices unavailable; explicitly selected Inherit remains available.'}</p> : null}
       {storageUnavailable ? <p role="status">Draft storage unavailable or full. Text remains in this tab; reload may lose recent edits. Sending requires safely clearing the saved draft.</p> : null}
@@ -561,8 +595,10 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
       {images.length ? <div className="chat-images" aria-label="Attached images">{images.map(image => <span key={`${image.artifactId}:${image.version}`}><ImagePlus size={14} />{image.name}<button type="button" disabled={busy || preflighting || imageBusy} aria-label={`Remove ${image.name}`} onClick={() => setImagesBySession(previous => ({ ...previous, [sessionId!]: (previous[sessionId!] ?? []).filter(item => item !== image) }))}><X size={13} /></button></span>)}</div> : null}
       {imageBusy ? <p role="status">Uploading image…</p> : null}
       {imageError ? <p role="alert">{imageError}</p> : null}
-      {imageAttachmentsEnabled ? <><input ref={imageInput} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-label="Attach images" onChange={event => { void attachImages(event.target.files); }} />
-      <button className="icon-button attach-image" type="button" disabled={busy || preflighting || imageBusy || images.length >= 4} aria-label="Attach image" title="Attach image" onClick={() => imageInput.current?.click()}><ImagePlus size={19} /></button></> : null}
+      {imageAttachmentsEnabled ? <input ref={imageInput} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-label="Attach images" onChange={event => { void attachImages(event.target.files); }} /> : null}
+      {fileError ? <p role="alert">{fileError}</p> : null}
+      {steerable ? null : <><input ref={fileInput} className="visually-hidden" type="file" multiple aria-label="Attach files" onChange={event => { void attachFiles(event.target.files); }} />
+      <button className="icon-button attach-image" type="button" disabled={busy || preflighting || imageBusy} aria-label="Attach file" title="Attach images or text files" onClick={() => fileInput.current?.click()}><Paperclip size={19} /></button></>}
       {steerable ? <p className="steer-hint" role="status">Jarvis is working. Anything you send now steers this run.</p> : null}
       <textarea placeholder={steerable ? 'Steer Jarvis…' : 'Message Jarvis…'} aria-label="Message Jarvis" maxLength={steerable ? maxSteer : max} value={draft} disabled={steerable ? false : busy || preflighting} onPaste={(event) => {
         if (!imageAttachmentsEnabled) return;
@@ -575,6 +611,5 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
         ? <button className="primary-button" type="submit" disabled={!!turn?.controlBusy || !draft.trim() || draft.length > maxSteer} aria-label="Send message" title="Steer Jarvis"><ArrowUp size={20} /></button>
         : <button className="primary-button" type="submit" disabled={busy || preflighting || imageBusy || (!draft.trim() && !images.length) || draft.length > max} aria-label="Send message" title="Send message"><ArrowUp size={20} /></button>}
     </form> : <p className="composer-feedback">{sessionId ? 'Messaging is unavailable for this chat.' : 'Choose New chat to begin.'}</p>}
-    <details className="turn-limit"><summary>Connection & recovery details</summary><p>One writer per chat in this tab; the server enforces cross-tab/session concurrency. Only opaque session, project, request and run identifiers are stored for reload recovery. Requested model/effort preferences are stored locally per chat and application environment. Known runs resume by status reads, never message retransmission. Pending admission without a run ID uses a read-only request lookup and stays locked while the outcome is unknown. Unsent text drafts are saved in this tab (up to 32 chats, 16,000 characters per draft and 128 KiB total). Image bytes are never saved in draft storage. Drafts appear only after selected-chat access is confirmed; sending clears the saved text before admission.</p></details>
   </>;
 }

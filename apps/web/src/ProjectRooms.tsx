@@ -349,6 +349,7 @@ export function ProjectRooms({ ref, sessions, threadStates = {}, statusClock, se
   const filter = query.trim().toLowerCase();
   const sessionTitle = (id: string) => sessions.find(session => session.id === id)?.title ?? known[id]?.title;
   const icon = (id: string) => <StatusIcon state={threadStatus(threadStates[id], statusClock)} />;
+  const fullIcon = (id: string) => <StatusIcon quiet={false} state={threadStatus(threadStates[id], statusClock)} />;
   const ordered = (ids: readonly string[]) => sortThreads(ids, threadStates, statusClock);
   const threadTitle = (room: ProjectRoom, id: string) => room.threads?.find(thread => thread.sessionId === id)?.title ?? sessionTitle(id) ?? 'Saved chat';
   const creationBlocked = (roomId: string) => uncertainCreates.includes(roomId) || !!pendingProjectChats[roomId];
@@ -398,7 +399,7 @@ export function ProjectRooms({ ref, sessions, threadStates = {}, statusClock, se
         <label>Note references (one per line)<textarea name="notes" disabled={busy} defaultValue={roomCreation.current.notes} onChange={event => { roomCreation.current.notes = event.target.value; }} maxLength={6156} /></label>
         <button className="primary-button" type="submit" disabled={busy}>Create project</button>
       </form> : selected ? <>
-        <div className="project-title"><ProjectIdentity project={selected} /><StatusIcon state={summarizeThreads(selected.sessionIds, threadStates, statusClock)} /><h3>{selected.name}</h3><button ref={editButton} className="secondary-button" type="button" disabled={busy} onClick={() => { setError(null); setDraft({ ...identityMetadata(selected), id: selected.id, name: selected.name, goal: selected.goal, instructions: selected.instructions ?? '', archived: selected.archived ?? false, repository: selected.repository, notes: selected.notes.join('\n') }); }}><Pencil size={14} /> Edit project</button></div>
+        <div className="project-title"><ProjectIdentity project={selected} /><StatusIcon quiet={false} state={summarizeThreads(selected.sessionIds, threadStates, statusClock)} /><h3>{selected.name}</h3><button ref={editButton} className="secondary-button" type="button" disabled={busy} onClick={() => { setError(null); setDraft({ ...identityMetadata(selected), id: selected.id, name: selected.name, goal: selected.goal, instructions: selected.instructions ?? '', archived: selected.archived ?? false, repository: selected.repository, notes: selected.notes.join('\n') }); }}><Pencil size={14} /> Edit project</button></div>
         <button className="secondary-button" type="button" disabled={busy} onClick={() => void perform(async () => { await saveMetadata(selected.id, { ...identityMetadata(selected), name: selected.name, goal: selected.goal, repository: selected.repository, notes: selected.notes, instructions: selected.instructions ?? '', archived: !selected.archived }); })}>{selected.archived ? 'Restore project' : 'Archive project'}</button>
         <button className="secondary-button project-delete-control" type="button" disabled={busy} onClick={event => { const element = event.currentTarget; void perform(() => inspectDeletion(selected, element)); }}>Delete project</button>
         {selected.archived ? <p role="status">Archived project — restore before sending new project messages.</p> : null}
@@ -414,7 +415,7 @@ export function ProjectRooms({ ref, sessions, threadStates = {}, statusClock, se
               const lead = selected.leadSessionId === id;
               return <div key={id} className="project-thread" role="group" aria-label={`Thread: ${threadTitle(selected, id)}`}>
                 <button className="sidebar-item" type="button" disabled={busy} onClick={() => void perform(async () => { await attach(id); closeDrawer(); callbacks.current.onNavigate?.(); })}>{threadTitle(selected, id)}</button>
-                <p className="muted small">{icon(id)}<br />{lead ? 'Lead · ' : ''}{session?.ownership === 'external' ? 'Read-only · ' : ''}{thread ? `Tracked ${new Date(thread.createdAt).toLocaleDateString()}` : 'Legacy chat · tracking date unavailable'}</p>
+                <p className="muted small">{fullIcon(id)}<br />{lead ? 'Lead · ' : ''}{session?.ownership === 'external' ? 'Read-only · ' : ''}{thread ? `Tracked ${new Date(thread.createdAt).toLocaleDateString()}` : 'Legacy chat · tracking date unavailable'}</p>
                 {threadDraft?.roomId === selected.id && threadDraft.sessionId === id ? <form aria-label="Rename thread" onSubmit={event => { event.preventDefault(); void perform(() => saveThread(selected, id, { title: threadDraft.title })); }}>
                   <label>Thread title<input required maxLength={120} disabled={busy} value={threadDraft.title} onChange={event => setThreadDraft({ roomId: selected.id, sessionId: id, title: event.target.value })} /></label>
                   <div className="button-row"><button type="submit" className="secondary-button" disabled={busy}>Save thread title</button><button type="button" className="text-button" disabled={busy} onClick={() => setThreadDraft(null)}>Cancel rename</button></div>

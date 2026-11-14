@@ -312,8 +312,6 @@ for (const viewport of [
     const targets: Record<string, Locator> = {
       'recent chat': page.getByRole('button', { name: session.title, exact: true }),
       project: page.getByRole('navigation', { name: 'Projects', exact: true }).getByRole('button', { name: projectName, exact: true }),
-      Agents: page.getByRole('button', { name: 'Agents Unavailable', exact: true }),
-      Rooms: page.getByRole('button', { name: 'Collaboration rooms Unavailable', exact: true }),
       Notifications: page.getByRole('button', { name: 'Notifications Inbox', exact: true }),
       Settings: page.getByRole('button', { name: 'Settings', exact: true }),
     };

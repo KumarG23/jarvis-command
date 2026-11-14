@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { CommandBootstrap, ProjectRoom } from '@jarvis-command/contracts';
-import { App } from './App';
+import { App, SHOW_STUDIO_ENTRY } from './App';
 import { StrictMode } from 'react';
 const key = 'jarvis-command:selected-session:v1', projectKey = 'jarvis-command:project-room:v1';
 const sessions = ['a', 'b'].map(letter => ({ id: `jc_${letter.repeat(32)}`, title: `SYNTHETIC saved ${letter}`, source: 'jarvis-command', ownership: 'command' as const, model: null, lastActive: '2026-11-09T15:00:00Z', messageCount: 0, toolCallCount: 0, pinned: false }));
@@ -97,7 +97,7 @@ it('keeps a missing project hint through project reload without a global chat lo
   expect(sessionStorage.getItem(key)).toBe(a!.id); expect(sessionStorage.getItem(projectKey)).toBe(project);
   expect(f.lookup()).toHaveLength(0); expect(f.history()).toHaveLength(0);
 });
-it('pauses a late recovery when Studio is opened without moving focus or replacing its view', async () => {
+it.skipIf(!SHOW_STUDIO_ENTRY)('pauses a late recovery when Studio is opened without moving focus or replacing its view', async () => {
   const f = fixture(); render(<App loadBootstrap={async () => bootstrap} />);
   await waitFor(() => expect(f.lookup()).toHaveLength(1));
   fireEvent.click(screen.getByRole('button', { name: /Studio crew/ }));
@@ -152,7 +152,7 @@ it('waits for the initial project adapter before a fast metadata recovery, inclu
   expect(screen.queryByRole('button', { name: 'Retry saved chat' })).not.toBeInTheDocument();
 });
 
-it('does not start delayed startup recovery after the user enters Studio', async () => {
+it.skipIf(!SHOW_STUDIO_ENTRY)('does not start delayed startup recovery after the user enters Studio', async () => {
   const f = fixture(); let inventory!: () => void;
   const ready = new Promise<void>(resolve => { inventory = resolve; });
   const original = f.fetcher.getMockImplementation()!;

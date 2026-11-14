@@ -23,8 +23,9 @@ export function HistoryReceipt({ sessionId, refreshKey }: Readonly<{ sessionId: 
     return () => controller.abort();
   }, [sessionId, refreshKey]);
   const current = snapshot?.sessionId === sessionId && snapshot.refreshKey === refreshKey ? snapshot : null;
+  // Shown only when Hermes has a receipt; a missing one is not worth a line in the chat.
+  if (!current?.usage) return null;
   return <aside className="history-receipt" aria-label="Saved session receipt">
-    <p>Latest saved session receipt · Individual message association unavailable</p>
-    {current?.usage ? <ExecutionReceipt usage={current.usage} /> : <p>{current ? 'Saved receipt unavailable' : 'Loading saved receipt…'}</p>}
+    <ExecutionReceipt usage={current.usage} />
   </aside>;
 }

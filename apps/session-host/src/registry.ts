@@ -35,6 +35,10 @@ export class Registry {
     return valid;
   }
 
+  remove(id: string) {
+    if (this.sessions.delete(id)) this.flush();
+  }
+
   private flush() {
     const temporary = `${this.path}.${process.pid}.tmp`;
     writeFileSync(temporary, `${JSON.stringify({ version: 1, sessions: this.all() }, null, 2)}\n`, { mode: 0o600 });

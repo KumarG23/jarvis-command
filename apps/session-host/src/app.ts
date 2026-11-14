@@ -113,6 +113,14 @@ export function buildSessionHostApp(manager: SessionManager) {
     } catch (error) { return sendError(reply, error); }
   });
 
+  app.post('/v1/sessions/:id/close', async (request, reply) => {
+    try {
+      const { id } = SessionParams.parse(request.params);
+      const { projectId } = ProjectQuery.parse(request.body);
+      return { closed: await manager.closeSession(id, projectId) };
+    } catch (error) { return sendError(reply, error); }
+  });
+
   app.get('/v1/sessions/:id/tail', async (request, reply) => {
     try {
       const { id } = SessionParams.parse(request.params);

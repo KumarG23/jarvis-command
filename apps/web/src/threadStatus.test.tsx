@@ -7,7 +7,7 @@ const now = Date.parse('2026-11-07T13:00:00Z');
 const state = (runStatus: ThreadState['runStatus'], unread: boolean | null = false): ThreadState => ({ sessionId: 'jc_' + 'a'.repeat(32), runStatus, unread, observedAt: new Date(now).toISOString(), runObservedAt: new Date(now).toISOString(), recentAt: null, latest: null, lastRead: null, historyComplete: true });
 it.each([['unknown', false, 'unknown'], ['unknown', true, 'unread'], ['completed', false, 'idle'], ['completed', true, 'unread'], ['running', false, 'working'], ['queued', true, 'working'], ['waiting-approval', true, 'needs-you'], ['failed', false, 'needs-you'], ['interrupted', false, 'needs-you'], ['cancelled', false, 'idle']] as const)('derives %s/unread %s as %s with labelled icon', (run, unread, expected) => {
   expect(threadStatus(state(run, unread), now)).toBe(expected);
-  render(<StatusIcon state={expected} />);
+  render(<StatusIcon quiet={false} state={expected} />);
   expect(screen.getByLabelText({ 'needs-you': 'Needs you', working: 'Working', unread: 'Unread', idle: 'Idle', unknown: 'Unknown' }[expected])).toHaveTextContent(/Needs you|Working|Unread|Idle|Unknown/);
 });
 it('missing, future or stale observations stay unknown; unread is shared and independent', () => {
