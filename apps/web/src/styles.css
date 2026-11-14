@@ -726,3 +726,39 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
   .recent-chat-row { grid-template-columns: minmax(0, 1fr) auto auto; }
   .recent-chat-row:not(:hover):not(:focus-within) .chat-row-action { display: none; }
 }
+
+/* Phones: one header row, like the Claude app. Menu, title, then compact icon actions.
+   The model picker moves into the composer on phones (see App.tsx). */
+@media (max-width: 760px) {
+  .command-main > .command-header, .command-main > .command-header.has-project-threads {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 56px; padding: 6px 8px; }
+  .command-main > .command-header .menu-button { flex: 0 0 44px; order: 0; }
+  .command-main > .command-header .room-breadcrumb { flex: 1 1 0; min-width: 0; order: 1; padding: 0; gap: 0; }
+  .command-main > .command-header .room-breadcrumb strong { font-size: 15px; font-weight: 600; }
+  .command-main > .command-header .room-breadcrumb > span { font-size: 12px; margin: 0; }
+  .command-main > .command-header .project-threads-button { order: 2; flex: 0 0 auto; min-width: 0; min-height: 40px; padding: 0 10px; font-size: 13px; }
+  .command-main > .command-header .header-actions { order: 3; flex: 0 0 auto; flex-wrap: nowrap; gap: 2px; min-height: 0; }
+  .command-main > .command-header .header-actions .icon-button { width: 40px; height: 40px; min-width: 40px; }
+  .command-main > .command-header .artifact-context-button.terminals-button { width: 40px; max-width: 40px; padding: 0; justify-content: center; border-color: transparent; background: transparent; }
+  .command-main > .command-header .artifact-context-button.terminals-button span { display: none; }
+  .command-main > .command-header .health-button { position: static; width: 32px; height: 40px; min-height: 40px; padding: 0; border: 0; background: transparent; }
+  .command-main > .command-header .header-thread-states { order: 4; flex: 1 0 100%; padding-left: 48px; }
+  .command-main > .command-header .requested-route-slot:empty { display: none; }
+  /* Model picker inside the composer: a small chip on the same line as the project context hint. */
+  .turn-composer > .inference-control { flex: 0 0 auto; }
+  .turn-composer > .inference-control > summary { min-height: 32px; padding: 5px 10px; border-radius: 999px; font-family: inherit; font-size: 12px; letter-spacing: 0; list-style: none; }
+  .turn-composer textarea { flex: 1 1 calc(100% - 60px); }
+  .command-main > .command-header .room-breadcrumb .project-identity { display: none; }
+  .turn-composer > .inference-control > summary::-webkit-details-marker { display: none; }
+  .turn-composer > .inference-control[open] { flex-basis: 100%; }
+  .turn-composer > .project-input-preview { flex: 1 1 0; min-width: 0; }
+  .turn-composer > .project-input-preview:not([open]) > summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+@media (max-width: 760px) {
+  .turn-composer > .project-input-preview { align-self: center; }
+  /* Phones: the whole drawer scrolls as one list, so recent chats aren't squeezed into a small box. */
+  .room-sidebar, .room-sidebar:has(.sidebar-scroll > .sidebar-section) { overflow-y: auto; overscroll-behavior: contain; }
+  .sidebar-scroll, .sidebar-scroll:has(> .sidebar-section) { flex: 0 0 auto; min-height: 0; overflow: visible; }
+  .sidebar-scroll > .sidebar-section, .sidebar-scroll > .sidebar-section[aria-label="Projects"], .sidebar-scroll > .sidebar-section[aria-label="Recent chats"] { flex: 0 0 auto; max-height: none; min-height: 0; overflow: visible; }
+  .room-sidebar .capability-navigation, .room-sidebar .sidebar-footer { flex: 0 0 auto; }
+}
