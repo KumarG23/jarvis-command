@@ -25,6 +25,7 @@ import {
   type LiveRunUsage,
   type SessionMessagesPage,
   type SessionMutationResponse,
+  MAX_MESSAGE_CHARACTERS,
 } from '@jarvis-command/contracts';
 import { z } from 'zod';
 
@@ -302,7 +303,7 @@ export function createCommandProxyClient(options: Readonly<{
       if (
         !SESSION_ID.test(request.sessionId)
         || !request.input.trim()
-        || request.input.length > 16_000
+        || request.input.length > MAX_MESSAGE_CHARACTERS
         || !IDEMPOTENCY_KEY.test(request.idempotencyKey)
         || (request.inference !== undefined && !InferenceOverrideSchema.safeParse(request.inference).success)
         || images.length > 4

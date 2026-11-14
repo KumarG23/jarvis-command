@@ -3,7 +3,7 @@ import Fastify, { type FastifyReply } from 'fastify';
 
 import type { ReadProxyConfig } from './config';
 
-const MAX_UPSTREAM_BYTES = 1_048_576;
+const MAX_UPSTREAM_BYTES = 8_388_608;
 
 type ReadProxyDependencies = Readonly<{
   config: ReadProxyConfig;

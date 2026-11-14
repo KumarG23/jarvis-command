@@ -26,6 +26,7 @@ import {
   type ModelCatalogEntry,
   type SessionMessage,
   type SessionSummary,
+  MAX_MESSAGE_CHARACTERS, MAX_SAVED_MESSAGE_CHARACTERS,
 } from '@jarvis-command/contracts';
 import Fastify, {
   type FastifyReply,
@@ -172,7 +173,7 @@ const UpstreamMessageSchema = z.object({
   id: z.union([OpaqueIdentifierSchema, z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)]),
   session_id: SessionIdSchema,
   role: z.enum(['user', 'assistant', 'system', 'tool', 'session_meta']),
-  content: z.string().max(131_072).nullable(),
+  content: z.string().max(MAX_SAVED_MESSAGE_CHARACTERS).nullable(),
   timestamp: z.union([z.number(), z.string()]).nullable().optional(),
   tool_name: z.string().nullable().optional(),
   display_kind: z.string().nullable().optional(),
@@ -299,7 +300,7 @@ const UpstreamModelOptionsSchema = z.object({
 
 const RunCreateBodySchema = z.object({
   sessionId: z.string().regex(SESSION_ID),
-  input: z.string().trim().min(1).max(16_000),
+  input: z.string().trim().min(1).max(MAX_MESSAGE_CHARACTERS),
   inference: InferenceOverrideSchema.optional(),
   // Per-run system text from Command (project context). Hermes treats it as ephemeral.
   instructions: z.string().trim().min(1).max(16_000).optional(),
@@ -337,7 +338,7 @@ export function buildCommandProxy({
   const app = Fastify({
     logger: false,
     trustProxy: false,
-    bodyLimit: 131_072,
+    bodyLimit: 1_048_576,
     exposeHeadRoutes: false,
     connectionTimeout: 10_000,
     requestTimeout: 12_000,

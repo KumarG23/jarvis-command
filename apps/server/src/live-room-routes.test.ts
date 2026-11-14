@@ -198,7 +198,7 @@ it('submits a bounded run and polls its opaque status behind Access', async () =
   const submitted = { ...request, input: undefined, publicRunId, status: 'running', replayed: false };
   Object.assign(liveRoom, { submitRun: vi.fn().mockResolvedValue(submitted), getRun: vi.fn().mockResolvedValue({ publicRunId, status: 'running' }) });
   expect((await app.inject({ method: 'POST', url: '/api/live/runs', payload: request })).statusCode).toBe(401);
-  for (const bad of [{ ...request, input: ' ' }, { ...request, input: 'x'.repeat(16001) }, { ...request, extra: true }, { ...request, clientRequestId: 'invalid' }]) {
+  for (const bad of [{ ...request, input: ' ' }, { ...request, input: 'x'.repeat(200_001) }, { ...request, extra: true }, { ...request, clientRequestId: 'invalid' }]) {
     expect((await app.inject({ method: 'POST', url: '/api/live/runs', headers, payload: bad })).statusCode).toBe(400);
   }
   expect(liveRoom.submitRun).not.toHaveBeenCalled();

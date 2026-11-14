@@ -13,6 +13,10 @@ const PublicRunIdSchema = z
 const ClientRequestIdSchema = z.uuid();
 export const ApprovalRequestIdSchema = z.string().min(1).max(256).regex(/^[!-~]+$/).refine((value) => !/\s/.test(value));
 export const OpaqueIdentifierSchema = ApprovalRequestIdSchema.max(160);
+// One chat message can be about 30,000 words (Discord stops at 2,000 characters).
+export const MAX_MESSAGE_CHARACTERS = 200_000;
+// Saved message content: a full-size message plus room for project context and markup.
+export const MAX_SAVED_MESSAGE_CHARACTERS = 262_144;
 const SafeTextSchema = (maximum: number) => z.string().max(maximum);
 const NonBlankTextSchema = (maximum: number) => z.string().trim().min(1).max(maximum);
 
@@ -160,7 +164,7 @@ export const CommandBootstrapSchema = z
         liveRoom: z.object({
           enabled: z.boolean(),
           externalContinue: z.literal(false),
-          maxInputCharacters: z.number().int().min(1).max(16_000),
+          maxInputCharacters: z.number().int().min(1).max(MAX_MESSAGE_CHARACTERS),
           maxSteerCharacters: z.number().int().min(1).max(4_000),
         }).strict(),
 
@@ -186,7 +190,7 @@ export const SessionMessageSchema = z.object({
   id: OpaqueIdentifierSchema,
   sessionId: SessionIdSchema,
   role: z.enum(['user', 'assistant', 'system', 'tool']),
-  content: SafeTextSchema(131_072),
+  content: SafeTextSchema(MAX_SAVED_MESSAGE_CHARACTERS),
   timestamp: IsoTimestampSchema.nullable(),
   toolName: NonBlankTextSchema(160).nullable(),
   displayKind: NonBlankTextSchema(80).nullable(),
@@ -245,7 +249,7 @@ export type FrozenRouting = z.infer<typeof FrozenRoutingSchema>;
 
 export const LiveRunSubmissionRequestSchema = z.object({
   sessionId: SessionIdSchema,
-  input: NonBlankTextSchema(16_000),
+  input: NonBlankTextSchema(MAX_MESSAGE_CHARACTERS),
   clientRequestId: ClientRequestIdSchema,
   inference: InferenceOverrideSchema.optional(),
   routing: RoutingResolutionRequestSchema.optional(),

@@ -3,8 +3,8 @@ import { appStorageKey } from './appEnvironment';
 
 export const textDraftKey = () => appStorageKey('jarvis-command:text-drafts:v1');
 const MAX_SESSIONS = 32;
-const MAX_TEXT = 16000;
-const MAX_STORAGE = 131072;
+const MAX_TEXT = 200_000;
+const MAX_STORAGE = 2_097_152;
 type Drafts = Record<string, string>;
 export type TextDraftMemory = Record<string, { text: string; snapshot: { text: string; failed: boolean }; failed: boolean }>;
 export type RetainedTextDrafts = readonly [TextDraftMemory, Dispatch<SetStateAction<TextDraftMemory>>];

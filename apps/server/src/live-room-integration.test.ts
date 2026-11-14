@@ -132,7 +132,7 @@ it.each(['漢'.repeat(16_000), '\u0000'.repeat(16_000)])('composes real Access, 
     const payload = { sessionId, input, clientRequestId: 'c17cb7d5-99cf-4a06-a24b-d5d5417e7a7e' };
     expect((await app.inject({ method: 'POST', url: '/api/live/runs', payload })).statusCode).toBe(401);
     expect(mutations).toBe(0);
-    for (const [input, status] of [['x'.repeat(16_001), 400], ['x'.repeat(131_073), 413]] as const) {
+    for (const [input, status] of [['x'.repeat(200_001), 400], ['x'.repeat(1_048_577), 413]] as const) {
       expect((await app.inject({ method: 'POST', url: '/api/live/runs', headers, payload: { ...payload, input } })).statusCode).toBe(status);
       expect((await proxy.inject({ method: 'POST', url: '/v1/runs', headers: { authorization: 'Bearer ' + 'c'.repeat(32), 'idempotency-key': 'jc-v1-' + 'a'.repeat(64) }, payload: { sessionId, input } })).statusCode).toBe(status);
     }
