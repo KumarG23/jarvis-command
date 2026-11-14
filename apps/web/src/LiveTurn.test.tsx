@@ -122,7 +122,7 @@ async function chooseChat(name: string) {
 async function open(value = bootstrap) {
   render(<App loadBootstrap={async () => value} />);
   await chooseChat(session.title);
-  await screen.findByText('No saved messages in session history yet.');
+  await screen.findByText('Nothing here yet. Ask Jarvis anything.');
 }
 async function send() {
   fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: 'Hello Jarvis' } });
@@ -928,7 +928,7 @@ it.each(['offline', 'capability', 'disabled', 'external'])('removes active contr
   initial.sessions.push({ ...session, id: 'external:room', title: 'External room', ownership: 'external' });
   const { rerender } = render(<App loadBootstrap={async () => initial} />);
   await chooseChat(session.title);
-  await screen.findByText('No saved messages in session history yet.'); await send();
+  await screen.findByText('Nothing here yet. Ask Jarvis anything.'); await send();
   act(() => Source.instances[0]!.emit('approval.request', { approval }));
   expect(screen.getByText(/Anything you send now steers this run/)).toBeInTheDocument();
   const changed = structuredClone(initial);

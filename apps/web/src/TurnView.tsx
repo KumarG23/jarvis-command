@@ -639,6 +639,6 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
       {steerable
         ? <button className="primary-button" type="submit" disabled={!!turn?.controlBusy || !draft.trim() || draft.length > maxSteer} aria-label="Send message" title="Steer Jarvis"><ArrowUp size={20} /></button>
         : <button className="primary-button" type="submit" disabled={busy || preflighting || imageBusy || (!draft.trim() && !images.length && !files.length) || fileBusy || draft.length > max} aria-label="Send message" title="Send message"><ArrowUp size={20} /></button>}
-    </form> : <p className="composer-feedback">{sessionId ? 'Messaging is unavailable for this chat.' : 'Choose New chat to begin.'}</p>}
+    </form> : sessionId ? <p className="composer-feedback">Messaging is unavailable for this chat.</p> : null}
   </>;
 }

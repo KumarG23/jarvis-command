@@ -123,6 +123,7 @@ async function mockApis(page: Page, lifecycle?: 'running' | 'failed') {
     [`/api/live/sessions/${session.id}`]: SessionMutationResponseSchema.parse({ session }),
     [`/api/sessions/${session.id}/messages`]: history,
     [`/api/live/sessions/${session.id}/context`]: validContextReceipt(session.id),
+    [`/api/live/sessions/${session.id}/deliveries`]: { sessionId: session.id, deliveries: [] },
     '/api/live/session-controls': SessionControlCapabilitiesSchema.parse({ sessionForkPreservesSource: true, sessionCompactionRuns: true }),
     '/api/live/model-options': InferenceOptionsResponseSchema.parse({ default: { provider: 'openai-codex', model: 'gpt-5.6-sol' }, options: [{ provider: 'openai-codex', model: 'gpt-5.6-sol', label: 'Sol', reasoningEfforts: ['medium'] }] }),
     '/api/artifacts': { artifacts: [] },
@@ -186,7 +187,8 @@ async function assertLayout(page: Page, testInfo: TestInfo, phase: string, lifec
   await page.evaluate(() => document.fonts.ready);
   const selectors = {
     header: '.command-header', title: '[aria-label="Selected session"]', project: '[aria-label="Selected project"]',
-    route: '.requested-route-slot summary', actions: '.header-actions', composer: '.composer-wrap', input: 'textarea[aria-label="Message Jarvis"]',
+    // Phones carry the model picker in the composer; wider screens in the header.
+    route: (page.viewportSize()?.width ?? 0) < 761 ? '.turn-composer > .inference-control > summary' : '.requested-route-slot summary', actions: '.header-actions', composer: '.composer-wrap', input: 'textarea[aria-label="Message Jarvis"]',
     ...(lifecycle ? { feedback: '.session-lifecycle-feedback' } : {}),
   };
   const geometry: Record<string, { x: number; y: number; width: number; height: number }> = {};
@@ -241,7 +243,7 @@ async function assertLayout(page: Page, testInfo: TestInfo, phase: string, lifec
   if (lifecycle !== 'running') reachable.push('Compact context', 'Fork chat');
   for (const name of reachable) await page.getByRole('button', { name, exact: true }).click({ trial: true });
   await page.locator('.health-button').click({ trial: true });
-  await page.locator('.requested-route-slot summary').click({ trial: true });
+  await page.locator(selectors.route).click({ trial: true });
 }
 
 for (const viewport of [{ width: 320, height: 640 }, { width: 360, height: 360 }, { width: 360, height: 740 }, { width: 390, height: 844 }, { width: 430, height: 740 }, { width: 1280, height: 720 }]) {

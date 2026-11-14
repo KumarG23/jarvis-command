@@ -140,6 +140,16 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 .welcome h1 { font-size: clamp(26px, 3vw, 39px); font-weight: 500; letter-spacing: -1.2px; margin: 15px 0; line-height: 1.2; }
 .welcome > p:not(.eyebrow) { font-size: 15px; line-height: 1.8; color: var(--muted); max-width: 400px; }
 .welcome-action { margin-top: 20px; font-size: 12px; }
+.welcome-suggestions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 26px; }
+.welcome-suggestion { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+.welcome-suggestion > svg:first-child { flex: none; color: var(--cyan); }
+.welcome-suggestion span { flex: 1; min-width: 0; }
+.welcome-suggestion-go { flex: none; color: var(--subtle); opacity: 0; transition: opacity .15s; }
+.welcome-suggestion:hover:not(:disabled) { border-color: var(--cyan); }
+.welcome-suggestion:hover .welcome-suggestion-go, .welcome-suggestion:focus-visible .welcome-suggestion-go { opacity: 1; }
+.welcome-suggestion:disabled { opacity: .55; cursor: default; }
+.welcome-actions { display: flex; align-items: center; gap: 16px; margin-top: 22px; flex-wrap: wrap; }
+@media (max-width: 420px) { .welcome-suggestions { grid-template-columns: 1fr; } }
 .external-chat-notice { max-width: 730px; margin: 0 auto 25px; color: var(--muted); font-size: 12px; }
 .timeline-event { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 16px; max-width: 730px; margin: 0 auto 28px; }
 .event-icon { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; color: var(--cyan); }
@@ -742,17 +752,19 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
   .command-main > .command-header .room-breadcrumb { flex: 1 1 0; min-width: 0; order: 1; padding: 0; gap: 0; }
   .command-main > .command-header .room-breadcrumb strong { font-size: 15px; font-weight: 600; }
   .command-main > .command-header .room-breadcrumb > span { font-size: 12px; margin: 0; }
-  .command-main > .command-header .project-threads-button { order: 2; flex: 0 0 auto; min-width: 0; min-height: 40px; padding: 0 10px; font-size: 13px; }
+  .command-main > .command-header .project-threads-button { order: 2; flex: 0 0 auto; min-width: 44px; min-height: 44px; padding: 0 10px; font-size: 13px; }
   .command-main > .command-header .header-actions { order: 3; flex: 0 0 auto; flex-wrap: nowrap; gap: 2px; min-height: 0; }
-  .command-main > .command-header .header-actions .icon-button { width: 40px; height: 40px; min-width: 40px; }
+  .command-main > .command-header .header-actions .icon-button { width: 40px; height: 44px; min-width: 40px; }
   .command-main > .command-header .artifact-context-button.terminals-button { width: 40px; max-width: 40px; padding: 0; justify-content: center; border-color: transparent; background: transparent; }
   .command-main > .command-header .artifact-context-button.terminals-button span { display: none; }
-  .command-main > .command-header .health-button { position: static; width: 32px; height: 40px; min-height: 40px; padding: 0; border: 0; background: transparent; }
+  .command-main > .command-header .health-button { position: static; width: 32px; height: 44px; min-height: 44px; padding: 0; border: 0; background: transparent; }
   .command-main > .command-header .header-thread-states { order: 4; flex: 1 0 100%; padding-left: 48px; }
   .command-main > .command-header .requested-route-slot:empty { display: none; }
   /* Model picker inside the composer: a small chip on the same line as the project context hint. */
   .turn-composer > .inference-control { flex: 0 0 auto; }
-  .turn-composer > .inference-control > summary { min-height: 32px; padding: 5px 10px; border-radius: 999px; font-family: inherit; font-size: 12px; letter-spacing: 0; list-style: none; }
+  /* 44px touch target; the visible 32px pill is drawn by ::before. */
+  .turn-composer > .inference-control > summary { position: relative; isolation: isolate; display: inline-flex; align-items: center; min-height: 44px; padding: 0 10px; border: 0; border-radius: 999px; background: transparent; font-family: inherit; font-size: 12px; letter-spacing: 0; list-style: none; }
+  .turn-composer > .inference-control > summary::before { content: ''; position: absolute; inset: 6px 0; z-index: -1; border: 1px solid var(--border); border-radius: 999px; background: var(--panel); }
   .turn-composer textarea { flex: 1 1 calc(100% - 110px); }
   .command-main > .command-header .room-breadcrumb .project-identity { display: none; }
   .turn-composer > .inference-control > summary::-webkit-details-marker { display: none; }
@@ -779,3 +791,36 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 .approval-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .approval-actions button { min-height: 44px; padding: 8px 16px; }
 .live-turn .stop-run { min-height: 40px; margin-top: 8px; }
+.empty-chat { margin: clamp(40px, 18vh, 160px) auto 0; text-align: center; color: var(--muted); font-size: 15px; }
+
+/* Wider screens: one header row and one button style (36px, 10px radius, quiet outline),
+   like the Claude app. Title on the left; model, Threads, details, Terminals and Hermes on the right. */
+@media (min-width: 761px) {
+  .command-main > .command-header, .command-main > .command-header.has-project-threads {
+    display: flex; flex-wrap: nowrap; align-items: center; gap: 8px; min-height: 60px; padding: 10px 20px; }
+  .command-main > .command-header .room-breadcrumb { flex: 1 1 auto; min-width: 0; order: 0; padding: 0; align-self: center; }
+  .command-main > .command-header .header-thread-states { order: 1; flex: 0 0 auto; }
+  .command-main > .command-header .requested-route-slot { order: 2; flex: 0 0 auto; }
+  .command-main > .command-header .project-threads-button { order: 3; }
+  .command-main > .command-header .header-actions { order: 4; flex-wrap: nowrap; gap: 8px; min-height: 0; }
+  /* Each button keeps a 44px touch target; the visible 36px outline is drawn by ::before. */
+  .command-main > .command-header :is(.project-threads-button, .artifact-context-button, .health-button, .header-actions .icon-button, .header-inference > summary) {
+    position: relative; isolation: isolate; display: inline-flex; align-items: center; justify-content: center; gap: 7px; width: auto; max-width: 220px;
+    height: 44px; min-height: 44px; min-width: 44px; padding: 0 12px; border: 0; border-radius: 10px;
+    background: transparent; color: var(--muted); font: 500 13px/1 inherit; letter-spacing: 0; white-space: nowrap; list-style: none; cursor: pointer; }
+  .command-main > .command-header :is(.project-threads-button, .artifact-context-button, .health-button, .header-actions .icon-button, .header-inference > summary)::before {
+    content: ''; position: absolute; inset: 4px 0; z-index: -1; border: 1px solid var(--border); border-radius: 10px; background: transparent; }
+  .command-main > .command-header .header-inference > summary::-webkit-details-marker { display: none; }
+  .command-main > .command-header .header-inference > summary::after { content: ''; width: 6px; height: 6px; margin: -3px 0 0 2px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); opacity: .7; }
+  .command-main > .command-header .header-inference .requested-label { display: none; }
+  .command-main > .command-header .header-inference .requested-choice { display: inline; overflow: hidden; text-overflow: ellipsis; }
+  .command-main > .command-header .header-actions .icon-button { width: 44px; padding: 0; }
+  .command-main > .command-header .header-actions .icon-button::before { inset: 4px; }
+  .command-main > .command-header :is(.project-threads-button, .artifact-context-button, .health-button, .header-actions .icon-button, .header-inference > summary):hover,
+  .command-main > .command-header :is(.project-threads-button[aria-expanded="true"], .artifact-context-button.active, .header-actions .icon-button.active, .header-inference[open] > summary) { color: var(--text); }
+  .command-main > .command-header :is(.project-threads-button, .artifact-context-button, .health-button, .header-actions .icon-button, .header-inference > summary):hover::before,
+  .command-main > .command-header :is(.project-threads-button[aria-expanded="true"], .artifact-context-button.active, .header-actions .icon-button.active, .header-inference[open] > summary)::before { background: var(--surface); }
+}
+.split-controls { display: flex; justify-content: flex-end; padding: 6px 20px; border-bottom: 1px solid var(--border); color: var(--subtle); }
+.split-controls select { min-height: 30px; padding: 3px 8px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--muted); font-size: 12px; }
+@media (max-width: 1100px) { .split-controls { display: none; } }

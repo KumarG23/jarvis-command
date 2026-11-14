@@ -27,6 +27,11 @@ function write(room: string, text: string) {
   if (sessionStorage.getItem(textDraftKey()) !== raw) throw Error('draft write unverified');
 }
 
+/** Puts starter text into a brand-new chat's draft before it opens. Best effort. */
+export function seedTextDraft(room: string, text: string): boolean {
+  try { write(room, text); return true; } catch { return false; }
+}
+
 // Read only after the selected session's canonical history has authorized access.
 // Text only, same tab and preview namespace. Never evict another unsent draft.
 export function useTextDraft(sessionId: string | undefined, authorized: boolean, retainedMemory?: RetainedTextDrafts) {

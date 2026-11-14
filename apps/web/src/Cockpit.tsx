@@ -14,6 +14,14 @@ const STATE_LABEL: Record<string, string> = {
 };
 const OWNER_LABEL = { human: 'You have input', lead: 'Lead has input', none: 'Nobody has input' } as const;
 const OWNER_SHORT = { human: 'You', lead: 'Lead', none: 'Nobody' } as const;
+// Short badges so a row of workers is easy to scan; the full name stays in the tab's subtitle.
+const KIND_BADGE: Record<string, string> = { claude: 'CC', codex: 'CX', agy: 'AG', gemini: 'GE', opencode: 'OC', hermes: 'J' };
+function KindBadge({ kind, state }: Readonly<{ kind: string; state: string }>) {
+  return <span className={`cockpit-kind kind-${KIND_BADGE[kind] || kind === 'shell' ? kind : 'other'}`} aria-hidden="true">
+    {kind === 'shell' ? <TerminalSquare size={14} /> : KIND_BADGE[kind] ?? kind.slice(0, 2).toUpperCase()}
+    <span className={`cockpit-dot state-${state}`} />
+  </span>;
+}
 const KIND_LABEL: Record<string, string> = { claude: 'Claude Code', codex: 'Codex', agy: 'Antigravity', gemini: 'Gemini', opencode: 'OpenCode', shell: 'Shell', hermes: 'Hermes' };
 
 export async function cockpitRequest<T>(path: string, body?: unknown): Promise<T> {
@@ -98,7 +106,7 @@ export function Cockpit({ projectId, projectName, onClose, fullScreen, onToggleF
         <ul>
           {sessions?.map(session => <li key={session.id} className="cockpit-tab" aria-current={session.id === selectedId ? 'true' : undefined}>
             <button type="button" className="cockpit-session-item" aria-current={session.id === selectedId ? 'true' : undefined} onClick={() => { setSelectedId(session.id); setCreating(false); }}>
-              <span className={`cockpit-dot state-${session.state}`} aria-hidden="true" />
+              <KindBadge kind={session.kind} state={session.state} />
               <span className="cockpit-session-text"><strong>{session.title}</strong><small>{KIND_LABEL[session.kind] ?? session.kind} · {STATE_LABEL[session.state] ?? session.state}{session.owner === 'lead' ? ' · lead' : ''}</small></span>
             </button>
             <button type="button" className="cockpit-tab-close" aria-label={`Close ${session.title}`} title={ACTIVE.has(session.state) ? 'Stop and close' : 'Close'} disabled={closing === session.id} onClick={() => requestClose(session)}><X size={15} /></button>

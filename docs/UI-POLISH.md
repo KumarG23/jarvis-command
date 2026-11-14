@@ -36,16 +36,19 @@ Goal: feel as finished as the Claude app, ChatGPT and Discord. Phone first, beca
     (PDF, zip, images, big logs) uploads to the artifact store and Jarvis gets its path and a fetch command.
     Jarvis sends files back with `deploy/scripts/command-file.sh`; images show inline in the chat and other
     files as download cards. See "Files" in `docs/cockpit/SCHEDULED-RUNS.md`.
+15. **New-chat screen.** "What are we working on?" with four starters (Homelab check, Set a reminder, Schedule a
+    job, Help me plan). A starter opens a new chat with its prompt in the message box and the cursor at the end.
+    An empty chat says "Nothing here yet. Ask Jarvis anything." instead of "No saved messages in session history yet."
+16. **One header button style.** On wider screens the header is one row and every control (model, Threads, project
+    details, Terminals, Hermes) is the same 36px outlined button, with a 44px touch target. The "Second conversation"
+    picker is a quiet right-aligned row.
+17. **Agent badges on terminal tabs.** CC (Claude Code), CX (Codex), AG (Antigravity), a terminal icon for shells,
+    each with its status dot in the corner.
 
 ## Next, in priority order
 
 1. **Streaming/working state.** The run inspector during a live reply still shows a lot of status text; aim for
    ChatGPT's single "Thinking…" line with expandable steps. Needs a live Hermes run to tune properly.
-2. **Empty state copy.** "YOUR SPACE TO THINK & BUILD / Choose a chat or start a new one" could just be a focused
-   composer with a few suggested prompts (homelab check, reminders), like ChatGPT.
-3. **Terminal tab names.** Tabs show the title only; a small agent icon (Claude/Codex/agy) would make a row of
-   workers easier to scan.
-4. **Consistent icon buttons.** Header buttons mix outlined pills, plain icons and text buttons. One button style
-   with one height would look more finished.
-5. **Light polish:** project names wrap in the sidebar, the user bubble is very large for short messages, and the
+2. **Light polish:** project names wrap in the sidebar, the user bubble is very large for short messages, and the
    "Development preview" bar is fine locally but worth confirming it never shows in production.
+3. **e2e:** `header-layout` sidebar test at 1280x720 reports the project row as clipped (also on the base branch).
