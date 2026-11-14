@@ -25,23 +25,22 @@ Goal: feel as finished as the Claude app, ChatGPT and Discord. Phone first, beca
    picker only shows on wide screens and only when the project has another chat.
 8. **Chat titles get their full width.** Row actions (add to project, delete) take no space until hover on
    desktop, and on phones only show on the open chat.
+9. **Phone header on one row.** Menu, title, Threads and icon actions (project details, Terminals, Hermes dot).
+   The model picker moves into the composer as a small chip on phones.
+10. **Phone drawer scrolls as one list** instead of two small boxes, so all recent chats are reachable.
+11. **Quieter composer.** "Project context included" no longer shows a character count until 80% of the limit.
+12. **Approval and stop prompts are cards** with real buttons ("Jarvis wants to run this", "Stop this reply?");
+    request/run/session IDs are under a Details toggle.
 
 ## Next, in priority order
 
-1. **Phone header is still two rows.** Breadcrumb, model chip, Threads, project-details, Terminals and the Hermes
-   dot compete for 390px. Proposal: one row with title + a single "⋯" menu holding Terminals, project details,
-   model and Hermes status; Threads becomes a tab or swipe.
-2. **Sidebar on phones scrolls in two tiny boxes.** Projects and Recent chats each get their own scroll area, so
-   only 2–3 recent chats are visible. One scrolling list (Claude/ChatGPT style) would show far more.
-3. **Composer.** "Project context included · 1690 / 16000 characters" sits above every project message. It could
-   become a small chip that only expands on tap, and the character count could appear only near the limit.
-4. **Streaming/working state.** Check the live-turn view (tool steps, approvals, stop) against ChatGPT's single
-   "Thinking…" line with expandable steps.
-5. **Empty state copy.** "YOUR SPACE TO THINK & BUILD / Choose a chat or start a new one" could just be a focused
+1. **Streaming/working state.** The run inspector during a live reply still shows a lot of status text; aim for
+   ChatGPT's single "Thinking…" line with expandable steps. Needs a live Hermes run to tune properly.
+2. **Empty state copy.** "YOUR SPACE TO THINK & BUILD / Choose a chat or start a new one" could just be a focused
    composer with a few suggested prompts (homelab check, reminders), like ChatGPT.
-6. **Terminal tab names.** Tabs show the title only; a small agent icon (Claude/Codex/agy) would make a row of
+3. **Terminal tab names.** Tabs show the title only; a small agent icon (Claude/Codex/agy) would make a row of
    workers easier to scan.
-7. **Consistent icon buttons.** Header buttons mix outlined pills, plain icons and text buttons. One button style
+4. **Consistent icon buttons.** Header buttons mix outlined pills, plain icons and text buttons. One button style
    with one height would look more finished.
-8. **Light polish:** project names wrap in the sidebar, the user bubble is very large for short messages, and the
+5. **Light polish:** project names wrap in the sidebar, the user bubble is very large for short messages, and the
    "Development preview" bar is fine locally but worth confirming it never shows in production.

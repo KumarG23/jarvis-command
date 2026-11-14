@@ -25,19 +25,20 @@ export function TurnView({ turn, allowed, approve, stop, onSaveResponse, threadP
     {turn.controlMessage ? <p role="status">{turn.done && /steer/i.test(turn.controlMessage)
       ? turn.terminalPendingSteer ? 'Run ended — unconsumed guidance was returned for draft recovery.' : 'Run ended — steer consumption was not reported.'
       : turn.controlMessage}</p> : null}
-    {turn.approval ? <section aria-label="Awaiting approval"><h2>Awaiting approval</h2><pre>{turn.approval.command}</pre><p>{turn.approval.description}</p><p>Tool: {turn.approval.tool ?? 'Not reported'}</p><p>Request: {turn.approval.requestId}</p><p>Run: {turn.publicRunId} · Session: {turn.intent.sessionId}</p>
-      {canControl && !turn.done ? <><button type="button" disabled={turn.controlBusy} onClick={() => approve(turn, 'once')}>Approve once</button><button type="button" disabled={turn.controlBusy} onClick={() => approve(turn, 'deny')}>Deny</button></> : null}
+    {turn.approval ? <section aria-label="Awaiting approval" className="approval-card"><h2>Jarvis wants to run this</h2><pre>{turn.approval.command}</pre>{turn.approval.description ? <p>{turn.approval.description}</p> : null}
+      <details className="approval-ids"><summary>Details</summary><p>Tool: {turn.approval.tool ?? 'Not reported'}</p><p>Request: {turn.approval.requestId}</p><p>Run: {turn.publicRunId} · Session: {turn.intent.sessionId}</p></details>
+      {canControl && !turn.done ? <div className="approval-actions"><button type="button" className="primary-button" disabled={turn.controlBusy} onClick={() => approve(turn, 'once')}>Approve once</button><button type="button" className="secondary-button" disabled={turn.controlBusy} onClick={() => approve(turn, 'deny')}>Deny</button></div> : null}
     </section> : null}
     {!turn.approval && !turn.done && turn.phase === 'Run waiting_for_approval' ? <section aria-label="Approval details missing" className="notice">
       <h2>Jarvis is waiting for an approval</h2>
       <p>Hermes paused this run for approval but didn't send Command what it wants to do, so there is nothing to approve here. Stop the run and send your message again, or approve it where Jarvis asked (for example Discord).</p>
     </section> : null}
     {canControl && !turn.done && turn.publicRunId ? <>
-      {confirmation?.intent === turn.intent && confirmation.publicRunId === turn.publicRunId ? <section aria-label="Confirm stop">
-        <h2>Confirm stop</h2><p>Run: {confirmation.publicRunId}</p><p>Session: {confirmation.intent.sessionId}</p>
-        <button type="button" disabled={turn.controlBusy} onClick={() => { stop(confirmation); setConfirmation(null); }}>Confirm stop</button>
-        <button type="button" onClick={() => setConfirmation(null)}>Keep running</button>
-      </section> : <button type="button" disabled={turn.controlBusy} onClick={() => setConfirmation(turn)}>Stop run</button>}
+      {confirmation?.intent === turn.intent && confirmation.publicRunId === turn.publicRunId ? <section aria-label="Confirm stop" className="stop-confirm">
+        <h2>Stop this reply?</h2><details className="approval-ids"><summary>Details</summary><p>Run: {confirmation.publicRunId}</p><p>Session: {confirmation.intent.sessionId}</p></details>
+        <div className="approval-actions"><button type="button" className="danger-button" disabled={turn.controlBusy} onClick={() => { stop(confirmation); setConfirmation(null); }}>Confirm stop</button>
+        <button type="button" className="secondary-button" onClick={() => setConfirmation(null)}>Keep running</button></div>
+      </section> : <button type="button" className="secondary-button stop-run" disabled={turn.controlBusy} onClick={() => setConfirmation(turn)}>Stop run</button>}
     </> : null}
   </section>;
 }
@@ -553,7 +554,11 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
       if (Array.from(event.dataTransfer.items).some(item => item.kind === 'file' && item.type.startsWith('image/'))) event.preventDefault();
     }} onDrop={(event) => { if (!imageAttachmentsEnabled) return; const files = Array.from(event.dataTransfer.files); if (files.some(file => file.type.startsWith('image/'))) { event.preventDefault(); void attachImages(files); } }}>
       {inferenceTarget ? createPortal(inferencePicker, inferenceTarget) : inferencePicker}
-      {projectId && !steerable ? <details className="project-input-preview"><summary>{displayedProject ? 'Project context included' : 'Project context awaiting readback'} · {composeProjectInput(draft.trim() || (images.length ? 'Review the attached image.' : ''), displayedProject, displayedRoster, sessionId).length} / {max} characters</summary>{displayedProject ? <><pre>{projectContext(displayedProject)}{displayedRoster ? `\n\n${rosterContext(displayedRoster)}` : ''}</pre>{isLead ? <><p>{displayedRoster ? 'Lead roster included. Review the complete bounded context above.' : rosterError || 'Lead roster loading; sending requires review.'}</p><button type="button" disabled={preflighting} onClick={() => setRosterRetry(value => value + 1)}>Refresh lead roster</button></> : null}</> : <p>Project context must be read back before sending.</p>}<p>Included as ordinary message text on new sends. Saved non-image files are not delivered to Hermes. Use Attach image explicitly for images.</p></details> : null}
+      {projectId && !steerable ? <details className="project-input-preview"><summary>{displayedProject ? 'Project context included' : 'Project context awaiting readback'}{(() => {
+        // The character count only matters near the limit.
+        const used = composeProjectInput(draft.trim() || (images.length ? 'Review the attached image.' : ''), displayedProject, displayedRoster, sessionId).length;
+        return used >= max * 0.8 ? ` · ${used} / ${max} characters` : '';
+      })()}</summary>{displayedProject ? <><pre>{projectContext(displayedProject)}{displayedRoster ? `\n\n${rosterContext(displayedRoster)}` : ''}</pre>{isLead ? <><p>{displayedRoster ? 'Lead roster included. Review the complete bounded context above.' : rosterError || 'Lead roster loading; sending requires review.'}</p><button type="button" disabled={preflighting} onClick={() => setRosterRetry(value => value + 1)}>Refresh lead roster</button></> : null}</> : <p>Project context must be read back before sending.</p>}<p>Included as ordinary message text on new sends. Saved non-image files are not delivered to Hermes. Use Attach image explicitly for images.</p></details> : null}
       {preflighting ? <p role="status">Checking saved context and requested model…</p> : null}
       {preflightError || problem || inferenceError ? <p role="status">{preflightError || problem || 'Model choices unavailable; explicitly selected Inherit remains available.'}</p> : null}
       {storageUnavailable ? <p role="status">Draft storage unavailable or full. Text remains in this tab; reload may lose recent edits. Sending requires safely clearing the saved draft.</p> : null}

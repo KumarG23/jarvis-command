@@ -762,3 +762,14 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
   .sidebar-scroll > .sidebar-section, .sidebar-scroll > .sidebar-section[aria-label="Projects"], .sidebar-scroll > .sidebar-section[aria-label="Recent chats"] { flex: 0 0 auto; max-height: none; min-height: 0; overflow: visible; }
   .room-sidebar .capability-navigation, .room-sidebar .sidebar-footer { flex: 0 0 auto; }
 }
+/* Approval and stop prompts: a clear card with real buttons; IDs tucked under Details. */
+.approval-card, .stop-confirm { margin: 12px 0; padding: 14px 16px; border: 1px solid #5a4a24; border-radius: 12px; background: #221d12; }
+.stop-confirm { border-color: var(--border); background: var(--panel); }
+.approval-card h2, .stop-confirm h2 { margin: 0 0 8px; font-size: 15px; font-weight: 600; }
+.approval-card pre { margin: 0 0 8px; padding: 10px; border-radius: 8px; background: var(--bg); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
+.approval-ids { color: var(--subtle); font-size: 12px; }
+.approval-ids summary { cursor: pointer; padding: 4px 0; }
+.approval-ids p { margin: 2px 0; overflow-wrap: anywhere; }
+.approval-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.approval-actions button { min-height: 44px; padding: 8px 16px; }
+.live-turn .stop-run { min-height: 40px; margin-top: 8px; }
