@@ -747,11 +747,11 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
   /* Model picker inside the composer: a small chip on the same line as the project context hint. */
   .turn-composer > .inference-control { flex: 0 0 auto; }
   .turn-composer > .inference-control > summary { min-height: 32px; padding: 5px 10px; border-radius: 999px; font-family: inherit; font-size: 12px; letter-spacing: 0; list-style: none; }
-  .turn-composer textarea { flex: 1 1 calc(100% - 60px); }
+  .turn-composer textarea { flex: 1 1 calc(100% - 110px); }
   .command-main > .command-header .room-breadcrumb .project-identity { display: none; }
   .turn-composer > .inference-control > summary::-webkit-details-marker { display: none; }
   .turn-composer > .inference-control[open] { flex-basis: 100%; }
-  .turn-composer > .project-input-preview { flex: 1 1 0; min-width: 0; }
+  .turn-composer > .project-input-preview { flex: 1 1 60%; min-width: 0; }
   .turn-composer > .project-input-preview:not([open]) > summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 @media (max-width: 760px) {

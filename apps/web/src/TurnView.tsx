@@ -3,7 +3,7 @@ import { SavedRoutingControls } from './SavedRoutingControls';
 import { composeProjectInput, projectContext, readProjectForSend, readProjectRoster, rosterContext, rosterFacts } from './projectInput';
 import { projectSendSnapshot, type ProjectRoster, type ProjectRoom } from '@jarvis-command/contracts';
 import { createPortal } from 'react-dom';
-import { ArrowUp, ChevronRight, Command, Copy, FilePlus2, ImagePlus, X } from 'lucide-react';
+import { ArrowUp, ChevronRight, Command, Copy, FilePlus2, ImagePlus, Paperclip, X } from 'lucide-react';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { ArtifactMutationResponseSchema, InferenceOptionsResponseSchema, type InferenceOptionsResponse, type InferenceOverride, type LiveRunSubmissionRequest, type ReasoningEffort, type RunEvent } from '@jarvis-command/contracts';
 import { boundedJson, type DraftRecovery, type Turn } from './useLiveTurn';
@@ -332,6 +332,8 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
     return () => { preflight.current?.abort(); };
   }, [sessionId]);
   const imageInput = useRef<HTMLInputElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [fileError, setFileError] = useState('');
   const images = sessionId ? imagesBySession[sessionId] ?? [] : [];
   const setDraft = (value: string) => { if (sessionId) setRoomDraft(sessionId, value); };
   const handoff = (recovery: DraftRecovery, append: boolean) => {
@@ -432,6 +434,33 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
       setImageBusy(false);
       if (imageInput.current) imageInput.current.value = '';
     }
+  };
+  // One attach button for everything: images go to Jarvis as images, text files (code, logs, configs, CSV, JSON…)
+  // are added to the message as fenced blocks, within the message limit. Other files can't reach Hermes yet.
+  const attachFiles = async (files: FileList | File[] | null) => {
+    const list = Array.from(files ?? []);
+    if (fileInput.current) fileInput.current.value = '';
+    if (!list.length || !sessionId || !allowed) return;
+    setFileError('');
+    const pictures = list.filter(file => file.type.startsWith('image/'));
+    const others = list.filter(file => !file.type.startsWith('image/'));
+    if (pictures.length) {
+      if (imageAttachmentsEnabled) void attachImages(pictures);
+      else setFileError('Image attachments are not enabled on this server.');
+    }
+    let next = draft;
+    const skipped: string[] = [];
+    for (const file of others) {
+      if (file.size > 512 * 1024) { skipped.push(`${file.name} (too large)`); continue; }
+      const text = await file.text().catch(() => null);
+      if (text === null || text.includes('\u0000') || /^%PDF-/.test(text)) { skipped.push(`${file.name} (not a text file)`); continue; }
+      const fence = text.includes('```') ? '~~~~' : '```';
+      const block = `${next.trim() ? '\n\n' : ''}${file.name}:\n${fence}\n${text.replace(/\s+$/, '')}\n${fence}`;
+      if (next.length + block.length > max - 500) { skipped.push(`${file.name} (would exceed the ${max.toLocaleString('en-US')}-character message limit)`); continue; }
+      next += block;
+    }
+    if (next !== draft) setDraft(next);
+    if (skipped.length) setFileError(`Not attached: ${skipped.join(', ')}. Chat accepts images and text files for now.`);
   };
   const submit = async () => {
     const message = draft.trim() || (images.length ? 'Review the attached image.' : '');
@@ -550,9 +579,9 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
       <button type="button" onClick={() => handoff(item, true)}>Append to draft</button>
     </section>) : null}
     {allowed ? <form className="turn-composer" onSubmit={(event) => { event.preventDefault(); void (steerable ? queue() : submit()); }} onDragOver={(event) => {
-      if (!imageAttachmentsEnabled) return;
-      if (Array.from(event.dataTransfer.items).some(item => item.kind === 'file' && item.type.startsWith('image/'))) event.preventDefault();
-    }} onDrop={(event) => { if (!imageAttachmentsEnabled) return; const files = Array.from(event.dataTransfer.files); if (files.some(file => file.type.startsWith('image/'))) { event.preventDefault(); void attachImages(files); } }}>
+      if (steerable) return;
+      if (Array.from(event.dataTransfer.items).some(item => item.kind === 'file')) event.preventDefault();
+    }} onDrop={(event) => { if (steerable) return; const files = Array.from(event.dataTransfer.files); if (files.length) { event.preventDefault(); void attachFiles(files); } }}>
       {inferenceTarget ? createPortal(inferencePicker, inferenceTarget) : inferencePicker}
       {projectId && !steerable ? <details className="project-input-preview"><summary>{displayedProject ? 'Project context included' : 'Project context awaiting readback'}{(() => {
         // The character count only matters near the limit.
@@ -566,8 +595,10 @@ export function TurnComposer({ retainedDrafts, allowed, imageAttachmentsEnabled,
       {images.length ? <div className="chat-images" aria-label="Attached images">{images.map(image => <span key={`${image.artifactId}:${image.version}`}><ImagePlus size={14} />{image.name}<button type="button" disabled={busy || preflighting || imageBusy} aria-label={`Remove ${image.name}`} onClick={() => setImagesBySession(previous => ({ ...previous, [sessionId!]: (previous[sessionId!] ?? []).filter(item => item !== image) }))}><X size={13} /></button></span>)}</div> : null}
       {imageBusy ? <p role="status">Uploading image…</p> : null}
       {imageError ? <p role="alert">{imageError}</p> : null}
-      {imageAttachmentsEnabled ? <><input ref={imageInput} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-label="Attach images" onChange={event => { void attachImages(event.target.files); }} />
-      <button className="icon-button attach-image" type="button" disabled={busy || preflighting || imageBusy || images.length >= 4} aria-label="Attach image" title="Attach image" onClick={() => imageInput.current?.click()}><ImagePlus size={19} /></button></> : null}
+      {imageAttachmentsEnabled ? <input ref={imageInput} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple aria-label="Attach images" onChange={event => { void attachImages(event.target.files); }} /> : null}
+      {fileError ? <p role="alert">{fileError}</p> : null}
+      {steerable ? null : <><input ref={fileInput} className="visually-hidden" type="file" multiple aria-label="Attach files" onChange={event => { void attachFiles(event.target.files); }} />
+      <button className="icon-button attach-image" type="button" disabled={busy || preflighting || imageBusy} aria-label="Attach file" title="Attach images or text files" onClick={() => fileInput.current?.click()}><Paperclip size={19} /></button></>}
       {steerable ? <p className="steer-hint" role="status">Jarvis is working. Anything you send now steers this run.</p> : null}
       <textarea placeholder={steerable ? 'Steer Jarvis…' : 'Message Jarvis…'} aria-label="Message Jarvis" maxLength={steerable ? maxSteer : max} value={draft} disabled={steerable ? false : busy || preflighting} onPaste={(event) => {
         if (!imageAttachmentsEnabled) return;
