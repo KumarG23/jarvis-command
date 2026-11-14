@@ -61,4 +61,6 @@ it('starts Claude and Codex without permission prompts only when the host runs t
   expect(ADAPTERS.codex.argv({ shell: '/bin/bash', prompt: 'go', autonomous: true })).toEqual(['codex', '--dangerously-bypass-approvals-and-sandbox', 'go']);
   expect(ADAPTERS.codex.argv({ shell: '/bin/bash', resume: 'r1', autonomous: true })).toEqual(['codex', '--dangerously-bypass-approvals-and-sandbox', 'resume', 'r1']);
   expect(ADAPTERS.codex.argv({ shell: '/bin/bash', prompt: 'go' })).toEqual(['codex', 'go']);
+  expect(ADAPTERS.agy.argv({ shell: '/bin/bash', prompt: 'go', autonomous: true })).toEqual(['agy', '--dangerously-skip-permissions', '--prompt-interactive', 'go']);
+  expect(ADAPTERS.agy.argv({ shell: '/bin/bash', resume: 'conv-1', autonomous: true })).toEqual(['agy', '--dangerously-skip-permissions', '--conversation', 'conv-1']);
 });

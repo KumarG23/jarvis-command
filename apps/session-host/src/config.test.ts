@@ -7,9 +7,10 @@ it('binds MCP separately only when asked', () => {
   expect(loadSessionHostConfig({ ...base, SESSION_HOST_MCP_BIND: '10.0.0.18' })).toMatchObject({ bind: '127.0.0.1', mcpBind: '10.0.0.18' });
 });
 
-it('runs Claude and Codex autonomously by default, and an empty setting restores their prompts', () => {
-  expect([...loadSessionHostConfig(base).autonomous].sort()).toEqual(['claude', 'codex']);
+it('runs Claude, Codex and agy autonomously by default, and an empty setting restores their prompts', () => {
+  expect([...loadSessionHostConfig(base).autonomous].sort()).toEqual(['agy', 'claude', 'codex']);
   expect(loadSessionHostConfig({ ...base, SESSION_HOST_AUTONOMOUS: '' }).autonomous.size).toBe(0);
   expect([...loadSessionHostConfig({ ...base, SESSION_HOST_AUTONOMOUS: 'codex' }).autonomous]).toEqual(['codex']);
-  expect(() => loadSessionHostConfig({ ...base, SESSION_HOST_AUTONOMOUS: 'agy' })).toThrow(/claude and codex/);
+  expect(() => loadSessionHostConfig({ ...base, SESSION_HOST_AUTONOMOUS: 'gemini' })).toThrow(/claude, codex and agy/);
+  expect(() => loadSessionHostConfig({ ...base, SESSION_HOST_AUTONOMOUS: 'shell' })).toThrow(/claude, codex and agy/);
 });

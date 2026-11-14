@@ -21,9 +21,9 @@ const EnvironmentSchema = z.object({
   SESSION_HOST_SHELL: z.string().optional(),
   // Comma-separated kinds Neal has qualified on this host (e.g. "claude,codex").
   SESSION_HOST_QUALIFIED: z.string().default(''),
-  // Comma-separated kinds started without permission prompts (claude, codex). Neal runs his agents
+  // Comma-separated kinds started without permission prompts (claude, codex, agy). Neal runs his agents
   // unattended; set it empty to bring the CLIs' own prompts back.
-  SESSION_HOST_AUTONOMOUS: z.string().default('claude,codex'),
+  SESSION_HOST_AUTONOMOUS: z.string().default('claude,codex,agy'),
   SESSION_HOST_REFRESH_MS: z.coerce.number().int().min(250).max(60_000).default(2_000),
   SESSION_HOST_TRUST_PROXY: flag.default(false),
 });
@@ -68,7 +68,7 @@ export function loadSessionHostConfig(environment: NodeJS.ProcessEnv): SessionHo
   const autonomous = new Set<CockpitKind>();
   for (const item of parsed.SESSION_HOST_AUTONOMOUS.split(',').map(value => value.trim()).filter(Boolean)) {
     const kind = CockpitKindSchema.parse(item);
-    if (kind !== 'claude' && kind !== 'codex') throw new Error(`SESSION_HOST_AUTONOMOUS supports claude and codex, not ${kind}`);
+    if (kind !== 'claude' && kind !== 'codex' && kind !== 'agy') throw new Error(`SESSION_HOST_AUTONOMOUS supports claude, codex and agy, not ${kind}`);
     autonomous.add(kind);
   }
   return Object.freeze({

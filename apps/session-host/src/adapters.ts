@@ -135,7 +135,9 @@ export const ADAPTERS: Record<CockpitKind, AdapterDefinition> = {
   },
   agy: {
     kind: 'agy', label: 'Antigravity (agy)', binary: () => 'agy', billing: 'Google account (official Antigravity CLI)',
-    argv: ({ prompt, resume }) => ['agy', ...(resume ? ['--conversation', resume] : []), ...(prompt ? ['--prompt-interactive', prompt] : [])],
+    // --dangerously-skip-permissions per installed agy 1.5.8 --help on VM118 (2026-11-13).
+    argv: ({ prompt, resume, autonomous }) => ['agy', ...(autonomous ? ['--dangerously-skip-permissions'] : []),
+      ...(resume ? ['--conversation', resume] : []), ...(prompt ? ['--prompt-interactive', prompt] : [])],
     promptViaArgv: false, promptWhenReady: true, preflight: async (cwd, env) => await agyPreflight(cwd, env) ?? await agyCreditsPreflight(cwd, env),
     discoverNativeSessionId: agyDiscover,
     note: 'The conversation ID is recorded after the first turn when the session has its own worktree.',
