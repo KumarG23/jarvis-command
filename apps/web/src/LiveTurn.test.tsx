@@ -180,7 +180,7 @@ it.each(['headers', 'body'])('bounds admission through stalled %s and cleans lat
   const { result, unmount } = readyHook();
   act(() => result.current.send(session.id, 'exact original', 100));
   await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
-  expect(result.current.turn?.phase).toMatch(/Admission uncertain/);
+  expect(result.current.turn?.phase).toBe('Couldn’t confirm your message was sent');
   expect((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].signal?.aborted).toBe(true);
   if (stall === 'headers') await act(async () => { deliver(response); });
   expect(cancel).toHaveBeenCalledTimes(1);
@@ -811,7 +811,7 @@ it.each(['sessionId', 'clientRequestId', 'publicRunId', 'network'])('preserves a
   await open();
   fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Same intent' } });
   const button = screen.getByRole('button', { name: 'Send message' }); fireEvent.click(button); fireEvent.click(button);
-  const retry = await screen.findByRole('button', { name: 'Retry same intent' });
+  const retry = await screen.findByRole('button', { name: 'Try again' });
   expect(bodies).toHaveLength(1); expect(Source.instances).toHaveLength(0);
   fireEvent.click(retry); await waitFor(() => expect(Source.instances).toHaveLength(1));
   expect(bodies[1]).toEqual(bodies[0]);
@@ -1311,7 +1311,7 @@ it('keeps an ambiguous 503 routing failure as admission uncertain', async () => 
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'routing_unavailable', message: 'x' }), { status: 503 })));
   const { result, unmount } = readyHook();
   act(() => result.current.send(session.id, 'replayed text', 100));
-  await waitFor(() => expect(result.current.turn?.phase).toMatch(/Admission uncertain/));
+  await waitFor(() => expect(result.current.turn?.phase).toBe('Couldn’t confirm your message was sent'));
   expect(result.current.recoveries).toEqual([]);
   unmount();
 });

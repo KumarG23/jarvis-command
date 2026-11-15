@@ -1,4 +1,5 @@
 import { sourceLabel } from './chatTitle';
+import { visibleUserText } from './projectInput';
 import { useLatestMessageView } from './useLatestMessageView';
 import { formatMessageTime } from './formatTime';
 import { MessageReactions } from './MessageReactions';
@@ -165,7 +166,7 @@ export function LiveRoom({ session, onHistory, reactions, reactionsAvailable = f
       </div>
       <div className="event-body">
         <div className="event-label"><span>{message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Jarvis' : message.role}</span>{message.timestamp ? <time dateTime={message.timestamp} title={new Date(message.timestamp).toLocaleString()}>{formatMessageTime(message.timestamp)}</time> : null}</div>
-        {message.role === 'tool' ? <details className="saved-tool-disclosure"><summary>{message.toolName ?? 'Tool activity'}</summary><p>{message.content || 'No text was saved.'}</p></details> : <>{message.toolName ? <h2>{message.toolName}</h2> : null}{message.role === 'assistant' ? <MessageContent text={message.content || 'Assistant activity record — no text was saved.'} threadProjectId={threadProjectId} threadProjectSessionIds={threadProjectSessionIds} onThreadLink={onThreadLink} /> : <p>{message.content || 'No text was saved.'}</p>}</>}
+        {message.role === 'tool' ? <details className="saved-tool-disclosure"><summary>{message.toolName ?? 'Tool activity'}</summary><p>{message.content || 'No text was saved.'}</p></details> : <>{message.toolName ? <h2>{message.toolName}</h2> : null}{message.role === 'assistant' ? <MessageContent text={message.content || 'Assistant activity record — no text was saved.'} threadProjectId={threadProjectId} threadProjectSessionIds={threadProjectSessionIds} onThreadLink={onThreadLink} /> : <p>{visibleUserText(message.content) || 'No text was saved.'}</p>}</>}
         <div className="message-actions">
           {message.role === 'assistant' && message.content ? <CopyResponse text={message.content} limited={false} onSave={onSaveResponse ? () => onSaveResponse(message) : undefined} /> : null}
           {reactionsAvailable && reactions && reactionSessionWritable && message.sessionId === session.id && (message.role === 'user' || message.role === 'assistant') && !message.toolName && !message.displayKind && messageOffsets.current.has(message.id) ? <MessageReactions key={`${session.id}:${message.id}`} client={reactions} target={{ sessionId: session.id, messageId: message.id, offset: messageOffsets.current.get(message.id)! }} /> : null}

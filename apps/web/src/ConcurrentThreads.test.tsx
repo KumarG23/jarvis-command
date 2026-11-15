@@ -92,7 +92,7 @@ it('accepts reversed ACK/status responses only in their original thread and fail
 it('reloads two lost-ACK admissions using GET lookup and status only, without replaying either payload', async () => {
   const f = fixture(async () => { throw new Error('SYNTHETIC ACK loss'); });
   const view = render(<Harness />); await ready(); sendBoth();
-  await waitFor(() => expect(threads.get(a).turn?.phase).toContain('uncertain'));
+  await waitFor(() => expect(threads.get(a).turn?.phase).toContain('Couldn’t confirm'));
   expect(readThreadRecoveries().every(record => record.publicRunId === null)).toBe(true);
   view.unmount();
   f.fetcher.mockImplementation(async (url: string) => {
@@ -114,7 +114,7 @@ it('retries only the original captured intent explicitly while the other thread 
     return Response.json({ sessionId: body.sessionId, clientRequestId: body.clientRequestId, publicRunId: body.sessionId === a ? runA : runB, status: 'running', replayed: body.sessionId === a });
   });
   render(<Harness />); await ready(); sendBoth();
-  await waitFor(() => expect(threads.get(a).turn?.phase).toContain('uncertain'));
+  await waitFor(() => expect(threads.get(a).turn?.phase).toContain('Couldn’t confirm'));
   act(() => threads.get(a).retry());
   await waitFor(() => expect(threads.get(a).turn?.identityVerified).toBe(true));
   expect(f.posts.filter(post => post.body.sessionId === a).map(post => post.body)).toEqual([f.posts[0]!.body, f.posts[0]!.body]);
