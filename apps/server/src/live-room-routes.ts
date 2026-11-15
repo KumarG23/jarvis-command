@@ -89,6 +89,13 @@ async function* encodeEventStream(events: AsyncIterable<RunEvent>, controller: A
   }
 }
 
+// POST routes that only read or report state; they share a large budget of their own.
+const SIGNAL_ROUTES = new Set([
+  '/api/notifications/presence', '/api/notifications/read', '/api/notifications/reconcile', '/api/notifications/:notificationId/open',
+  '/api/live/reactions/read', '/api/live/routing-defaults/read', '/api/live/sessions/:sessionId/read',
+]);
+const RATE_LIMITS = { read: 240, signal: 600, write: 60 } as const;
+
 export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Dependencies, artifactStore?: ArtifactStore) {
   const rooms = dependencies.config.command ? new ProjectRoomStore(dirname(dependencies.config.command.auditLogPath)) : undefined;
   const sessionMutations = new KeyedSerialQueue();
@@ -121,10 +128,16 @@ export function registerLiveRoomRoutes(app: FastifyInstance, dependencies: Depen
       }
       const now = Date.now();
       for (const [key, rate] of rates) if (rate.reset <= now) rates.delete(key);
-      const key = `${subjects.get(request)}:${mutating ? 'write' : 'read'}`;
+      // Background POSTs (presence pings, read markers, reaction/default lookups) fire on their own
+      // timers and must never use up the budget for real writes such as sending a message.
+      const route = request.routeOptions.url ?? 'unknown';
+      const bucket = !mutating ? 'read' : SIGNAL_ROUTES.has(route) ? 'signal' : 'write';
+      const key = `${subjects.get(request)}:${bucket}`;
       const rate = rates.get(key) ?? { reset: now + 60_000, count: 0 };
-      if (rate.count >= (mutating ? 30 : 240) || (!rates.has(key) && rates.size >= 2048)) {
-        return reply.header('retry-after', '60').code(429).send({ error: 'rate_limited' });
+      if (rate.count >= RATE_LIMITS[bucket] || (!rates.has(key) && rates.size >= 2048)) {
+        // Route and bucket only: never the identity, body or query.
+        console.warn(JSON.stringify({ event: 'rate-limited', route, method: request.method, bucket }));
+        return reply.header('retry-after', String(Math.max(1, Math.ceil((rate.reset - now) / 1000)))).code(429).send({ error: 'rate_limited' });
       }
       rate.count++;
       rates.set(key, rate);
