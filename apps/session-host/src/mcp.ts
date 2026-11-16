@@ -26,10 +26,19 @@ const tool = <T extends z.ZodObject>(name: string, description: string, schema: 
   { name, description, schema, run: run as Tool['run'] }
 );
 
-const summary = (session: { id: string; title: string; kind: string; state: string; owner: string; branch: string | null; cwd: string; exitCode: number | null; failure: string | null; billing: string; stateAt: string }) => ({
+const summary = (session: { id: string; title: string; kind: string; state: string; owner: string; branch: string | null; cwd: string; exitCode: number | null; failure: string | null; billing: string; stateAt: string; standing?: boolean | undefined }) => ({
   id: session.id, title: session.title, kind: session.kind, state: session.state, owner: session.owner,
   branch: session.branch, cwd: session.cwd, exitCode: session.exitCode, failure: session.failure,
-  billing: session.billing, stateSince: session.stateAt,
+  billing: session.billing, stateSince: session.stateAt, standing: session.standing === true,
+});
+
+// Agent CLIs get one long-lived terminal per project (see open_agent). Shells keep one terminal per request.
+const AGENT_KINDS = new Set(['claude', 'codex', 'agy', 'gemini', 'opencode']);
+const agentKind = z.enum(['claude', 'codex', 'agy', 'gemini', 'opencode']);
+
+const opened = (result: Awaited<ReturnType<SessionManager['openAgent']>>) => ({
+  opened: result.opened, taskSent: result.delivered, ...(result.note ? { note: result.note } : {}), session: summary(result.session),
+  next: 'Follow progress with read_tail. Send the next task to this same terminal with open_agent or send_input. Leave it open when the task is done.',
 });
 
 export const TOOLS: Tool[] = [
@@ -37,13 +46,28 @@ export const TOOLS: Tool[] = [
     z.object({}).strict(), async manager => describeAdapters(manager.config.shell, manager.config.qualified, manager.env)),
   tool('list_sessions', 'List the cockpit sessions (threads) in a project with their state and who has input.',
     z.object({ projectId }).strict(), async (manager, args) => manager.list(args.projectId).map(summary)),
+  tool('open_agent',
+    'The way to give work to Claude Code (claude), Codex (codex) or Antigravity (agy) in a project. Each project keeps ONE long-lived terminal per agent CLI, so Neal can scroll back through everything that agent did. This opens it the first time, reuses it while it runs, and restarts it in place (earlier output kept above, same conversation where the CLI supports it) if it exited, crashed or was stopped. The task is typed into it as the next message. Never stop or close these terminals when a task is done; leave them open for the next task.',
+    z.object({
+      projectId, kind: agentKind, task: z.string().max(200_000).optional()
+        .describe('The message to send to the agent. Omit to just open the terminal.'),
+      repository: CockpitRepositorySchema.optional()
+        .describe('Only used the first time the terminal opens: clone (or use) this repository in the project folder and start the agent there.'),
+    }).strict(),
+    async (manager, args) => opened(await manager.openAgent({
+      projectId: args.projectId, kind: args.kind, task: args.task, repository: args.repository,
+    }, 'lead'))),
   tool('create_session',
-    'Start a new working session in the project: an official agent CLI (claude, codex, agy, gemini, opencode) or a shell, in its own git worktree when a repository is given. The task text is given to the agent as its first message. Reusing a requestId returns the same session instead of starting another. You get input ownership of sessions you start.',
+    'Start a shell in the project, in its own git worktree when a repository is given. For agent CLIs (claude, codex, agy, gemini, opencode) this sends the task to the project\'s long-lived terminal for that agent, exactly like open_agent, unless separate is true. Set separate only when Neal asks for an extra parallel terminal. Reusing a requestId returns the same session instead of starting another. You get input ownership of sessions you start.',
     z.object({
       projectId, requestId: CockpitRequestIdSchema, title: z.string().min(1).max(120), kind: CockpitKindSchema,
       repository: CockpitRepositorySchema.optional(), worktree: z.boolean().optional(), task: z.string().max(16_000).optional(),
+      separate: z.boolean().optional().describe('Open an additional terminal (own worktree when a repository is given) instead of the project\'s standing one. Only when Neal asks for parallel agents.'),
     }).strict(),
     async (manager, args) => {
+      if (AGENT_KINDS.has(args.kind) && !args.separate) {
+        return opened(await manager.openAgent({ projectId: args.projectId, kind: args.kind, task: args.task, repository: args.repository }, 'lead'));
+      }
       const { session, created } = await manager.create({
         projectId: args.projectId, requestId: args.requestId, title: args.title, kind: args.kind,
         ...(args.repository ? { repository: args.repository } : {}),
@@ -57,8 +81,8 @@ export const TOOLS: Tool[] = [
   tool('read_tail', 'Read the last lines of a session\'s terminal as plain text (escape codes removed, likely secrets masked). Use sparingly; prefer get_session and get_diff.',
     z.object({ projectId, sessionId, lines: z.number().int().min(1).max(400).optional() }).strict(),
     async (manager, args) => ({ text: await manager.tail(args.sessionId, args.projectId, args.lines ?? 60) })),
-  tool('send_input', 'Type text into a session you have input ownership of, then press Enter unless submit is false. Refused while Neal has input. Never answer login or payment prompts; tell Neal instead. Neal delegates routine work: you may answer a folder-trust or tool-permission prompt in a session you own when the task Neal asked for needs it.',
-    z.object({ projectId, sessionId, text: z.string().min(1).max(16_000), submit: z.boolean().optional() }).strict(),
+  tool('send_input', 'Type text into a session you have input ownership of, then press Enter unless submit is false. Text with line breaks is pasted as one message. Refused while Neal has input. Never answer login or payment prompts; tell Neal instead. Neal delegates routine work: you may answer a folder-trust or tool-permission prompt in a session you own when the task Neal asked for needs it.',
+    z.object({ projectId, sessionId, text: z.string().min(1).max(200_000), submit: z.boolean().optional() }).strict(),
     async (manager, args) => {
       await manager.input(args.sessionId, args.projectId, 'lead', args.text, args.submit ?? true);
       return { ok: true };
@@ -72,7 +96,7 @@ export const TOOLS: Tool[] = [
       await manager.interrupt(args.sessionId, args.projectId, 'lead');
       return { ok: true };
     }),
-  tool('stop_session', 'Stop a session you started and still control. Its worktree, branch and files are kept.',
+  tool('stop_session', 'Stop an extra session you started and still control. Its worktree, branch and files are kept. Refused for the project\'s long-lived agent terminals (standing: true): those stay open between tasks and only Neal closes them. To halt a running task use interrupt instead.',
     z.object({ projectId, sessionId }).strict(), async (manager, args) => summary(await manager.stopSession(args.sessionId, args.projectId, 'lead'))),
   tool('get_diff', 'Show the git status, diffstat and patch of a session\'s working tree against its HEAD.',
     z.object({ projectId, sessionId }).strict(), async (manager, args) => manager.diff(args.sessionId, args.projectId)),
@@ -96,7 +120,7 @@ function toolError(error: unknown) {
 }
 
 export function buildMcpApp(manager: SessionManager) {
-  const app = Fastify({ logger: false, bodyLimit: 64 * 1024 });
+  const app = Fastify({ logger: false, bodyLimit: 1024 * 1024 });
   const mcpKey = manager.config.mcpKey ?? '';
 
   app.addHook('onRequest', async (request, reply) => {
@@ -124,7 +148,8 @@ export function buildMcpApp(manager: SessionManager) {
           serverInfo: { name: 'jarvis-cockpit', version: '0.1.0' },
           instructions: 'Tools for the Jarvis Command project lead to run and supervise agent sessions on the execution host. '
             + 'You only have input on sessions you started or that Neal handed to you. Never answer login or payment prompts for Neal. '
-            + 'Folder-trust and tool-permission prompts in your own sessions you may answer when the work Neal asked for needs it.',
+            + 'Folder-trust and tool-permission prompts in your own sessions you may answer when the work Neal asked for needs it. '
+            + 'Give Claude Code, Codex and agy work through open_agent: each project has one long-lived terminal per agent that you reuse for every task and never close.',
         });
       }
       case 'ping':

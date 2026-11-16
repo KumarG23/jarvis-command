@@ -9,6 +9,7 @@ Status: slice 1, part 1. Built and tested in a sandbox with real tmux and bash. 
 - Each session is one tmux session on a private socket (`$SESSION_HOST_STATE_DIR/tmux.sock`), started from an argv array with no shell parsing. tmux keeps the agent alive when the browser, the BFF or this service restarts. After a host reboot, sessions show as `lost` and are never relaunched automatically.
 - `sessions.json` in the state dir records the project, request ID, kind, working directory, branch, native session ID and state of each session.
 - Viewers attach read-only (`tmux attach -r` in a node-pty). All typing goes through one input gate that enforces ownership: `human`, `lead` or `none`. Neal can always take over. The lead can type only into sessions it started or that Neal handed to it.
+- **Standing agent terminals.** Each project keeps one long-lived terminal per agent CLI (Claude Code, Codex, agy, Gemini CLI, OpenCode), marked `standing: true`. The lead's `open_agent` tool opens it on first use and sends every later task into the same terminal, so Neal can scroll back through everything that agent did. If the CLI exits, crashes or is stopped, the next task restarts it in place and prints its earlier output above a `--- reopened ---` divider (Claude Code resumes the same conversation). The host saves each standing terminal's plain text every 30 seconds to `$SESSION_HOST_STATE_DIR/transcripts/<project>/<kind>.txt`, so the history also survives a host reboot or Neal closing the tab. The lead can't stop these terminals; Neal can, and the host stops one that has been silent for `SESSION_HOST_IDLE_HOURS` (unless Neal holds its input).
 - When given a repository, coding sessions get their own `git worktree` on branch `cockpit/<session id>` under `$SESSION_HOST_WORKTREES_DIR/<project>/`. Existing checkouts, branches and dirty work are never touched or removed.
 - Provider API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY` and similar) and `SESSION_HOST_*` are removed from worker environments. A subscription CLI therefore can't quietly fall back to paid API billing, and a worker can't call this service as Neal. Claude Code and Codex launches are refused only if the CLI is logged in with an API key. A logged-out CLI shows its own official login flow in the terminal.
 
@@ -27,6 +28,7 @@ Status: slice 1, part 1. Built and tested in a sandbox with real tmux and bash. 
 | `SESSION_HOST_PROJECTS_DIR` | `~/projects` | Per-project dirs and clones. |
 | `SESSION_HOST_WORKTREES_DIR` | `~/worktrees` | Per-session worktrees. |
 | `SESSION_HOST_SHELL` | `$SHELL` or `/bin/bash` | Shell for `shell` sessions. |
+| `SESSION_HOST_IDLE_HOURS` | `24` | Stop a standing agent terminal after this many hours with no output. Its text is kept and shown when it reopens. `0` never stops them. |
 | `SESSION_HOST_QUALIFIED` | empty | Comma-separated kinds Neal has tested on this host, e.g. `claude,codex`. Unqualified kinds still launch; they're just labeled unqualified. |
 
 Generate keys with `openssl rand -hex 32`.
@@ -64,7 +66,9 @@ Contracts live in `packages/contracts/src/cockpit.ts`.
 
 ## MCP (lead listener, `Authorization: Bearer $SESSION_HOST_MCP_KEY`)
 
-This is Streamable HTTP at `POST /mcp` with JSON responses. The tools are: `list_adapters`, `list_sessions`, `create_session`, `get_session`, `read_tail`, `send_input`, `take_input`, `release_input`, `interrupt`, `stop_session`, `get_diff` and `run_check`. Every call acts as the lead.
+This is Streamable HTTP at `POST /mcp` with JSON responses. The tools are: `list_adapters`, `list_sessions`, `open_agent`, `create_session`, `get_session`, `read_tail`, `send_input`, `take_input`, `release_input`, `interrupt`, `stop_session`, `get_diff` and `run_check`. Every call acts as the lead.
+
+`open_agent` is how the lead gives an agent CLI work: it reuses the project's standing terminal for that agent. `create_session` with an agent kind does the same unless `separate: true` is passed, which Neal has to ask for (parallel agents in their own worktrees). Text with line breaks or over 1,000 characters is sent as a bracketed paste, so a multi-line task arrives as one message.
 
 ## Tests
 

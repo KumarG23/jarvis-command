@@ -16,6 +16,8 @@ export function projectInstructions(room: ProjectRoom, sessionId: string, termin
     `Project: ${room.name}`,
     // Server-derived from the saved room, never from the browser. The cockpit tools need it exactly.
     `Cockpit projectId: ${room.id} (pass exactly this as projectId to the cockpit tools so terminals appear in this project's Terminals panel; never use a chat, thread or session ID, or an ID taken from a chat title)`,
+    // Static on purpose (prompt cache). Neal wants one visible, long-lived terminal per agent per project.
+    'Agent terminals: this project keeps one long-lived terminal per agent CLI (Claude Code, Codex, agy). Give them work with the open_agent cockpit tool, which reuses that terminal for every task so Neal can scroll back through its whole history. Do not open a new terminal per task, and do not stop or close one when a task is done.',
     `Goal: ${room.goal}`,
     ...(room.repository ? [`Repository: ${room.repository}`] : []),
     ...(room.instructions?.trim() ? ['Project instructions:', room.instructions.trim()] : []),

@@ -1,9 +1,10 @@
 import { randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import * as pty from 'node-pty';
 import type {
-  CockpitActor, CockpitOwner, CockpitSession, CockpitSessionCreate, CockpitState,
+  CockpitActor, CockpitKind, CockpitOwner, CockpitSession, CockpitSessionCreate, CockpitState,
 } from '@jarvis-command/contracts';
 import { ADAPTERS } from './adapters';
 import type { SessionHostConfig } from './config';
@@ -20,6 +21,29 @@ export class ConflictError extends Error {
 const LIVE: ReadonlySet<CockpitState> = new Set(['connecting', 'running', 'waiting_for_input', 'unknown']);
 const now = () => new Date().toISOString();
 
+// How much of a standing terminal's text is kept on disk, and how often it is refreshed.
+const TRANSCRIPT_LINES = 3_000;
+const SNAPSHOT_EVERY_MS = 30_000;
+
+export type AgentOpenResult = {
+  session: CockpitSession;
+  // existing: it was already running. started: first terminal for this agent in the project.
+  // reopened: it had stopped, exited or crashed, and was started again with its earlier output above.
+  opened: 'existing' | 'started' | 'reopened';
+  delivered: boolean;
+  note: string | null;
+};
+
+// Claude Code keeps each conversation as ~/.claude/projects/<dir>/<session id>.jsonl. Resuming an id
+// it never saved makes the CLI exit, so resume only when the file is there.
+function claudeConversationExists(env: NodeJS.ProcessEnv, id: string) {
+  if (!env.HOME) return false;
+  const root = join(env.HOME, '.claude', 'projects');
+  try {
+    return readdirSync(root).some(dir => existsSync(join(root, dir, `${id}.jsonl`)));
+  } catch { return false; }
+}
+
 export class SessionManager extends EventEmitter {
   readonly registry: Registry;
   readonly tmux: Tmux;
@@ -27,6 +51,7 @@ export class SessionManager extends EventEmitter {
   private chain: Promise<unknown> = Promise.resolve();
   private readonly inputChains = new Map<string, Promise<unknown>>();
   private timer: NodeJS.Timeout | null = null;
+  private readonly snapshots = new Map<string, { at: number; text: string }>();
 
   constructor(readonly config: SessionHostConfig, env: NodeJS.ProcessEnv = process.env) {
     super();
@@ -84,8 +109,44 @@ export class SessionManager extends EventEmitter {
       } else if (session.state === 'unknown' || session.pid !== pane.pid) {
         this.update(session, { state: 'running', pid: pane.pid });
       }
+      if (session.standing && pane) await this.standingUpkeep(session, pane.dead, pane.activity);
     }
     await this.discoverNativeIds();
+  }
+
+  // Keeps a copy of each standing terminal's text on disk, so its history survives a crash, a host
+  // reboot or Neal closing the tab, and stops one that has been quiet for longer than the idle limit.
+  private async standingUpkeep(session: CockpitSession, dead: boolean, activity: number | null) {
+    const last = this.snapshots.get(session.id);
+    if (!last || Date.now() - last.at >= SNAPSHOT_EVERY_MS) await this.snapshot(session);
+    const idleMs = this.config.idleStopMs;
+    if (dead || !idleMs || activity === null || session.owner === 'human') return;
+    if (Date.now() - activity * 1_000 < idleMs) return;
+    const current = this.registry.get(session.id);
+    if (!current || !LIVE.has(current.state)) return;
+    await this.snapshot(current, true);
+    await this.tmux.kill(current.id).catch(() => undefined);
+    this.update(current, { state: 'stopped', pid: null });
+  }
+
+  transcriptPath(projectId: string, kind: CockpitKind) {
+    return join(this.config.stateDir, 'transcripts', projectId, `${kind}.txt`);
+  }
+
+  // Saves the terminal's plain text (no colours) for the project's standing terminal of that agent.
+  private async snapshot(session: CockpitSession, force = false) {
+    const raw = await this.tmux.capture(session.id, TRANSCRIPT_LINES).catch(() => null);
+    const stamp = Date.now();
+    if (raw === null) return;
+    const lines = raw.split('\n').map(line => line.trimEnd());
+    while (lines.length && !lines.at(-1)) lines.pop();
+    const text = lines.join('\n');
+    const last = this.snapshots.get(session.id);
+    this.snapshots.set(session.id, { at: stamp, text });
+    if (!text.trim() || (!force && last?.text === text)) return;
+    const path = this.transcriptPath(session.projectId, session.kind);
+    mkdirSync(join(this.config.stateDir, 'transcripts', session.projectId), { recursive: true, mode: 0o700 });
+    writeFileSync(path, `${text}\n`, { mode: 0o600 });
   }
 
   // Records a CLI-chosen native id (agy's conversation) once the CLI has written it.
@@ -166,24 +227,123 @@ export class SessionManager extends EventEmitter {
 
   // Waits until the TUI has drawn something and stopped changing (or 30s pass), then types the
   // first message as its creator. Skips it if someone else took input in the meantime.
-  private async typeWhenReady(id: string, text: string, settleMs = 1_200, limitMs = 30_000) {
+  private async typeWhenReady(id: string, text: string) {
     const creator = this.registry.get(id)?.owner;
-    const started = Date.now();
-    let last = '', stableSince = Date.now();
     try {
-      while (Date.now() - started < limitMs) {
-        await new Promise(resolve => setTimeout(resolve, 300));
-        const session = this.registry.get(id);
-        if (!session || !LIVE.has(session.state) || session.owner !== creator) return;
-        const screen = (await this.tmux.capture(id, 0)).trim();
-        if (screen !== last) { last = screen; stableSince = Date.now(); continue; }
-        if (screen && Date.now() - stableSince >= settleMs) break;
-      }
-      const session = this.registry.get(id);
-      if (!session || !LIVE.has(session.state) || session.owner !== creator) return;
+      if (!await this.settled(id, creator)) return;
       await this.tmux.sendBytes(id, text);
       await this.tmux.sendKey(id, 'Enter');
     } catch { /* the session ended; nothing to type into */ }
+  }
+
+  // Waits until the screen has drawn something and stopped changing (or the limit passes).
+  // False when the session ended or its input owner changed meanwhile.
+  private async settled(id: string, owner: CockpitOwner | undefined, settleMs = 1_200, limitMs = 30_000) {
+    const started = Date.now();
+    let last = '', stableSince = Date.now();
+    while (Date.now() - started < limitMs) {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      const session = this.registry.get(id);
+      if (!session || !LIVE.has(session.state) || session.owner !== owner) return false;
+      const screen = (await this.tmux.capture(id, 0)).trim();
+      if (screen !== last) { last = screen; stableSince = Date.now(); continue; }
+      if (screen && Date.now() - stableSince >= settleMs) break;
+    }
+    const session = this.registry.get(id);
+    return Boolean(session && LIVE.has(session.state) && session.owner === owner);
+  }
+
+  private standingFor(projectId: string, kind: CockpitKind) {
+    return this.registry.all()
+      .filter(session => session.projectId === projectId && session.kind === kind && session.standing)
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+  }
+
+  // The project's one long-lived terminal for an agent CLI. Opens it the first time, reuses it while
+  // it runs, and starts it again (with its earlier output shown above) after it stopped or crashed.
+  // A task is pasted into it as the next message.
+  async openAgent(input: { projectId: string; kind: CockpitKind; task?: string | undefined; repository?: string | undefined; cols?: number | undefined; rows?: number | undefined }, actor: CockpitActor): Promise<AgentOpenResult> {
+    const { session: opened, opened: how } = await this.serial(async () => {
+      const existing = this.standingFor(input.projectId, input.kind);
+      if (existing && LIVE.has(existing.state)) return { session: existing, opened: 'existing' as const };
+      if (existing) return { session: await this.launchStanding(existing, input.cols, input.rows), opened: 'reopened' as const };
+      const stamp = now();
+      const adapter = ADAPTERS[input.kind];
+      const id = `cs_${randomBytes(12).toString('hex')}`;
+      let session = this.registry.put({
+        id, requestId: `agent-${input.kind}-${randomBytes(6).toString('hex')}`, projectId: input.projectId, title: adapter.label,
+        kind: input.kind, createdBy: actor, owner: actor, state: 'connecting', host: this.config.hostName, cwd: this.config.projectsDir,
+        repository: input.repository ?? null, branch: null, worktree: false, nativeSessionId: null, pid: null,
+        exitCode: null, failure: null, billing: adapter.billing, standing: true, createdAt: stamp, updatedAt: stamp, stateAt: stamp,
+      });
+      this.emit('session', session);
+      try {
+        const workspace = await prepareWorkspace({
+          projectsDir: this.config.projectsDir, worktreesDir: this.config.worktreesDir,
+          projectId: input.projectId, sessionId: id, repository: input.repository, worktree: false, env: this.env,
+        });
+        session = this.update(session, { cwd: workspace.cwd, branch: workspace.branch });
+      } catch (error) {
+        const failure = error instanceof Error ? error.message : 'Launch failed';
+        return { session: this.update(session, { state: 'failed', failure: failure.slice(0, 500) }), opened: 'started' as const };
+      }
+      return { session: await this.launchStanding(session, input.cols, input.rows), opened: 'started' as const };
+    });
+
+    let session = opened;
+    const result = (delivered: boolean, note: string | null): AgentOpenResult => ({ session: this.registry.get(session.id) ?? session, opened: how, delivered, note });
+    if (!LIVE.has(session.state)) return result(false, session.failure ?? `The terminal is ${session.state}.`);
+    if (!input.task) return result(false, null);
+    if (session.owner === 'none' && actor === 'lead') session = this.ownership(session.id, session.projectId, 'lead', 'take');
+    if (session.owner !== actor) {
+      return result(false, actor === 'lead' ? 'Neal has input on this terminal, so the task was not sent. Ask him to hand it back, or wait.' : 'The lead has input on this terminal. Take over to type.');
+    }
+    if (how !== 'existing' && !await this.settled(session.id, actor).catch(() => false)) {
+      return result(false, 'The terminal ended or changed hands before it was ready, so the task was not sent.');
+    }
+    await this.input(session.id, session.projectId, actor, input.task, true);
+    return result(true, null);
+  }
+
+  // (Re)starts a standing terminal's process: in its old pane when that is still there (the CLI exited),
+  // otherwise in a new one. Either way it first prints the saved text of the earlier run.
+  private async launchStanding(stale: CockpitSession, cols = 120, rows = 32) {
+    let session = this.registry.get(stale.id) ?? stale;
+    const adapter = ADAPTERS[session.kind];
+    try {
+      const refusal = adapter.preflight ? await adapter.preflight(session.cwd, this.env) : null;
+      if (refusal) return this.update(session, { state: 'failed', failure: refusal, pid: null });
+      const previous = session.nativeSessionId;
+      const resume = previous && (session.kind !== 'claude' || claudeConversationExists(this.env, previous)) ? previous : undefined;
+      const nativeSessionId = resume ?? adapter.assignNativeSessionId?.() ?? null;
+      const argv = adapter.argv({
+        shell: this.config.shell, resume, nativeSessionId: resume ? undefined : nativeSessionId ?? undefined,
+        autonomous: this.config.autonomous.has(session.kind),
+      });
+      const pane = (await this.tmux.panes())?.get(session.id);
+      // Respawning a pane clears its scrollback, so save the finished run's text first.
+      if (pane) await this.snapshot(session, true);
+      const transcript = this.transcriptPath(session.projectId, session.kind);
+      const reopening = existsSync(transcript);
+      const banner = reopening ? `--- ${adapter.label} reopened ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC${resume ? ', same conversation' : ''} ---` : '';
+      // Prints the earlier output and a divider, then runs the CLI.
+      const wrapped = reopening
+        ? ['/bin/sh', '-c', 'cat "$1" 2>/dev/null; printf "\\n%s\\n\\n" "$2"; shift 2; exec "$@"', 'cockpit', transcript, banner, ...argv]
+        : argv;
+      const env = { COCKPIT_SESSION_ID: session.id, COCKPIT_PROJECT_ID: session.projectId };
+      if (pane) await this.tmux.respawn(session.id, { cwd: session.cwd, argv: wrapped, env });
+      else await this.tmux.newSession(session.id, { cwd: session.cwd, argv: wrapped, cols, rows, env });
+      const live = (await this.tmux.panes())?.get(session.id);
+      session = this.update(session, {
+        state: live && !live.dead ? 'running' : live?.dead ? 'exited' : 'unknown',
+        pid: live && !live.dead ? live.pid : null, exitCode: live?.dead ? live.status : null, failure: null, nativeSessionId,
+      });
+      this.snapshots.set(session.id, { at: Date.now(), text: '' });
+      return session;
+    } catch (error) {
+      const failure = error instanceof Error ? error.message : 'Launch failed';
+      return this.update(session, { state: 'failed', failure: failure.slice(0, 500), pid: null });
+    }
   }
 
   private requireLive(session: CockpitSession) {
@@ -206,7 +366,13 @@ export class SessionManager extends EventEmitter {
     const next = previous.then(async () => {
       // Re-check ownership at write time so a takeover wins over queued lead input.
       if (this.registry.get(id)?.owner !== actor) throw new ConflictError('Input ownership changed', 'not_owner');
-      await this.tmux.sendBytes(id, data);
+      if (data.includes('\n') || data.length > 1_000) {
+        await this.tmux.paste(id, data);
+        // Give the CLI a moment to take in the paste before Enter submits it.
+        if (submit) await new Promise(resolve => setTimeout(resolve, 250));
+      } else {
+        await this.tmux.sendBytes(id, data);
+      }
       if (submit) await this.tmux.sendKey(id, 'Enter');
     });
     this.inputChains.set(id, next.catch(() => undefined));
@@ -244,6 +410,10 @@ export class SessionManager extends EventEmitter {
     if (actor === 'lead' && (session.owner !== 'lead' || session.createdBy !== 'lead')) {
       throw new ConflictError('The lead can only stop sessions it started and still controls', 'not_owner', session.owner);
     }
+    if (actor === 'lead' && session.standing) {
+      throw new ConflictError(`This is the project's ${session.title} terminal. It stays open between tasks so Neal can see its history; only Neal closes it. Send the next task to it instead.`, 'standing');
+    }
+    if (session.standing) await this.snapshot(session, true);
     await this.tmux.kill(id);
     return this.update(session, { state: 'stopped', pid: null });
   }
@@ -252,8 +422,10 @@ export class SessionManager extends EventEmitter {
   // The worktree (and any commits in it) stays on disk.
   async closeSession(id: string, projectId: string) {
     const session = this.get(id, projectId);
+    if (session.standing) await this.snapshot(session, true);
     await this.tmux.kill(id).catch(() => undefined);
     this.registry.remove(session.id);
+    this.snapshots.delete(session.id);
     return { id: session.id };
   }
 
