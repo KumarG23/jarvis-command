@@ -101,7 +101,8 @@ it('reloads two opaque records outside recents read-only and opens the retained 
 it.each(['denied', 'foreign', 'external', 'membership', 'archived-thread', 'archived-project', 'away-back', 'newer-navigation'] as const)('refuses adverse retained read %s without losing drafts or identities', async mode => {
   const f = fixture({ ...room, sessionIds: [a!.id], threads: [room.threads![0]!] });
   recoverBoth();
-  render(<App loadBootstrap={async () => bootstrap} />);
+  // Away-back needs a plain chat outside any project to step away to.
+  render(<App loadBootstrap={async () => mode === 'away-back' ? { ...bootstrap, sessions: [a!, c!] } : bootstrap} />);
   fireEvent.change(await primary(), { target: { value: 'SYNTHETIC unchanged draft A' } });
   await waitFor(() => expect(readThreadRecoveries().every(record => !!record.publicRunId)).toBe(true));
   const before = sessionStorage.getItem(threadRecoveryKey);
@@ -118,7 +119,7 @@ it.each(['denied', 'foreign', 'external', 'membership', 'archived-thread', 'arch
     await act(async () => { f.readbacks.resolve(a!.id, Response.json({ session: a })); });
   }
   if (mode === 'away-back') {
-    fireEvent.click(screen.getByRole('button', { name: a!.title }));
+    fireEvent.click(screen.getByRole('button', { name: c!.title }));
     await waitFor(() => expect(screen.queryByLabelText('Selected project')).toBeNull());
     fireEvent.click(screen.getByRole('button', { name: room.name }));
     await waitFor(() => expect(f.readbacks.pending(a!.id)).toBe(1));
@@ -162,9 +163,10 @@ it('opens an unscoped retained session with unknown latest state from its retain
   expect(screen.queryByRole('button', { name: 'View active chat' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: `Supervise ${b!.id}` }));
   await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(b!.title));
-  expect(screen.queryByLabelText('Selected project')).toBeNull();
+  // B belongs to another project, so it opens in that project's view rather than the selected one.
+  expect(screen.getByLabelText('Selected project')).toHaveTextContent(otherRoom.name);
   expect(f.fetcher.mock.calls.some(([url]) => url === `/api/live/sessions/${b!.id}`)).toBe(true);
-  fireEvent.click(screen.getByRole('button', { name: a!.title }));
+  fireEvent.click(screen.getByRole('button', { name: room.name }));
   expect(await primary()).toHaveValue('SYNTHETIC preserved unscoped draft A');
   expect(readThreadRecoveries()).toHaveLength(2);
   expect(f.posts).toHaveLength(0);

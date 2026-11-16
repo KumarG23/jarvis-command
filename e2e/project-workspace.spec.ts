@@ -126,8 +126,8 @@ for (const width of [1280, 320, 360, 390, 430]) test(`SYNTHETIC project workspac
   expect(admissions[0]).not.toHaveProperty('projectId');
   room = { ...room, instructions: 'SYNTHETIC changed after admission' };
   await page.reload();
-  await expect(page.getByText(/Original project: room_/)).toContainText(pid);
-  await expect(page.getByText('Original message unavailable after reload; no message was retransmitted.')).toBeVisible();
+  await expect(page.getByText(/Project: room_/)).toContainText(pid);
+  await expect(page.getByText(/Reconnected after reload/)).toBeVisible();
   expect(admissions).toHaveLength(2);
   expect(creates).toBe(1); expect(errors).toEqual([]); expect(unexpected).toEqual([]);
 });

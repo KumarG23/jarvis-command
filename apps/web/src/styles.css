@@ -832,3 +832,8 @@ h1, h2, h3, h4, p { overflow-wrap: anywhere; }
 .other-sessions > summary span { margin-left: auto; padding: 1px 7px; border-radius: 999px; background: var(--surface); font-size: 11px; }
 .other-sessions > summary:hover { color: var(--muted); }
 .other-sessions-hint { margin: 0 12px 6px; color: var(--subtle); font-size: 11px; line-height: 1.5; }
+
+/* A quiet note on a run picked back up after a page reload. */
+.recovery-note { margin: 4px 0 8px; color: var(--subtle); font-size: 13px; }
+.recovery-note summary { cursor: pointer; }
+.recovery-note p { margin: 4px 0; overflow-wrap: anywhere; }
