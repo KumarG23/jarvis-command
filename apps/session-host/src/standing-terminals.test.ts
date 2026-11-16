@@ -30,6 +30,34 @@ while IFS= read -r line; do
 done
 `;
 
+// A stand-in for Codex's composer: like the real TUI, an Enter that arrives within 50ms of other
+// input counts as part of a paste burst and becomes a newline instead of submitting.
+const BURSTY_CODEX = `#!/usr/bin/env python3
+import os, sys, time, tty
+if len(sys.argv) > 1 and sys.argv[1] == 'login':
+    print('Logged in using ChatGPT'); sys.exit(0)
+tty.setraw(0)
+def out(text):
+    os.write(1, text.encode())
+out('\\x1b[?2004hCODEX READY\\r\\n> ')
+buf, last, paste = '', 0.0, False
+while True:
+    data = os.read(0, 4096).decode(errors='replace')
+    if not data: break
+    now = time.monotonic()
+    while data:
+        if data.startswith('\\x1b[200~'): paste, data = True, data[6:]; continue
+        if data.startswith('\\x1b[201~'): paste, data = False, data[6:]; continue
+        ch, data = data[0], data[1:]
+        if ch == '\\r' and not paste and now - last >= 0.05:
+            out('\\r\\nsubmitted:' + buf.replace('\\n', '|') + '\\r\\n> '); buf = ''
+        else:
+            buf += '\\n' if ch in '\\r\\n' else ch
+            out(ch if ch not in '\\r\\n' else '\\r\\n  ')
+        last = now
+`;
+const hasPython = spawnSync('python3', ['-V']).status === 0;
+
 describe.skipIf(!hasTmux)('standing agent terminals (real tmux)', () => {
   let root: string;
   let manager: SessionManager;
@@ -128,6 +156,18 @@ describe.skipIf(!hasTmux)('standing agent terminals (real tmux)', () => {
     text = await tailHas(fresh.session.id, 'codex got:after-close');
     expect(text).toContain('codex got:after-exit');
   }, 40_000);
+
+  it.skipIf(!hasPython)('submits a task to a Codex-style composer with one call, no extra Enter needed', async () => {
+    await start();
+    writeFileSync(join(root, 'bin', 'codex'), BURSTY_CODEX, { mode: 0o755 });
+    const first = (await call('open_agent', { projectId: 'proj1', kind: 'codex', task: 'short task' })).json();
+    expect(first.taskSent).toBe(true);
+    await tailHas(first.session.id, 'submitted:short task');
+    await call('send_input', { projectId: 'proj1', sessionId: first.session.id, text: 'second task' });
+    await tailHas(first.session.id, 'submitted:second task');
+    await call('open_agent', { projectId: 'proj1', kind: 'codex', task: 'line one\nline two' });
+    await tailHas(first.session.id, 'submitted:line one|line two');
+  }, 30_000);
 
   it('does not type over Neal while he has input', async () => {
     await start();

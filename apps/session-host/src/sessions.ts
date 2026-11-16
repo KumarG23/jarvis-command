@@ -20,6 +20,7 @@ export class ConflictError extends Error {
 
 const LIVE: ReadonlySet<CockpitState> = new Set(['connecting', 'running', 'waiting_for_input', 'unknown']);
 const now = () => new Date().toISOString();
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // How much of a standing terminal's text is kept on disk, and how often it is refreshed.
 const TRANSCRIPT_LINES = 3_000;
@@ -52,6 +53,8 @@ export class SessionManager extends EventEmitter {
   private readonly inputChains = new Map<string, Promise<unknown>>();
   private timer: NodeJS.Timeout | null = null;
   private readonly snapshots = new Map<string, { at: number; text: string }>();
+  // Pause between pasting a message into an agent CLI and pressing Enter.
+  submitDelayMs = 600;
 
   constructor(readonly config: SessionHostConfig, env: NodeJS.ProcessEnv = process.env) {
     super();
@@ -214,8 +217,7 @@ export class SessionManager extends EventEmitter {
         if (input.initialInput && adapter.promptWhenReady) {
           void this.typeWhenReady(id, input.initialInput);
         } else if (input.initialInput && !adapter.promptViaArgv) {
-          await this.tmux.sendBytes(id, input.initialInput);
-          await this.tmux.sendKey(id, 'Enter');
+          await this.typeMessage(id, input.kind, input.initialInput, true);
         }
         return { session, created: true };
       } catch (error) {
@@ -231,9 +233,37 @@ export class SessionManager extends EventEmitter {
     const creator = this.registry.get(id)?.owner;
     try {
       if (!await this.settled(id, creator)) return;
-      await this.tmux.sendBytes(id, text);
-      await this.tmux.sendKey(id, 'Enter');
+      const kind = this.registry.get(id)?.kind ?? 'shell';
+      await this.typeMessage(id, kind, text, true);
     } catch { /* the session ended; nothing to type into */ }
+  }
+
+  // Agent TUIs (Codex in particular) treat a fast burst of keystrokes followed straight away by
+  // Enter as a paste and put a newline in the composer instead of submitting. So a message to an
+  // agent goes in as one bracketed paste, Enter follows after a pause, and if the text still sits
+  // in the composer a moment later, Enter is pressed once more (an Enter on an empty composer is a no-op).
+  private async typeMessage(id: string, kind: CockpitKind, text: string, submit: boolean) {
+    const agent = kind !== 'shell';
+    const pasted = agent || text.includes('\n') || text.length > 1_000;
+    if (pasted) await this.tmux.paste(id, text);
+    else await this.tmux.sendBytes(id, text);
+    if (!submit) return;
+    if (pasted) await sleep(agent ? this.submitDelayMs : 250);
+    await this.tmux.sendKey(id, 'Enter');
+    if (!agent) return;
+    await sleep(this.submitDelayMs * 2);
+    if (await this.stillInComposer(id, text)) await this.tmux.sendKey(id, 'Enter');
+  }
+
+  // True when the end of the text still shows on the last few lines of the screen, where the
+  // agent's composer is, meaning the Enter was taken as a newline rather than a submit.
+  private async stillInComposer(id: string, text: string) {
+    const lastLine = text.trim().split('\n').at(-1)?.trim() ?? '';
+    const needle = lastLine.slice(-24);
+    if (!needle) return false;
+    const screen = await this.tmux.capture(id, 0).catch(() => '');
+    // The composer sits at the bottom, under at most a couple of footer lines.
+    return stripControl(screen).split('\n').map(line => line.trim()).filter(Boolean).slice(-4).some(line => line.includes(needle));
   }
 
   // Waits until the screen has drawn something and stopped changing (or the limit passes).
@@ -366,14 +396,7 @@ export class SessionManager extends EventEmitter {
     const next = previous.then(async () => {
       // Re-check ownership at write time so a takeover wins over queued lead input.
       if (this.registry.get(id)?.owner !== actor) throw new ConflictError('Input ownership changed', 'not_owner');
-      if (data.includes('\n') || data.length > 1_000) {
-        await this.tmux.paste(id, data);
-        // Give the CLI a moment to take in the paste before Enter submits it.
-        if (submit) await new Promise(resolve => setTimeout(resolve, 250));
-      } else {
-        await this.tmux.sendBytes(id, data);
-      }
-      if (submit) await this.tmux.sendKey(id, 'Enter');
+      await this.typeMessage(id, session.kind, data, submit);
     });
     this.inputChains.set(id, next.catch(() => undefined));
     await next;
