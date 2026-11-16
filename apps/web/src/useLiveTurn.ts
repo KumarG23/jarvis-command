@@ -11,6 +11,19 @@ const MAX_UNCONFIRMED_TURNS = 8;
 export class RoutingRefusedResponseError extends Error {
   constructor(message: string) { super(message); this.name = 'RoutingRefusedResponseError'; }
 }
+// A non-OK answer from Command. 409 means the chat is still busy (usually the last reply is
+// finishing); nothing was recorded for this message, so retrying the same intent is safe.
+export class AdmissionStatusError extends Error {
+  constructor(public readonly status: number) { super('response'); this.name = 'AdmissionStatusError'; }
+}
+/** Shown when automatic retries could not confirm a send. The Retry button keys off this exact text. */
+export const UNCONFIRMED_PHASE = 'Couldn’t confirm your message was sent';
+export const BUSY_PHASE = 'Waiting for Jarvis to finish the last reply…';
+export const RESENDING_PHASE = 'Still sending…';
+// Automatic same-intent retries after a lost or busy admission (about 1.5 minutes in all).
+// The server replays an admitted intent instead of starting it twice, so these are safe.
+let admissionRetryDelays: readonly number[] = [1_500, 3_000, 5_000, 8_000, 12_000, 20_000, 30_000];
+export function setAdmissionRetryDelays(delays: readonly number[]) { admissionRetryDelays = delays; }
 const REFUSED_FALLBACK = 'Command refused this model, effort or project for this message. Nothing was sent; pick an eligible model and send again.';
 // Own the reader: transport cancellation must not depend on cooperative JSON parsing.
 export async function boundedJson(url: string, init: RequestInit, controller: AbortController): Promise<unknown> {
@@ -32,7 +45,9 @@ export async function boundedJson(url: string, init: RequestInit, controller: Ab
       const response = await fetch(url, { ...init, signal: controller.signal });
       if (controller.signal.aborted) { void response.body?.cancel().catch(() => {}); throw new Error('late response'); }
       reader = response.body?.getReader();
-      if ((!response.ok && response.status !== 422) || response.redirected || !reader) throw new Error('response');
+      if (response.redirected) throw new Error('response');
+      if (!response.ok && response.status !== 422) throw new AdmissionStatusError(response.status);
+      if (!reader) throw new Error('response');
       const decoder = new TextDecoder();
       let text = '';
       let bytes = 0;
@@ -112,6 +127,7 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
   const current = useRef<Turn | null>(null);
   const alive = useRef(true);
   const cleanup = useRef(() => {});
+  const autoRetries = useRef(new WeakMap<TurnIntent, number>());
   const checkStatus = useRef<((preserve: boolean) => boolean) | null>(null);
   const mutation = useRef<AbortController | null>(null);
   const admissionAge = useRef({ wall: 0, monotonic: 0, elapsed: 0 });
@@ -396,7 +412,25 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
       supervise(current.current!);
     } catch (error) {
       if (cancelled || !alive.current || current.current?.intent !== intent) return;
-      if (!(error instanceof RoutingRefusedResponseError)) { update({ phase: 'Admission uncertain — retry the same intent' }); return; }
+      if (!(error instanceof RoutingRefusedResponseError)) {
+        const status = error instanceof AdmissionStatusError ? error.status : 0;
+        // 400/401/403/413: the request itself was rejected, so retrying the same bytes cannot help.
+        const definite = status === 400 || status === 401 || status === 403 || status === 413;
+        const attempt = autoRetries.current.get(intent) ?? 0;
+        const delay = admissionRetryDelays[attempt];
+        if (!definite && delay !== undefined && !retryExpired()) {
+          autoRetries.current.set(intent, attempt + 1);
+          update({ phase: status === 409 ? BUSY_PHASE : RESENDING_PHASE });
+          const timer = setTimeout(() => {
+            if (!alive.current || current.current?.intent !== intent || current.current.done) return;
+            void admit(intent);
+          }, delay);
+          cleanup.current = () => { cancelled = true; clearTimeout(timer); };
+          return;
+        }
+        update({ phase: UNCONFIRMED_PHASE, ...(status ? { error: `Command answered ${status}.` } : {}) });
+        return;
+      }
       // A definite refusal: nothing was recorded, so drop the pending recovery identity and hand the
       // text back to the composer instead of offering a same-intent retry.
       try {
@@ -414,7 +448,8 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
     input: string,
     max: number,
     inference?: InferenceOverride,
-    images?: LiveRunSubmissionRequest['images'],
+    // Images go to the model as images; entries marked kind 'file' are other uploads Jarvis opens on the host.
+    attachments?: ReadonlyArray<{ artifactId: string; version: number; kind?: 'file' }>,
     clientRequestId?: string,
     projectId?: string | null,
     routing?: LiveRunSubmissionRequest['routing'],
@@ -425,17 +460,21 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
     if (recoveryBlocked.current || (current.current && !current.current.done) || !input.trim() || input.length > max) return false;
     cleanup.current();
     mutation.current?.abort(); mutation.current = null;
+    const images = attachments?.filter(item => item.kind !== 'file').map(({ artifactId, version }) => ({ artifactId, version }));
+    const files = attachments?.filter(item => item.kind === 'file').map(({ artifactId, version }) => ({ artifactId, version }));
     const intent = {
       sessionId,
       input,
       clientRequestId: clientRequestId ?? crypto.randomUUID(),
       ...(inference ? { inference: { ...inference } } : {}),
-      ...(images?.length ? { images: images.map(image => ({ ...image })) } : {}),
+      ...(images?.length ? { images } : {}),
+      ...(files?.length ? { files } : {}),
       ...(routing ? { routing: { ...routing } } : {}),
     };
     if (intent.inference) Object.freeze(intent.inference);
     if (intent.routing) Object.freeze(intent.routing);
     if (intent.images) { intent.images.forEach(image => Object.freeze(image)); Object.freeze(intent.images); }
+    if (intent.files) { intent.files.forEach(file => Object.freeze(file)); Object.freeze(intent.files); }
     Object.freeze(intent);
     const pending = { ...(projectId ? { projectId } : {}), sessionId, clientRequestId: intent.clientRequestId, publicRunId: null };
     try { writeStored(pending, null); stored.current = pending; }
@@ -466,7 +505,8 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
     return true;
   }
   function retry() {
-    if (current.current?.phase !== 'Admission uncertain — retry the same intent' || current.current.intent.input === null) return;
+    if (current.current?.phase !== UNCONFIRMED_PHASE || current.current.intent.input === null) return;
+    autoRetries.current.delete(current.current.intent);
     if (retryExpired()) { update({ phase: 'Admission unknown — retry window expired; writer locked' }); return; }
     cleanup.current();
     update({ phase: 'Sending' }); void admit(current.current.intent);

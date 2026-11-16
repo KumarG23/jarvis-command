@@ -1,6 +1,11 @@
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { FileDown } from 'lucide-react';
 import { SessionIdSchema } from '@jarvis-command/contracts';
+
+// Files stored in Command (uploads, or files Jarvis sent) are the only same-origin URLs a message may use.
+const ARTIFACT_FILE = /^\/api\/artifacts\/art_[a-f0-9]{32}\/versions\/[1-9]\d{0,4}\/(blob|download)$/;
+const artifactFile = (url: string | undefined) => (url ? ARTIFACT_FILE.exec(url)?.[1] ?? null : null) as 'blob' | 'download' | null;
 
 type MarkdownNode = { type?: string; url?: string; children?: MarkdownNode[] };
 
@@ -24,11 +29,12 @@ function inertQuotedThreadLinks() {
 }
 
 // No raw HTML plugins and no automatic remote loads (including Markdown images).
-// Links are explicit external HTTP(S) navigations; app-origin actions stay inert.
+// Links are explicit external HTTP(S) navigations; app-origin actions stay inert, except
+// Command's own stored files: images show inline and other files get a download card.
 export function MessageContent({ text, className = '', threadProjectId, threadProjectSessionIds, onThreadLink }: Readonly<{ text: string; className?: string; threadProjectId?: string | null | undefined; threadProjectSessionIds?: readonly string[] | undefined; onThreadLink?: ((projectId: string, sessionId: string) => void) | undefined }>) {
   return <div className={`message-content ${className}`}><ReactMarkdown remarkPlugins={[remarkGfm, inertQuotedThreadLinks]} skipHtml
     urlTransform={url => {
-      if (threadSessionId(url)) return url;
+      if (threadSessionId(url) || artifactFile(url)) return url;
       try {
         const parsed = new URL(url);
         return ['https:', 'http:'].includes(parsed.protocol) && parsed.origin !== window.location.origin && !parsed.username && !parsed.password ? parsed.href : '';
@@ -40,9 +46,12 @@ export function MessageContent({ text, className = '', threadProjectId, threadPr
         if (sessionId) return threadProjectId && onThreadLink && threadProjectSessionIds?.includes(sessionId)
           ? <button className="message-thread-link" type="button" onClick={() => onThreadLink(threadProjectId, sessionId)}>{children}</button>
           : <span>{children}</span>;
+        if (artifactFile(href)) return <a className="message-file" href={href} download><FileDown size={16} aria-hidden="true" /><span>{children}</span></a>;
         return href ? <a href={href} target="_blank" rel="noopener noreferrer">{children}</a> : <span>{children}</span>;
       },
-      img: ({ alt }) => <span className="message-image-placeholder">[Image not loaded{alt ? `: ${alt}` : ''}]</span>,
+      img: ({ src, alt }) => typeof src === 'string' && artifactFile(src) === 'blob'
+        ? <a className="message-inline-image" href={src} target="_blank" rel="noopener noreferrer"><img src={src} alt={alt ?? ''} loading="lazy" /></a>
+        : <span className="message-image-placeholder">[Image not loaded{alt ? `: ${alt}` : ''}]</span>,
       table: ({ children }) => <div className="message-table" role="region" aria-label="Message table" tabIndex={0}><table>{children}</table></div>,
       pre: ({ children }) => <pre tabIndex={0} aria-label="Code block">{children}</pre>,
     }}>{text}</ReactMarkdown></div>;

@@ -122,7 +122,7 @@ async function chooseChat(name: string) {
 async function open(value = bootstrap) {
   render(<App loadBootstrap={async () => value} />);
   await chooseChat(session.title);
-  await screen.findByText('No saved messages in session history yet.');
+  await screen.findByText('Nothing here yet. Ask Jarvis anything.');
 }
 async function send() {
   fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: 'Hello Jarvis' } });
@@ -180,7 +180,7 @@ it.each(['headers', 'body'])('bounds admission through stalled %s and cleans lat
   const { result, unmount } = readyHook();
   act(() => result.current.send(session.id, 'exact original', 100));
   await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
-  expect(result.current.turn?.phase).toMatch(/Admission uncertain/);
+  expect(result.current.turn?.phase).toBe('Couldn’t confirm your message was sent');
   expect((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].signal?.aborted).toBe(true);
   if (stall === 'headers') await act(async () => { deliver(response); });
   expect(cancel).toHaveBeenCalledTimes(1);
@@ -811,7 +811,7 @@ it.each(['sessionId', 'clientRequestId', 'publicRunId', 'network'])('preserves a
   await open();
   fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Same intent' } });
   const button = screen.getByRole('button', { name: 'Send message' }); fireEvent.click(button); fireEvent.click(button);
-  const retry = await screen.findByRole('button', { name: 'Retry same intent' });
+  const retry = await screen.findByRole('button', { name: 'Try again' });
   expect(bodies).toHaveLength(1); expect(Source.instances).toHaveLength(0);
   fireEvent.click(retry); await waitFor(() => expect(Source.instances).toHaveLength(1));
   expect(bodies[1]).toEqual(bodies[0]);
@@ -840,7 +840,7 @@ it('keeps supervision across rooms, ignores foreign events and closes on unmount
 });
 
 it.each(['offline', 'external', 'capability'])('keeps %s sessions read-only', async (fault) => {
-  setup(); await open({ ...bootstrap, hermes: { ...bootstrap.hermes, state: fault === 'offline' ? 'offline' : 'online', capabilities: fault === 'capability' ? [] : ['run_events_sse'] }, sessions: [{ ...session, ownership: fault === 'external' ? 'external' : 'command' }] });
+  setup(); await open({ ...bootstrap, hermes: { ...bootstrap.hermes, state: fault === 'offline' ? 'offline' : 'online', capabilities: fault === 'capability' ? [] : ['run_events_sse'] }, sessions: [{ ...session, ownership: fault === 'external' ? 'external' : 'command', messageCount: 3 }] });
   expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
 });
 
@@ -925,10 +925,10 @@ it('cancels an active steer body on unmount without recovery callbacks', async (
 it.each(['offline', 'capability', 'disabled', 'external'])('removes active controls under %s gating and retains supervision', async (gate) => {
   const fetchMock = setup();
   const initial = structuredClone(bootstrap);
-  initial.sessions.push({ ...session, id: 'external:room', title: 'External room', ownership: 'external' });
+  initial.sessions.push({ ...session, id: 'external:room', title: 'External room', ownership: 'external', messageCount: 3 });
   const { rerender } = render(<App loadBootstrap={async () => initial} />);
   await chooseChat(session.title);
-  await screen.findByText('No saved messages in session history yet.'); await send();
+  await screen.findByText('Nothing here yet. Ask Jarvis anything.'); await send();
   act(() => Source.instances[0]!.emit('approval.request', { approval }));
   expect(screen.getByText(/Anything you send now steers this run/)).toBeInTheDocument();
   const changed = structuredClone(initial);
@@ -1311,7 +1311,7 @@ it('keeps an ambiguous 503 routing failure as admission uncertain', async () => 
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'routing_unavailable', message: 'x' }), { status: 503 })));
   const { result, unmount } = readyHook();
   act(() => result.current.send(session.id, 'replayed text', 100));
-  await waitFor(() => expect(result.current.turn?.phase).toMatch(/Admission uncertain/));
+  await waitFor(() => expect(result.current.turn?.phase).toBe('Couldn’t confirm your message was sent'));
   expect(result.current.recoveries).toEqual([]);
   unmount();
 });

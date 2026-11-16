@@ -40,6 +40,16 @@ export function rosterFacts(roster: ProjectRoster): string {
   return JSON.stringify({ ...roster, observedAt: null, project: projectSendSnapshot(roster.project),
     items: roster.items.map(item => ({ ...item, statusObservedAt: null, messagesObservedAt: null, runUpdatedAt: null })) });
 }
+const CONTEXT_START = '[Project context — saved in Command]';
+const CONTEXT_END = '\n[/Project context]';
+const MESSAGE_START = '\n\n[Message]\n';
+/** What Neal typed, without the project context Command adds around it for Jarvis. */
+export function visibleUserText(text: string): string {
+  if (!text.startsWith(CONTEXT_START)) return text;
+  const end = text.indexOf(CONTEXT_END);
+  const start = end < 0 ? -1 : text.indexOf(MESSAGE_START, end);
+  return start < 0 ? text : text.slice(start + MESSAGE_START.length);
+}
 export function composeProjectInput(input: string, room?: ProjectRoom | null, roster?: ProjectRoster | null, sessionId?: string): string {
   return room ? `${projectContext(room)}${roster && sessionId === room.leadSessionId && projectSendSnapshot(roster.project) === projectSendSnapshot(room) ? `\n\n${rosterContext(roster)}` : ''}\n\n[Message]\n${input}` : input;
 }

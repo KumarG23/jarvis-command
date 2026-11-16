@@ -4,7 +4,7 @@ import { RoutingRefusedError, RoutingUnavailableError } from './routing-defaults
 import { ThreadReadStorageError } from './thread-read-store';
 import { ThreadObservationUnavailableError } from './thread-state';
 import { ReactionStorageError, ReactionUnavailableError, ReactionConflictError, ReactionBoundsError } from './reaction-store';
-import { CommandBootstrapSchema, type CommandBootstrap } from '@jarvis-command/contracts';
+import { CommandBootstrapSchema, MAX_MESSAGE_CHARACTERS, type CommandBootstrap } from '@jarvis-command/contracts';
 import fastifyStatic from '@fastify/static';
 import Fastify from 'fastify';
 
@@ -48,7 +48,7 @@ export function buildApp(dependencies: AppDependencies) {
   const app = Fastify({
     logger: createLoggerOptions(dependencies.config.nodeEnv),
     trustProxy: false,
-    bodyLimit: 131_072,
+    bodyLimit: 1_048_576,
     connectionTimeout: 10_000,
     requestTimeout: 15_000,
     keepAliveTimeout: 5_000,
@@ -200,7 +200,7 @@ export function buildApp(dependencies: AppDependencies) {
         liveRoom: {
           enabled: liveRoomEnabled,
           externalContinue: false,
-          maxInputCharacters: 16_000,
+          maxInputCharacters: MAX_MESSAGE_CHARACTERS,
           maxSteerCharacters: 4_000,
         },
 

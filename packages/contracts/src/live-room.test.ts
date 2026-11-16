@@ -122,7 +122,7 @@ describe('Live Room run request and status contracts', () => {
     })).toThrow();
     expect(() => LiveRunSubmissionRequestSchema.parse({
       sessionId: session.id,
-      input: 'x'.repeat(16_001),
+      input: 'x'.repeat(200_001),
       clientRequestId: 'c17cb7d5-99cf-4a06-a24b-d5d5417e7a7e',
     })).toThrow();
   });

@@ -7,7 +7,7 @@ import { createReadbackFixture } from './readbackFixture';
 
 const room = { id: 'room_' + 'a'.repeat(32), name: 'Synthetic project', goal: 'Exact metadata', repository: '/not/read', notes: [], sessionIds: [], lastSessionId: null };
 const session = { id: 'jc_' + 'b'.repeat(32), title: 'Created conversation', source: 'api_server', ownership: 'command', model: null, lastActive: '2026-09-06T12:00:00Z', messageCount: 0, toolCallCount: 0, pinned: false };
-const external = { ...session, id: 'discord:channel+message', title: 'This Discord chat', source: 'discord', ownership: 'external' };
+const external = { ...session, id: 'discord:channel+message', title: 'This Discord chat', source: 'discord', ownership: 'external', messageCount: 3 };
 it('adds an external recent chat directly to a chosen project', async () => {
   const linked = { ...room, sessionIds: [external.id], lastSessionId: external.id };
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

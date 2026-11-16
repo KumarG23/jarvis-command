@@ -50,6 +50,23 @@ export function createArtifactImageResolver(artifactStore: ArtifactStore) {
   };
 }
 
+const formatBytes = (size: number) => size < 1024 ? `${size} B` : size < 1_048_576 ? `${(size / 1024).toFixed(1)} KB` : `${(size / 1_048_576).toFixed(1)} MB`;
+
+export function createArtifactFileDescriber(artifactStore: ArtifactStore) {
+  return async (references: ReadonlyArray<Readonly<{ artifactId: string; version: number }>>) => {
+    const lines: string[] = [];
+    for (const { artifactId, version } of references) {
+      const file = await artifactStore.versionFile(artifactId, version);
+      const name = (file.artifact.originalFilename ?? file.artifact.title).replace(/[\r\n`[\]]/g, ' ');
+      lines.push(`- [${name}](/api/artifacts/${artifactId}/versions/${version}/download) (${formatBytes(file.size)}): \`${file.path}\` · \`command-file.sh get ${artifactId} ${version}\``);
+    }
+    return [
+      'Attached files. On the Command VM they are at the paths shown; from another machine, fetch one with the command shown (scheduled-runs listener, deliveries key).',
+      ...lines,
+    ].join('\n');
+  };
+}
+
 export function createCommandServer(
   config: AppConfig,
   overrides: CompositionOverrides = {},
@@ -88,6 +105,7 @@ export function createCommandServer(
   const scheduled = config.scheduledRuns && config.command ? createScheduledRunsServer({
     config: config.scheduledRuns, liveRoom: () => liveRoom, rooms: () => rooms,
     ...(deliveries && notifications ? { deliver: createDeliverer({ deliveries, notifications, push, presence }) } : {}),
+    artifactStore: artifactStore ?? null, maxFileBytes: config.artifacts.maxFileBytes,
   }) : undefined;
   const app = buildApp({
     config,
@@ -126,6 +144,7 @@ export function createCommandServer(
       resolveImages: artifactStore
         ? createArtifactImageResolver(artifactStore)
         : async () => { throw Object.assign(new Error('Artifact storage unavailable'), { statusCode: 503 }); },
+      ...(artifactStore ? { describeFiles: createArtifactFileDescriber(artifactStore) } : {}),
     });
   });
   // The scheduled-runs listener opens only once the live room exists, and closes with the app.

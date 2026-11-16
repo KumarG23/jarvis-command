@@ -3,8 +3,8 @@ import { appStorageKey } from './appEnvironment';
 
 export const textDraftKey = () => appStorageKey('jarvis-command:text-drafts:v1');
 const MAX_SESSIONS = 32;
-const MAX_TEXT = 16000;
-const MAX_STORAGE = 131072;
+const MAX_TEXT = 200_000;
+const MAX_STORAGE = 2_097_152;
 type Drafts = Record<string, string>;
 export type TextDraftMemory = Record<string, { text: string; snapshot: { text: string; failed: boolean }; failed: boolean }>;
 export type RetainedTextDrafts = readonly [TextDraftMemory, Dispatch<SetStateAction<TextDraftMemory>>];
@@ -25,6 +25,11 @@ function write(room: string, text: string) {
   if (!room.startsWith('jc_') || room.length > 256 || text.length > MAX_TEXT || Object.keys(drafts).length > MAX_SESSIONS || (raw.length > MAX_STORAGE || new TextEncoder().encode(raw).length > MAX_STORAGE)) throw Error('draft limit');
   sessionStorage.setItem(textDraftKey(), raw);
   if (sessionStorage.getItem(textDraftKey()) !== raw) throw Error('draft write unverified');
+}
+
+/** Puts starter text into a brand-new chat's draft before it opens. Best effort. */
+export function seedTextDraft(room: string, text: string): boolean {
+  try { write(room, text); return true; } catch { return false; }
 }
 
 // Read only after the selected session's canonical history has authorized access.

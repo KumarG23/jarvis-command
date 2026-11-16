@@ -31,6 +31,7 @@ async function fakeHost() {
   host.get('/v1/sessions', async () => ({ sessions: [] }));
   host.post('/v1/sessions', async (request, reply) => { seen.at(-1)!.body = request.body; return reply.code(201).send({ session: { id: SESSION } }); });
   host.post('/v1/sessions/:id/stop', async () => { throw new Error('boom'); });
+  host.post('/v1/sessions/:id/close', async request => { seen.at(-1)!.body = request.body; return { closed: { id: SESSION } }; });
   host.get('/v1/sessions/:id/terminal', { websocket: true }, (socket, request) => {
     if (request.headers.authorization !== `Bearer ${HOST_KEY}`) { socket.close(4401); return; }
     socket.send(JSON.stringify({ type: 'session' }));
@@ -119,8 +120,11 @@ describe('cockpit routes', () => {
     // Host 5xx becomes 502 rather than leaking as our own failure.
     const stopped = await app.inject({ method: 'POST', url: `/api/cockpit/projects/${ROOM}/sessions/${SESSION}/stop`, headers: writeHeaders, payload: {} });
     expect(stopped.statusCode).toBe(502);
+    const closed = await app.inject({ method: 'POST', url: `/api/cockpit/projects/${ROOM}/sessions/${SESSION}/close`, headers: writeHeaders, payload: {} });
+    expect(closed.statusCode).toBe(200);
+    expect(host.seen.find(entry => entry.url.endsWith('/close'))?.body).toEqual({ projectId: ROOM });
     const audit = (await readFile(join(root, 'audit', 'cockpit-audit.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line) as Record<string, unknown>);
-    expect(audit.map(line => line.action)).toEqual(['session.create', 'session.stop']);
+    expect(audit.map(line => line.action)).toEqual(['session.create', 'session.stop', 'session.close']);
     expect(audit[0]).toMatchObject({ actor: 'neal', roomId: ROOM });
     expect(JSON.stringify(audit)).not.toContain(HOST_KEY);
   });

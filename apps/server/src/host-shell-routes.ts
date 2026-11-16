@@ -135,7 +135,7 @@ export function registerHostShellRoutes(app: FastifyInstance, dependencies: Depe
       return relay(reply, host('POST', `/v1/sessions/${sessionId}/ownership`, { projectId: HOST_SHELL_PROJECT, action }));
     });
 
-    for (const action of ['interrupt', 'stop'] as const) {
+    for (const action of ['interrupt', 'stop', 'close'] as const) {
       routes.post(`/api/host-shell/sessions/:sessionId/${action}`, async (request, reply) => {
         const { sessionId } = SessionParams.parse(request.params);
         z.object({}).strict().parse(request.body ?? {});

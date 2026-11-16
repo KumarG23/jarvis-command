@@ -1,4 +1,7 @@
+import { sourceLabel } from './chatTitle';
+import { visibleUserText } from './projectInput';
 import { useLatestMessageView } from './useLatestMessageView';
+import { formatMessageTime } from './formatTime';
 import { MessageReactions } from './MessageReactions';
 import type { MessageReactionClient } from './useMessageReactions';
 import { isChatReadMessage, SessionMessagesPageSchema, type SessionMessage, type SessionSummary } from '@jarvis-command/contracts';
@@ -127,7 +130,7 @@ export function LiveRoom({ session, onHistory, reactions, reactionsAvailable = f
   const deliveryView = (delivery: ScheduledDelivery) => <article key={delivery.deliveryId} className="timeline-event history-message scheduled-delivery" data-delivery-id={delivery.deliveryId} aria-label="Scheduled message from Jarvis">
     <div className="event-icon cyan"><AlarmClock size={19} /></div>
     <div className="event-body">
-      <div className="event-label"><span>Jarvis · {delivery.kind === 'reminder' ? 'Reminder' : 'Scheduled'}{delivery.title ? `: ${delivery.title}` : ''}</span><time>{new Date(delivery.deliveredAt).toLocaleString()}</time></div>
+      <div className="event-label"><span>Jarvis · {delivery.kind === 'reminder' ? 'Reminder' : 'Scheduled'}{delivery.title ? `: ${delivery.title}` : ''}</span><time dateTime={delivery.deliveredAt} title={new Date(delivery.deliveredAt).toLocaleString()}>{formatMessageTime(delivery.deliveredAt)}</time></div>
       <MessageContent text={delivery.content} threadProjectId={threadProjectId} threadProjectSessionIds={threadProjectSessionIds} onThreadLink={onThreadLink} />
       <CopyResponse text={delivery.content} limited={false} />
     </div>
@@ -150,11 +153,11 @@ export function LiveRoom({ session, onHistory, reactions, reactionsAvailable = f
   }
   const liveAfter = (index: number) => <>{placedDeliveries.get(index)?.map(deliveryView)}{projected.filter((item) => item.after === index).map(({ turn }) => <Fragment key={turn.intent.clientRequestId}>{renderTurn?.(turn)}</Fragment>)}</>;
   return <>
-    {session.ownership === 'external' ? <p className="external-chat-notice">External chat · Read-only. Continuation is unavailable.</p> : null}
-    {!reactionsAvailable || !reactions || !reactionSessionWritable ? <p className="reaction-note">{!reactionSessionWritable ? 'Reactions unavailable in read-only chats.' : reactionsUnavailableReason ?? 'Reactions unavailable on this server.'}</p> : null}
+    {session.ownership === 'external' ? <p className="external-chat-notice">{sourceLabel(session.source)} · Read-only. You can read it here but replies go where it started.</p> : null}
+    {reactionSessionWritable && (!reactionsAvailable || !reactions) ? <p className="reaction-note">{reactionsUnavailableReason ?? 'Reactions unavailable on this server.'}</p> : null}
     {loading ? <p role="status">Loading messages…</p> : null}
     {error ? <div className="history-feedback"><p role="alert">{error}</p><button type="button" className="primary-button" onClick={() => { setError(null); setLoading(true); setAttempt((value) => value + 1); }}>Retry history</button></div> : null}
-    {!loading && !error && messages.length === 0 && deliveries.length === 0 ? <p role="status">No saved messages in session history yet.</p> : null}
+    {!loading && !error && messages.length === 0 && deliveries.length === 0 ? <p role="status" className="empty-chat">Nothing here yet. Ask Jarvis anything.</p> : null}
     {focus && focus.state !== 'searching' && focus.state !== 'found' ? <div className="history-feedback" role="status"><p>{FOCUS_NOTICE[focus.state]}</p><button type="button" className="text-button" onClick={() => setFocus(null)}>Dismiss</button></div> : null}
     {liveAfter(-1)}
     {messages.map((message, index) => <Fragment key={message.id}>{omittedEchoIds.has(message.id) || (message.role === 'assistant' && !message.content && !message.toolName) ? null : activityGroups.has(index) ? activityGroups.get(index)!.length === 0 ? null : <ActivityGroup messages={activityGroups.get(index)!} open={activityGroups.get(index)!.some(item => item.id === focus?.id)} /> : <article ref={message.id === focus?.id ? (element) => { focusRef.current = element; } : undefined} tabIndex={message.id === focus?.id ? -1 : undefined} data-reply-focus={message.id === focus?.id && focus.state === 'found' ? 'true' : undefined} className="timeline-event history-message" data-message-id={message.id} aria-label={message.role === 'user' ? 'Your message' : message.role === 'assistant' ? 'Jarvis response' : undefined}>
@@ -162,10 +165,12 @@ export function LiveRoom({ session, onHistory, reactions, reactionsAvailable = f
         {message.role === 'tool' ? <SquareTerminal size={17} /> : message.role === 'user' ? <MessageSquare size={17} /> : <Command size={25} />}
       </div>
       <div className="event-body">
-        <div className="event-label"><span>{message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Jarvis' : message.role}</span><time>{message.timestamp ? new Date(message.timestamp).toLocaleString() : 'Time not reported'}</time></div>
-        {message.role === 'tool' ? <details className="saved-tool-disclosure"><summary>{message.toolName ?? 'Tool activity'}</summary><p>{message.content || 'No text was saved.'}</p></details> : <>{message.toolName ? <h2>{message.toolName}</h2> : null}{message.role === 'assistant' ? <MessageContent text={message.content || 'Assistant activity record — no text was saved.'} threadProjectId={threadProjectId} threadProjectSessionIds={threadProjectSessionIds} onThreadLink={onThreadLink} /> : <p>{message.content || 'No text was saved.'}</p>}</>}
-        {reactionsAvailable && reactions && reactionSessionWritable && message.sessionId === session.id && (message.role === 'user' || message.role === 'assistant') && !message.toolName && !message.displayKind && messageOffsets.current.has(message.id) ? <MessageReactions key={`${session.id}:${message.id}`} client={reactions} target={{ sessionId: session.id, messageId: message.id, offset: messageOffsets.current.get(message.id)! }} /> : null}
-        {message.role === 'assistant' && message.content ? <CopyResponse text={message.content} limited={false} onSave={onSaveResponse ? () => onSaveResponse(message) : undefined} /> : null}
+        <div className="event-label"><span>{message.role === 'user' ? 'You' : message.role === 'assistant' ? 'Jarvis' : message.role}</span>{message.timestamp ? <time dateTime={message.timestamp} title={new Date(message.timestamp).toLocaleString()}>{formatMessageTime(message.timestamp)}</time> : null}</div>
+        {message.role === 'tool' ? <details className="saved-tool-disclosure"><summary>{message.toolName ?? 'Tool activity'}</summary><p>{message.content || 'No text was saved.'}</p></details> : <>{message.toolName ? <h2>{message.toolName}</h2> : null}{message.role === 'assistant' ? <MessageContent text={message.content || 'Assistant activity record — no text was saved.'} threadProjectId={threadProjectId} threadProjectSessionIds={threadProjectSessionIds} onThreadLink={onThreadLink} /> : <p>{visibleUserText(message.content) || 'No text was saved.'}</p>}</>}
+        <div className="message-actions">
+          {message.role === 'assistant' && message.content ? <CopyResponse text={message.content} limited={false} onSave={onSaveResponse ? () => onSaveResponse(message) : undefined} /> : null}
+          {reactionsAvailable && reactions && reactionSessionWritable && message.sessionId === session.id && (message.role === 'user' || message.role === 'assistant') && !message.toolName && !message.displayKind && messageOffsets.current.has(message.id) ? <MessageReactions key={`${session.id}:${message.id}`} client={reactions} target={{ sessionId: session.id, messageId: message.id, offset: messageOffsets.current.get(message.id)! }} /> : null}
+        </div>
         {message.id === latestMessage?.id ? <span ref={latestMarker} className="latest-message-view" aria-hidden="true" /> : null}
       </div>
     </article>}{liveAfter(index)}</Fragment>)}

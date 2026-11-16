@@ -85,6 +85,8 @@ type LiveRoomServiceOptions = Readonly<{
   client: CommandProxyClient;
   ledger: AuditLedger;
   resolveImages?: (references: NonNullable<LiveRunSubmissionRequest['images']>) => Promise<ReadonlyArray<Readonly<{ mime: string; bytes: Buffer }>>>;
+  /** Turns uploaded file references into a note telling Jarvis where each file is saved. */
+  describeFiles?: (references: NonNullable<LiveRunSubmissionRequest['files']>) => Promise<string>;
   createPublicRunId?: () => string;
   now?: () => Date;
   notify?: RunNotifier | undefined;
@@ -132,6 +134,7 @@ export function createLiveRoomService({
   ledger,
   rooms,
   resolveImages,
+  describeFiles,
   createPublicRunId = () => `jcr_${randomBytes(16).toString('hex')}`,
   now = () => new Date(),
   notify,
@@ -259,6 +262,7 @@ export function createLiveRoomService({
     const requestFingerprint = sha256(canonicalJson({
       inference: prepared.inference ? JSON.stringify(prepared.inference) : '',
       images: prepared.images ? JSON.stringify(prepared.images) : '',
+      ...(prepared.files ? { files: JSON.stringify(prepared.files) } : {}),
       input: prepared.input,
       sessionId: prepared.sessionId,
     }));
@@ -290,6 +294,7 @@ export function createLiveRoomService({
     const payloadFingerprint = sha256(canonicalJson({
       inference: request.inference ? JSON.stringify(request.inference) : '',
       images: request.images ? JSON.stringify(request.images) : '',
+      ...(request.files ? { files: JSON.stringify(request.files) } : {}),
       input: request.input,
       sessionId: request.sessionId,
       ...(request.routing ? { routing: JSON.stringify(request.routing) } : {}),
@@ -402,6 +407,8 @@ export function createLiveRoomService({
       ? await resolveImages?.(request.images)
       : undefined;
     if (request.images?.length && !images) throw new Error('Artifact image resolver unavailable');
+    if (request.files?.length && !describeFiles) throw new Error('Artifact file resolver unavailable');
+    const fileNote = request.files?.length && describeFiles ? await describeFiles(request.files) : '';
     const room = projectContext && rooms
       ? (await rooms.list()).find(candidate => !candidate.archived && candidate.sessionIds.includes(request.sessionId))
       : undefined;
@@ -411,7 +418,7 @@ export function createLiveRoomService({
       const upstream = await client.startRun({
         ...(instructions ? { instructions } : {}),
         sessionId: request.sessionId,
-        input: request.input,
+        input: fileNote ? `${request.input}\n\n${fileNote}` : request.input,
         idempotencyKey: `jc-v1-${sha256(`${record.actor}\0${record.clientRequestId}`)}`,
         ...(request.inference ? { inference: request.inference } : {}),
         ...(images?.length ? { images } : {}),

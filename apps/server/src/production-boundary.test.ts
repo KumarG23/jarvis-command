@@ -165,7 +165,7 @@ describe('production trust boundary', () => {
         version: '0.1.0-integration',
         environment: 'production',
         generatedAt: '2026-09-03T17:01:00.000Z',
-        liveRoom: { enabled: false, externalContinue: false, maxInputCharacters: 16_000, maxSteerCharacters: 4_000 },
+        liveRoom: { enabled: false, externalContinue: false, maxInputCharacters: 200_000, maxSteerCharacters: 4_000 },
       },
       hermes: {
         state: 'online',
