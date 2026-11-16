@@ -25,6 +25,7 @@ import {
   type LiveRunUsage,
   type SessionMessagesPage,
   type SessionMutationResponse,
+  MAX_MESSAGE_CHARACTERS,
 } from '@jarvis-command/contracts';
 import { z } from 'zod';
 
@@ -178,6 +179,7 @@ export type CommandProxyClient = Readonly<{
     idempotencyKey: string;
     inference?: InferenceOverride;
     images?: ReadonlyArray<Readonly<{ mime: string; bytes: Buffer }>>;
+    instructions?: string;
   }>) => Promise<CommandRunCreate>;
   startContextCompaction: (request: Readonly<{ sessionId: string; idempotencyKey: string }>) => Promise<CommandRunCreate>;
   getRun: (runId: string) => Promise<CommandRunStatus>;
@@ -301,12 +303,13 @@ export function createCommandProxyClient(options: Readonly<{
       if (
         !SESSION_ID.test(request.sessionId)
         || !request.input.trim()
-        || request.input.length > 16_000
+        || request.input.length > MAX_MESSAGE_CHARACTERS
         || !IDEMPOTENCY_KEY.test(request.idempotencyKey)
         || (request.inference !== undefined && !InferenceOverrideSchema.safeParse(request.inference).success)
         || images.length > 4
         || imageBytes > MAX_CHAT_IMAGE_BYTES
         || images.some(image => !CHAT_IMAGE_MIMES.has(image.mime) || image.bytes.length < 1)
+        || (request.instructions !== undefined && (!request.instructions.trim() || request.instructions.length > 16_000))
       ) {
         return Promise.reject(new CommandProxyUnavailableError(400));
       }
@@ -317,6 +320,7 @@ export function createCommandProxyClient(options: Readonly<{
           input: request.input.trim(),
           ...(request.inference ? { inference: request.inference } : {}),
           ...(images.length ? { images: images.map(image => ({ mime: image.mime, dataBase64: image.bytes.toString('base64') })) } : {}),
+          ...(request.instructions ? { instructions: request.instructions } : {}),
         },
         headers: { 'idempotency-key': request.idempotencyKey },
       });

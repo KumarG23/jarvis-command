@@ -59,3 +59,33 @@ export function writeThreadRecovery(sessionId: string, value: RecoveryIdentity |
   sessionStorage.setItem(threadRecoveryKey, JSON.stringify({ version: 2, records, legacyImported: true }));
   if (!sameRecovery(readThreadRecovery(sessionId), record)) throw new Error('thread recovery write unverified');
 }
+
+// The text of a sent message, kept per tab so a reload mid-run can still show what was asked.
+// Display only: recovery never resends it. Bounded so a huge paste cannot crowd out other storage.
+export const recoveryInputKey = appStorageKey('jarvis-command:live-inputs:v1');
+const MAX_RECOVERY_INPUTS = 8;
+const MAX_RECOVERY_INPUT_CHARS = 400_000;
+type RecoveryInput = { clientRequestId: string; input: string };
+function recoveryInputs(): RecoveryInput[] {
+  try {
+    const raw = sessionStorage.getItem(recoveryInputKey);
+    if (!raw) return [];
+    const data = JSON.parse(raw) as unknown;
+    return Array.isArray(data) ? data.filter((item): item is RecoveryInput => !!item && typeof item === 'object'
+      && typeof (item as RecoveryInput).clientRequestId === 'string' && typeof (item as RecoveryInput).input === 'string') : [];
+  } catch { return []; }
+}
+export function rememberRecoveryInput(clientRequestId: string, input: string) {
+  if (input.length > MAX_RECOVERY_INPUT_CHARS) return;
+  const items = [...recoveryInputs().filter(item => item.clientRequestId !== clientRequestId), { clientRequestId, input }].slice(-MAX_RECOVERY_INPUTS);
+  try { sessionStorage.setItem(recoveryInputKey, JSON.stringify(items)); } catch { /* Optional display aid. */ }
+}
+export function readRecoveryInput(clientRequestId: string): string | null {
+  return recoveryInputs().find(item => item.clientRequestId === clientRequestId)?.input ?? null;
+}
+export function forgetRecoveryInput(clientRequestId: string) {
+  const items = recoveryInputs();
+  const remaining = items.filter(item => item.clientRequestId !== clientRequestId);
+  if (remaining.length === items.length) return;
+  try { if (remaining.length) sessionStorage.setItem(recoveryInputKey, JSON.stringify(remaining)); else sessionStorage.removeItem(recoveryInputKey); } catch { /* Optional display aid. */ }
+}

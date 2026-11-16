@@ -79,7 +79,7 @@ it('retries exactly the captured composed intent after a lost ACK without readin
   act(() => hook.result.current.history(sessionId, [], true));
   const input = composeProjectInput('Original message', leadRoom, makeRoster(), sessionId);
   act(() => { expect(hook.result.current.send(sessionId, input, 16000, undefined, undefined, undefined, room.id)).toBe(true); });
-  await waitFor(() => expect(hook.result.current.turn?.phase).toMatch(/Admission uncertain/));
+  await waitFor(() => expect(hook.result.current.turn?.phase).toBe('Couldn’t confirm your message was sent'));
   const changed = { ...room, instructions: 'Changed after admission', name: 'Different' };
   expect(composeProjectInput('Original message', changed)).not.toEqual(input);
   act(() => hook.result.current.retry());
@@ -327,4 +327,12 @@ it('enforces the complete cap including the roster and retains lead draft', asyn
   await screen.findByText(/Complete message including project context/);
   expect(send).not.toHaveBeenCalled();
   expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('message');
+});
+
+it('shows only what was typed in the user bubble, not the project context around it', async () => {
+  const { visibleUserText } = await import('./projectInput');
+  const composed = composeProjectInput('Not working still.\n[Message]\nliteral', leadRoom, makeRoster(), sessionId);
+  expect(visibleUserText(composed)).toBe('Not working still.\n[Message]\nliteral');
+  expect(visibleUserText('Plain message')).toBe('Plain message');
+  expect(visibleUserText('[Project context — saved in Command]\nno end')).toBe('[Project context — saved in Command]\nno end');
 });

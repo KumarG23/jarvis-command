@@ -56,12 +56,12 @@ it('pages through existing bounded history to find the exact message, with no mu
   expect(document.querySelector('[data-message-id="assistant:first"]')).not.toHaveAttribute('data-reply-focus');
 });
 
-it('stops at the existing ten-page bound with an incomplete-history notice instead of scraping or guessing', async () => {
+it('stops at the history page bound with an incomplete-history notice instead of scraping or guessing', async () => {
   let calls = 0;
   vi.stubGlobal('fetch', vi.fn(async (url: string) => { if (!url.includes('/messages')) return new Response('{}', { status: 404 }); calls++; const offset = Number(new URL(url, 'http://t.test').searchParams.get('offset')); return page([message(`assistant:${offset}`)], offset, true); }));
   render(<LiveRoom session={session} onHistory={vi.fn()} focusMessageId="assistant:never" />);
-  expect(await screen.findByText(/not found within the history loaded so far/)).toBeInTheDocument();
-  expect(calls).toBe(10);
+  expect(await screen.findByText(/not found within the history loaded so far/, undefined, { timeout: 15_000 })).toBeInTheDocument();
+  expect(calls).toBe(20);
   expect(document.querySelector('[data-reply-focus]')).toBeNull();
 });
 

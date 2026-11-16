@@ -2,6 +2,24 @@ import { SessionMutationResponseSchema, type SessionSummary } from '@jarvis-comm
 import { Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
+/** Creates a new Command chat. Throws Error('access') when Access refused, Error('create') otherwise. */
+export async function createLiveSession(): Promise<SessionSummary> {
+  const response = await fetch('/api/live/sessions', {
+    method: 'POST', credentials: 'same-origin',
+    headers: { accept: 'application/json', 'content-type': 'application/json', 'x-jarvis-command': '1' },
+    body: '{}',
+  });
+  if (response.status === 401 || response.status === 403 || response.redirected) throw new Error('access');
+  if (!response.ok) throw new Error('create');
+  const { session } = SessionMutationResponseSchema.parse(await response.json());
+  if (session.ownership !== 'command' || !session.id.startsWith('jc_')) throw new Error('create');
+  return session;
+}
+
+export const createSessionError = (failure: unknown) => failure instanceof Error && failure.message === 'access'
+  ? 'Access expired or denied. Confirm Cloudflare Access before creating a session.'
+  : 'Session creation could not be confirmed. Refresh recent sessions before creating again; the session may already exist.';
+
 export function CreateSession({ onCreated, disabled = false }: Readonly<{ disabled?: boolean; onCreated: (session: SessionSummary) => void }>) {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -18,20 +36,10 @@ export function CreateSession({ onCreated, disabled = false }: Readonly<{ disabl
     setCreating(true);
     setError(null);
     try {
-      const response = await fetch('/api/live/sessions', {
-        method: 'POST', credentials: 'same-origin',
-        headers: { accept: 'application/json', 'content-type': 'application/json', 'x-jarvis-command': '1' },
-        body: '{}',
-      });
-      if (response.status === 401 || response.status === 403 || response.redirected) throw new Error('access');
-      if (!response.ok) throw new Error('create');
-      const { session } = SessionMutationResponseSchema.parse(await response.json());
-      if (session.ownership !== 'command' || !session.id.startsWith('jc_')) throw new Error('create');
+      const session = await createLiveSession();
       if (mounted.current) onCreated(session);
     } catch (failure: unknown) {
-      if (mounted.current) setError(failure instanceof Error && failure.message === 'access'
-        ? 'Access expired or denied. Confirm Cloudflare Access before creating a session.'
-        : 'Session creation could not be confirmed. Refresh recent sessions before creating again; the session may already exist.');
+      if (mounted.current) setError(createSessionError(failure));
     } finally {
       busy.current = false;
       if (mounted.current) setCreating(false);

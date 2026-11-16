@@ -283,6 +283,16 @@ export class ArtifactStore {
     }
   }
 
+  /** Where a version's bytes live on this host, for an agent that opens the file itself. */
+  public async versionFile(id: string, version: number): Promise<{ artifact: ArtifactMetadata; path: string; mime: string; size: number }> {
+    const artifact = await this.readMetadata(id);
+    const selected = artifact.versions.find(item => item.version === version);
+    if (!selected) throw Object.assign(new Error('Version missing'), { statusCode: 404 });
+    const path = this.#versionPath(artifact.id, version);
+    await assertInside(this.#root, path);
+    return { artifact, path, mime: selected.mime, size: selected.size };
+  }
+
   public async readVersionBytes(id: string, version: number): Promise<{ artifact: ArtifactMetadata; bytes: Buffer }> {
     const artifact = await this.readMetadata(id);
     if (!artifact.versions.some(item => item.version === version)) throw Object.assign(new Error('Version missing'), { statusCode: 404 });

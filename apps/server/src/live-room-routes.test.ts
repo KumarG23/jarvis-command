@@ -198,7 +198,7 @@ it('submits a bounded run and polls its opaque status behind Access', async () =
   const submitted = { ...request, input: undefined, publicRunId, status: 'running', replayed: false };
   Object.assign(liveRoom, { submitRun: vi.fn().mockResolvedValue(submitted), getRun: vi.fn().mockResolvedValue({ publicRunId, status: 'running' }) });
   expect((await app.inject({ method: 'POST', url: '/api/live/runs', payload: request })).statusCode).toBe(401);
-  for (const bad of [{ ...request, input: ' ' }, { ...request, input: 'x'.repeat(16001) }, { ...request, extra: true }, { ...request, clientRequestId: 'invalid' }]) {
+  for (const bad of [{ ...request, input: ' ' }, { ...request, input: 'x'.repeat(200_001) }, { ...request, extra: true }, { ...request, clientRequestId: 'invalid' }]) {
     expect((await app.inject({ method: 'POST', url: '/api/live/runs', headers, payload: bad })).statusCode).toBe(400);
   }
   expect(liveRoom.submitRun).not.toHaveBeenCalled();
@@ -252,14 +252,22 @@ it('rejects unlisted live-route query fields before service invocation', async (
   expect(liveRoom.getRun).not.toHaveBeenCalled();
 });
 
+it('never lets background presence pings use up the budget for sending', async () => {
+  const { app, createSession } = setup();
+  for (let i = 0; i < 100; i++) await app.inject({ method: 'POST', url: '/api/notifications/presence', headers, payload: { sessionId: 'jc_' + 'a'.repeat(32), visible: true } });
+  expect((await app.inject({ method: 'POST', url: '/api/live/sessions', headers, payload: {} })).statusCode).toBe(200);
+  expect(createSession).toHaveBeenCalledTimes(1);
+});
+
 it('rate limits authenticated mutations per actor before service invocation', async () => {
   const { app, createSession } = setup();
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 60; i++) {
     expect((await app.inject({ method: 'POST', url: '/api/live/sessions', headers, payload: {} })).statusCode).toBe(200);
   }
   const response = await app.inject({ method: 'POST', url: '/api/live/sessions', headers, payload: {} });
   expect(response.statusCode).toBe(429);
-  expect(createSession).toHaveBeenCalledTimes(30);
+  expect(Number(response.headers['retry-after'])).toBeGreaterThan(0);
+  expect(createSession).toHaveBeenCalledTimes(60);
 });
 
 it('caps serialized SSE output and never turns stream truncation into a terminal run event', async () => {

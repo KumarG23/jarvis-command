@@ -131,7 +131,7 @@ test('reloads a known synthetic run with identifiers only and no second admissio
   expect(JSON.stringify(saved)).not.toContain(input);
   const before = reads;
   await page.reload();
-  await expect(page.getByText(/Original message unavailable/)).toBeVisible();
+  await expect(page.getByText(/Reconnected after reload/)).toBeVisible();
   await expect(page.getByLabel('Selected session')).toHaveText(session.title);
   await expect(page.getByRole('textbox', { name: 'Message Jarvis' })).toBeDisabled();
   await expect.poll(() => reads).toBeGreaterThan(before);

@@ -2,6 +2,7 @@ import { pushConfig, type PushConfig } from './push-service';
 import { tmpdir } from 'node:os';
 import { isAbsolute, resolve } from 'node:path';
 import { z } from 'zod';
+import { InferenceOverrideSchema, type InferenceOverride } from '@jarvis-command/contracts';
 
 const EnvironmentSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -20,11 +21,16 @@ const EnvironmentSchema = z.object({
   HERMES_API_BASE_URL: z.url().default('http://127.0.0.1:18642'),
   HERMES_READ_PROXY_KEY: z.string().min(32),
   REACTIONS_MODE: z.enum(['disabled', 'enabled']).default('disabled'),
+  // Sends saved project metadata to Hermes as per-run instructions for chats in a project.
+  PROJECT_CONTEXT_MODE: z.enum(['disabled', 'enabled']).default('disabled'),
   REPLY_EVIDENCE_MODE: z.enum(['disabled', 'enabled']).default('disabled'),
   PROJECT_DELETION_MODE: z.enum(['disabled', 'enabled']).default('disabled'),
   COMMAND_MODE: z.enum(['disabled', 'enabled']).default('disabled'),
   PUBLIC_ORIGIN: z.url().optional(),
   HERMES_COMMAND_API_BASE_URL: z.url().optional(),
+  // provider/model[/effort], e.g. openai-codex/gpt-6.1-sol/medium. Used when no prompt, thread or
+  // project default applies; still checked against the live inventory on every run.
+  COMMAND_DEFAULT_INFERENCE: z.string().max(240).optional(),
   HERMES_COMMAND_PROXY_KEY: z.string().min(32).optional(),
   COMMAND_AUDIT_LOG_PATH: z.string().min(1).optional(),
   WEB_DIST_DIR: z.string().min(1).optional(),
@@ -33,11 +39,32 @@ const EnvironmentSchema = z.object({
   ARTIFACT_MAX_FILE_BYTES: z.coerce.number().int().min(1).max(52_428_800).default(10_485_760),
   ARTIFACT_MAX_TOTAL_BYTES: z.coerce.number().int().min(1).max(10_737_418_240).default(268_435_456),
   ARTIFACT_MAX_COUNT: z.coerce.number().int().min(1).max(100_000).default(10_000),
+  // Project cockpit: relays real agent terminals from the session host (apps/session-host).
+  COCKPIT_MODE: z.enum(['disabled', 'enabled']).default('disabled'),
+  SESSION_HOST_BASE_URL: z.url().optional(),
+  SESSION_HOST_KEY: z.string().min(32).optional(),
+  // Hermes host admin shell: a separate session host on the Hermes machine, outside Projects.
+  HOST_SHELL_MODE: z.enum(['disabled', 'enabled']).default('disabled'),
+  HOST_SHELL_BASE_URL: z.url().optional(),
+  HOST_SHELL_KEY: z.string().min(32).optional(),
+  HOST_SHELL_NAME: z.string().trim().min(1).max(40).regex(/^[^\r\n]+$/).optional(),
+  // Scheduled runs: a separate bearer-key listener (never the Access-protected app port) that lets a
+  // Hermes cron script start a run in a Command chat as the configured owner.
+  SCHEDULED_RUNS_MODE: z.enum(['disabled', 'enabled']).default('disabled'),
+  SCHEDULED_RUNS_HOST: z.string().min(1).max(255).default('127.0.0.1'),
+  SCHEDULED_RUNS_PORT: z.coerce.number().int().min(1).max(65_535).default(8652),
+  SCHEDULED_RUNS_KEY: z.string().min(32).max(512).optional(),
+  /** Separate key for POST /v1/deliveries only (the Hermes `command` plugin). It can't start runs. */
+  SCHEDULED_DELIVERIES_KEY: z.string().min(32).max(512).optional(),
+  SCHEDULED_RUNS_OWNER_ACTOR: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  /** Where a delivery addressed to "home" lands: a project (room_…) or a chat (jc_…). */
+  SCHEDULED_RUNS_HOME: z.string().regex(/^(room_[a-f0-9]{32}|jc_[a-f0-9]{32})$/).optional(),
 });
 
 export type AppConfig = Readonly<{
   projectDeletionEnabled?: boolean;
   reactionsEnabled?: boolean;
+  projectContextEnabled?: boolean;
   replyEvidenceEnabled?: boolean;
   push?: PushConfig;
   nodeEnv: 'development' | 'test' | 'production';
@@ -60,8 +87,30 @@ export type AppConfig = Readonly<{
     commandProxyKey: string;
     auditLogPath: string;
     publicOrigin: string;
+    defaultInference?: InferenceOverride;
   }> | null;
   webDistDir: string | undefined;
+  cockpit?: Readonly<{
+    sessionHostUrl: string;
+    sessionHostKey: string;
+  }> | null;
+  hostShell?: Readonly<{
+    url: string;
+    key: string;
+    /** Label shown in Command, e.g. "Hermes host". */
+    name: string;
+  }> | null;
+  scheduledRuns?: Readonly<{
+    host: string;
+    port: number;
+    key: string;
+    /** Audit-ledger actor fingerprint (sha256 of the owner's Access subject). */
+    ownerActor: string;
+    /** Key accepted only by POST /v1/deliveries; null disables deliveries. */
+    deliveriesKey?: string | null;
+    /** Target for deliveries addressed to "home"; null when not configured. */
+    home?: string | null;
+  }> | null;
   artifacts: Readonly<{
     enabled: boolean;
     root: string | null;
@@ -137,11 +186,13 @@ export function loadConfig(environment: NodeJS.ProcessEnv): AppConfig {
         if (commandProxyKey === parsed.HERMES_READ_PROXY_KEY || baseUrl.origin === hermesBridgeUrl.origin) {
           throw new Error('Command and read bridges require distinct credentials and origins');
         }
+        const defaultInference = parseDefaultInference(parsed.COMMAND_DEFAULT_INFERENCE);
         return Object.freeze({
           baseUrl: baseUrl.origin,
           commandProxyKey,
           auditLogPath,
           publicOrigin: publicUrl.origin,
+          ...(defaultInference ? { defaultInference } : {}),
         });
       })()
     : null;
@@ -178,8 +229,57 @@ export function loadConfig(environment: NodeJS.ProcessEnv): AppConfig {
         maxArtifacts: parsed.ARTIFACT_MAX_COUNT,
       });
 
+  const cockpit = parsed.COCKPIT_MODE === 'enabled'
+    ? (() => {
+        if (!command) throw new Error('COCKPIT_MODE requires COMMAND_MODE=enabled (projects and PUBLIC_ORIGIN)');
+        const url = new URL(requireValue('SESSION_HOST_BASE_URL', parsed.SESSION_HOST_BASE_URL));
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('SESSION_HOST_BASE_URL must be http(s)');
+        if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+          throw new Error('SESSION_HOST_BASE_URL must be an uncredentialed origin');
+        }
+        return Object.freeze({
+          sessionHostUrl: url.origin,
+          sessionHostKey: requireValue('SESSION_HOST_KEY', parsed.SESSION_HOST_KEY),
+        });
+      })()
+    : null;
+
+  const hostShell = parsed.HOST_SHELL_MODE === 'enabled'
+    ? (() => {
+        if (!command) throw new Error('HOST_SHELL_MODE requires COMMAND_MODE=enabled (PUBLIC_ORIGIN and the audit ledger)');
+        const url = new URL(requireValue('HOST_SHELL_BASE_URL', parsed.HOST_SHELL_BASE_URL));
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('HOST_SHELL_BASE_URL must be http(s)');
+        if (url.username || url.password || url.pathname !== '/' || url.search || url.hash) {
+          throw new Error('HOST_SHELL_BASE_URL must be an uncredentialed origin');
+        }
+        const key = requireValue('HOST_SHELL_KEY', parsed.HOST_SHELL_KEY);
+        if (key === parsed.SESSION_HOST_KEY) throw new Error('HOST_SHELL_KEY must differ from SESSION_HOST_KEY');
+        return Object.freeze({ url: url.origin, key, name: parsed.HOST_SHELL_NAME ?? 'Hermes host' });
+      })()
+    : null;
+
+  const scheduledRuns = parsed.SCHEDULED_RUNS_MODE === 'enabled'
+    ? (() => {
+        if (!command) throw new Error('SCHEDULED_RUNS_MODE requires COMMAND_MODE=enabled');
+        if (parsed.SCHEDULED_RUNS_PORT === parsed.PORT) throw new Error('SCHEDULED_RUNS_PORT must differ from PORT');
+        if (parsed.SCHEDULED_DELIVERIES_KEY && parsed.SCHEDULED_DELIVERIES_KEY === parsed.SCHEDULED_RUNS_KEY) throw new Error('SCHEDULED_DELIVERIES_KEY must differ from SCHEDULED_RUNS_KEY');
+        return Object.freeze({
+          host: parsed.SCHEDULED_RUNS_HOST,
+          port: parsed.SCHEDULED_RUNS_PORT,
+          key: requireValue('SCHEDULED_RUNS_KEY', parsed.SCHEDULED_RUNS_KEY),
+          ownerActor: requireValue('SCHEDULED_RUNS_OWNER_ACTOR', parsed.SCHEDULED_RUNS_OWNER_ACTOR),
+          deliveriesKey: parsed.SCHEDULED_DELIVERIES_KEY ?? null,
+          home: parsed.SCHEDULED_RUNS_HOME ?? null,
+        });
+      })()
+    : null;
+
   return Object.freeze({
+    cockpit,
+    hostShell,
+    scheduledRuns,
     reactionsEnabled: parsed.REACTIONS_MODE === 'enabled',
+    ...(parsed.PROJECT_CONTEXT_MODE === 'enabled' ? { projectContextEnabled: true } : {}),
     replyEvidenceEnabled: parsed.REPLY_EVIDENCE_MODE === 'enabled',
     projectDeletionEnabled: parsed.PROJECT_DELETION_MODE === 'enabled',
     push: pushConfig(environment),
@@ -214,4 +314,17 @@ function requireValue(name: string, value: string | undefined): string {
     throw new Error(`${name} is required for this configuration`);
   }
   return value;
+}
+
+export function parseDefaultInference(value: string | undefined): InferenceOverride | undefined {
+  if (!value?.trim()) return undefined;
+  const parts = value.trim().split('/');
+  const [provider, ...rest] = parts;
+  // OpenRouter ids contain slashes and carry no effort; Codex/xAI end with an effort segment.
+  const candidate = provider === 'openrouter' || provider === 'anthropic'
+    ? { provider, model: rest.join('/') }
+    : { provider, model: rest.slice(0, -1).join('/'), reasoningEffort: rest.at(-1) };
+  const result = InferenceOverrideSchema.safeParse(candidate);
+  if (!result.success) throw new Error('COMMAND_DEFAULT_INFERENCE must be provider/model/effort (Codex, xAI) or provider/model (Anthropic, OpenRouter :free)');
+  return result.data;
 }

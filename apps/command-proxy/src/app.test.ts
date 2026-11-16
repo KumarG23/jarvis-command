@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { buildCommandProxy } from './app';
+import { createHmac } from 'node:crypto';
+import { buildCommandProxy, commandOriginAssertion } from './app';
 import type { CommandProxyConfig } from './config';
 
 const commandKey = 'command-proxy-key-that-is-long-enough-123456';
@@ -17,6 +18,7 @@ const config: CommandProxyConfig = Object.freeze({
   hermesApiKey: hermesKey,
   maxStreamSeconds: 1_800,
   anthropicRoutesEnabled: false,
+  advertisedSubscriptionRoutes: false,
   openRouterFreeRoutesEnabled: false,
   historyBindingEnabled: false,
 });
@@ -151,6 +153,16 @@ describe('command proxy route boundary', () => {
     const response = await app.inject({ method: 'POST', url: '/v1/runs', headers: authHeaders({ 'idempotency-key': 'jc-v1-' + 'a'.repeat(64) }), payload: { sessionId: commandSessionId, input } });
     expect(response.statusCode).toBe(202);
     expect(JSON.parse(String(fetcher.mock.calls[1]![1]!.body)).input).toBe(input);
+  });
+
+  it('forwards bounded per-run instructions and rejects oversized ones', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'jarvis-command'))).mockResolvedValueOnce(jsonResponse({ run_id: runId, status: 'running' }));
+    const app = createApp(fetcher);
+    const response = await app.inject({ method: 'POST', url: '/v1/runs', headers: authHeaders({ 'idempotency-key': 'jc-v1-' + 'b'.repeat(64) }), payload: { sessionId: commandSessionId, input: 'hi', instructions: 'Project: Test' } });
+    expect(response.statusCode).toBe(202);
+    expect(JSON.parse(String(fetcher.mock.calls[1]![1]!.body)).instructions).toBe('Project: Test');
+    const oversized = await createApp(vi.fn<typeof fetch>()).inject({ method: 'POST', url: '/v1/runs', headers: authHeaders({ 'idempotency-key': 'jc-v1-' + 'c'.repeat(64) }), payload: { sessionId: commandSessionId, input: 'hi', instructions: 'x'.repeat(16_001) } });
+    expect(oversized.statusCode).toBe(400);
   });
 
   it('forwards capability-gated context compaction and projects only bounded measured results', async () => {
@@ -673,6 +685,38 @@ describe('run creation and control', () => {
     expect(Buffer.byteLength(response.payload)).toBeLessThan(400_000);
   });
 
+  it('offers every advertised subscription model only when advertised subscription routes are enabled', async () => {
+    const inventory = () => {
+      const fixture = upstreamModelOptionsWithAnthropic();
+      fixture.provider = 'anthropic'; fixture.model = 'claude-sonnet-5-5';
+      fixture.providers[0]!.models.push('gpt-6.1-sol', 'gpt-6.1-terra');
+      fixture.providers.push({ slug: 'openai-api', authenticated: true, models: ['gpt-6.1-sol'] });
+      return fixture;
+    };
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => jsonResponse(inventory()));
+    const app = createApp(fetcher, undefined, { advertisedSubscriptionRoutes: true });
+    const body = (await app.inject({ url: '/api/model/options', headers: authHeaders() })).json();
+    const keys = body.options.map((option: { provider: string; model: string }) => `${option.provider}:${option.model}`);
+    // Curated, labelled routes first; then the rest of what the logged-in provider advertises.
+    expect(keys.slice(0, 6)).toEqual(['openai-codex:gpt-6-astra', 'openai-codex:gpt-6-sol', 'openai-codex:gpt-6-luna', 'openai-codex:gpt-5.6-sol', 'openai-codex:gpt-5.6-terra', 'openai-codex:gpt-5.6-luna']);
+    expect(keys).toEqual(expect.arrayContaining(['openai-codex:gpt-6.1-sol', 'openai-codex:gpt-6.1-terra', 'openai-codex:unapproved-model', 'xai-oauth:grok-4.7']));
+    expect(body.options.find((option: { model: string }) => option.model === 'gpt-6.1-sol')).toMatchObject({ label: 'gpt-6.1-sol', reasoningEfforts: ['minimal', 'low', 'medium', 'high', 'xhigh'] });
+    // A paid API provider and Claude (its own flag is off) stay unselectable.
+    expect(keys.some((key: string) => key.startsWith('openai-api:') || key.startsWith('anthropic:'))).toBe(false);
+    const entry = (provider: string, model: string) => body.catalog.entries.find((item: { provider: string; model: string }) => item.provider === provider && item.model === model);
+    expect(entry('openai-codex', 'gpt-6.1-sol')).toMatchObject({ selectable: true, unavailableReason: null });
+    expect(entry('openai-api', 'gpt-6.1-sol')).toMatchObject({ selectable: false, unavailableReason: 'not_approved_allowlist' });
+    expect(entry('anthropic', 'claude-sonnet-5-5')).toMatchObject({ selectable: false, unavailableReason: 'not_approved_allowlist' });
+
+    // With the Claude flag on too, every advertised Claude model becomes selectable with provider-default effort.
+    const both = createApp(fetcher, undefined, { advertisedSubscriptionRoutes: true, anthropicRoutesEnabled: true });
+    const bothBody = (await both.inject({ url: '/api/model/options', headers: authHeaders() })).json();
+    expect(bothBody.options).toEqual(expect.arrayContaining([{ provider: 'anthropic', model: 'claude-opus-5-6', label: 'claude-opus-5-6', reasoningEfforts: [] }]));
+    expect(bothBody.catalog.entries.find((item: { model: string; provider: string }) => item.provider === 'anthropic' && item.model === 'claude-sonnet-5-5')).toMatchObject({ selectable: true });
+
+    // Run admission keeps checking the exact route against this same live inventory (supportsInference).
+  });
+
   it('reports absent and unauthenticated inventory without enabling selection', async () => {
     const absent = createApp(vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse({
       provider: 'openai-codex', model: 'gpt-5.6-sol', providers: [],
@@ -913,7 +957,8 @@ describe('run creation and control', () => {
   it('fails closed for forged, unadvertised, unauthenticated and extra-effort Claude selections', async () => {
     const app = createApp(vi.fn<typeof fetch>(), undefined, { anthropicRoutesEnabled: true });
     for (const inference of [
-      { provider: 'anthropic', model: 'claude-opus-5-6' },
+      // An unadvertised Claude id now passes the shape check and is refused against the
+      // live inventory instead (409 inference_unavailable, covered below).
       { provider: 'anthropic', model: 'claude-opus-5-5', reasoningEffort: 'high' },
       { provider: 'anthropic', model: 'gpt-6-sol' },
     ]) {
@@ -1227,7 +1272,7 @@ describe('run creation and control', () => {
   });
 
   it('permits only exact once or deny approval responses', async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => jsonResponse({
       object: 'hermes.run.approval_response',
       run_id: runId,
       request_id: 'approval-1',
@@ -1244,7 +1289,7 @@ describe('run creation and control', () => {
     });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ runId, requestId: 'approval-1', choice: 'once', resolved: 1 });
-    expect(JSON.parse(String(fetcher.mock.calls[0]![1]?.body))).toEqual({
+    expect(JSON.parse(String(fetcher.mock.calls.find(([, init]) => init?.method === 'POST')![1]?.body))).toEqual({
       request_id: 'approval-1',
       choice: 'once',
     });
@@ -1258,7 +1303,7 @@ describe('run creation and control', () => {
       });
       expect(denied.statusCode).toBe(400);
     }
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1);
   });
 
   it('forwards bounded steer and stop controls without extra fields', async () => {
@@ -1813,3 +1858,88 @@ describe('installed Hermes durable transcript and run contract', () => {
     expect((await app.inject({ url: `/v1/runs/${runId}`, headers: authHeaders() })).statusCode).toBe(200);
   });
 });
+
+describe('Command origin assertion (v1)', () => {
+  const originKey = 'command-origin-key-that-is-long-enough-1234567';
+  const idem = 'jc-v1-' + 'd'.repeat(64);
+  const run = async (overrides: Partial<CommandProxyConfig>, extra: Record<string, string> = {}) => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(upstreamSession(commandSessionId, 'jarvis-command'))).mockResolvedValueOnce(jsonResponse({ run_id: runId, status: 'running' }));
+    const response = await createApp(fetcher, undefined, overrides).inject({ method: 'POST', url: '/v1/runs', headers: authHeaders({ 'idempotency-key': idem, ...extra }), payload: { sessionId: commandSessionId, input: 'remind me' } });
+    expect(response.statusCode).toBe(202);
+    return new Headers(fetcher.mock.calls[1]![1]!.headers as Record<string, string>);
+  };
+
+  it('matches the documented HMAC string exactly', () => {
+    const expected = createHmac('sha256', originKey).update(`command-origin/v1\n${commandSessionId}\n${idem}`, 'utf8').digest('hex');
+    expect(commandOriginAssertion(originKey, commandSessionId, idem)).toBe(`v1.${expected}`);
+    expect(expected).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('signs the exact session and idempotency key only when the key is configured', async () => {
+    const signed = await run({ commandOriginKey: originKey });
+    expect(signed.get('x-command-origin')).toBe(commandOriginAssertion(originKey, commandSessionId, idem));
+    expect(signed.get('idempotency-key')).toBe(idem);
+    expect((await run({})).get('x-command-origin')).toBeNull();
+  });
+
+  it('never forwards a caller-supplied assertion', async () => {
+    const forged = 'v1.' + 'f'.repeat(64);
+    expect((await run({}, { 'x-command-origin': forged })).get('x-command-origin')).toBeNull();
+    const replaced = await run({ commandOriginKey: originKey }, { 'x-command-origin': forged });
+    expect(replaced.get('x-command-origin')).toBe(commandOriginAssertion(originKey, commandSessionId, idem));
+  });
+});
+
+describe('pending approval inside pending_controls', () => {
+  const status = (extra: Record<string, unknown>) => ({ run_id: runId, session_id: commandSessionId, status: 'waiting_for_approval', updated_at: 1788530400, ...extra });
+  const read = async (body: unknown) => {
+    const response = await createApp(vi.fn<typeof fetch>().mockResolvedValueOnce(jsonResponse(body))).inject({ url: `/v1/runs/${runId}`, headers: authHeaders() });
+    expect(response.statusCode).toBe(200);
+    return response.json().approval;
+  };
+  // Literal installed shape (gateway/session_pending_controls.py) for the protected-file guard.
+  const guard = (extra: Record<string, unknown> = {}) => ({ kind: 'approval', prompt_id: 'prompt-guard-1', execution_generation: 2, command: '<write to [AGENTS.md]>', description: 'Protected agent-instruction file write', choices: ['once', 'deny'], timeout_s: 60, ...extra });
+  it('projects the single installed-shape approval control by its prompt_id', async () => {
+    expect(await read(status({ pending_controls: [guard()] })))
+      .toEqual({ requestId: 'prompt-guard-1', command: '<write to [AGENTS.md]>', description: 'Protected agent-instruction file write', tool: null });
+    expect(await read(status({ pending_controls: [guard({ choices: ['once', 'session', 'always', 'deny'], edit: true })] }))).toMatchObject({ requestId: 'prompt-guard-1' });
+  });
+  it('prefers top-level approval and refuses ambiguous, contradictory or malformed controls without failing status', async () => {
+    expect(await read(status({ approval: { request_id: 'approval-top', command: 'echo top', description: 'Top' }, pending_controls: [guard()] })))
+      .toMatchObject({ requestId: 'approval-top' });
+    for (const controls of [
+      [guard(), guard({ prompt_id: 'prompt-guard-2' })],
+      [guard({ prompt_id: ' bad id ' })],
+      [guard({ prompt_id: undefined })],
+      [guard({ id: 'prompt-guard-1' })],
+      [guard({ request_id: 'other' })],
+      [guard({ approval: { request_id: 'nested' } })],
+      [guard({ execution_generation: '2' })],
+      [guard({ execution_generation: -1 })],
+      [guard({ choices: ['once'] })],
+      [guard({ choices: ['once', 'deny', 'forever'] })],
+      [guard({ choices: ['once', 'deny', 'deny'] })],
+      [guard({ command: '' })],
+      [guard({ description: ' ' })],
+      [{ kind: 'steer', prompt_id: 's1' }],
+    ]) expect(await read(status({ pending_controls: controls }))).toBeNull();
+    expect(await read(status({ pending_controls: 'nope' }))).toBeNull();
+  });
+  it.each(['once', 'deny'] as const)('answers a status-only guard approval (%s) with its prompt_id and execution generation', async (choice) => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(status({ pending_controls: [guard()] })))
+      .mockResolvedValueOnce(jsonResponse({ run_id: runId, request_id: 'prompt-guard-1', choice, resolved: 1 }));
+    const response = await createApp(fetcher).inject({ method: 'POST', url: `/v1/runs/${runId}/approval`, headers: authHeaders(), payload: { requestId: 'prompt-guard-1', choice } });
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(String(fetcher.mock.calls[1]![1]!.body))).toEqual({ request_id: 'prompt-guard-1', execution_generation: 2, choice });
+  });
+  it('answers a stream approval without a generation when no matching control is pending', async () => {
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(jsonResponse(status({ pending_controls: [guard({ prompt_id: 'someone-else' })] })))
+      .mockResolvedValueOnce(jsonResponse({ run_id: runId, request_id: 'stream-approval', choice: 'once', resolved: 1 }));
+    const response = await createApp(fetcher).inject({ method: 'POST', url: `/v1/runs/${runId}/approval`, headers: authHeaders(), payload: { requestId: 'stream-approval', choice: 'once' } });
+    expect(response.statusCode).toBe(200);
+    expect(JSON.parse(String(fetcher.mock.calls[1]![1]!.body))).toEqual({ request_id: 'stream-approval', choice: 'once' });
+  });
+});
+

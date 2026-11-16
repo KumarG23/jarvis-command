@@ -57,8 +57,12 @@ export function requestedEffortLabel(inference: InferenceOverride): string {
   return 'reasoningEffort' in inference ? inference.reasoningEffort : 'provider default';
 }
 
-export function routeDecision(receipt: NonNullable<LiveRunUsage['execution']>): 'Fallback used' | 'Route changed' | 'Exact route' | 'Route verification unavailable' {
+export type RouteDecision = 'Fallback used' | 'Route changed' | 'Exact route' | 'Default route' | 'Route verification unavailable';
+export function routeDecision(receipt: NonNullable<LiveRunUsage['execution']>): RouteDecision {
   if (receipt.fallbackUsed) return 'Fallback used';
+  // Inherit sends no request, so there is nothing to verify against: the run used Hermes' own
+  // default. The executed route is still reported (and may be wire-confirmed) separately.
+  if (receipt.requested.provider === null && receipt.requested.model === null && receipt.requested.reasoningEffort === null) return 'Default route';
   const mismatch = (['provider', 'model', 'reasoningEffort'] as const).some(key =>
     receipt.requested[key] !== null && receipt.executed[key] !== null && receipt.requested[key] !== receipt.executed[key]);
   if (mismatch) return 'Route changed';

@@ -70,15 +70,17 @@ async function harness() {
 
 it('keeps every partial combination inert through a counted completion, and without Web Push only the in-app item exists', async () => {
   // [environment, reported state, expected durable reply items]; each case gets its own stores and fixtures.
-  const cases: Array<[Record<string, string>, string, number]> = [
-    [{}, 'disabled', 0],
-    [{ REPLY_EVIDENCE_MODE: 'enabled' }, 'disabled', 0],
-    [{ ...push, REPLY_NOTIFICATIONS_MODE: 'enabled' }, 'unsupported', 0],
-    [{ ...push, REPLY_EVIDENCE_MODE: 'enabled' }, 'disabled', 0],
+  // [environment, reported state, expected durable reply items, expected pushes].
+  const cases: Array<[Record<string, string>, string, number, number]> = [
+    [{}, 'disabled', 0, 0],
+    [{ REPLY_EVIDENCE_MODE: 'enabled' }, 'disabled', 0, 0],
+    // Push and replies on but no evidence: no reply item, so the finished-run item pushes generic text.
+    [{ ...push, REPLY_NOTIFICATIONS_MODE: 'enabled' }, 'unsupported', 0, 1],
+    [{ ...push, REPLY_EVIDENCE_MODE: 'enabled' }, 'disabled', 0, 0],
     // Configured, not inert: evidence + replies without Web Push yields the item but never a push.
-    [{ REPLY_NOTIFICATIONS_MODE: 'enabled', REPLY_EVIDENCE_MODE: 'enabled' }, 'available', 1],
+    [{ REPLY_NOTIFICATIONS_MODE: 'enabled', REPLY_EVIDENCE_MODE: 'enabled' }, 'available', 1, 0],
   ];
-  for (const [extra, replies, items] of cases) {
+  for (const [extra, replies, items, pushes] of cases) {
     const h = await harness();
     const s = h.open(extra);
     await s.app.ready();
@@ -93,7 +95,7 @@ it('keeps every partial combination inert through a counted completion, and with
     expect(h.state.posts).toBe(1);
     expect(h.state.historyGets).toBeGreaterThanOrEqual(items);
     if (!items) expect(h.state.historyGets).toBe(0);
-    expect(h.sent).toEqual([]);
+    expect(h.sent).toHaveLength(pushes);
   }
 });
 
@@ -128,6 +130,9 @@ it('real factory binds exact evidence after onReady and yields one item and one 
   const third = await s.submit(3); await s.observe(third);
   inbox = await s.inbox();
   expect(inbox.items.filter((item: { category?: string }) => item.category === 'assistant-reply')).toHaveLength(1);
-  expect(h.sent).toHaveLength(1);
+  // Each unverified reply falls back to one generic finished-run push; none repeat.
+  expect(h.sent).toHaveLength(3);
+  await s.observe(second); await s.observe(third); await s.post('/api/notifications/reconcile');
+  expect(h.sent).toHaveLength(3);
   expect(h.state.posts).toBe(3);
 });

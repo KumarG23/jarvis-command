@@ -120,8 +120,8 @@ describe('Selected room recovery', () => {
     view.unmount(); render(<App loadBootstrap={load} />);
     await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(session.title));
     expect(fetchMock).toHaveBeenCalledWith(`/api/live/sessions/${session.id}`, expect.anything());
-    fireEvent.click(within(screen.getByRole('navigation', { name: 'Recent chats' })).getByRole('button', { name: session.title }));
-    expect(screen.queryByText(room.goal)).not.toBeInTheDocument();
+    // A project chat lives under its project, not in Recent chats.
+    expect(within(screen.getByRole('navigation', { name: 'Recent chats' })).queryByRole('button', { name: session.title })).toBeNull();
     sessionStorage.removeItem('jarvis-command:project-room:v1');
   });
   it.each(['unknown', 'disabled', 'storage-denied'])('ignores unusable remembered selection: %s', async (mode) => {
@@ -183,8 +183,8 @@ it('opens a freshly verified project thread outside bootstrap and roster bounds 
   expect(screen.getByLabelText('Selected project')).toHaveTextContent(project.name);
   fireEvent.click(await screen.findByRole('button', { name: 'Other recent chat' }));
   await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(otherRecent.title));
+  // Opening the project returns to its last chat, the lead.
   fireEvent.click(await screen.findByRole('button', { name: project.name }));
-  fireEvent.click(within(screen.getByRole('navigation', { name: 'Recent chats' })).getByRole('button', { name: current.title }));
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('draft stays with lead'));
   expect(fetchMock.mock.calls.some(([, init]) => init?.method && init.method !== 'GET')).toBe(false);
   expect(fetchMock.mock.calls.some(([url]) => /\/runs|\/sessions$|\/sessions\/[^/]+\/fork|\/threads\//.test(url))).toBe(false);
@@ -275,8 +275,8 @@ it('keeps the newer link selection guard when an older overlapping read fails', 
   expect(screen.getByLabelText('Selected session')).toHaveTextContent(current.title);
   fireEvent.click(await screen.findByRole('button', { name: 'Other recent chat' }));
   await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(otherRecent.title));
+  // Opening the project returns to its last chat, the lead.
   fireEvent.click(await screen.findByRole('button', { name: project.name }));
-  fireEvent.click(within(screen.getByRole('navigation', { name: 'Recent chats' })).getByRole('button', { name: current.title }));
   await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(current.title));
 
   await act(async () => readbacks.resolve(secondTarget.id, Response.json({ session: secondTarget })));
@@ -305,7 +305,7 @@ describe('Command session creation', () => {
       method: 'POST', credentials: 'same-origin', headers: { accept: 'application/json', 'content-type': 'application/json', 'x-jarvis-command': '1' }, body: '{}',
     });
     await act(async () => pending.resolve(Response.json({ session: created })));
-    expect(await screen.findByText('No saved messages in session history yet.')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing here yet. Ask Jarvis anything.')).toBeInTheDocument();
     expect(screen.getByLabelText('Selected session')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: created.title })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toBeInTheDocument();
@@ -369,23 +369,21 @@ describe('Live Room history', () => {
     expect(screen.queryByText(/private upstream/)).not.toBeInTheDocument();
   });
 
-  it('bounds history to ten pages and labels the view limit instead of claiming the end', async () => {
+  it('loads remaining history pages automatically up to the page cap and labels the view limit', async () => {
     const fetchMock = vi.fn().mockImplementation((url: string) => {
       const offset = Number(new URL(url, 'http://localhost').searchParams.get('offset'));
-      return Promise.resolve(Response.json(history('session_123', offset, Array.from({ length: 50 }, (_, i) => `Row ${offset + i}`), true)));
+      // Two rows per page keeps rendering cheap; the bound under test is the page count.
+      return Promise.resolve(Response.json(history('session_123', offset, [`Row ${offset}`, `Row ${offset + 1}`], true)));
     });
     stubFetch(fetchMock);
     render(<App loadBootstrap={async () => liveBootstrap} />);
     await clickEnabled(/^Jarvis Command/);
-    for (let page = 1; page < 10; page += 1) {
-      await screen.findByText(`Row ${page * 50 - 1}`);
-      fireEvent.click(screen.getByRole('button', { name: 'Load more messages' }));
-    }
-    await screen.findByText('Row 499');
-    expect(screen.getByText('History view limit reached. More messages may exist.')).toBeInTheDocument();
+    await screen.findByText('Row 39', undefined, { timeout: 10_000 });
+    expect(await screen.findByText('History view limit reached. More messages may exist.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Load more messages' })).not.toBeInTheDocument();
     expect(screen.queryByText('End of history.')).not.toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(10);
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/messages?'))).toHaveLength(20);
+    expect(screen.queryByText('Row 40')).not.toBeInTheDocument();
   }, 20_000);
 
   it('opens mobile navigation and selects a chat without a second session picker', async () => {
@@ -469,7 +467,7 @@ describe('Live Room history', () => {
     stubFetch(vi.fn().mockResolvedValue(Response.json(history('session_123', 0, []))));
     render(<App loadBootstrap={async () => liveBootstrap} />);
     await clickEnabled(/^Jarvis Command/);
-    expect(await screen.findByText('No saved messages in session history yet.')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing here yet. Ask Jarvis anything.')).toBeInTheDocument();
   });
 
   it('selects a recent session and renders oldest-first typed history through the BFF', async () => {
@@ -487,8 +485,8 @@ describe('Live Room history', () => {
     expect(within(timeline).getAllByRole('article').map((row) => row.textContent)).toEqual([
       expect.stringContaining('First question'), expect.stringContaining('Assistant answer'), expect.stringContaining('Tool output'),
     ]);
-    expect(within(timeline).getByText('terminal')).toBeInTheDocument();
-    expect(within(timeline).getByText(/External chat · Read-only/)).toBeInTheDocument();
+    expect(within(timeline).getByText('Used 1 tool · terminal')).toBeInTheDocument();
+    expect(within(timeline).getByText(/· Read-only. You can read it here/)).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Message Jarvis' })).not.toBeInTheDocument();
   });
 });

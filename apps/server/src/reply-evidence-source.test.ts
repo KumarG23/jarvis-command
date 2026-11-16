@@ -49,7 +49,7 @@ async function harness() {
   hermes.setNotFoundHandler(async (_request, reply) => { counts.other++; return reply.code(404).send({}); });
   const hermesAddress = await hermes.listen({ host: '127.0.0.1', port: 0 });
   cleanup.push(() => hermes.close());
-  const proxy = buildCommandProxy({ config: { host: '127.0.0.1', port: 8644, commandProxyKey: 'c'.repeat(32), hermesApiKey: 'h'.repeat(32), hermesBaseUrl: hermesAddress, maxStreamSeconds: 60, anthropicRoutesEnabled: false, openRouterFreeRoutesEnabled: false, historyBindingEnabled: true } });
+  const proxy = buildCommandProxy({ config: { host: '127.0.0.1', port: 8644, commandProxyKey: 'c'.repeat(32), hermesApiKey: 'h'.repeat(32), hermesBaseUrl: hermesAddress, maxStreamSeconds: 60, anthropicRoutesEnabled: false, advertisedSubscriptionRoutes: false, openRouterFreeRoutesEnabled: false, historyBindingEnabled: true } });
   const proxyAddress = await proxy.listen({ host: '127.0.0.1', port: 0 });
   cleanup.push(() => proxy.close());
   const client = createCommandProxyClient({ baseUrl: proxyAddress, commandProxyKey: 'c'.repeat(32) });

@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { storageReason } from './storage-reason';
 import { constants } from 'node:fs';
 import { lstat, open, rename, unlink, type FileHandle } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
@@ -39,6 +40,13 @@ export class PushStore {
   #emptyActor(): z.infer<typeof PushActorSchema> { return { push: { devices: [], receipts: [] } }; }
   read(actor: string): Promise<PushView> {
     return this.#transaction(state => ({ result: pushView(state.actors[actor] ?? this.#emptyActor()) }));
+  }
+  /** Unexpired devices with their subscriptions, for a test push only. Records no receipt. */
+  testDevices(actor: string): Promise<Array<z.infer<typeof DeviceSchema>>> {
+    return this.#transaction(state => {
+      const now = this.now().toISOString();
+      return { result: (state.actors[actor]?.push.devices ?? []).filter(device => device.expiresAt > now) };
+    });
   }
   registerDevice(actor: string, input: PushSubscription): Promise<PushView> {
     const subscription = PushSubscriptionSchema.parse(input);
@@ -113,15 +121,15 @@ export class PushStore {
         for (let path = this.directory; ; path = dirname(path)) {
           const stat = await lstat(path);
           if (!stat.isDirectory() || stat.isSymbolicLink() || (stat.uid !== 0 && stat.uid !== process.getuid!())
-            || ((stat.mode & 0o022) !== 0 && (stat.mode & 0o1000) === 0)) throw new NotificationStorageError();
+            || ((stat.mode & 0o022) !== 0 && (stat.mode & 0o1000) === 0)) throw new NotificationStorageError('unsafe_ancestor_directory');
           if (path === '/') break;
         }
         directory = await open(this.directory, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
         const identity = await directory.stat();
-        if (identity.uid !== process.getuid!() || (identity.mode & 0o777) !== 0o700) throw new NotificationStorageError();
+        if (identity.uid !== process.getuid!() || (identity.mode & 0o777) !== 0o700) throw new NotificationStorageError('directory_owner_or_mode');
         const bound = async () => {
           const current = await lstat(this.directory);
-          if (current.dev !== identity.dev || current.ino !== identity.ino || current.mode !== identity.mode || current.uid !== identity.uid) throw new NotificationStorageError();
+          if (current.dev !== identity.dev || current.ino !== identity.ino || current.mode !== identity.mode || current.uid !== identity.uid) throw new NotificationStorageError('directory_changed');
         };
         const root = `/proc/self/fd/${directory.fd}`;
         const path = join(root, FILE);
@@ -130,7 +138,7 @@ export class PushStore {
           const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
           try {
             const stat = await handle.stat();
-            if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== process.getuid!() || (stat.mode & 0o777) !== 0o600 || stat.size > MAX_BYTES) throw new NotificationStorageError();
+            if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== process.getuid!() || (stat.mode & 0o777) !== 0o600 || stat.size > MAX_BYTES) throw new NotificationStorageError('file_owner_mode_links_or_size');
             const bytes = Buffer.alloc(MAX_BYTES + 1);
             const { bytesRead } = await handle.read(bytes, 0, bytes.length, 0);
             if (bytesRead !== stat.size || bytesRead > MAX_BYTES) throw new NotificationStorageError();
@@ -158,7 +166,7 @@ export class PushStore {
       } catch (error) {
         if (renamed) this.#poisoned = true; // Commit may have landed: require restart/readback, never silently retry.
         if (error instanceof NotificationNotFoundError || (error instanceof Error && 'statusCode' in error && error.statusCode === 400)) throw error;
-        throw new NotificationStorageError();
+        throw new NotificationStorageError(storageReason(error));
       } finally {
         if (staging) await unlink(staging).catch(() => undefined);
         await directory?.close();

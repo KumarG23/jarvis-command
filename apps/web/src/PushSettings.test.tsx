@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import { PushSettings } from './PushSettings';
 import { PushLink } from './PushLink';
@@ -65,25 +65,51 @@ it('allows explicit revocation even if push is disabled and displays no endpoint
   expect(b.fetch).toHaveBeenCalledWith('/api/notifications/push/devices/dev_' + 'a'.repeat(32) + '/revoke', expect.anything());
   expect(b.requestPermission).not.toHaveBeenCalled(); expect(refresh).toHaveBeenCalledTimes(1);
 });
-it.each(['missing', 'unavailable', null])('reauthorizes click, leaves %s target actionless, and never adopts an unverified target', async result => {
+it.each(['missing', 'unavailable', null])('reauthorizes the target, leaves %s target actionless, and never adopts an unverified target', async result => {
   window.history.replaceState(null, '', '/?notification=' + id);
   const open = vi.fn(async () => result ? { state: result } : null); const onOpen = vi.fn();
   render(<PushLink enabled state={{ open, busy: false } as unknown as NotificationsState} onOpen={onOpen} />);
-  expect(open).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole('button', { name: 'Open notification' }));
   await screen.findByText(/missing, expired or unavailable/);
-  expect(open).toHaveBeenCalledWith(id); expect(onOpen).not.toHaveBeenCalled();
+  expect(open).toHaveBeenCalledTimes(1); expect(open).toHaveBeenCalledWith(id); expect(onOpen).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Open notification' }));
+  await waitFor(() => expect(open).toHaveBeenCalledTimes(2));
+  expect(onOpen).not.toHaveBeenCalled();
 });
-it('keeps an opaque deep link through sign-in and opens only the server-confirmed target on explicit click', async () => {
+it('cold launch keeps the deep link through sign-in, waits for project navigation, then opens the server-confirmed chat once', async () => {
   window.history.replaceState(null, '', '/?notification=' + id);
   const target = { state: 'available', sessionId: 'jc_' + 'a'.repeat(32) };
   const open = vi.fn(async () => target); const onOpen = vi.fn(() => null);
-  const { rerender } = render(<PushLink enabled={false} state={{ open, busy: false } as unknown as NotificationsState} onOpen={onOpen} />);
+  const { rerender } = render(<PushLink enabled={false} ready={false} state={{ open, busy: false } as unknown as NotificationsState} onOpen={onOpen} />);
   expect(screen.getByText(/Sign in to a live/)).toBeInTheDocument(); expect(open).not.toHaveBeenCalled();
-  rerender(<PushLink enabled state={{ open, busy: false } as unknown as NotificationsState} onOpen={onOpen} />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open notification' }));
+  // Signed in, but the restored project selection is still loading: no navigation yet.
+  rerender(<PushLink enabled ready={false} state={{ open, busy: false } as unknown as NotificationsState} onOpen={onOpen} />);
+  expect(open).not.toHaveBeenCalled();
+  rerender(<PushLink enabled ready state={{ open, busy: false } as unknown as NotificationsState} onOpen={onOpen} />);
   await waitFor(() => expect(onOpen).toHaveBeenCalledWith(target));
   expect(screen.queryByRole('region', { name: 'Push notification' })).not.toBeInTheDocument();
+  expect(window.location.search).toBe('');
+  rerender(<PushLink enabled ready state={{ open, busy: false } as unknown as NotificationsState} onOpen={onOpen} />);
+  expect(open).toHaveBeenCalledTimes(1);
+});
+it('an already-open window showing another chat opens the tapped notification from the service worker message', async () => {
+  window.history.replaceState(null, '', '/');
+  const listeners: Array<(event: MessageEvent) => void> = [];
+  const controller = {} as ServiceWorker;
+  Object.defineProperty(navigator, 'serviceWorker', { configurable: true, value: {
+    controller, addEventListener: (_: string, listener: (event: MessageEvent) => void) => listeners.push(listener), removeEventListener: vi.fn(),
+  } });
+  const target = { state: 'available', sessionId: 'jc_' + 'b'.repeat(32) };
+  const open = vi.fn(async () => target); const onOpen = vi.fn(() => null);
+  const view = render(<PushLink enabled ready state={{ open, busy: false } as unknown as NotificationsState} onOpen={onOpen} />);
+  expect(open).not.toHaveBeenCalled();
+  act(() => { for (const listener of listeners) listener({ source: controller, data: { type: 'command-notification', id } } as unknown as MessageEvent); });
+  await waitFor(() => expect(onOpen).toHaveBeenCalledWith(target));
+  expect(open).toHaveBeenCalledWith(id);
+  // A second tap on the same notification opens it again.
+  act(() => { for (const listener of listeners) listener({ source: controller, data: { type: 'command-notification', id } } as unknown as MessageEvent); });
+  await waitFor(() => expect(open).toHaveBeenCalledTimes(2));
+  view.unmount();
+  Reflect.deleteProperty(navigator, 'serviceWorker');
 });
 it('ignores malformed push query targets', () => {
   window.history.replaceState(null, '', '/?notification=https://evil.invalid');

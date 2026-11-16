@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest';
 import { buildCommandProxy } from './app';
 it('projects authenticated durable-run readiness and only bounded session-control flags', async () => {
   const fetcher = vi.fn<typeof fetch>();
-  const app = buildCommandProxy({ config: { host: '127.0.0.1', port: 8644, commandProxyKey: 'c'.repeat(32), hermesApiKey: 'h'.repeat(32), hermesBaseUrl: 'http://127.0.0.1:8642', maxStreamSeconds: 1800, anthropicRoutesEnabled: false, openRouterFreeRoutesEnabled: false, historyBindingEnabled: false }, fetcher });
+  const app = buildCommandProxy({ config: { host: '127.0.0.1', port: 8644, commandProxyKey: 'c'.repeat(32), hermesApiKey: 'h'.repeat(32), hermesBaseUrl: 'http://127.0.0.1:8642', maxStreamSeconds: 1800, anthropicRoutesEnabled: false, advertisedSubscriptionRoutes: false, openRouterFreeRoutesEnabled: false, historyBindingEnabled: false }, fetcher });
   try {
     expect((await app.inject('/_ready')).statusCode).toBe(401);
     for (const durable of [true, false]) {

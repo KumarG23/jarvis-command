@@ -69,7 +69,7 @@ it.each([409, 503])('retains an immutable same-UUID envelope on %s and retry des
   const hook = renderHook(() => useLiveTurn(sessionId)); act(() => hook.result.current.history(sessionId, [], true));
   const choice = { ...inference }, routing = { mode: 'defaults' as const, projectId }, images = [{ artifactId: 'art_' + 'c'.repeat(32), version: 1 }];
   act(() => { expect(hook.result.current.send(sessionId, 'SYNTHETIC uncertain draft', 1000, choice, images, undefined, projectId, routing)).toBe(true); });
-  await waitFor(() => expect(hook.result.current.turn?.phase).toBe('Admission uncertain — retry the same intent'));
+  await waitFor(() => expect(hook.result.current.turn?.phase).toBe('Couldn’t confirm your message was sent'));
   Object.assign(choice, { model: 'gpt-6-sol', reasoningEffort: 'high' }); routing.projectId = 'room_' + 'd'.repeat(32); images[0]!.version = 2;
   act(() => hook.result.current.retry()); await waitFor(() => expect(bodies).toHaveLength(2));
   expect(bodies[1]).toEqual(bodies[0]); expect(bodies[1]).toMatchObject({ routing: { mode: 'defaults', projectId }, images: [{ version: 1 }] });

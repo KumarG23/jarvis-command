@@ -3,7 +3,8 @@ import { StrictMode } from 'react';
 import { App } from './App';
 import { afterEach, expect, it, vi } from 'vitest';
 import { useLiveTurn } from './useLiveTurn';
-import { readRecovery } from './turnRecovery';
+import { TurnView } from './TurnView';
+import { readRecovery, readRecoveryInput, recoveryInputKey, rememberRecoveryInput } from './turnRecovery';
 
 const key = 'jarvis-command:live-turn';
 const sessionId = 'jc_reload';
@@ -87,10 +88,11 @@ it.each([true, false])('shows recovered target without fabricating a bootstrap r
   sessionStorage.setItem(key, JSON.stringify(record));
   vi.stubGlobal('fetch', vi.fn(async (url: string) => Response.json(url === '/api/rooms' ? { version: 1, rooms: [] } : url.includes('/messages?') ? { sessionId, messages: [], pagination: { limit: 50, offset: 0, returned: 0, hasMore: false } } : status())));
   render(<App loadBootstrap={async () => ({ identity: { provider: 'development' }, command: { version: 'test', environment: 'test', generatedAt: '2026-09-04T12:00:00.000Z', liveRoom: { enabled: true, externalContinue: false, maxInputCharacters: 100, maxSteerCharacters: 100 } }, hermes: { state: 'online', version: null, model: null, provider: null, gatewayState: 'idle', activeAgents: 0, capabilities: ['run_events_sse'], readinessChecks: {} }, sessions: present ? [{ id: sessionId, title: 'Real bootstrap room', source: 'web', ownership: 'command', model: null, lastActive: '2026-09-04T12:00:00.000Z', messageCount: 0, toolCallCount: 0, pinned: false }] : [] })} />);
-  await waitFor(() => expect(screen.getByText(/Original message unavailable/)).toBeInTheDocument());
+  await waitFor(() => expect(screen.getByText(/Reconnected after reload/)).toBeInTheDocument());
   expect(screen.getByRole('region', { name: 'Current turn' })).toHaveTextContent(clientRequestId);
   await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(present ? 'Real bootstrap room' : 'Jarvis Command'));
-  if (present) expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toBeDisabled();
+  // A verified recovered run is steerable from the normal message box; new messages wait for the run to end.
+  if (present) expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveAttribute('placeholder', 'Steer Jarvis…');
   else expect(screen.queryByText('Command-owned session')).not.toBeInTheDocument();
 });
 
@@ -290,8 +292,11 @@ it('writes and verifies only opaque pending identifiers before POST, then binds 
   await act(async () => result.current.send(sessionId, 'secret original input', 100));
   expect(fetchMock).toHaveBeenCalledTimes(1);
   expect(JSON.parse(sessionStorage.getItem(key)!)).toEqual({ sessionId, clientRequestId: result.current.turn!.intent.clientRequestId, publicRunId });
-  expect(writes.mock.calls).toHaveLength(2);
-  for (const [storedKey, value] of writes.mock.calls) {
+  // The recovery identity stays opaque; the sent text is kept separately, for display only after a reload.
+  const identityWrites = writes.mock.calls.filter(([storedKey]) => storedKey !== recoveryInputKey);
+  expect(identityWrites).toHaveLength(2);
+  expect(readRecoveryInput(result.current.turn!.intent.clientRequestId)).toBe('secret original input');
+  for (const [storedKey, value] of identityWrites) {
     expect(storedKey).toBe(key);
     expect(Object.keys(JSON.parse(value)).sort()).toEqual(['clientRequestId', 'publicRunId', 'sessionId']);
     expect(value).not.toContain('secret');
@@ -363,4 +368,36 @@ it.each(['unmount', 'replaced-storage'])('does not bind a late admission lookup 
     expect(result.current.turn?.identityVerified).toBe(false);
     unmount();
   }
+});
+
+it('shows the sent message again after a reload mid-run, without resending it', async () => {
+  sessionStorage.setItem(key, JSON.stringify(record));
+  rememberRecoveryInput(clientRequestId, 'check the quartermaster repo');
+  const fetchMock = vi.fn<(url: string) => Promise<Response>>(async () => Response.json(status('running')));
+  vi.stubGlobal('fetch', fetchMock);
+  const { result, unmount } = renderHook(useLiveTurn);
+  await waitFor(() => expect(result.current.turn?.identityVerified).toBe(true));
+  expect(result.current.turn?.intent.input).toBeNull();
+  expect(result.current.turn?.recoveredInput).toBe('check the quartermaster repo');
+  expect(fetchMock.mock.calls.every(([url]) => url === `/api/live/runs/${publicRunId}`)).toBe(true);
+  render(<TurnView turn={result.current.turn!} allowed approve={() => {}} stop={() => {}} />);
+  expect(screen.getByRole('article', { name: 'Your message' })).toHaveTextContent('check the quartermaster repo');
+  expect(screen.getByText(/Reconnected after reload — still working/)).toBeInTheDocument();
+  expect(screen.queryByText(/Original message unavailable/)).toBeNull();
+  // Once saved history already ends with that message, the live turn stops repeating it.
+  const saved = { id: 'm1', sessionId, role: 'user' as const, content: 'check the quartermaster repo', timestamp: '2026-09-04T12:00:00.000Z', toolName: null, displayKind: null };
+  act(() => result.current.history(sessionId, [saved], true));
+  expect(result.current.turn?.userHistoryMatched).toBe(true);
+  unmount();
+});
+
+it('forgets the kept message once the recovered run finishes', async () => {
+  sessionStorage.setItem(key, JSON.stringify(record));
+  rememberRecoveryInput(clientRequestId, 'finished question');
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json(status('completed'))));
+  const { result, unmount } = renderHook(useLiveTurn);
+  await waitFor(() => expect(result.current.turn?.done).toBe(true));
+  expect(readRecoveryInput(clientRequestId)).toBeNull();
+  expect(sessionStorage.getItem(key)).toBeNull();
+  unmount();
 });

@@ -6,7 +6,7 @@ import type { ThreadReadStore } from './thread-read-store';
 
 export class ThreadObservationUnavailableError extends Error {
   readonly statusCode = 503;
-  constructor() { super('Thread observation unavailable'); }
+  constructor(readonly reason: string = 'unspecified') { super('Thread observation unavailable'); this.name = 'ThreadObservationUnavailableError'; }
 }
 type Source = Pick<ReturnType<typeof createLiveRoomService>, 'getSession' | 'getMessages' | 'getRosterStatus'>;
 // Bounded canonical oldest-first traversal, never a timestamp/text match or a run/message join.
@@ -14,7 +14,7 @@ type Source = Pick<ReturnType<typeof createLiveRoomService>, 'getSession' | 'get
 export function createThreadState(source: Source, store: ThreadReadStore) {
   const queue = new KeyedSerialQueue();
   let active = 0;
-  const unavailable = () => new ThreadObservationUnavailableError();
+  const unavailable = (reason: string) => new ThreadObservationUnavailableError(reason);
   async function snapshot(subject: string, sessionId: string) {
     const deadline = Date.now() + 8000;
     const seen = new Set<string>();
@@ -24,12 +24,12 @@ export function createThreadState(source: Source, store: ThreadReadStore) {
     let recentAt: string | null = null;
     const canonical = new Map<number, { messageId: string; eligible: boolean }>();
     for (let offset = 0; offset < 1000;) {
-      if (Date.now() >= deadline) throw unavailable();
+      if (Date.now() >= deadline) throw unavailable('history_deadline');
       const page = SessionMessagesPageSchema.parse(await source.getMessages(subject, sessionId, 100, offset));
       if (page.sessionId !== sessionId || page.messages.some(m => m.sessionId !== sessionId)
         || page.pagination.offset !== offset || page.pagination.limit !== 100 || page.pagination.returned !== page.messages.length
         || (page.pagination.hasMore && !page.messages.length)) throw Error('History unavailable');
-      if (Date.now() >= deadline || page.messages.some(message => { if (seen.has(message.id)) return true; seen.add(message.id); return false; })) throw unavailable();
+      if (Date.now() >= deadline || page.messages.some(message => { if (seen.has(message.id)) return true; seen.add(message.id); return false; })) throw unavailable('history_deadline_or_duplicate');
       for (const [index, message] of page.messages.entries()) {
         const position = offset + index;
         const eligible = isChatReadMessage(message);
@@ -70,7 +70,7 @@ export function createThreadState(source: Source, store: ThreadReadStore) {
       unread: !history.historyComplete ? null : history.latest ? !(durableRead?.messageId === history.latest.messageId && durableRead?.position === history.latest.position) : false });
   }
   return { read: async (subject: string, sessionId: string, viewed?: ThreadReadRequest) => {
-    if (active >= 2) throw unavailable();
+    if (active >= 2) throw unavailable('too_many_concurrent_reads');
     active++;
     try { return await queue.run(`${actor(subject)}:${sessionId}`, () => read(subject, sessionId, viewed)); } finally { active--; }
   } };

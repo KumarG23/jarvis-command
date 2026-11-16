@@ -7,7 +7,7 @@ import { createReadbackFixture } from './readbackFixture';
 
 const room = { id: 'room_' + 'a'.repeat(32), name: 'Synthetic project', goal: 'Exact metadata', repository: '/not/read', notes: [], sessionIds: [], lastSessionId: null };
 const session = { id: 'jc_' + 'b'.repeat(32), title: 'Created conversation', source: 'api_server', ownership: 'command', model: null, lastActive: '2026-09-06T12:00:00Z', messageCount: 0, toolCallCount: 0, pinned: false };
-const external = { ...session, id: 'discord:channel+message', title: 'This Discord chat', source: 'discord', ownership: 'external' };
+const external = { ...session, id: 'discord:channel+message', title: 'This Discord chat', source: 'discord', ownership: 'external', messageCount: 3 };
 it('adds an external recent chat directly to a chosen project', async () => {
   const linked = { ...room, sessionIds: [external.id], lastSessionId: external.id };
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -696,4 +696,28 @@ it('keeps legacy and unknown identity metadata through unrelated edit/archive pa
   expect(stored).toMatchObject({ projectIcon: 'future-glyph', projectColor: 'future-accent', archived: true });
   expect(writes).toHaveLength(2);
   for (const write of writes) { expect(write).not.toHaveProperty('projectIcon'); expect(write).not.toHaveProperty('projectColor'); }
+});
+it('shows a visible message when the deletion check fails instead of silently doing nothing', async () => {
+  const writes: string[] = [];
+  vi.stubGlobal('fetch', vi.fn(async (path: string, init?: RequestInit) => {
+    if (init?.method) writes.push(path);
+    if (path.endsWith('/deletion')) return Response.json({ error: 'upstream' }, { status: 502 });
+    return Response.json({ version: 1, rooms: [room] });
+  }));
+  render(<ProjectRooms sessions={[]} onScope={vi.fn()} onSession={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: `Delete project ${room.name}` }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Could not check this project for deletion');
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(writes).toEqual([]);
+});
+it('explains why deletion is unavailable when the server has it turned off', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (path: string) => {
+    if (path.endsWith('/deletion')) return Response.json({ roomId: room.id, name: room.name, chats: 0, artifacts: 0, token: 'a'.repeat(64), enabled: false, availabilityReason: 'Project deletion is turned off on this server (PROJECT_DELETION_MODE). Nothing was changed.', contentsAvailable: false, reason: 'Unsupported' });
+    return Response.json({ version: 1, rooms: [room] });
+  }));
+  render(<ProjectRooms sessions={[]} onScope={vi.fn()} onSession={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: `Delete project ${room.name}` }));
+  const dialog = await screen.findByRole('dialog', { name: 'Delete project?' });
+  expect(dialog).toHaveTextContent('turned off on this server');
+  expect(within(dialog).getByRole('button', { name: 'Delete project only' })).toBeDisabled();
 });

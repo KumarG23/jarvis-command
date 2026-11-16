@@ -13,6 +13,10 @@ const PublicRunIdSchema = z
 const ClientRequestIdSchema = z.uuid();
 export const ApprovalRequestIdSchema = z.string().min(1).max(256).regex(/^[!-~]+$/).refine((value) => !/\s/.test(value));
 export const OpaqueIdentifierSchema = ApprovalRequestIdSchema.max(160);
+// One chat message can be about 30,000 words (Discord stops at 2,000 characters).
+export const MAX_MESSAGE_CHARACTERS = 200_000;
+// Saved message content: a full-size message plus room for project context and markup.
+export const MAX_SAVED_MESSAGE_CHARACTERS = 262_144;
 const SafeTextSchema = (maximum: number) => z.string().max(maximum);
 const NonBlankTextSchema = (maximum: number) => z.string().trim().min(1).max(maximum);
 
@@ -22,14 +26,18 @@ export const GatewayStateSchema = z.enum(['idle', 'busy', 'unknown']);
 export const SessionOwnershipSchema = z.enum(['command', 'external']);
 export const ApprovalChoiceSchema = z.enum(['once', 'deny']);
 export const ReasoningEffortSchema = z.enum(['minimal', 'low', 'medium', 'high', 'xhigh']);
+// Subscription routes are whatever the authenticated provider currently advertises
+// (new models appear without a Command release). The command proxy only offers, and
+// only admits, a model the authenticated provider lists; this is just the id shape.
+const SubscriptionModelIdSchema = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,79}$/, 'Invalid model id');
 const OpenAiCodexInferenceSchema = z.object({
   provider: z.literal('openai-codex'),
-  model: z.enum(['gpt-6-astra', 'gpt-6-sol', 'gpt-6-luna', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']),
+  model: SubscriptionModelIdSchema,
   reasoningEffort: ReasoningEffortSchema,
 }).strict();
 const GrokInferenceSchema = z.object({
   provider: z.literal('xai-oauth'),
-  model: z.enum(['grok-4.7', 'grok-4.6']),
+  model: SubscriptionModelIdSchema,
   reasoningEffort: ReasoningEffortSchema,
 }).strict();
 // Claude routes are enabled only by an explicit command-proxy flag. Their installed
@@ -37,7 +45,7 @@ const GrokInferenceSchema = z.object({
 // rather than inventing or translating a Codex/xAI effort value.
 const AnthropicInferenceSchema = z.object({
   provider: z.literal('anthropic'),
-  model: z.enum(['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5']),
+  model: z.string().regex(/^claude-[a-z0-9][a-z0-9.-]{0,72}$/, 'Invalid Claude model id'),
 }).strict();
 // OpenRouter ids are dynamic, so the allowlist shape is the exact zero-spend suffix:
 // lowercase namespace/segments followed by a single lowercase `:free`. Paid ids,
@@ -156,7 +164,7 @@ export const CommandBootstrapSchema = z
         liveRoom: z.object({
           enabled: z.boolean(),
           externalContinue: z.literal(false),
-          maxInputCharacters: z.number().int().min(1).max(16_000),
+          maxInputCharacters: z.number().int().min(1).max(MAX_MESSAGE_CHARACTERS),
           maxSteerCharacters: z.number().int().min(1).max(4_000),
         }).strict(),
 
@@ -182,7 +190,7 @@ export const SessionMessageSchema = z.object({
   id: OpaqueIdentifierSchema,
   sessionId: SessionIdSchema,
   role: z.enum(['user', 'assistant', 'system', 'tool']),
-  content: SafeTextSchema(131_072),
+  content: SafeTextSchema(MAX_SAVED_MESSAGE_CHARACTERS),
   timestamp: IsoTimestampSchema.nullable(),
   toolName: NonBlankTextSchema(160).nullable(),
   displayKind: NonBlankTextSchema(80).nullable(),
@@ -241,7 +249,7 @@ export type FrozenRouting = z.infer<typeof FrozenRoutingSchema>;
 
 export const LiveRunSubmissionRequestSchema = z.object({
   sessionId: SessionIdSchema,
-  input: NonBlankTextSchema(16_000),
+  input: NonBlankTextSchema(MAX_MESSAGE_CHARACTERS),
   clientRequestId: ClientRequestIdSchema,
   inference: InferenceOverrideSchema.optional(),
   routing: RoutingResolutionRequestSchema.optional(),
@@ -249,6 +257,11 @@ export const LiveRunSubmissionRequestSchema = z.object({
     artifactId: z.string().regex(/^art_[a-f0-9]{32}$/),
     version: z.number().int().min(1).max(10_000),
   }).strict()).max(4).optional(),
+  // Any other uploaded file: Jarvis is told where it is saved on the Command host and opens it there.
+  files: z.array(z.object({
+    artifactId: z.string().regex(/^art_[a-f0-9]{32}$/),
+    version: z.number().int().min(1).max(10_000),
+  }).strict()).max(10).optional(),
 }).strict();
 
 export const LiveRunSubmissionResponseSchema = z.object({

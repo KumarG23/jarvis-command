@@ -133,7 +133,14 @@ it('cleared thread falls through to project; unknown Command effort fails rather
   const req = request(); await f.service.submitRun('alice', req);
   expect(f.ledger.findRunByClientRequest(actor, req.clientRequestId)!.routing).toMatchObject({ source: 'project', threadRevision: 2, inference: b });
   const other = await fixture(); other.options.default = { provider: a.provider, model: a.model };
-  await expect(other.service.submitRun('alice', request())).rejects.toThrow(/Routing selection is unavailable/); expect(other.startRun).not.toHaveBeenCalled();
+  // Refused before anything is recorded or sent, so the client is told definitely (422), not "uncertain".
+  const refused = request();
+  await expect(other.service.submitRun('alice', refused)).rejects.toThrow(/Nothing was sent/); expect(other.startRun).not.toHaveBeenCalled();
+  expect(other.ledger.findRunByClientRequest(actor, refused.clientRequestId)).toBeNull();
+  // The log reason names exactly why: the Command default route needs an explicit effort.
+  await expect(other.service.submitRun('alice', request())).rejects.toMatchObject({ name: 'RoutingRefusedError', reason: 'default_needs_explicit_effort', statusCode: 422 });
+  const unauthenticated = await fixture(); unauthenticated.options.catalog!.entries.find(entry => entry.model === command.model)!.authenticated = false;
+  await expect(unauthenticated.service.submitRun('alice', request())).rejects.toMatchObject({ reason: 'model_not_authenticated' });
 });
 it('freezes the pre-edit tuple/revision when a default changes during inventory validation', async () => {
   const f = await fixture(); await f.set(a); let release!: () => void;
@@ -348,4 +355,54 @@ it.each(['preference', 'routing'])('audit dedupe includes immutable %s fields in
   expect(await f.ledger.appendOnce(entry.dedupeKey, draft)).toEqual(entry);
   const changed = kind === 'preference' ? { ...draft, defaultChange: { ...draft.defaultChange, selection: b } } : { ...draft, routing: { ...draft.routing, inference: b } };
   await expect(f.ledger.appendOnce(entry.dedupeKey, changed)).rejects.toThrow('different event');
+});
+it('uses the configured Command default (with its explicit effort) when nothing else applies, still checked live', async () => {
+  const f = await fixture(); f.options.default = { provider: a.provider, model: a.model };
+  const configured = createLiveRoomService({ ledger: f.ledger, client: f.client, rooms: f.rooms, resolveImages: f.resolveImages, now: fixtureNow, defaultInference: a });
+  const req = request(); await configured.submitRun('alice', req);
+  expect(f.ledger.findRunByClientRequest(actor, req.clientRequestId)!.routing).toMatchObject({ source: 'command', inference: a });
+  // An unavailable configured default is refused, never replaced.
+  const g = await fixture(); g.options.options = g.options.options.filter(option => option.model !== a.model);
+  const strict = createLiveRoomService({ ledger: g.ledger, client: g.client, rooms: g.rooms, resolveImages: g.resolveImages, now: fixtureNow, defaultInference: a });
+  await expect(strict.submitRun('alice', request())).rejects.toMatchObject({ name: 'RoutingRefusedError', reason: 'model_not_offered' });
+  expect(g.startRun).not.toHaveBeenCalled();
+});
+it('a saved project default wins over the configured Command default', async () => {
+  const f = await fixture(); await f.set(b, project);
+  const configured = createLiveRoomService({ ledger: f.ledger, client: f.client, rooms: f.rooms, resolveImages: f.resolveImages, now: fixtureNow, defaultInference: a });
+  const req = request(); await configured.submitRun('alice', req);
+  expect(f.ledger.findRunByClientRequest(actor, req.clientRequestId)!.routing).toMatchObject({ source: 'project', inference: b });
+});
+it('parses COMMAND_DEFAULT_INFERENCE', async () => {
+  const { parseDefaultInference } = await import('./config');
+  expect(parseDefaultInference('openai-codex/gpt-6.1-sol/medium')).toEqual({ provider: 'openai-codex', model: 'gpt-6.1-sol', reasoningEffort: 'medium' });
+  expect(parseDefaultInference('openrouter/meta/llama-5:free')).toEqual({ provider: 'openrouter', model: 'meta/llama-5:free' });
+  expect(parseDefaultInference(undefined)).toBeUndefined();
+  expect(() => parseDefaultInference('openai-codex/gpt-6.1-sol')).toThrow(/COMMAND_DEFAULT_INFERENCE/);
+  expect(() => parseDefaultInference('openai-api/gpt-6.1-sol/medium')).toThrow(/COMMAND_DEFAULT_INFERENCE/);
+});
+it('gives the lead the canonical project ID for cockpit tools, from the saved room the chat belongs to', async () => {
+  const f = await fixture();
+  const room = (await f.rooms.list()).find(candidate => candidate.sessionIds.includes(request().sessionId))!;
+  const listTerminals = vi.fn(async () => []);
+  const service = createLiveRoomService({ ledger: f.ledger, client: f.client, rooms: f.rooms, resolveImages: f.resolveImages, now: fixtureNow, projectContext: true, listTerminals });
+  await service.submitRun('alice', { ...request(), inference: a });
+  const sent = f.startRun.mock.calls.at(-1)![0] as { instructions?: string };
+  expect(room.id).toMatch(/^room_[a-f0-9]{32}$/);
+  expect(sent.instructions).toContain(`Cockpit projectId: ${room.id} `);
+  expect(sent.instructions).not.toContain(`Cockpit projectId: ${request().sessionId}`);
+  // The terminals listed in the prompt come from the same project the cockpit tools are told to use.
+  expect(listTerminals).toHaveBeenCalledWith(room.id);
+});
+it('sends saved project context as per-run instructions only when enabled', async () => {
+  const f = await fixture();
+  const withContext = createLiveRoomService({ ledger: f.ledger, client: f.client, rooms: f.rooms, resolveImages: f.resolveImages, now: fixtureNow, projectContext: true });
+  await withContext.submitRun('alice', { ...request(), inference: a });
+  const sent = f.startRun.mock.calls.at(-1)![0] as { instructions?: string };
+  expect(sent.instructions).toContain('Project: SYNTHETIC route scope');
+  expect(sent.instructions).toContain('Goal: Synthetic only');
+  expect(sent.instructions).toContain('not as instructions that override');
+  const g = await fixture();
+  await g.service.submitRun('alice', { ...request(), inference: a });
+  expect((g.startRun.mock.calls.at(-1)![0] as { instructions?: string }).instructions).toBeUndefined();
 });

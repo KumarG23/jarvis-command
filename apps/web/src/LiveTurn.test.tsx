@@ -122,7 +122,7 @@ async function chooseChat(name: string) {
 async function open(value = bootstrap) {
   render(<App loadBootstrap={async () => value} />);
   await chooseChat(session.title);
-  await screen.findByText('No saved messages in session history yet.');
+  await screen.findByText('Nothing here yet. Ask Jarvis anything.');
 }
 async function send() {
   fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: 'Hello Jarvis' } });
@@ -180,7 +180,7 @@ it.each(['headers', 'body'])('bounds admission through stalled %s and cleans lat
   const { result, unmount } = readyHook();
   act(() => result.current.send(session.id, 'exact original', 100));
   await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
-  expect(result.current.turn?.phase).toMatch(/Admission uncertain/);
+  expect(result.current.turn?.phase).toBe('Couldn’t confirm your message was sent');
   expect((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].signal?.aborted).toBe(true);
   if (stall === 'headers') await act(async () => { deliver(response); });
   expect(cancel).toHaveBeenCalledTimes(1);
@@ -632,6 +632,42 @@ it('keeps monitoring healthy long-running work until its terminal status arrives
   unmount();
 });
 
+it('keeps a healthy stream open past a minute without flickering the phase', async () => {
+  const fetchMock = setup(undefined, status('running', { output: null }));
+  const { result, unmount } = readyHook();
+  vi.useFakeTimers();
+  await act(async () => result.current.send(session.id, 'long work', 100));
+  act(() => Source.instances[0]!.emit('tool.started', { tool: 'terminal', preview: 'build' }));
+  const phase = result.current.turn?.phase;
+  await act(async () => { await vi.advanceTimersByTimeAsync(185_000); });
+  expect(Source.instances).toHaveLength(1);
+  expect(Source.instances[0]!.close).not.toHaveBeenCalled();
+  expect(result.current.turn?.phase).toBe(phase);
+  expect(result.current.turn?.telemetry?.statusChecks).toBeGreaterThan(0);
+  fetchMock.mockResolvedValueOnce(Response.json(status()));
+  await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+  expect(result.current.turn?.done).toBe(true);
+  unmount();
+});
+
+it('shows replayed activity once and keeps streaming after repeated healthy reconnects', async () => {
+  setup(undefined, status('running', { output: null }));
+  const { result, unmount } = readyHook();
+  vi.useFakeTimers();
+  await act(async () => result.current.send(session.id, 'replay', 100));
+  for (let index = 0; index < 4; index++) {
+    act(() => Source.instances[index]!.emit('tool.started', { tool: 'execute_code', preview: 'step' }));
+    act(() => Source.instances[index]!.emit('tool.completed', { tool: 'execute_code', error: false, durationSeconds: 1 }));
+    act(() => Source.instances[index]!.onerror?.());
+    await act(async () => { await vi.advanceTimersByTimeAsync(2_000); });
+    expect(Source.instances).toHaveLength(index + 2);
+  }
+  expect(result.current.turn?.events.filter((event) => event.type === 'tool.started')).toHaveLength(1);
+  expect(result.current.turn?.events.filter((event) => event.type === 'tool.completed')).toHaveLength(1);
+  expect(result.current.turn?.phase).not.toMatch(/Reconnecting|Recovering/);
+  unmount();
+});
+
 it('bounds reconnection and failed status polling without inventing a terminal state', async () => {
   const fetchMock = setup(undefined, status('running', { output: null })); await open(); await send();
   fetchMock.mockRejectedValue(new Error('network unavailable'));
@@ -775,7 +811,7 @@ it.each(['sessionId', 'clientRequestId', 'publicRunId', 'network'])('preserves a
   await open();
   fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Same intent' } });
   const button = screen.getByRole('button', { name: 'Send message' }); fireEvent.click(button); fireEvent.click(button);
-  const retry = await screen.findByRole('button', { name: 'Retry same intent' });
+  const retry = await screen.findByRole('button', { name: 'Try again' });
   expect(bodies).toHaveLength(1); expect(Source.instances).toHaveLength(0);
   fireEvent.click(retry); await waitFor(() => expect(Source.instances).toHaveLength(1));
   expect(bodies[1]).toEqual(bodies[0]);
@@ -804,7 +840,7 @@ it('keeps supervision across rooms, ignores foreign events and closes on unmount
 });
 
 it.each(['offline', 'external', 'capability'])('keeps %s sessions read-only', async (fault) => {
-  setup(); await open({ ...bootstrap, hermes: { ...bootstrap.hermes, state: fault === 'offline' ? 'offline' : 'online', capabilities: fault === 'capability' ? [] : ['run_events_sse'] }, sessions: [{ ...session, ownership: fault === 'external' ? 'external' : 'command' }] });
+  setup(); await open({ ...bootstrap, hermes: { ...bootstrap.hermes, state: fault === 'offline' ? 'offline' : 'online', capabilities: fault === 'capability' ? [] : ['run_events_sse'] }, sessions: [{ ...session, ownership: fault === 'external' ? 'external' : 'command', messageCount: 3 }] });
   expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
 });
 
@@ -850,13 +886,13 @@ it.each(['same', 'different'])('preserves a %s uncertain steer after terminal re
 const approval = { requestId: 'approval:exact', command: 'Synthetic command --target exact', description: 'Complete description', tool: 'terminal' };
 it('retains an edited steer draft after a successful queued acknowledgement', async () => {
   const fetchMock = setup(undefined, status('running')); await open(); await send();
-  fireEvent.change(screen.getByRole('textbox', { name: 'Steer Jarvis' }), { target: { value: 'original' } });
+  fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: 'original' } });
   let resolve!: (response: Response) => void;
   fetchMock.mockImplementationOnce(() => new Promise<Response>((done) => { resolve = done; }));
-  fireEvent.click(screen.getByRole('button', { name: 'Queue steer' }));
-  fireEvent.change(screen.getByRole('textbox', { name: 'Steer Jarvis' }), { target: { value: 'edited during request' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: 'edited during request' } });
   await act(async () => resolve(Response.json({ publicRunId: id, accepted: true, state: 'queued' })));
-  expect(screen.getByRole('textbox', { name: 'Steer Jarvis' })).toHaveValue('edited during request');
+  expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('edited during request');
   expect(screen.getByText(/Steer queued — not executed/)).toBeInTheDocument();
   expect(fetchMock.mock.calls.filter(([url]) => url.endsWith('/steer'))).toHaveLength(1);
 });
@@ -889,19 +925,20 @@ it('cancels an active steer body on unmount without recovery callbacks', async (
 it.each(['offline', 'capability', 'disabled', 'external'])('removes active controls under %s gating and retains supervision', async (gate) => {
   const fetchMock = setup();
   const initial = structuredClone(bootstrap);
-  initial.sessions.push({ ...session, id: 'external:room', title: 'External room', ownership: 'external' });
+  initial.sessions.push({ ...session, id: 'external:room', title: 'External room', ownership: 'external', messageCount: 3 });
   const { rerender } = render(<App loadBootstrap={async () => initial} />);
   await chooseChat(session.title);
-  await screen.findByText('No saved messages in session history yet.'); await send();
+  await screen.findByText('Nothing here yet. Ask Jarvis anything.'); await send();
   act(() => Source.instances[0]!.emit('approval.request', { approval }));
-  expect(screen.getByRole('button', { name: 'Queue steer' })).toBeInTheDocument();
+  expect(screen.getByText(/Anything you send now steers this run/)).toBeInTheDocument();
   const changed = structuredClone(initial);
   if (gate === 'offline') changed.hermes.state = 'offline';
   if (gate === 'capability') changed.hermes.capabilities = [];
   if (gate === 'disabled') changed.command.liveRoom.enabled = false;
   await act(async () => rerender(<App loadBootstrap={async () => changed} />));
   if (gate === 'external') await chooseChat('External room');
-  for (const name of ['Approve once', 'Deny', 'Stop run', 'Queue steer']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+  for (const name of ['Approve once', 'Deny', 'Stop run']) expect(screen.queryByRole('button', { name })).not.toBeInTheDocument();
+  expect(screen.queryByText(/Anything you send now steers this run/)).not.toBeInTheDocument();
   expect(fetchMock.mock.calls.filter(([url]) => /\/(approval|stop|steer)$/.test(url))).toHaveLength(0);
   await act(async () => Source.instances[0]!.onerror?.());
   expect(fetchMock.mock.calls.some(([url]) => url === `/api/live/runs/${id}`)).toBe(true);
@@ -909,15 +946,15 @@ it.each(['offline', 'capability', 'disabled', 'external'])('removes active contr
 it('queues exact steer with shared locking and restores authoritative terminal input once', async () => {
   const exact = '  focus here\nexactly  ';
   const fetchMock = setup(undefined, status('completed', { pendingSteer: exact })); await open(); await send();
-  const field = screen.getByRole('textbox', { name: 'Steer Jarvis' });
+  const field = screen.getByRole('textbox', { name: 'Message Jarvis' });
   fireEvent.change(field, { target: { value: ' ' } });
-  expect(screen.getByRole('button', { name: 'Queue steer' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
   fireEvent.change(field, { target: { value: 'x'.repeat(101) } });
-  expect(screen.getByRole('button', { name: 'Queue steer' })).toBeDisabled();
+  expect(screen.getByRole('button', { name: 'Send message' })).toBeDisabled();
   fireEvent.change(field, { target: { value: exact } });
   let resolve!: (response: Response) => void;
   fetchMock.mockImplementationOnce(() => new Promise<Response>((done) => { resolve = done; }));
-  fireEvent.click(screen.getByRole('button', { name: 'Queue steer' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
   expect(screen.getByRole('button', { name: 'Stop run' })).toBeDisabled();
   const posts = fetchMock.mock.calls.filter(([url]) => url.endsWith('/steer'));
   expect(posts).toHaveLength(1);
@@ -959,18 +996,18 @@ it('offers explicit recovery for an edited room draft and does not auto-restore 
 it.each(['missing', 'run', 'malformed', 'network', 'state', 'accepted'])('retains exact uncertain %s steer separately from newer edits', async (fault) => {
   const fetchMock = setup(undefined, status('running')); await open(); await send();
   const exact = '  original\nsteer  ';
-  fireEvent.change(screen.getByRole('textbox', { name: 'Steer Jarvis' }), { target: { value: exact } });
+  fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: exact } });
   let resolve!: (response: Response) => void;
   let reject!: (reason: Error) => void;
   fetchMock.mockImplementationOnce(() => new Promise<Response>((yes, no) => { resolve = yes; reject = no; }));
-  fireEvent.click(screen.getByRole('button', { name: 'Queue steer' }));
-  fireEvent.change(screen.getByRole('textbox', { name: 'Steer Jarvis' }), { target: { value: 'Newer edit' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+  fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: 'Newer edit' } });
   await act(async () => {
     if (fault === 'network') reject(new Error('SECRET'));
     else resolve(Response.json(fault === 'missing' ? {} : { publicRunId: fault === 'run' ? 'jcr_' + 'b'.repeat(32) : id, accepted: fault !== 'accepted', state: fault === 'state' ? 'executed' : 'queued', ...(fault === 'malformed' ? { extra: true } : {}) }));
   });
   expect(screen.getByText(/Steer outcome unconfirmed/)).toBeInTheDocument();
-  expect(screen.getByRole('textbox', { name: 'Steer Jarvis' })).toHaveValue('Newer edit');
+  expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('Newer edit');
   expect(screen.getByRole('region', { name: 'Recover steer draft' }).querySelector('pre')!.textContent).toBe(exact);
   expect(fetchMock.mock.calls.filter(([url]) => url.endsWith('/steer'))).toHaveLength(1);
   expect(document.body.textContent).not.toContain('SECRET');
@@ -1251,4 +1288,44 @@ it('keeps an authorized unsent draft when reselecting the same chat', async () =
   fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: 'Retain selected draft' } });
   await chooseChat(session.title);
   expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('Retain selected draft');
+});
+
+it('shows a definite routing refusal as not sent, clears recovery and hands the text back', async () => {
+  const fetchMock = vi.fn(async () => new Response(JSON.stringify({ error: 'routing_refused', message: 'Command refused this model. Nothing was sent.' }), { status: 422, headers: { 'content-type': 'application/json' } }));
+  vi.stubGlobal('fetch', fetchMock);
+  const { result, unmount } = readyHook();
+  act(() => result.current.send(session.id, 'keep this text', 100));
+  await waitFor(() => expect(result.current.turn?.phase).toBe('Not sent — pick an eligible model'));
+  expect(result.current.turn).toMatchObject({ done: true, refused: true, error: 'Command refused this model. Nothing was sent.' });
+  expect(sessionStorage.getItem(recoveryKey)).toBeNull();
+  expect(result.current.recoveries).toEqual([expect.objectContaining({ input: 'keep this text', kind: 'refused' })]);
+  // History refreshes do not turn the refusal into an unconfirmed turn that fills the backlog.
+  act(() => result.current.history(session.id, [], true));
+  expect(result.current.turn?.historyMatched).toBe(true);
+  act(() => { result.current.send(session.id, 'next try', 100); });
+  expect(result.current.completedTurns).toHaveLength(0);
+  unmount();
+});
+
+it('keeps an ambiguous 503 routing failure as admission uncertain', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'routing_unavailable', message: 'x' }), { status: 503 })));
+  const { result, unmount } = readyHook();
+  act(() => result.current.send(session.id, 'replayed text', 100));
+  await waitFor(() => expect(result.current.turn?.phase).toBe('Couldn’t confirm your message was sent'));
+  expect(result.current.recoveries).toEqual([]);
+  unmount();
+});
+it('steers from the normal message box with Enter while a run is active, without starting a new run', async () => {
+  const fetchMock = setup(undefined, status('running')); await open(); await send();
+  const runsBefore = fetchMock.mock.calls.filter(([url, init]) => url === '/api/live/runs' && init?.method === 'POST').length;
+  expect(screen.queryByRole('textbox', { name: 'Steer Jarvis' })).not.toBeInTheDocument();
+  const box = screen.getByRole('textbox', { name: 'Message Jarvis' });
+  expect(box).toBeEnabled(); expect(box).toHaveAttribute('placeholder', 'Steer Jarvis…');
+  fetchMock.mockResolvedValueOnce(Response.json({ publicRunId: id, accepted: true, state: 'queued' }));
+  fireEvent.change(box, { target: { value: 'focus on the art plan' } });
+  await act(async () => { fireEvent.keyDown(box, { key: 'Enter' }); });
+  const steers = fetchMock.mock.calls.filter(([url]) => url.endsWith('/steer'));
+  expect(steers).toHaveLength(1); expect(steers[0]![1]!.body).toBe(JSON.stringify({ input: 'focus on the art plan' }));
+  expect(fetchMock.mock.calls.filter(([url, init]) => url === '/api/live/runs' && init?.method === 'POST')).toHaveLength(runsBefore);
+  await waitFor(() => expect(box).toHaveValue(''));
 });

@@ -92,7 +92,7 @@ it('accepts reversed ACK/status responses only in their original thread and fail
 it('reloads two lost-ACK admissions using GET lookup and status only, without replaying either payload', async () => {
   const f = fixture(async () => { throw new Error('SYNTHETIC ACK loss'); });
   const view = render(<Harness />); await ready(); sendBoth();
-  await waitFor(() => expect(threads.get(a).turn?.phase).toContain('uncertain'));
+  await waitFor(() => expect(threads.get(a).turn?.phase).toContain('Couldn’t confirm'));
   expect(readThreadRecoveries().every(record => record.publicRunId === null)).toBe(true);
   view.unmount();
   f.fetcher.mockImplementation(async (url: string) => {
@@ -114,7 +114,7 @@ it('retries only the original captured intent explicitly while the other thread 
     return Response.json({ sessionId: body.sessionId, clientRequestId: body.clientRequestId, publicRunId: body.sessionId === a ? runA : runB, status: 'running', replayed: body.sessionId === a });
   });
   render(<Harness />); await ready(); sendBoth();
-  await waitFor(() => expect(threads.get(a).turn?.phase).toContain('uncertain'));
+  await waitFor(() => expect(threads.get(a).turn?.phase).toContain('Couldn’t confirm'));
   act(() => threads.get(a).retry());
   await waitFor(() => expect(threads.get(a).turn?.identityVerified).toBe(true));
   expect(f.posts.filter(post => post.body.sessionId === a).map(post => post.body)).toEqual([f.posts[0]!.body, f.posts[0]!.body]);
@@ -261,17 +261,17 @@ it.each(['malformed', 'duplicate-session', 'foreign-lookup', 'expired-access'] a
 
 it('retains unsent guidance and image references when its composer closes and reopens in another pane', async () => {
   const f = fixture(); const view = render(<Harness composerFor={a} />); await ready(); sendBoth();
-  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Steer Jarvis' })).toBeEnabled());
-  fireEvent.change(screen.getByRole('textbox', { name: 'Steer Jarvis' }), { target: { value: 'SYNTHETIC unsent A guidance' } });
+  await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toBeEnabled());
+  fireEvent.change(screen.getByRole('textbox', { name: 'Message Jarvis' }), { target: { value: 'SYNTHETIC unsent A guidance' } });
   act(() => threads.get(a).composerDrafts.setImagesBySession({ [a]: [{ artifactId: `art_${'c'.repeat(32)}`, version: 1, name: 'SYNTHETIC-A.png', size: 100 }] }));
   expect(screen.getByText('SYNTHETIC-A.png')).toBeInTheDocument();
   view.rerender(<Harness />);
   view.rerender(<Harness composerFor={b} />);
-  expect(screen.getByRole('textbox', { name: 'Steer Jarvis' })).toHaveValue('');
+  expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('');
   expect(screen.queryByText('SYNTHETIC-A.png')).not.toBeInTheDocument();
   view.rerender(<Harness />);
   view.rerender(<Harness composerFor={a} />);
-  expect(screen.getByRole('textbox', { name: 'Steer Jarvis' })).toHaveValue('SYNTHETIC unsent A guidance');
+  expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('SYNTHETIC unsent A guidance');
   expect(screen.getByText('SYNTHETIC-A.png')).toBeInTheDocument();
   expect(f.posts).toHaveLength(2); // Opening/closing never sends guidance or images.
 });

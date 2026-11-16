@@ -9,6 +9,7 @@ import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'reac
 import { createPortal } from 'react-dom';
 import { ChevronDown, ChevronRight, FolderPlus, MessageSquare, Plus, Search, Trash2, X, FileText, Link, Pencil } from 'lucide-react';
 import { CreateSession } from './CreateSession';
+import { chatTitle, splitRecent } from './chatTitle';
 
 import { appStorageKey } from './appEnvironment';
 
@@ -21,10 +22,11 @@ async function request(path: string, body?: unknown) {
     ...(body === undefined ? {} : { method: 'POST', body: JSON.stringify(body) }) });
   if (response.status === 404 && body !== undefined && /^\/api\/rooms\/room_[a-f0-9]{32}$/.test(path)) throw Error('Project editing is unavailable on this server, or this project no longer exists. Your draft is kept here until you reload or cancel. Reload projects to check availability.');
   if (!response.ok && /\/delete$/.test(path)) { const body = await response.json().catch(() => null) as { error?: string } | null; throw Error(body?.error ?? 'Project deletion could not be confirmed.'); }
+  if (!response.ok && /\/deletion$/.test(path)) throw Error('Could not check this project for deletion: Jarvis did not confirm its linked chats. Nothing was changed. Try again shortly.');
   if (!response.ok) throw Error('Project operation could not be confirmed. Reload projects before retrying; the change may already have been saved.');
   return response.json() as Promise<unknown>;
 }
-export type ProjectRoomsHandle = { readback: (room: ProjectRoom) => void; openDetails: (opener?: HTMLElement) => void; openThreads: (opener: HTMLElement) => void; focusDetails: () => void; closeDetails: () => void; focusSearch: () => void; selectChat: (session: SessionSummary) => boolean; openLinkedChat: (room: ProjectRoom, session: SessionSummary) => boolean; adoptSession: (session: SessionSummary) => Promise<void> };
+export type ProjectRoomsHandle = { readback: (room: ProjectRoom) => void; openDetails: (opener?: HTMLElement) => void; openThreads: (opener: HTMLElement) => void; focusDetails: () => void; closeDetails: () => void; focusSearch: () => void; selectChat: (session: SessionSummary) => boolean; openLinkedChat: (room: ProjectRoom, session: SessionSummary) => boolean; roomFor: (sessionId: string) => ProjectRoom | null; adoptSession: (session: SessionSummary) => Promise<void> };
 type Props = Readonly<{
   ref?: Ref<ProjectRoomsHandle>;
   sessions: SessionSummary[];
@@ -135,6 +137,9 @@ export function ProjectRooms({ ref, sessions, threadStates = {}, statusClock, se
       callbacks.current.onScope(room.name); callbacks.current.onProjectScope?.(room.id); callbacks.current.onSession(session); callbacks.current.onNavigate?.();
       return true;
     },
+    // The loaded, non-archived project that holds this chat (notification navigation), if any.
+    roomFor: sessionId => rooms.find(room => !room.archived && room.sessionIds.includes(sessionId)
+      && !room.threads?.some(thread => thread.sessionId === sessionId && thread.archived)) ?? null,
     adoptSession: async session => {
       if (draft || working.current) throw Error('Finish the current project operation before switching chats.');
       working.current = true; setBusy(true); setError(null);
@@ -205,6 +210,13 @@ export function ProjectRooms({ ref, sessions, threadStates = {}, statusClock, se
     }
   }
   async function chooseChat(session: SessionSummary) {
+    // A chat that belongs to a project always opens in that project's view, with its threads and terminals.
+    const room = rooms.find(item => item.sessionIds.includes(session.id));
+    if (room) {
+      setSelected(room); setExpanded(room.id); remember(room.id); setOpen(false);
+      callbacks.current.onScope(room.name); callbacks.current.onProjectScope?.(room.id); callbacks.current.onSession(session); callbacks.current.onNavigate?.();
+      return;
+    }
     setSelected(null); setExpanded(null); setOpen(false); remember(null);
     callbacks.current.onScope(null); callbacks.current.onProjectScope?.(null); callbacks.current.onSession(session); callbacks.current.onNavigate?.();
   }
@@ -320,7 +332,8 @@ export function ProjectRooms({ ref, sessions, threadStates = {}, statusClock, se
   async function deleteProject() {
     if (!projectDelete || deleteUncertain) return;
     const target = projectDelete;
-    for (const id of rooms.find(room => room.id === target.roomId)?.sessionIds ?? []) await resolveSession(id);
+    // Keep linked chats in the chat list after unlinking. A chat Hermes no longer has is skipped; the server decides.
+    for (const id of rooms.find(room => room.id === target.roomId)?.sessionIds ?? []) await resolveSession(id).catch(() => undefined);
     // Set before dispatch: an uncertain acknowledgement never permits a resend.
     setDeleteUncertain(true);
     let failure: unknown;
@@ -344,11 +357,19 @@ export function ProjectRooms({ ref, sessions, threadStates = {}, statusClock, se
   const filter = query.trim().toLowerCase();
   const sessionTitle = (id: string) => sessions.find(session => session.id === id)?.title ?? known[id]?.title;
   const icon = (id: string) => <StatusIcon state={threadStatus(threadStates[id], statusClock)} />;
+  const fullIcon = (id: string) => <StatusIcon quiet={false} state={threadStatus(threadStates[id], statusClock)} />;
   const ordered = (ids: readonly string[]) => sortThreads(ids, threadStates, statusClock);
   const threadTitle = (room: ProjectRoom, id: string) => room.threads?.find(thread => thread.sessionId === id)?.title ?? sessionTitle(id) ?? 'Saved chat';
   const creationBlocked = (roomId: string) => uncertainCreates.includes(roomId) || !!pendingProjectChats[roomId];
   const filtered = rooms.filter(room => [room.name, room.goal, room.repository, ...room.notes, ...room.sessionIds.map(id => threadTitle(room, id))].some(value => value.toLowerCase().includes(filter))).sort((a, b) => Number(!!a.archived) - Number(!!b.archived));
-  const recent = sessions.filter(session => session.title.toLowerCase().includes(filter));
+  // Project chats live under their project, so Recent chats lists only chats outside any project.
+  const projectChatIds = new Set(rooms.flatMap(room => room.sessionIds));
+  const recent = sessions.filter(session => !projectChatIds.has(session.id) && chatTitle(session).toLowerCase().includes(filter));
+  const { own: recentOwn, other: recentOther } = splitRecent(recent, selectedSessionId);
+  const [otherOpenState, setOtherOpen] = useState(false);
+  // Open the group while searching, or when the open chat is one of them.
+  const otherOpen = otherOpenState || !!filter || recentOther.some(session => session.id === selectedSessionId);
+  const recentRow = (session: SessionSummary) => <div className="recent-chat-row" key={session.id}><button type="button" className="sidebar-item chat-item" aria-label={chatTitle(session)} disabled={busy || !!draft} aria-current={!selected && selectedSessionId === session.id ? 'page' : undefined} title={session.ownership === 'external' ? `${chatTitle(session)} · Read-only` : chatTitle(session)} onClick={() => void perform(() => chooseChat(session))}><MessageSquare size={17} /><span><span className="chat-item-title">{chatTitle(session)}</span>{icon(session.id)}</span>{session.ownership === 'external' ? <span className="read-only-dot" aria-label="Read-only chat" /> : null}</button><button className="icon-button chat-row-action" type="button" aria-label={`Add ${chatTitle(session)} to project`} disabled={busy || !rooms.length} onClick={() => { setProjectTarget(session); setTargetRoomId(rooms[0]?.id ?? ''); }}><FolderPlus size={15} /></button>{session.ownership === 'command' ? <button className="icon-button chat-row-action danger" type="button" aria-label={`Delete ${session.title}`} disabled={busy} onClick={() => setDeleteTarget(session)}><Trash2 size={15} /></button> : null}</div>;
   const allKnown = [...sessions, ...Object.values(known).filter(session => !sessions.some(item => item.id === session.id))];
   const panel = open ? <div className="project-details" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); closeDrawer(); } }}>
     <header className="pane-header"><h2>{creatingRoom ? 'New project' : 'Project details'}</h2><button ref={closeButton} type="button" className="icon-button" aria-label="Close project details" onClick={closeDrawer}><X size={20} /></button></header>
@@ -393,7 +414,7 @@ export function ProjectRooms({ ref, sessions, threadStates = {}, statusClock, se
         <label>Note references (one per line)<textarea name="notes" disabled={busy} defaultValue={roomCreation.current.notes} onChange={event => { roomCreation.current.notes = event.target.value; }} maxLength={6156} /></label>
         <button className="primary-button" type="submit" disabled={busy}>Create project</button>
       </form> : selected ? <>
-        <div className="project-title"><ProjectIdentity project={selected} /><StatusIcon state={summarizeThreads(selected.sessionIds, threadStates, statusClock)} /><h3>{selected.name}</h3><button ref={editButton} className="secondary-button" type="button" disabled={busy} onClick={() => { setError(null); setDraft({ ...identityMetadata(selected), id: selected.id, name: selected.name, goal: selected.goal, instructions: selected.instructions ?? '', archived: selected.archived ?? false, repository: selected.repository, notes: selected.notes.join('\n') }); }}><Pencil size={14} /> Edit project</button></div>
+        <div className="project-title"><ProjectIdentity project={selected} /><StatusIcon quiet={false} state={summarizeThreads(selected.sessionIds, threadStates, statusClock)} /><h3>{selected.name}</h3><button ref={editButton} className="secondary-button" type="button" disabled={busy} onClick={() => { setError(null); setDraft({ ...identityMetadata(selected), id: selected.id, name: selected.name, goal: selected.goal, instructions: selected.instructions ?? '', archived: selected.archived ?? false, repository: selected.repository, notes: selected.notes.join('\n') }); }}><Pencil size={14} /> Edit project</button></div>
         <button className="secondary-button" type="button" disabled={busy} onClick={() => void perform(async () => { await saveMetadata(selected.id, { ...identityMetadata(selected), name: selected.name, goal: selected.goal, repository: selected.repository, notes: selected.notes, instructions: selected.instructions ?? '', archived: !selected.archived }); })}>{selected.archived ? 'Restore project' : 'Archive project'}</button>
         <button className="secondary-button project-delete-control" type="button" disabled={busy} onClick={event => { const element = event.currentTarget; void perform(() => inspectDeletion(selected, element)); }}>Delete project</button>
         {selected.archived ? <p role="status">Archived project — restore before sending new project messages.</p> : null}
@@ -409,7 +430,7 @@ export function ProjectRooms({ ref, sessions, threadStates = {}, statusClock, se
               const lead = selected.leadSessionId === id;
               return <div key={id} className="project-thread" role="group" aria-label={`Thread: ${threadTitle(selected, id)}`}>
                 <button className="sidebar-item" type="button" disabled={busy} onClick={() => void perform(async () => { await attach(id); closeDrawer(); callbacks.current.onNavigate?.(); })}>{threadTitle(selected, id)}</button>
-                <p className="muted small">{icon(id)}<br />{lead ? 'Lead · ' : ''}{session?.ownership === 'external' ? 'Read-only · ' : ''}{thread ? `Tracked ${new Date(thread.createdAt).toLocaleDateString()}` : 'Legacy chat · tracking date unavailable'}</p>
+                <p className="muted small">{fullIcon(id)}<br />{lead ? 'Lead · ' : ''}{session?.ownership === 'external' ? 'Read-only · ' : ''}{thread ? `Tracked ${new Date(thread.createdAt).toLocaleDateString()}` : 'Legacy chat · tracking date unavailable'}</p>
                 {threadDraft?.roomId === selected.id && threadDraft.sessionId === id ? <form aria-label="Rename thread" onSubmit={event => { event.preventDefault(); void perform(() => saveThread(selected, id, { title: threadDraft.title })); }}>
                   <label>Thread title<input required maxLength={120} disabled={busy} value={threadDraft.title} onChange={event => setThreadDraft({ roomId: selected.id, sessionId: id, title: event.target.value })} /></label>
                   <div className="button-row"><button type="submit" className="secondary-button" disabled={busy}>Save thread title</button><button type="button" className="text-button" disabled={busy} onClick={() => setThreadDraft(null)}>Cancel rename</button></div>
@@ -441,6 +462,7 @@ export function ProjectRooms({ ref, sessions, threadStates = {}, statusClock, se
     })}
     <label className="sidebar-search"><Search size={17} /><input ref={search} type="search" aria-label="Search projects and chats" placeholder="Search" value={query} onChange={event => setQuery(event.target.value)} />{query ? <button className="icon-button" type="button" aria-label="Clear search" onClick={() => setQuery('')}><X size={15} /></button> : null}</label>
     <div className="sidebar-scroll">
+      {error && !open ? <p role="alert" className="notice error sidebar-error">{error} <button className="text-button" type="button" disabled={busy} onClick={() => void perform(() => load(selected?.id))}>Reload projects</button></p> : null}
       <nav aria-label="Projects" className="sidebar-section"><div className="section-heading"><h2>Projects</h2><button className="icon-button" type="button" aria-label="New project" disabled={busy || !!draft} onClick={event => showDetails(event.currentTarget, true)}><Plus size={17} /></button></div>
         {!loaded ? <p className="empty-copy">Loading projects…</p> : !rooms.length ? <p className="empty-copy">No projects yet.</p> : !filtered.length ? <p className="empty-copy">No matching projects.</p> : null}
         {filtered.map((room, index) => <div key={room.id} className="project-nav-group">{room.archived && !filtered[index - 1]?.archived ? <h3 className="section-heading">Archived projects</h3> : null}<div className="project-nav-row"><button type="button" className="sidebar-item project-nav" title={room.name} disabled={busy || !!draft} aria-current={selected?.id === room.id ? 'page' : undefined} aria-expanded={expanded === room.id} onClick={() => {
@@ -452,8 +474,8 @@ export function ProjectRooms({ ref, sessions, threadStates = {}, statusClock, se
           <button className="text-button project-info-button" type="button" aria-expanded={open && !creatingRoom} onClick={event => showDetails(event.currentTarget)}>Project details <ChevronRight size={13} /></button>
         </div> : null}</div>)}
       </nav>
-      <nav aria-label="Recent chats" className="sidebar-section"><div className="section-heading"><h2>Recent chats</h2></div>{recent.length ? ordered(recent.map(session => session.id)).map(id => recent.find(session => session.id === id)!).map(session => <div className="recent-chat-row" key={session.id}><button type="button" className="sidebar-item chat-item" aria-label={session.title} disabled={busy || !!draft} aria-current={!selected && selectedSessionId === session.id ? 'page' : undefined} title={session.ownership === 'external' ? `${session.title} · Read-only` : session.title} onClick={() => void perform(() => chooseChat(session))}><MessageSquare size={17} /><span><span className="chat-item-title">{session.title}</span>{icon(session.id)}</span>{session.ownership === 'external' ? <span className="read-only-dot" aria-label="Read-only chat" /> : null}</button><button className="icon-button chat-row-action" type="button" aria-label={`Add ${session.title} to project`} disabled={busy || !rooms.length} onClick={() => { setProjectTarget(session); setTargetRoomId(rooms[0]?.id ?? ''); }}><FolderPlus size={15} /></button>{session.ownership === 'command' ? <button className="icon-button chat-row-action danger" type="button" aria-label={`Delete ${session.title}`} disabled={busy} onClick={() => setDeleteTarget(session)}><Trash2 size={15} /></button> : null}</div>) : <p className="empty-copy">{query ? 'No matching chats.' : 'Your chats will appear here.'}</p>}</nav>
-      {error && !open ? <p role="alert" className="notice error">{error} <button className="text-button" type="button" disabled={busy} onClick={() => void perform(() => load(selected?.id))}>Reload projects</button></p> : null}
+      <nav aria-label="Recent chats" className="sidebar-section"><div className="section-heading"><h2>Recent chats</h2></div>{recentOwn.length ? ordered(recentOwn.map(session => session.id)).map(id => recentOwn.find(session => session.id === id)!).map(recentRow) : <p className="empty-copy">{query ? 'No matching chats.' : 'Your chats will appear here.'}</p>}
+        {recentOther.length ? <details className="other-sessions" open={otherOpen} onToggle={event => setOtherOpen(event.currentTarget.open)}><summary>Other Jarvis sessions <span>{recentOther.length}</span></summary><p className="other-sessions-hint">Discord, scheduled jobs and other places Jarvis ran. Read-only here.</p>{recentOther.map(recentRow)}</details> : null}</nav>
     </div>
     {projectTarget ? <div className="action-dialog-backdrop"><section className="action-dialog" role="dialog" aria-modal="true" aria-labelledby="add-chat-title"><h2 id="add-chat-title">Add chat to project</h2><p>{projectTarget.title}</p><label>Project<select value={targetRoomId} disabled={busy} onChange={event => setTargetRoomId(event.target.value)}>{rooms.map(room => <option key={room.id} value={room.id}>{room.name}</option>)}</select></label><div className="button-row"><button className="primary-button" type="button" disabled={busy || !targetRoomId} onClick={() => void perform(async () => { await linkToProject(targetRoomId, projectTarget.id, false); setProjectTarget(null); })}>Add to project</button><button className="secondary-button" type="button" disabled={busy} onClick={() => setProjectTarget(null)}>Cancel</button></div></section></div> : null}
     {projectDelete ? createPortal(<div className="action-dialog-backdrop project-delete-backdrop"><section className="action-dialog project-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-project-title" onKeyDown={event => {

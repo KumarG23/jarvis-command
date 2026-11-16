@@ -11,7 +11,7 @@ const config: CommandProxyConfig = {
   hermesBaseUrl: 'http://127.0.0.1:8642',
   hermesApiKey: 'hermes-api-key-that-is-long-enough-12345678',
   maxStreamSeconds: 1800,
-  anthropicRoutesEnabled: false,
+  anthropicRoutesEnabled: false, advertisedSubscriptionRoutes: false,
   openRouterFreeRoutesEnabled: false,
   historyBindingEnabled: false,
 };

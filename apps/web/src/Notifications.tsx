@@ -11,6 +11,7 @@ import {
 } from '@jarvis-command/contracts';
 import { useEffect, useRef, useState } from 'react';
 import { boundedJson } from './useLiveTurn';
+import { closeReadAlerts, inboxIn, knownItems } from './notificationInbox';
 
 const CATEGORY_LABELS: Record<NotificationCategory, string> = {
   'run-completed': 'Run finished',
@@ -24,6 +25,7 @@ const FILTERS = [
   { key: 'run-failed', label: 'Failed' },
   { key: 'approval', label: 'Approvals' },
   { key: 'assistant-reply', label: 'Replies' },
+  { key: 'delivery', label: 'Reminders' },
 ] as const;
 type FilterKey = (typeof FILTERS)[number]['key'];
 
@@ -58,7 +60,7 @@ export function useNotifications(enabled: boolean, refreshKey: string) {
       const value = await action(new AbortController());
       if (!alive.current) return null;
       const next = apply(value);
-      if (ticket === sequence.current) { if (next) setInbox(next); setError(null); }
+      if (ticket === sequence.current) { if (next) { setInbox(next); void closeReadAlerts(next); } setError(null); }
       return value;
     } catch {
       if (alive.current && ticket === sequence.current) setError(failure);
@@ -66,11 +68,11 @@ export function useNotifications(enabled: boolean, refreshKey: string) {
     } finally { if (alive.current && ticket === sequence.current) setBusy(false); }
   }
 
-  const refresh = () => run(async c => NotificationInboxSchema.parse(await boundedJson('/api/notifications', read, c)), value => value, 'Notifications could not be loaded. Your other work is unaffected.');
-  const reconcile = () => run(async c => NotificationReconcileResponseSchema.parse(await boundedJson('/api/notifications/reconcile', write({}), c)), value => value.inbox, 'Active runs could not be checked. Showing what was last recorded.');
-  const markRead = (selection: { ids: string[] } | { all: true }) => run(async c => NotificationInboxSchema.parse(await boundedJson('/api/notifications/read', write(selection), c)), value => value, 'Read state was not saved. Try again.');
+  const refresh = () => run(async c => NotificationInboxSchema.parse(knownItems(await boundedJson('/api/notifications', read, c))), value => value, 'Notifications could not be loaded. Your other work is unaffected.');
+  const reconcile = () => run(async c => NotificationReconcileResponseSchema.parse(inboxIn(await boundedJson('/api/notifications/reconcile', write({}), c))), value => value.inbox, 'Active runs could not be checked. Showing what was last recorded.');
+  const markRead = (selection: { ids: string[] } | { all: true }) => run(async c => NotificationInboxSchema.parse(knownItems(await boundedJson('/api/notifications/read', write(selection), c))), value => value, 'Read state was not saved. Try again.');
   const savePreferences = async (preferences: NotificationPreferences) => {
-    const saved = await run(async c => NotificationInboxSchema.parse(await boundedJson('/api/notifications/preferences', write(preferences), c)), value => value, 'Preferences were not saved. Your edits are kept; try again.');
+    const saved = await run(async c => NotificationInboxSchema.parse(knownItems(await boundedJson('/api/notifications/preferences', write(preferences), c))), value => value, 'Preferences were not saved. Your edits are kept; try again.');
     // Authoritative readback: anything other than the requested value is a failed save.
     if (saved && JSON.stringify(saved.preferences) !== JSON.stringify(preferences)) { setError('Preferences were not saved as requested. Your edits are kept; try again.'); return false; }
     return saved !== null;
@@ -83,7 +85,7 @@ export function useNotifications(enabled: boolean, refreshKey: string) {
     return ticket === openSequence.current ? target : null;
   };
   const openRequest = (id: string): Promise<NotificationTarget | null> => run(
-    async c => NotificationTargetSchema.parse(await boundedJson(`/api/notifications/${id}/open`, write({}), c)),
+    async c => NotificationTargetSchema.parse(inboxIn(await boundedJson(`/api/notifications/${id}/open`, write({}), c))),
     value => value.state === 'available' ? value.inbox : null,
     'This notification could not be opened. It may no longer exist.',
   );
@@ -154,9 +156,9 @@ export function NotificationsPane({ state, onOpen }: Readonly<{
         <button type="button" className="secondary-button" disabled={busy} onClick={() => void state.reconcile()}>Check active runs</button>
       </div>
       {items.length === 0 ? <p className="empty-copy" role="status">{inbox.items.length === 0 ? 'No notifications yet.' : 'No notifications match this filter.'}</p> : <ul className="notification-list" aria-label="Notifications">
-        {items.map(item => <li key={item.id} className={`notification-row${item.readAt === null ? ' unread' : ''}`}>
+        {items.map(item => <li key={item.id} className={`notification-row${item.readAt === null ? ' unread' : ' read'}`}>
           <div>
-            <strong>{item.title}{item.readAt === null ? <span className="visually-hidden"> (unread)</span> : null}</strong>
+            <strong>{item.readAt === null ? <span className="unread-dot" aria-hidden="true" /> : null}{item.title}<span className="visually-hidden">{item.readAt === null ? ' (unread)' : ' (read)'}</span></strong>
             <p>{item.body}</p>
             <small>Observed by Command {timeFormat.format(new Date(item.observedAt))}</small>
           </div>

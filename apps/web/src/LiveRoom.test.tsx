@@ -104,11 +104,32 @@ it('keeps saved tool output collapsed while retaining its exact payload', async 
   const tool = { id: 'tool:1', sessionId: session.id, role: 'tool', content: 'Exact tool output\n  unchanged', timestamp: null, toolName: 'terminal', displayKind: null };
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ sessionId: session.id, messages: [tool], pagination: { limit: 50, offset: 0, returned: 1, hasMore: false } })));
   render(<LiveRoom session={session} onHistory={vi.fn()} />);
-  const summary = await screen.findByText('terminal');
-  expect(summary.closest('details')).not.toHaveAttribute('open');
+  const group = await screen.findByText('Used 1 tool · terminal');
+  expect(group.closest('details')).not.toHaveAttribute('open');
+  const summary = screen.getByText('Result · terminal');
   expect(summary.closest('details')!.querySelector('p')!.textContent).toBe(tool.content);
-  fireEvent.click(summary);
-  expect(summary.closest('details')).toHaveAttribute('open');
+  fireEvent.click(group);
+  expect(group.closest('details')).toHaveAttribute('open');
+});
+
+it('collapses a run of tool steps into one expandable line between replies', async () => {
+  const message = (id: string, role: string, content: string, toolName: string | null = null) => ({ id, sessionId: session.id, role, content, timestamp: null, toolName, displayKind: null });
+  const messages = [
+    message('u:1', 'user', 'Build it'),
+    message('a:1', 'assistant', '{"cmd":"ls"}', 'terminal'),
+    message('t:1', 'tool', 'file-a', 'terminal'),
+    message('a:2', 'assistant', '{"code":"1"}', 'execute_code'),
+    message('t:2', 'tool', 'ok', 'execute_code'),
+    message('t:3', 'tool', 'ok again', 'execute_code'),
+    message('a:3', 'assistant', 'Done building.'),
+    message('t:4', 'tool', 'later', 'read_file'),
+  ];
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ sessionId: session.id, messages, pagination: { limit: 50, offset: 0, returned: messages.length, hasMore: false } })));
+  render(<LiveRoom session={session} onHistory={vi.fn()} />);
+  await screen.findByText('Used 3 tools · terminal, execute_code');
+  expect(screen.getAllByRole('article', { name: 'Tool activity' })).toHaveLength(2);
+  expect(screen.getByText('Used 1 tool · read_file')).toBeInTheDocument();
+  expect(screen.getAllByRole('article').map(row => row.getAttribute('aria-label'))).toEqual(['Your message', 'Tool activity', 'Jarvis response', 'Tool activity']);
 });
 
 it('renders stored and live assistant thread links consistently; user and tool messages stay inert', async () => {
@@ -162,3 +183,26 @@ it('loads 250 canonical IDs across five pages, retaining identical messages and 
   expect(onHistory).toHaveBeenLastCalledWith(session.id, messages, true);
   expect(fetchMock.mock.calls.filter(([url]) => url.includes('/messages?')).map(([url]) => new URL(url, 'http://fixture').searchParams.get('offset'))).toEqual(['0', '50', '100', '150', '200']);
 }, 15000);
+it('shows delivered reminders in time order between saved messages, only when enabled', async () => {
+  const messages = [
+    { id: 'm1', sessionId: session.id, role: 'user', content: 'remind me at 5', timestamp: '2026-11-12T16:00:00Z', toolName: null, displayKind: null },
+    { id: 'm2', sessionId: session.id, role: 'assistant', content: 'Will do.', timestamp: '2026-11-12T16:00:05Z', toolName: null, displayKind: null },
+    { id: 'm3', sessionId: session.id, role: 'user', content: 'thanks', timestamp: '2026-11-12T18:00:00Z', toolName: null, displayKind: null },
+  ];
+  const delivery = { deliveryId: 'dlv_' + 'b'.repeat(32), sessionId: session.id, kind: 'reminder', title: 'Stretch', content: 'Time to **stretch**.', deliveredAt: '2026-11-12T17:00:00Z' };
+  const fetcher = vi.fn(async (url: string) => url.endsWith('/deliveries')
+    ? Response.json({ sessionId: session.id, deliveries: [delivery] })
+    : Response.json({ sessionId: session.id, messages, pagination: { limit: 50, offset: 0, returned: 3, hasMore: false } }));
+  vi.stubGlobal('fetch', fetcher);
+  const view = render(<LiveRoom session={session} onHistory={vi.fn()} showDeliveries />);
+  const card = await screen.findByRole('article', { name: 'Scheduled message from Jarvis' });
+  expect(card.textContent).toContain('Reminder: Stretch');
+  expect(card.querySelector('strong')?.textContent).toBe('stretch');
+  const order = [...document.querySelectorAll('[data-message-id], [data-delivery-id]')].map(node => node.getAttribute('data-message-id') ?? 'delivery');
+  expect(order).toEqual(['m1', 'm2', 'delivery', 'm3']);
+  view.unmount();
+  fetcher.mockClear();
+  render(<LiveRoom session={session} onHistory={vi.fn()} />);
+  await waitFor(() => expect(document.querySelector('[data-message-id="m3"]')).not.toBeNull());
+  expect(fetcher.mock.calls.some(([url]) => String(url).endsWith('/deliveries'))).toBe(false);
+});

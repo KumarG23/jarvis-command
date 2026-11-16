@@ -35,13 +35,15 @@
         if (!event.data || event.data.text().length > 1024) return;
         const payload = event.data.json();
         const keys = Object.keys(payload).sort().join(',');
-        const reply = payload.version === 2 && keys === 'body,id,title,version' && validText(payload.title, 80) && validText(payload.body, 160);
+        // A test push (owner pressed "Send test notification") carries `test: true` and is not an inbox item.
+        const test = payload.version === 2 && keys === 'body,id,test,title,version' && payload.test === true;
+        const reply = payload.version === 2 && (keys === 'body,id,title,version' || test) && validText(payload.title, 80) && validText(payload.body, 160);
         if (!validId(payload.id) || !(reply || (payload.version === 1 && keys === 'id,version'))) return;
         if (!await claim(payload.id)) return;
         await self.registration.showNotification(reply ? payload.title : 'Jarvis Command', {
           body: reply ? payload.body : 'An update is available. Sign in to Command to review it.',
           icon: '/pwa-192.png', tag: payload.id, renotify: false,
-          data: { id: payload.id },
+          data: test ? { id: payload.id, test: true } : { id: payload.id },
         });
       } catch { /* no speculative display or retry on unavailable storage/malformed payload */ }
     })());
@@ -51,8 +53,9 @@
     const id = event.notification.data?.id;
     if (!validId(id) || event.action) return;
     event.waitUntil((async () => {
+      const test = event.notification.data?.test === true;
       const destination = new URL('/', self.location.origin);
-      destination.searchParams.set('notification', id);
+      if (!test) destination.searchParams.set('notification', id);
       const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: false });
       const existing = windows.find(client => {
         const url = new URL(client.url);
@@ -60,7 +63,7 @@
       });
       if (existing) {
         // Preserve the existing page's drafts, unsaved edits and active run.
-        existing.postMessage({ type: 'command-notification', id });
+        if (!test) existing.postMessage({ type: 'command-notification', id });
         await existing.focus();
       } else await self.clients.openWindow(destination.href);
     })());

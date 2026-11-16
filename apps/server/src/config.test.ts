@@ -30,6 +30,9 @@ describe('loadConfig', () => {
     });
 
     expect(config).toEqual({
+      cockpit: null,
+      scheduledRuns: null,
+      hostShell: null,
       reactionsEnabled: false,
       replyEvidenceEnabled: false,
       projectDeletionEnabled: false,
@@ -65,6 +68,36 @@ describe('loadConfig', () => {
       },
     });
     expect(config).not.toHaveProperty('SOME_UNRELATED_SECRET');
+  });
+
+  it('enables the cockpit only with a session host origin and key', () => {
+    const key = 'k'.repeat(40);
+    expect(loadConfig({ ...productionEnvironment, COCKPIT_MODE: 'enabled', SESSION_HOST_BASE_URL: 'http://10.0.0.5:8650', SESSION_HOST_KEY: key }).cockpit)
+      .toEqual({ sessionHostUrl: 'http://10.0.0.5:8650', sessionHostKey: key });
+    expect(() => loadConfig({ ...productionEnvironment, COCKPIT_MODE: 'enabled', SESSION_HOST_KEY: key })).toThrow(/SESSION_HOST_BASE_URL/);
+    expect(() => loadConfig({ ...productionEnvironment, COCKPIT_MODE: 'enabled', SESSION_HOST_BASE_URL: 'http://u:p@10.0.0.5:8650', SESSION_HOST_KEY: key })).toThrow(/uncredentialed/);
+    expect(() => loadConfig({ ...productionEnvironment, COCKPIT_MODE: 'enabled', SESSION_HOST_BASE_URL: 'http://10.0.0.5:8650', SESSION_HOST_KEY: 'short' })).toThrow();
+    expect(() => loadConfig({ ...productionEnvironment, COMMAND_MODE: 'disabled', COCKPIT_MODE: 'enabled', SESSION_HOST_BASE_URL: 'http://10.0.0.5:8650', SESSION_HOST_KEY: key })).toThrow();
+  });
+
+  it('enables scheduled runs only with a key and owner actor on a separate port', () => {
+    const key = 'k'.repeat(40);
+    const owner = 'a'.repeat(64);
+    expect(loadConfig({ ...productionEnvironment, HOST_SHELL_MODE: 'enabled', HOST_SHELL_BASE_URL: 'http://192.168.1.20:8660', HOST_SHELL_KEY: 'x'.repeat(40) }).hostShell)
+      .toEqual({ url: 'http://192.168.1.20:8660', key: 'x'.repeat(40), name: 'Hermes host' });
+    expect(() => loadConfig({ ...productionEnvironment, HOST_SHELL_MODE: 'enabled', HOST_SHELL_BASE_URL: 'http://192.168.1.20:8660' })).toThrow(/HOST_SHELL_KEY/);
+    expect(() => loadConfig({ ...productionEnvironment, HOST_SHELL_MODE: 'enabled', HOST_SHELL_BASE_URL: 'http://u:p@192.168.1.20:8660', HOST_SHELL_KEY: 'x'.repeat(40) })).toThrow(/uncredentialed/);
+    expect(() => loadConfig({ ...productionEnvironment, HOST_SHELL_MODE: 'enabled', HOST_SHELL_BASE_URL: 'http://192.168.1.20:8660', HOST_SHELL_KEY: 'x'.repeat(40), SESSION_HOST_KEY: 'x'.repeat(40) })).toThrow(/must differ/);
+    expect(loadConfig(productionEnvironment).scheduledRuns).toBeNull();
+    expect(loadConfig({ ...productionEnvironment, SCHEDULED_RUNS_MODE: 'enabled', SCHEDULED_RUNS_HOST: '0.0.0.0', SCHEDULED_RUNS_KEY: key, SCHEDULED_RUNS_OWNER_ACTOR: owner }).scheduledRuns)
+      .toEqual({ host: '0.0.0.0', port: 8652, key, ownerActor: owner, deliveriesKey: null, home: null });
+    expect(() => loadConfig({ ...productionEnvironment, SCHEDULED_RUNS_MODE: 'enabled', SCHEDULED_RUNS_OWNER_ACTOR: owner })).toThrow(/SCHEDULED_RUNS_KEY/);
+    expect(() => loadConfig({ ...productionEnvironment, SCHEDULED_RUNS_MODE: 'enabled', SCHEDULED_RUNS_KEY: key })).toThrow(/SCHEDULED_RUNS_OWNER_ACTOR/);
+    expect(() => loadConfig({ ...productionEnvironment, SCHEDULED_RUNS_MODE: 'enabled', SCHEDULED_RUNS_KEY: key, SCHEDULED_RUNS_OWNER_ACTOR: 'not-a-hash' })).toThrow();
+    expect(() => loadConfig({ ...productionEnvironment, SCHEDULED_RUNS_MODE: 'enabled', SCHEDULED_RUNS_KEY: key, SCHEDULED_RUNS_OWNER_ACTOR: owner, SCHEDULED_RUNS_PORT: productionEnvironment.PORT ?? '8650' })).toThrow(/differ/);
+    expect(() => loadConfig({ ...productionEnvironment, SCHEDULED_RUNS_MODE: 'enabled', SCHEDULED_RUNS_KEY: key, SCHEDULED_RUNS_OWNER_ACTOR: owner, SCHEDULED_DELIVERIES_KEY: key })).toThrow(/must differ/);
+    expect(loadConfig({ ...productionEnvironment, SCHEDULED_RUNS_MODE: 'enabled', SCHEDULED_RUNS_KEY: key, SCHEDULED_RUNS_OWNER_ACTOR: owner, SCHEDULED_DELIVERIES_KEY: 'd'.repeat(40), SCHEDULED_RUNS_HOME: `room_${'1'.repeat(32)}` }).scheduledRuns)
+      .toMatchObject({ deliveriesKey: 'd'.repeat(40), home: `room_${'1'.repeat(32)}` });
   });
 
   it('refuses development authentication in production', () => {
