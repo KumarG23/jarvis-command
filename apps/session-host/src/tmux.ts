@@ -25,7 +25,8 @@ export function workerEnvironment(source: NodeJS.ProcessEnv = process.env): Node
   return result;
 }
 
-export type PaneInfo = { name: string; pid: number | null; dead: boolean; status: number | null };
+// activity: when the pane last produced output (epoch seconds), or null if tmux did not say.
+export type PaneInfo = { name: string; pid: number | null; dead: boolean; status: number | null; activity: number | null };
 
 const CONFIG = [
   // Keep a finished process's last screen and exit status until the cockpit stops it.
@@ -86,8 +87,16 @@ export class Tmux {
       '-c', options.cwd, ...envArgs, '--', ...argv]);
   }
 
+  // Starts a new process in an existing (usually dead) pane. The pane's scrollback stays, so the
+  // earlier run's output remains visible above the new one.
+  async respawn(name: string, options: { cwd: string; argv: readonly string[]; env: Record<string, string> }) {
+    const envArgs = Object.entries(options.env).flatMap(([key, value]) => ['-e', `${key}=${value}`]);
+    const argv = options.argv.length === 1 ? ['/usr/bin/env', ...options.argv] : options.argv;
+    await this.must(['respawn-pane', '-k', '-t', `=${name}:`, '-c', options.cwd, ...envArgs, '--', ...argv]);
+  }
+
   async panes(): Promise<Map<string, PaneInfo> | null> {
-    const result = await this.run(['list-panes', '-a', '-F', '#{session_name}|#{pane_pid}|#{pane_dead}|#{pane_dead_status}']);
+    const result = await this.run(['list-panes', '-a', '-F', '#{session_name}|#{pane_pid}|#{pane_dead}|#{pane_dead_status}|#{window_activity}']);
     if (result.code !== 0) {
       const message = `${result.stderr}${result.stdout}`;
       if (/no server running|error connecting|No such file or directory/i.test(message)) return new Map();
@@ -96,13 +105,14 @@ export class Tmux {
     const panes = new Map<string, PaneInfo>();
     for (const line of result.stdout.split('\n')) {
       if (!line) continue;
-      const [name = '', pid, dead, status] = line.split('|');
+      const [name = '', pid, dead, status, activity] = line.split('|');
       if (panes.has(name)) continue; // one pane per cockpit session
       panes.set(name, {
         name,
         pid: pid && /^\d+$/.test(pid) ? Number(pid) : null,
         dead: dead === '1',
         status: status && /^-?\d+$/.test(status) ? Number(status) : null,
+        activity: activity && /^\d+$/.test(activity) ? Number(activity) : null,
       });
     }
     return panes;
@@ -114,6 +124,14 @@ export class Tmux {
       const hex = [...bytes.subarray(offset, offset + 256)].map(byte => byte.toString(16).padStart(2, '0'));
       await this.must(['send-keys', '-t', `=${name}:`, '-H', ...hex]);
     }
+  }
+
+  // Pastes text as one block. Apps that enabled bracketed paste (Claude Code, Codex, agy) receive it
+  // as a paste, so newlines inside a task stay newlines instead of submitting it early.
+  async paste(name: string, data: string) {
+    const buffer = `cockpit-${name}`;
+    await this.must(['load-buffer', '-b', buffer, '-'], data);
+    await this.must(['paste-buffer', '-p', '-d', '-r', '-b', buffer, '-t', `=${name}:`]);
   }
 
   async sendKey(name: string, key: 'C-c' | 'Enter' | 'Escape') {

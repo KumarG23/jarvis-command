@@ -26,6 +26,9 @@ const EnvironmentSchema = z.object({
   SESSION_HOST_AUTONOMOUS: z.string().default('claude,codex,agy'),
   SESSION_HOST_REFRESH_MS: z.coerce.number().int().min(250).max(60_000).default(2_000),
   SESSION_HOST_TRUST_PROXY: flag.default(false),
+  // A project's standing agent terminal that has printed nothing for this long is stopped (its output
+  // is kept and shown again when it reopens). 0 keeps them open forever.
+  SESSION_HOST_IDLE_HOURS: z.coerce.number().min(0).max(24 * 365).default(24),
 });
 
 export type SessionHostConfig = Readonly<{
@@ -43,6 +46,7 @@ export type SessionHostConfig = Readonly<{
   qualified: ReadonlySet<CockpitKind>;
   autonomous: ReadonlySet<CockpitKind>;
   refreshMs: number;
+  idleStopMs: number;
 }>;
 
 function absolute(name: string, value: string | undefined, fallback: string) {
@@ -86,5 +90,6 @@ export function loadSessionHostConfig(environment: NodeJS.ProcessEnv): SessionHo
     qualified,
     autonomous,
     refreshMs: parsed.SESSION_HOST_REFRESH_MS,
+    idleStopMs: Math.round(parsed.SESSION_HOST_IDLE_HOURS * 3_600_000),
   });
 }

@@ -70,6 +70,9 @@ export const CockpitSessionSchema = z.object({
   exitCode: z.number().int().nullable(),
   failure: z.string().nullable(),
   billing: z.string(),
+  // The project's long-lived terminal for this agent CLI. The lead reuses it for every task instead
+  // of opening or closing terminals; only Neal closes it (or the host after a long idle time).
+  standing: z.boolean().optional(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
   stateAt: z.iso.datetime(),
