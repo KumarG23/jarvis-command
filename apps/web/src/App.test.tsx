@@ -120,8 +120,8 @@ describe('Selected room recovery', () => {
     view.unmount(); render(<App loadBootstrap={load} />);
     await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(session.title));
     expect(fetchMock).toHaveBeenCalledWith(`/api/live/sessions/${session.id}`, expect.anything());
-    fireEvent.click(within(screen.getByRole('navigation', { name: 'Recent chats' })).getByRole('button', { name: session.title }));
-    expect(screen.queryByText(room.goal)).not.toBeInTheDocument();
+    // A project chat lives under its project, not in Recent chats.
+    expect(within(screen.getByRole('navigation', { name: 'Recent chats' })).queryByRole('button', { name: session.title })).toBeNull();
     sessionStorage.removeItem('jarvis-command:project-room:v1');
   });
   it.each(['unknown', 'disabled', 'storage-denied'])('ignores unusable remembered selection: %s', async (mode) => {
@@ -183,8 +183,8 @@ it('opens a freshly verified project thread outside bootstrap and roster bounds 
   expect(screen.getByLabelText('Selected project')).toHaveTextContent(project.name);
   fireEvent.click(await screen.findByRole('button', { name: 'Other recent chat' }));
   await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(otherRecent.title));
+  // Opening the project returns to its last chat, the lead.
   fireEvent.click(await screen.findByRole('button', { name: project.name }));
-  fireEvent.click(within(screen.getByRole('navigation', { name: 'Recent chats' })).getByRole('button', { name: current.title }));
   await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message Jarvis' })).toHaveValue('draft stays with lead'));
   expect(fetchMock.mock.calls.some(([, init]) => init?.method && init.method !== 'GET')).toBe(false);
   expect(fetchMock.mock.calls.some(([url]) => /\/runs|\/sessions$|\/sessions\/[^/]+\/fork|\/threads\//.test(url))).toBe(false);
@@ -275,8 +275,8 @@ it('keeps the newer link selection guard when an older overlapping read fails', 
   expect(screen.getByLabelText('Selected session')).toHaveTextContent(current.title);
   fireEvent.click(await screen.findByRole('button', { name: 'Other recent chat' }));
   await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(otherRecent.title));
+  // Opening the project returns to its last chat, the lead.
   fireEvent.click(await screen.findByRole('button', { name: project.name }));
-  fireEvent.click(within(screen.getByRole('navigation', { name: 'Recent chats' })).getByRole('button', { name: current.title }));
   await waitFor(() => expect(screen.getByLabelText('Selected session')).toHaveTextContent(current.title));
 
   await act(async () => readbacks.resolve(secondTarget.id, Response.json({ session: secondTarget })));

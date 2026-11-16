@@ -1,6 +1,6 @@
 import { LiveRunRequestLookupSchema, LiveRunSteerResponseSchema, LiveRunStopResponseSchema, LiveRunApprovalResponseSchema, LiveRunSubmissionResponseSchema, LiveRunStatusSchema, RunEventSchema, type InferenceOverride, type LiveRunSubmissionRequest, type LiveRunStatus, type RunEvent, type SessionMessage } from '@jarvis-command/contracts';
 import { useEffect, useRef, useState } from 'react';
-import { clearRecovery, readRecovery, writeRecovery, readThreadRecovery, writeThreadRecovery, type RecoveryIdentity } from './turnRecovery';
+import { clearRecovery, forgetRecoveryInput, readRecovery, readRecoveryInput, rememberRecoveryInput, writeRecovery, readThreadRecovery, writeThreadRecovery, type RecoveryIdentity } from './turnRecovery';
 import { matchTurn, projectTurns } from './timeline';
 
 const eventNames = ['message.delta', 'tool.started', 'tool.completed', 'subagent.start', 'subagent.complete', 'approval.request', 'approval.responded', 'run.steered', 'context.compaction.started', 'context.compaction.progress', 'context.compaction.completed', 'context.compaction.aborted', 'run.completed', 'run.failed', 'run.cancelled', 'run.interrupted'] as const;
@@ -89,6 +89,8 @@ export type Turn = {
   events: RunEvent[]; approval: LiveRunStatus['approval']; done: boolean; historyMatched: boolean;
   identityVerified: boolean; controlBusy?: boolean; controlMessage?: string;
   historyBaseline?: string[]; userHistoryMatched?: boolean;
+  // The sent text, read back after a reload for display only. It is never resent.
+  recoveredInput?: string;
   terminalPendingSteer?: boolean;
   historyBinding?: LiveRunStatus['historyBinding'];
   usage?: LiveRunStatus['usage'];
@@ -150,7 +152,8 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
       const identity = readStored();
       stored.current = identity;
       if (identity) {
-        current.current = { ...(identity.projectId ? { projectId: identity.projectId } : {}), intent: { sessionId: identity.sessionId, clientRequestId: identity.clientRequestId, input: null }, publicRunId: identity.publicRunId,
+        const recoveredInput = readRecoveryInput(identity.clientRequestId);
+        current.current = { ...(identity.projectId ? { projectId: identity.projectId } : {}), ...(recoveredInput !== null ? { recoveredInput } : {}), intent: { sessionId: identity.sessionId, clientRequestId: identity.clientRequestId, input: null }, publicRunId: identity.publicRunId,
           phase: identity.publicRunId ? 'Recovering status' : 'Recovering admission — writer locked',
           output: '', outputLimited: false, events: [], approval: null, done: false, historyMatched: false, identityVerified: false, activityUnavailable: true };
         setTurn(current.current);
@@ -278,6 +281,7 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
           histories.current.delete(run.intent.sessionId);
           update({ terminalPendingSteer: status.pendingSteer !== null });
           try {
+            forgetRecoveryInput(run.intent.clientRequestId);
             if (stored.current) {
               clearStored(stored.current);
               stored.current = null; recoveryBlocked.current = false; setRecoveryError(null);
@@ -479,6 +483,7 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
     const pending = { ...(projectId ? { projectId } : {}), sessionId, clientRequestId: intent.clientRequestId, publicRunId: null };
     try { writeStored(pending, null); stored.current = pending; }
     catch { recoveryBlocked.current = true; setRecoveryError('Local reload recovery unavailable — message not sent; writer locked.'); return false; }
+    rememberRecoveryInput(intent.clientRequestId, input);
     admissionAge.current = { wall: Date.now(), monotonic: performance.now(), elapsed: 0 };
     if (current.current && !current.current.historyMatched) {
       const previous = current.current;
@@ -527,7 +532,7 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
     const run = current.current;
     if (run && run.intent.sessionId === sessionId && !run.refused) {
       const match = matchTurn(run, messages, complete);
-      update({ historyMatched: !!match.assistant, userHistoryMatched: !!match.user });
+      update({ historyMatched: !!match.assistant, userHistoryMatched: !!match.user || recoveredInputSaved(run, messages) });
     }
   }
   function resume() {
@@ -594,4 +599,12 @@ export function useLiveTurn(sessionScope?: string, foreground = true) {
   const historyBacklogFull = !!turn?.done && !turn.historyMatched && completedTurns.length >= MAX_UNCONFIRMED_TURNS;
   const historyReady = (sessionId: string | undefined) => !!sessionId && histories.current.get(sessionId)?.complete === true;
   return { turn, completedTurns, refresh, send, adopt, retry, history, historyReady, historyBacklogFull, resume, approve, stop, steer, recoveries, consumeRecovery, refreshStatus, recoveryError };
+}
+
+// After a reload the run has no history baseline. If saved history already ends with the
+// recovered message, history shows it and the live turn must not repeat it.
+function recoveredInputSaved(run: Turn, messages: SessionMessage[]) {
+  if (run.intent.input !== null || run.recoveredInput === undefined) return false;
+  const last = [...messages].reverse().find(message => message.role === 'user');
+  return !!last && (last.content === run.recoveredInput || last.content.startsWith(`${run.recoveredInput}\n`));
 }

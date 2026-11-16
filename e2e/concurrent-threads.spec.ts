@@ -90,7 +90,7 @@ for (const [width, height] of [[1280, 720], [320, 740], [360, 740], [390, 740], 
     expect(identities).toHaveLength(2);
     await page.reload();
     await expect(page.getByLabel('Selected session')).toHaveText(sessions[0]!.title);
-    await expect(primary.getByText('Original message unavailable after reload; no message was retransmitted.')).toBeVisible();
+    await expect(primary.getByText(/Reconnected after reload/)).toBeVisible();
     if (width <= 760) await page.getByRole('button', { name: 'Open chat navigation' }).click();
     await expect(page.getByRole('button', { name: `Supervise ${sessions[1]!.title}` })).toContainText('Run running');
     await page.getByRole('button', { name: `Supervise ${sessions[1]!.title}` }).click();

@@ -18,7 +18,13 @@ export function TurnView({ turn, allowed, approve, stop, onSaveResponse, threadP
   const canControl = allowed && turn.identityVerified;
   return <section className="live-turn" aria-label="Current turn">
     <RunInspector key={JSON.stringify([turn.intent.sessionId, turn.intent.clientRequestId])} turn={turn} />
-    {turn.intent.input === null ? <><p>Original message unavailable after reload; no message was retransmitted.</p>{turn.projectId ? <p>Original project: {turn.projectId}. Saved context may have changed since admission; recovery does not resend it.</p> : null}<p>Recovery target · Session: {turn.intent.sessionId} · Request: {turn.intent.clientRequestId} · Run: {turn.publicRunId ?? 'Unknown — admission unconfirmed'}</p></> : !turn.userHistoryMatched ? <article className="timeline-event live-message" aria-label="Your message"><div className="event-icon violet" aria-hidden="true">You</div><div className="event-body"><div className="event-label">You</div><p className="turn-input">{visibleUserText(turn.intent.input)}</p></div></article> : null}
+    {turn.intent.input === null ? <>
+      {turn.recoveredInput !== undefined && !turn.userHistoryMatched ? <YourMessage text={turn.recoveredInput} /> : null}
+      <details className="recovery-note"><summary>{turn.done ? 'Reconnected after reload' : 'Reconnected after reload — still working'}</summary>
+        <p>Nothing was resent; Command picked the same run back up.{turn.recoveredInput === undefined ? ' Your message is in the chat history.' : ''}</p>
+        {turn.projectId ? <p>Project: {turn.projectId}</p> : null}
+        <p>Session: {turn.intent.sessionId} · Request: {turn.intent.clientRequestId} · Run: {turn.publicRunId ?? 'admission unconfirmed'}</p>
+      </details></> : !turn.userHistoryMatched ? <YourMessage text={turn.intent.input} /> : null}
     {turn.output && turn.intent.input === null && !turn.historyBinding ? <details className="recovered-run-output"><summary>Recovered run output — canonical message link unavailable</summary><MessageContent className="turn-output" text={turn.output} threadProjectId={threadProjectId} threadProjectSessionIds={threadProjectSessionIds} onThreadLink={onThreadLink} /></details> : null}
     {turn.output && !turn.historyMatched && (turn.intent.input !== null || turn.historyBinding) ? <article className="timeline-event live-message" aria-label="Jarvis response"><div className="event-icon cyan" aria-hidden="true"><Command size={21} /></div><div className="event-body"><div className="event-label">Jarvis</div><MessageContent className="turn-output" text={turn.output} threadProjectId={threadProjectId} threadProjectSessionIds={threadProjectSessionIds} onThreadLink={onThreadLink} /><CopyResponse key={JSON.stringify([turn.intent.sessionId, turn.intent.clientRequestId])} text={turn.output} limited={turn.outputLimited} onSave={onSaveResponse ? () => onSaveResponse(turn.output!, turn.publicRunId ?? null) : undefined} /></div></article> : null}
     {turn.outputLimited ? <p role="status">Output preview limited. Full output may be available in session history.</p> : null}
@@ -41,6 +47,10 @@ export function TurnView({ turn, allowed, approve, stop, onSaveResponse, threadP
       </section> : <button type="button" className="secondary-button stop-run" disabled={turn.controlBusy} onClick={() => setConfirmation(turn)}>Stop run</button>}
     </> : null}
   </section>;
+}
+
+function YourMessage({ text }: Readonly<{ text: string }>) {
+  return <article className="timeline-event live-message" aria-label="Your message"><div className="event-icon violet" aria-hidden="true">You</div><div className="event-body"><div className="event-label">You</div><p className="turn-input">{visibleUserText(text)}</p></div></article>;
 }
 
 function RunInspector({ turn }: Readonly<{ turn: Turn }>) {

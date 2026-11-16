@@ -210,6 +210,13 @@ export function ProjectRooms({ ref, sessions, threadStates = {}, statusClock, se
     }
   }
   async function chooseChat(session: SessionSummary) {
+    // A chat that belongs to a project always opens in that project's view, with its threads and terminals.
+    const room = rooms.find(item => item.sessionIds.includes(session.id));
+    if (room) {
+      setSelected(room); setExpanded(room.id); remember(room.id); setOpen(false);
+      callbacks.current.onScope(room.name); callbacks.current.onProjectScope?.(room.id); callbacks.current.onSession(session); callbacks.current.onNavigate?.();
+      return;
+    }
     setSelected(null); setExpanded(null); setOpen(false); remember(null);
     callbacks.current.onScope(null); callbacks.current.onProjectScope?.(null); callbacks.current.onSession(session); callbacks.current.onNavigate?.();
   }
@@ -355,7 +362,9 @@ export function ProjectRooms({ ref, sessions, threadStates = {}, statusClock, se
   const threadTitle = (room: ProjectRoom, id: string) => room.threads?.find(thread => thread.sessionId === id)?.title ?? sessionTitle(id) ?? 'Saved chat';
   const creationBlocked = (roomId: string) => uncertainCreates.includes(roomId) || !!pendingProjectChats[roomId];
   const filtered = rooms.filter(room => [room.name, room.goal, room.repository, ...room.notes, ...room.sessionIds.map(id => threadTitle(room, id))].some(value => value.toLowerCase().includes(filter))).sort((a, b) => Number(!!a.archived) - Number(!!b.archived));
-  const recent = sessions.filter(session => chatTitle(session).toLowerCase().includes(filter));
+  // Project chats live under their project, so Recent chats lists only chats outside any project.
+  const projectChatIds = new Set(rooms.flatMap(room => room.sessionIds));
+  const recent = sessions.filter(session => !projectChatIds.has(session.id) && chatTitle(session).toLowerCase().includes(filter));
   const { own: recentOwn, other: recentOther } = splitRecent(recent, selectedSessionId);
   const [otherOpenState, setOtherOpen] = useState(false);
   // Open the group while searching, or when the open chat is one of them.
